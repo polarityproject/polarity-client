@@ -13,6 +13,7 @@
 #include "mod/log.h"
 #include "mod/sfv_game.h"
 #include "mod/ue4.h"
+#include "mod/watch.h"
 
 #include <windows.h>
 
@@ -22,6 +23,7 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -62,6 +64,23 @@ public:
         last_ = rf_.finalThrough >= 0 ? std::min(rf_.finalThrough, rf_.FrameCount() - 1) : rf_.FrameCount() - 1;
     }
 
+    void Keep(int from, int to)
+    {
+        keepFrom_ = from;
+        keepTo_ = to;
+    }
+
+    // `trap <frame> <region> <offset> <bytes>`: a write watch on those bytes
+    // from that frame's tick on (debug registers, 8 bytes each, 4 in all);
+    // the writers are logged when the replay ends.
+    struct Trap {
+        int frame;
+        std::string region;
+        size_t offset;
+        int bytes;
+    };
+    void AddTrap(Trap t) { traps_.push_back(std::move(t)); }
+
     bool OnFrame(SfvGame& game) override
     {
         if (g_stop.exchange(false)) {
@@ -74,6 +93,7 @@ public:
             if (BattleCreationCount() == creationsAtJump_) return false;
             jumped_ = true;
             game.ForgetBattleObjects();
+            game.BeginWarmup();
             Log("replay: battle created (%s)", RoundEndState().c_str());
         }
         if (!ready_) return Warmup(game);
@@ -83,13 +103,11 @@ public:
 
 private:
     // Neutral ticks until the battle's objects exist, then frozen at frame 0
-    // as a netplay session is.
+    // as a netplay session is (SfvGame::WarmupStep).
     bool Warmup(SfvGame& game)
     {
-        game.RefreshRegions();
-        if (game.Regions().empty() || !game.InputUnit()) {
-            game.Advance(FrameInputs{}, false);
-            if (++warmupTicks_ % 300 == 0) Log("replay: still no battle objects after %d ticks", warmupTicks_);
+        if (game.WarmupStep()) {
+            if (game.WarmupTicks() % 300 == 0) Log("replay: still no battle objects after %d ticks", game.WarmupTicks());
             return true;
         }
         ready_ = true;
@@ -110,19 +128,24 @@ private:
             HashRegions(game.Regions(), hashes.data());
         }
         layout_ = game.LayoutVersion(); // after the copy and its new canonical order
-        const int differ = Compare(game, hashes.data(), rf_.initialHashes.data(), -1);
-        Log("replay: battle objects ready after %d neutral ticks (%s); state before frame 0 %s", warmupTicks_,
-            RoundEndState().c_str(), differ ? ("differs in " + std::to_string(differ) + " regions").c_str() : "equal");
-        // Replays sent soon after the game started had the objects after 3
-        // ticks, and every one of them went on differently from frame 0 (its
-        // camera did not follow the fight); 6 or more always matched, and
-        // sessions took 6 to 18. Not understood yet; more ticks once the
-        // objects exist do not help (the battle moves on from the recording).
-        if (warmupTicks_ < 6) {
-            Log("replay: WARNING: the battle was ready after only %d ticks; such replays have differed from their "
-                "recording without a real divergence: run it again",
-                warmupTicks_);
+        if (stress_ == 0 && keepFrom_ >= 0) {
+            // `keep`: this run as a full recording, its start state first.
+            kept_ = ReplayFile{};
+            kept_.modVersion = rf_.modVersion;
+            kept_.gameBuild = game.BuildId();
+            kept_.matchId = rf_.matchId;
+            kept_.localPlayer = rf_.localPlayer;
+            kept_.setup = rf_.setup;
+            kept_.regions = DescribeRegions(game.Regions());
+            kept_.initialHashes = hashes;
+            std::vector<uint8_t> state(StateSize(game.Regions()));
+            SaveRegions(game.Regions(), state.data());
+            kept_.dumps.push_back({-1, "initial", std::move(state)});
         }
+        const int differ = Compare(game, hashes.data(), rf_.initialHashes.data(), -1);
+        Log("replay: battle objects ready after %d neutral ticks (%s); state before frame 0 %s", game.ObjectsAt(),
+            RoundEndState().c_str(),
+            differ ? ("differs in " + std::to_string(differ) + " regions").c_str() : "equal");
         if (stress_ > 0) {
             NetplayConfig nc;
             nc.stressCheckDistance = static_cast<unsigned char>(stress_);
@@ -245,6 +268,16 @@ private:
         game.Advance(rf_.inputs[frame_], false);
         CheckFrame(game, frame_);
         WatchFrame(game, frame_);
+        if (keepFrom_ >= 0) {
+            std::vector<uint64_t> hashes(game.Regions().size());
+            HashRegions(game.Regions(), hashes.data());
+            kept_.SetFrame(frame_, rf_.inputs[frame_], hashes.data());
+            if (frame_ >= keepFrom_ && frame_ <= keepTo_) {
+                std::vector<uint8_t> state(StateSize(game.Regions()));
+                SaveRegions(game.Regions(), state.data());
+                kept_.dumps.push_back({frame_, "kept", std::move(state)});
+            }
+        }
         frame_++;
         return true;
     }
@@ -272,6 +305,21 @@ private:
     // (by name) and the round's end state.
     void WatchFrame(SfvGame& game, int f)
     {
+        for (const Trap& t : traps_) {
+            if (f != t.frame - 1) continue;
+            const auto r = std::find_if(game.Regions().begin(), game.Regions().end(),
+                                        [&](const StateRegion& x) { return x.name == t.region; });
+            if (r == game.Regions().end() || t.offset >= r->size) {
+                Log("replay: trap: no region %s +0x%zx", t.region.c_str(), t.offset);
+                continue;
+            }
+            const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+            for (int done = 0; done < t.bytes && trapSlots_ < 4; done += 8) {
+                ArmWatch(trapSlots_++, r->ptr + t.offset + done, std::min(8, t.bytes - done), base);
+            }
+            Log("replay: trap armed on %s +0x%zx (%d bytes) at %p before frame %d", t.region.c_str(), t.offset, t.bytes,
+                static_cast<void*>(r->ptr + t.offset), t.frame);
+        }
         if (f < watchFrom_ || f > watchTo_) return;
         std::string bytes = "-";
         for (const StateRegion& r : game.Regions()) {
@@ -333,14 +381,16 @@ private:
         std::vector<uint64_t> hashes(game.Regions().size());
         HashRegions(game.Regions(), hashes.data());
         framesChecked_++;
+        // A state dump of the frame (a compact recording's every 600 frames, a
+        // kept run's chosen frames) is compared word by word.
+        if (const StateDump* dump = rf_.FindDump(f)) CompareDump(game, *dump, f);
         if (rf_.HasRegionHashes(f)) {
             Compare(game, hashes.data(), rf_.FrameHashes(f), f);
             return;
         }
         // A compact recording: the frame's checksum only (a mismatch names no
-        // region), and every 600 frames a state dump, compared word by word.
+        // region).
         const bool equal = FoldChecksum(hashes.data(), hashes.size()) == rf_.FrameChecksum(f);
-        if (const StateDump* dump = rf_.FindDump(f)) CompareDump(game, *dump, f);
         if (equal) return;
         if (firstMismatch_ < 0) firstMismatch_ = f;
         mismatchFrames_++;
@@ -388,7 +438,7 @@ private:
             best->taken = true;
             if (bestDiff == 0) continue;
             differing++;
-            for (size_t w = 0; w + 8 <= r.size && shown < 24; w += 8) {
+            for (size_t w = 0; w + 8 <= r.size && shown < 96; w += 8) {
                 if (masked(w / 8) || std::memcmp(r.ptr + w, best->bytes + w, 8) == 0) continue;
                 uint64_t mine, theirs;
                 std::memcpy(&mine, r.ptr + w, 8);
@@ -441,6 +491,19 @@ private:
 
     void Finish(SfvGame& game)
     {
+        if (trapSlots_) {
+            WatchReport();
+            DisarmWatches();
+            trapSlots_ = 0;
+        }
+        if (stress_ == 0 && keepFrom_ >= 0 && kept_.FrameCount() > 0) {
+            kept_.finalThrough = kept_.FrameCount() - 1;
+            const std::string stem = name_.substr(0, name_.rfind('.'));
+            const std::string path = Utf8Path(MatchesDir()) + "\\" + stem + "_kept.sfvr";
+            std::string error;
+            if (SaveReplay(kept_, path, &error, ReplayDetail::Full)) Log("replay: kept this run as %s", path.c_str());
+            else Log("replay: cannot keep this run: %s", error.c_str());
+        }
         game.inputOverride = nullptr;
         game.exclusiveTicks = false;
         SetRoundDirectorPerTick(false, false);
@@ -478,6 +541,13 @@ private:
 
     ReplayFile rf_;
     std::string name_;
+    // `keep <from> <to>` (straight runs): this run saved as a full recording
+    // (<name>_kept.sfvr), with state dumps of those frames: a stress replay of
+    // it names the words that differ there (CompareDump).
+    int keepFrom_ = -1, keepTo_ = -1;
+    std::vector<Trap> traps_;
+    int trapSlots_ = 0;
+    ReplayFile kept_;
     int stress_;
     int creationsAtJump_;
     int watchFrom_, watchTo_;
@@ -487,7 +557,6 @@ private:
     int last_ = -1;
     bool jumped_ = false;
     bool ready_ = false;
-    int warmupTicks_ = 0;
     int layout_ = 0;
     int frame_ = 0;
     int fed_ = 0;
@@ -507,7 +576,8 @@ private:
 
 } // namespace
 
-void RequestReplay(const std::string& path, int stressDistance, int watchFrom, int watchTo, const std::string& watchRegion)
+void RequestReplay(const std::string& path, int stressDistance, int watchFrom, int watchTo, const std::string& watchRegion,
+                   int keepFrom, int keepTo, bool preload, const std::string& traps)
 {
     if (path == "stop") {
         g_stop = CurrentFrameDriver() != nullptr;
@@ -539,7 +609,13 @@ void RequestReplay(const std::string& path, int stressDistance, int watchFrom, i
     }
     // The recorded setup for the battle the jump starts.
     SetPendingSetup(rf.setup);
-    SetFrameDriver(new ReplayDriver(std::move(rf), name, stressDistance, watchFrom, watchTo, watchRegion));
+    auto* driver = new ReplayDriver(std::move(rf), name, stressDistance, watchFrom, watchTo, watchRegion);
+    driver->Keep(keepFrom, keepTo);
+    std::istringstream ts(traps);
+    ReplayDriver::Trap t;
+    while (ts >> t.frame >> t.region >> std::hex >> t.offset >> std::dec >> t.bytes) driver->AddTrap(t);
+    SetFrameDriver(driver);
+    if (!preload) picks.clear();
     PreloadCharacters(std::move(picks), [] { JumpToBattle(); });
 }
 

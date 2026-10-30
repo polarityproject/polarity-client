@@ -29,7 +29,13 @@ namespace sfv::mod {
 // "stop" ends the running replay.
 // watchFrom..watchTo (-1: none): logs watchRegion's first 16 bytes and the
 // round's end state for each of those frames (research).
+// keepFrom..keepTo (>= 0, straight runs): the run saved as a full recording
+// next to the file (<name>_kept.sfvr), with state dumps of those frames.
+// preload false: the jump without loading the characters first.
+// traps: "<frame> <region> <hex offset> <bytes>" groups, write watches armed
+// before that frame's tick, their writers logged at the end (research).
 void RequestReplay(const std::string& path, int stressDistance, int watchFrom = -1, int watchTo = -1,
-                   const std::string& watchRegion = "");
+                   const std::string& watchRegion = "", int keepFrom = -1, int keepTo = -1, bool preload = true,
+                   const std::string& traps = "");
 
 } // namespace sfv::mod

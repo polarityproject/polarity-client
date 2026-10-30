@@ -19,6 +19,7 @@
 #include "mod/netplay_driver.h"
 #include "mod/outside_probe.h"
 #include "mod/overlay.h"
+#include "mod/textures.h"
 #include "mod/replay_driver.h"
 #include "mod/tracer.h"
 
@@ -504,6 +505,33 @@ void RunNetCommand(const std::string& line)
         Step parsed;
         if (ParseButtons(buttons, parsed)) PressUiButtons(parsed.buttons, ms);
     }
+    else if (cmd == "textures") {
+        // textures <filter> [limit]: loaded Texture2D objects by name or package.
+        std::string filter;
+        int limit = 80;
+        ss >> filter >> limit;
+        LogTextures(filter, limit);
+    }
+    else if (cmd == "showtex") {
+        // showtex <object name | /Game/... path> | showtex off: the texture's
+        // shader resource view drawn by the overlay (research: portraits and
+        // stage pictures for the controller UI).
+        std::string which;
+        ss >> which;
+        if (which.empty() || which == "off") {
+            SetOverlayTexture(nullptr, 0, 0, "");
+            return;
+        }
+        RunOnGameThread([which] {
+            const void* texture = FindOrLoadTexture(which);
+            if (!texture) {
+                Log("showtex: no texture %s", which.c_str());
+                return;
+            }
+            const TextureView view = ViewOfTexture(texture);
+            if (view.srv) SetOverlayTexture(view.srv, view.width, view.height, which);
+        });
+    }
     else if (cmd == "watchmatch") {
         // watchmatch <n | live>: a spectator watches the session's n-th kept
         // match (1: the oldest) or the newest from its start (the panel's
@@ -885,14 +913,26 @@ void RunNetCommand(const std::string& line)
     else if (cmd == "replay") {
         // replay <file in SFVR\matches (or reports\) or a full path> [stress <distance>]
         // ... [watch <from> <to> <region>]
-        std::string file, word, region;
-        int stress = 0, from = -1, to = -1;
+        // ... [keep <from> <to>] (a straight run kept as a full recording with
+        // state dumps of those frames) [cold] (no preload: the characters
+        // load as the battle is created, which then has its objects sooner)
+        // [trap <frame> <region> <hex offset> <bytes>]... (write watches)
+        std::string file, word, region, traps;
+        int stress = 0, from = -1, to = -1, keepFrom = -1, keepTo = -1;
+        bool cold = false;
         ss >> file;
         while (ss >> word) {
             if (word == "stress") ss >> stress;
             if (word == "watch") ss >> from >> to >> region;
+            if (word == "keep") ss >> keepFrom >> keepTo;
+            if (word == "cold") cold = true;
+            if (word == "trap") {
+                std::string f, r, off, b;
+                ss >> f >> r >> off >> b;
+                traps += f + " " + r + " " + off + " " + b + " ";
+            }
         }
-        RequestReplay(file, stress, from, to, region);
+        RequestReplay(file, stress, from, to, region, keepFrom, keepTo, !cold, traps);
     }
     else if (cmd == "regions") {
         size_t size = 0;
@@ -1138,7 +1178,7 @@ bool Parse(const std::string& line, Step& step)
         return !ss.fail();
     }
     if (cmd == "host" || cmd == "join" || cmd == "spectate" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
-        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "skipcallbacks") {
+        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "skipcallbacks") {
         step.kind = Step::Net;
         step.line = line;
         return true;

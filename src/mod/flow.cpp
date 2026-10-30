@@ -2182,6 +2182,23 @@ std::string Utf8Of(const uint8_t* fstring)
     return out;
 }
 
+} // namespace
+
+void* LoadAsset(const std::string& className, const std::string& path)
+{
+    if (!g_base || std::memcmp(reinterpret_cast<const void*>(g_base + kStaticLoadObject), kStaticLoadObjectBytes,
+                               sizeof(kStaticLoadObjectBytes)) != 0) {
+        Log("flow: StaticLoadObject not where expected");
+        return nullptr;
+    }
+    const void* cls = ue4::FindObject(className, "Class");
+    if (!cls) return nullptr;
+    using LoadFn = void* (*)(const void* cls, void* outer, const wchar_t* name, const wchar_t* file, uint32_t flags, void* sandbox, bool reconcile);
+    return reinterpret_cast<LoadFn>(g_base + kStaticLoadObject)(cls, nullptr, WideOf(path).c_str(), nullptr, 0, nullptr, true);
+}
+
+namespace {
+
 void LogPresetsOf(int index)
 {
     using LoadFn = void* (*)(const void* cls, void* outer, const wchar_t* name, const wchar_t* file, uint32_t flags, void* sandbox, bool reconcile);

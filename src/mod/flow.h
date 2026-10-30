@@ -24,6 +24,9 @@ bool InstallFlowProbes(const GameImage& image, bool offlineBoot);
 // queue from the scene manager's tick and from the pad poll (neither runs
 // every frame in every screen), at most once per 10 ms.
 void RunOnGameThread(std::function<void()> task);
+// Loads one asset by path ("/Game/UI/Foo/T_Foo.T_Foo") as an object of the
+// named class through the game's StaticLoadObject. Game thread; null on failure.
+void* LoadAsset(const std::string& className, const std::string& path);
 void PumpGameThread();
 std::string PumpStats(); // diagnostics: how often each source ran it
 void RunOnGameThreadAfter(int frames, std::function<void()> task);
