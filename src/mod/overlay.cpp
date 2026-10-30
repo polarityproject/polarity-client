@@ -1246,14 +1246,18 @@ void DrawDelay(Choices& c, const char* label = "Delay")
 // prediction (rollback) does the rest. 1 to 3 frames.
 void DrawDelaySuggestion(const NetView& v)
 {
-    if (!v.linkPingMs) return;
+    // A spectator has no input delay of its own.
+    if (!v.linkPingMs || v.spectator) return;
     const int suggested = SuggestedDelay(v.linkPingMs);
+    // Wrapped at the window's edge: the post-match side windows are narrow.
+    ImGui::PushTextWrapPos(0.0f);
     ImGui::TextColored(kDim, "Suggested delay %d (ping %u ms)", suggested, v.linkPingMs);
     // Below it the other player's inputs come late more often than not: the
     // game rolls back most frames (CPU, and corrections you can see).
     if (g_choices.delay < suggested) {
         ImGui::TextColored(kAmber, "Delay %d is below that: expect frequent rollbacks", g_choices.delay);
     }
+    ImGui::PopTextWrapPos();
 }
 
 void DrawDelay(Choices& c, const NetView& v)
