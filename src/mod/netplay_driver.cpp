@@ -1355,8 +1355,7 @@ private:
             // No battle frames come while jumping from the menus: the match
             // can be let go of here.
             if (GetState() != State::Jumping || game_.BattleRunning()) return;
-            SetFrameDriver(nullptr);
-            Sleep(50);
+            DetachFrameDriver();
             FinishMatch(game_);
         }
         next_ = Next::None;
@@ -1507,8 +1506,7 @@ private:
         if (!holdOverResults_.exchange(false)) return;
         SetPadIsolation(false);
         SetBlockPause(false);
-        SetFrameDriver(nullptr);
-        Sleep(50); // the game thread lets go of this driver's frame
+        DetachFrameDriver();
     }
 
     void BeginJump()
@@ -2754,9 +2752,11 @@ void Replace(std::unique_ptr<NetplayDriver> next)
 {
     std::lock_guard lock(g_driverMutex);
     if (g_driver) {
-        // Detach, then give the game thread a frame to leave OnFrame.
-        if (CurrentFrameDriver() == g_driver.get()) SetFrameDriver(nullptr);
-        Sleep(100);
+        // Detach: a match the game thread is letting go of (FinishMatch, as
+        // the other player left) is let go of before Stop looks at it. The
+        // fixed 100 ms wait here before was not always enough: Stop then
+        // read the session while FinishMatch reset it, and the game crashed.
+        if (CurrentFrameDriver() == g_driver.get()) DetachFrameDriver();
         g_driver->Stop();
     }
     g_driver = std::move(next);

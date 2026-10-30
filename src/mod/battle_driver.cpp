@@ -30,6 +30,9 @@ SfvGame::BattleFrameFn g_origBattleFrame = nullptr;
 RecordFrameFn g_origRecordFrame = nullptr;
 std::atomic<IFrameDriver*> g_driver{nullptr};
 bool g_inDriver = false;
+// The game thread while it may be in a driver's OnFrame (set before it reads
+// g_driver), else 0: DetachFrameDriver waits for it.
+std::atomic<DWORD> g_frameThread{0};
 
 // Rose's soul level (her entity's +0x444, a 2..5 she changes during the
 // intro and later) is picked by rva 0x3AD7E0 from a random stream that is not
@@ -242,16 +245,18 @@ void BattleFrameDetour(uint8_t* battleFrame)
         g_origBattleFrame(battleFrame);
         return;
     }
+    g_frameThread = GetCurrentThreadId();
+    bool handled = false;
     if (IFrameDriver* driver = g_driver) {
         g_inDriver = true;
-        bool handled;
         {
             hitch::Scope timed(hitch::Part::NetFrame);
             handled = driver->OnFrame(*g_game);
         }
         g_inDriver = false;
-        if (handled) return;
     }
+    g_frameThread = 0;
+    if (handled) return;
     hitch::Scope timed(hitch::Part::BattleFrame);
     g_origBattleFrame(battleFrame);
 }
@@ -357,6 +362,20 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game)
 }
 
 void SetFrameDriver(IFrameDriver* driver) { g_driver = driver; }
+
+void DetachFrameDriver()
+{
+    g_driver = nullptr;
+    // A frame that read the driver before runs to its end (on the game
+    // thread itself there is nothing to wait for).
+    const DWORD self = GetCurrentThreadId();
+    for (int waited = 0; waited < 5000; waited++) {
+        const DWORD busy = g_frameThread;
+        if (busy == 0 || busy == self) return;
+        Sleep(1);
+    }
+    Log("battle driver: the game thread is still in a frame driver after 5 s");
+}
 
 IFrameDriver* CurrentFrameDriver() { return g_driver; }
 

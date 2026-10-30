@@ -24,6 +24,10 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game);
 // The driver used from the next frame on; nullptr gives the frame loop back
 // to the game. The caller keeps ownership.
 void SetFrameDriver(IFrameDriver* driver);
+// SetFrameDriver(nullptr), then waits until the game thread has left the
+// frame it was running with the driver (up to 5 s): after it, no OnFrame of
+// the old driver runs.
+void DetachFrameDriver();
 IFrameDriver* CurrentFrameDriver();
 // Research (`regions <size>`): logs the snapshot regions of that size with their addresses.
 void LogRegionsOfSize(size_t size);

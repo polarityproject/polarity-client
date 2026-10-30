@@ -36,6 +36,8 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   the other character loaded as the battle began, a few frames off on each
   PC (spectators then desynced from the first frame). The match now waits
   until both games have both characters (up to 90 seconds).
+- The game could crash when you left a session at the moment the other
+  player left it too (both games closing the match at once).
 - A desync report is saved in the background: writing it during the match
   froze the game for a tenth of a second or more.
 - Non-Latin systems and games: the game's own text (character, costume,
