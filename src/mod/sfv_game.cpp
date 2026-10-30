@@ -671,6 +671,16 @@ std::vector<uint64_t> g_skipCallbacks;
 std::atomic<bool> g_skipAny{false};
 } // namespace
 
+std::vector<uint64_t> DefaultSkippedLoadCallbacks()
+{
+    // thunk rva << 32 | target rva. About 90% of the time the callbacks take
+    // after a load (0.9-1.2 ms a load on the test PC): the fighters'
+    // animation re-sync (0x3587D0) and two at 0x448B30 / 0x448B40. The ticks
+    // resimulated after the load set the same state: two-PC sessions and
+    // stress replays with them skipped had no desync (2026-10-30).
+    return {0x4C1D10ull << 32 | 0x3587D0, 0x447A60ull << 32 | 0x448B30, 0x447A60ull << 32 | 0x448B40};
+}
+
 void SetSkippedLoadCallbacks(std::vector<uint64_t> keys)
 {
     std::lock_guard lock(g_skipMutex);

@@ -133,6 +133,7 @@ DWORD WINAPI ModMain(LPVOID self)
     InstallFlowProbes(image, config.offlineBoot);
     WatchLoginStatus();
     InstallBattleDriver(image, &game);
+    if (config.netplay.skipLoadCallbacks) SetSkippedLoadCallbacks(DefaultSkippedLoadCallbacks());
     InstallNetplay(&game, config.reportDir, kModVersion, config.netplay);
 
     switch (config.mode) {

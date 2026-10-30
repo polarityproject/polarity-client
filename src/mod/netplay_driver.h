@@ -70,6 +70,7 @@ struct NetplayOptions {
     int maxDumps = 24;                     // ... at most this many
     bool fullRecordings = false;           // recordings keep every frame's region hashes, not only around desyncs (testing)
     bool skipSaves = true;                 // saves that can never be loaded skip their copy (netplay.h)
+    bool skipLoadCallbacks = true;         // loads leave out the costliest game callbacks (DefaultSkippedLoadCallbacks)
     bool verifyLoads = true;               // each load checked against its save's checksum (netplay.h)
     bool menuAfterMatch = true;            // back to the main menu when a session ends or on leave
     bool reconcileStart = true;            // joiner takes the host's values where the frozen states differ (lobby.h)
@@ -114,6 +115,7 @@ struct NetView {
     Phase phase = Phase::Idle;
     bool host = false;
     bool spectator = false;
+    bool scripted = false; // started by a command (tests): it keeps the delay the command set
     bool udp = false;
     std::string code;     // the match code (hosting or joining)
     std::string status;   // the status line

@@ -266,6 +266,7 @@ Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const st
     n.reconcileStart = ReadInt(path, L"netplay", L"reconcile_start", 1) != 0;
     n.fullRecordings = ReadInt(path, L"netplay", L"full_recordings", 0) != 0;
     n.skipSaves = ReadInt(path, L"netplay", L"skip_saves", 1) != 0;
+    n.skipLoadCallbacks = ReadInt(path, L"netplay", L"skip_load_callbacks", 1) != 0;
     n.verifyLoads = ReadInt(path, L"netplay", L"verify_loads", 1) != 0;
     ReadNetplayChoices(path, n, false);
     if (!panelPath.empty()) ReadNetplayChoices(panelPath, n, true);

@@ -18,6 +18,14 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   connection (the game then rolls back most frames), and the log says so at
   the start of each match.
 
+### Changed
+
+- Rollbacks take less time: after loading an earlier frame the game no
+  longer runs its three costliest follow-up steps (the fighters' animation
+  re-sync and two more), about 90% of the time a rollback's load took. The
+  frames played again after it set the same state. `[netplay]
+  skip_load_callbacks=0` in sfv_rollback.ini turns it off.
+
 ### Fixed
 
 - The game could crash a few seconds after starting (about one start in

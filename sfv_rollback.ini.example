@@ -80,6 +80,11 @@ full_recordings=0
 ; confirmed: the delay covers the latency) keeps its checksum but skips the
 ; state copy. 0: every save copies (for comparing the costs).
 skip_saves=1
+; 1: a rollback's load leaves out the game's three costliest after-load
+; callbacks (the fighters' animation re-sync and two more), about 90% of the
+; time a load takes; the frames resimulated after it set the same state.
+; 0: every callback runs (for comparing).
+skip_load_callbacks=1
 ; 1: after each rollback's load, the state's checksum is compared with the one
 ; taken when that frame was saved; a mismatch is logged (a save/load bug).
 verify_loads=1

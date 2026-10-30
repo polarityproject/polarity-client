@@ -51,10 +51,13 @@ struct StateMap {
 void WatchRegionOfNextBattle(const std::string& name, size_t offset, int length);
 void ArmPendingRegionWatch(const std::vector<StateRegion>& regions, uintptr_t imageBase);
 
-// Research (`skipcallbacks`): game callbacks a load does not run, by key
-// (thunk rva << 32 | the rva of the function its context names), as the load
-// cost lines print them. Empty: all run (the default).
+// Game callbacks a load does not run, by key (thunk rva << 32 | the rva of
+// the function its context names), as the load cost lines print them. Empty:
+// all run. Set at start from [netplay] skip_load_callbacks; `skipcallbacks`
+// changes it (research).
 void SetSkippedLoadCallbacks(std::vector<uint64_t> keys);
+// The callbacks loads leave out by default ([netplay] skip_load_callbacks).
+std::vector<uint64_t> DefaultSkippedLoadCallbacks();
 
 class SfvGame : public IGame {
 public:
