@@ -20,6 +20,9 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ### Fixed
 
+- The game could crash a few seconds after starting (about one start in
+  five on some PCs), when the mod's overlay set itself up at the same moment
+  as the game's graphics. The overlay now waits for the game's window.
 - A desync report is saved in the background: writing it during the match
   froze the game for a tenth of a second or more.
 - Non-Latin systems and games: the game's own text (character, costume,
