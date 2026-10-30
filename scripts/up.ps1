@@ -15,8 +15,20 @@ if ($Count -gt 1 -and -not (Select-String -Path (Join-Path $w 'sfv_rollback.ini'
   exit 1
 }
 if ($Restart) {
-  Get-Process StreetFighterV -ErrorAction SilentlyContinue | Stop-Process -Force
-  Start-Sleep 2
+  # A killed game can take a while to go (and while it is there it counts as
+  # running: one instance fewer would be started).
+  $old = @(Get-Process StreetFighterV -ErrorAction SilentlyContinue)
+  $old | Stop-Process -Force
+  $killed = Get-Date
+  while (Get-Process StreetFighterV -ErrorAction SilentlyContinue) {
+    if (((Get-Date) - $killed).TotalSeconds -gt 90) {
+      Write-Error "the running games did not exit within 90 s"
+      exit 1
+    }
+    Start-Sleep -Milliseconds 250
+  }
+  $took = ((Get-Date) - $killed).TotalSeconds
+  if ($took -gt 2) { "the closed games took $([int]$took) s to exit" }
 }
 $running = @(Get-Process StreetFighterV -ErrorAction SilentlyContinue).Count
 # The loader runs a copy of the DLL, so this one is never in use.
@@ -68,6 +80,11 @@ while ($up.Count -lt $launched -and (Get-Date) -lt $deadline) {
 }
 if ($up.Count -lt $launched) {
   Write-Error "not all started instances reached the main menu in $TimeoutSeconds s"
+  exit 1
+}
+$now = @(Get-Process StreetFighterV -ErrorAction SilentlyContinue).Count
+if ($now -ne $Count) {
+  Write-Error "$now games running, $Count wanted"
   exit 1
 }
 if ($StageSelect) {
