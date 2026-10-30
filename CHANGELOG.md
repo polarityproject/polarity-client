@@ -39,6 +39,11 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   for move variants was never set. Both now come from the match and the
   frame, the same on every PC and after any rollback. Players need the same
   version to play together.
+- Rose's matches desynced every time after a rollback (a short warning
+  around her soul level change): a countdown that applies her new soul
+  level was not restored by rollbacks, so the level changed a frame early
+  on the PC that rolled back. It is restored now. Players need the same
+  version to play together.
 - A match could start before both games had loaded both characters: a
   game reported its characters loaded while it only knew its own pick, so
   the other character loaded as the battle began, a few frames off on each

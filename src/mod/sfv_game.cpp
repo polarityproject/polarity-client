@@ -327,6 +327,13 @@ uint8_t* SfvGame::SingletonTicks() const
                : nullptr;
 }
 
+// Rose's soul entity (vtable rva 0x2C5E2A8): the game snapshots 884 bytes of
+// it from +0xF0; +0x5C8..+0x66F (counters, the soul level countdown and
+// table; plain integers, a pointer follows) is added (RefreshRegions).
+constexpr uint32_t kSoulEntityVtable = 0x2C5E2A8;
+constexpr size_t kSoulEntityRegionSize = 884, kSoulEntityRegionAt = 0xF0;
+constexpr size_t kSoulEntityTailAt = 0x5C8, kSoulEntityTailSize = 0xA8;
+
 bool SfvGame::RefreshRegions()
 {
     // The game's table, in its order, plus our extra regions; only rebuilt
@@ -340,6 +347,7 @@ bool SfvGame::RefreshRegions()
             for (size_t i = 0; i < count; i++) raw.emplace_back(begin[i].ptr, static_cast<size_t>(begin[i].size));
         }
     }
+    const size_t gameRegions = raw.size();
     const bool extras = includeSyncCounters && !raw.empty();
     if (extras && inputUnit_) raw.emplace_back(inputUnit_ + game::inputunit::kCountersBegin, game::inputunit::kCountersSize);
     if (extras && battleFrame_) raw.emplace_back(battleFrame_ + game::battleframe::kStateBegin, game::battleframe::kStateSize);
@@ -356,6 +364,19 @@ bool SfvGame::RefreshRegions()
     std::vector<ExtraRegion> flow;
     if (extras) {
         flow.push_back({"flow.round", RoundFlowState(), kRoundFlowStateSize});
+        // Rose's soul entity: the game's region is its +0xF0..+0x463; the
+        // countdown that applies a new soul level (+0x61C, rva 0x3C14F9 and
+        // 0x3C1990), the level table and its counters lie after it. A
+        // rollback left them run on, and the level came a frame early in
+        // the resimulation (both PCs desynced in every Rose match).
+        for (size_t i = 0; i < gameRegions; i++) {
+            if (raw[i].second != kSoulEntityRegionSize) continue;
+            uint8_t* entity = raw[i].first - kSoulEntityRegionAt;
+            if (IsReadable(entity, 8) && *reinterpret_cast<const uintptr_t*>(entity) == image_.base + kSoulEntityVtable &&
+                IsReadable(entity + kSoulEntityTailAt, kSoulEntityTailSize)) {
+                flow.push_back({"rose.soul", entity + kSoulEntityTailAt, kSoulEntityTailSize});
+            }
+        }
     }
     for (const auto& e : flow) raw.emplace_back(e.ptr, e.size);
     if (raw == rawLayout_) return false;
@@ -486,6 +507,14 @@ void SfvGame::SetStateMap(const StateMap* map)
             // Restored on a rollback like the rest, but out of the checksum.
             r.ignore.resize(1, 0);
             r.ignore[0] |= 1;
+        }
+        if (r.name == "rose.soul") {
+            // The entity's +0x620..+0x62F (this region's +0x58, +0x60): left
+            // from the last match (floats, at times an address), constant
+            // through the next and different on each machine; none of the
+            // soul code writes them. Restored, but out of the checksum.
+            if (r.ignore.size() < 2) r.ignore.resize(2, 0);
+            r.ignore[1] |= uint8_t(1u << (0x58 / 8 - 8)) | uint8_t(1u << (0x60 / 8 - 8));
         }
         if (IsEffectRegion(r)) {
             // Restored on a rollback like the rest, but out of the checksum.
@@ -733,7 +762,7 @@ std::string SfvGame::BuildId() const
 {
     char buf[96];
     const uint64_t noise = NoiseHash();
-    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-5/map-%016llx/noise-%016llx", image_.timestamp,
+    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-6/map-%016llx/noise-%016llx", image_.timestamp,
                   static_cast<unsigned long long>(stateMap_ ? stateMap_->Fingerprint() : 0),
                   static_cast<unsigned long long>(noise));
     return buf;

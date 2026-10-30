@@ -350,11 +350,15 @@ private:
             return;
         }
         std::string bytes = "-";
+        // "<region>+<hex offset>": the 16 bytes from there.
+        const size_t plus = watchRegion_.find('+');
+        const std::string watchName = watchRegion_.substr(0, plus);
+        const size_t at = plus == std::string::npos ? 0 : std::stoull(watchRegion_.substr(plus + 1), nullptr, 16);
         for (const StateRegion& r : game.Regions()) {
-            if (r.name != watchRegion_) continue;
+            if (r.name != watchName || at >= r.size) continue;
             char b[64];
             uint64_t w[2] = {};
-            std::memcpy(w, r.ptr, std::min<size_t>(16, r.size));
+            std::memcpy(w, r.ptr + at, std::min<size_t>(16, r.size - at));
             std::snprintf(b, sizeof(b), "%016llx %016llx", static_cast<unsigned long long>(w[0]),
                           static_cast<unsigned long long>(w[1]));
             bytes = b;
