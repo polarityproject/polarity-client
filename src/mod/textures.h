@@ -26,4 +26,11 @@ struct TextureView {
 // (FTextureResource -> RHI texture -> D3D11 objects); logs the chain.
 TextureView ViewOfTexture(const void* texture);
 
+// Research (`savetex`): writes the texture's top mip to SFVR\textures\<name>.dds
+// as it is in memory (BC formats stay compressed). Takes over the view's
+// reference. The copy is made on the render thread: SaveQueuedTextures, from
+// the overlay's Present.
+void SaveTextureLater(void* srv, const std::string& name);
+void SaveQueuedTextures();
+
 } // namespace sfv::mod

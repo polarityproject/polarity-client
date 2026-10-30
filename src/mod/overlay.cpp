@@ -1,4 +1,5 @@
 #include "mod/overlay.h"
+#include "mod/textures.h"
 
 #include "core/match_code.h"
 #include "mod/config.h"
@@ -2703,6 +2704,7 @@ HRESULT STDMETHODCALLTYPE PresentDetour(IDXGISwapChain* self, UINT syncInterval,
 {
     HookGuard guard;
     if (Stopping() || (flags & DXGI_PRESENT_TEST)) return g_origPresent(self, syncInterval, flags);
+    SaveQueuedTextures();
     // Frames per second: frames counted over each half second. (Averaging
     // 1/frame time read high whenever frame times were uneven, 61-62 at a
     // true 60: the mean of 1/t is above 1/mean t.)
