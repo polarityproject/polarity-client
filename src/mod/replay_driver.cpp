@@ -607,8 +607,11 @@ void RequestReplay(const std::string& path, int stressDistance, int watchFrom, i
     for (const PlayerSetup& p : rf.setup.players) {
         if (p.character) picks.push_back({UnpackCode(p.character), static_cast<int>(p.costume)});
     }
-    // The recorded setup for the battle the jump starts.
+    // The recorded setup and stage for the battle the jump starts (without
+    // the stage the battle loads the game's default request, Training).
     SetPendingSetup(rf.setup);
+    SetPendingStage(rf.setup.stage == kKeepStage ? "" : StageCode(rf.setup.stage));
+    Log("replay: stage %s", rf.setup.stage == kKeepStage ? "as prepared" : StageCode(rf.setup.stage).c_str());
     auto* driver = new ReplayDriver(std::move(rf), name, stressDistance, watchFrom, watchTo, watchRegion);
     driver->Keep(keepFrom, keepTo);
     std::istringstream ts(traps);
