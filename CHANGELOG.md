@@ -45,6 +45,8 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   compared. Players need the same version to play together.
 - The game could crash when you left a session at the moment the other
   player left it too (both games closing the match at once).
+- The game could crash, rarely, while a match was being set up: the mod
+  read the game's object list as the game was growing it.
 - A desync report is saved in the background: writing it during the match
   froze the game for a tenth of a second or more.
 - Non-Latin systems and games: the game's own text (character, costume,

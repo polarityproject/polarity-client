@@ -29,11 +29,24 @@ const uint8_t* g_items = nullptr;
 size_t g_itemStride = 0;
 constexpr int kItemChunk = 64 * 1024;
 
+// A read that fails instead of faulting: the engine can free or move what is
+// read (its object array grows while a battle loads on another thread), so
+// a check before the copy is not enough (a host crashed in ForEachObject
+// that way, 2026-10-30).
+bool CopyGuarded(void* out, const void* p, size_t size)
+{
+    __try {
+        std::memcpy(out, p, size);
+        return true;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 template <typename T> bool Read(const void* p, T* out)
 {
-    if (!IsReadable(p, sizeof(T))) return false;
-    std::memcpy(out, p, sizeof(T));
-    return true;
+    return p && CopyGuarded(out, p, sizeof(T));
 }
 
 std::string EntryText(const void* entry)
