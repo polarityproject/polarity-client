@@ -36,6 +36,13 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   the other character loaded as the battle began, a few frames off on each
   PC (spectators then desynced from the first frame). The match now waits
   until both games have both characters (up to 90 seconds).
+- False desync warnings with visual effects such as R. Mika's motion
+  trail: after a long rollback the game could put the same effect into
+  another of its effect slots, and the leftovers in the slots it did not
+  use were reported as a desync, often for the rest of the match. The
+  effect looked the same on both screens. Pooled effect objects and the
+  script's effect records are still restored on rollbacks but no longer
+  compared. Players need the same version to play together.
 - The game could crash when you left a session at the moment the other
   player left it too (both games closing the match at once).
 - A desync report is saved in the background: writing it during the match

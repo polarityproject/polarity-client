@@ -211,6 +211,9 @@ public:
     bool OutcomeDecided() override;
 
 private:
+    // A region of a pooled visual effect object (kEffectRegions in sfv_game.cpp):
+    // out of the checksum.
+    bool IsEffectRegion(const StateRegion& r) const;
     void RunPostRestoreCallbacks(const game::FrameId& id);
     // Time after loads (performance counter ticks), per game callback (by rva)
     // and for the round state the mod puts back (OnStateLoaded logs them).

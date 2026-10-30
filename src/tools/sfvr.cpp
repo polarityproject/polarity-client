@@ -567,7 +567,8 @@ int CmdRegion(int argc, char** argv)
     return 1;
 }
 
-// Writes the region table (regions.txt: name, size and offset in the dump) and
+// Writes the region table (regions.txt: name, size, offset in the dump and
+// the words left out of its checksum as a hex bit mask, or "-") and
 // every state dump (frame_<n>.bin) for scripts that look for fields.
 int CmdExport(int argc, char** argv)
 {
@@ -582,7 +583,14 @@ int CmdExport(int argc, char** argv)
     }
     size_t at = 0;
     for (const auto& region : rf.regions) {
-        std::fprintf(table, "%s %zu %zu\n", region.name.c_str(), static_cast<size_t>(region.size), at);
+        std::string mask;
+        for (uint8_t b : region.ignore) {
+            char hex[3];
+            std::snprintf(hex, sizeof(hex), "%02x", b);
+            mask += hex;
+        }
+        std::fprintf(table, "%s %zu %zu %s\n", region.name.c_str(), static_cast<size_t>(region.size), at,
+                     mask.empty() ? "-" : mask.c_str());
         at += static_cast<size_t>(region.size);
     }
     std::fclose(table);

@@ -379,11 +379,43 @@ void DetachFrameDriver()
 
 IFrameDriver* CurrentFrameDriver() { return g_driver; }
 
+std::string RegionOwner(const void* region)
+{
+    // The nearest word at or before the region that points at a vtable in
+    // the game's .rdata (whose first entry points into .text).
+    const uintptr_t base = g_imageBase ? g_imageBase : reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    constexpr uintptr_t kTextBegin = 0x1000, kTextEnd = 0x2C28000, kRdataEnd = 0x3966000;
+    const auto* p = reinterpret_cast<const uint8_t*>(reinterpret_cast<uintptr_t>(region) & ~uintptr_t{7});
+    for (size_t back = 0; back <= 0x4000; back += 8) {
+        const uint8_t* at = p - back;
+        if (!IsReadable(at, 8)) break;
+        const uintptr_t v = *reinterpret_cast<const uintptr_t*>(at);
+        if (v < base + kTextEnd || v >= base + kRdataEnd || !IsReadable(reinterpret_cast<const void*>(v), 8)) continue;
+        const uintptr_t first = *reinterpret_cast<const uintptr_t*>(v);
+        if (first < base + kTextBegin || first >= base + kTextEnd) continue;
+        char b[64];
+        std::snprintf(b, sizeof(b), "vtable rva 0x%llx at -0x%zx", static_cast<unsigned long long>(v - base),
+                      static_cast<size_t>(static_cast<const uint8_t*>(region) - at));
+        return b;
+    }
+    return "unknown";
+}
+
 void LogRegionsOfSize(size_t size)
 {
     if (!g_game) return;
     for (const StateRegion& r : g_game->Regions()) {
-        if (r.size == size) Log("regions: %s at %p", r.name.c_str(), static_cast<void*>(r.ptr));
+        if (r.size != size) continue;
+        std::string words;
+        for (size_t w = 0; w + 8 <= r.size && w < 0x100; w += 8) {
+            const uint64_t v = *reinterpret_cast<const uint64_t*>(r.ptr + w);
+            if (!v) continue;
+            char b[40];
+            std::snprintf(b, sizeof(b), " +0x%zx=%llx", w, static_cast<unsigned long long>(v));
+            words += b;
+        }
+        Log("regions: %s at %p, owner %s:%s", r.name.c_str(), static_cast<void*>(r.ptr), RegionOwner(r.ptr).c_str(),
+            words.c_str());
     }
 }
 

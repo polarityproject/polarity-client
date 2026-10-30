@@ -29,8 +29,12 @@ void SetFrameDriver(IFrameDriver* driver);
 // the old driver runs.
 void DetachFrameDriver();
 IFrameDriver* CurrentFrameDriver();
-// Research (`regions <size>`): logs the snapshot regions of that size with their addresses.
+// Research (`regions <size>`): logs the snapshot regions of that size with
+// their addresses and owners.
 void LogRegionsOfSize(size_t size);
+// Research: the object a region lies in, as "vtable rva 0x... at -0x..." (the
+// nearest vtable pointer at or before it), or "unknown".
+std::string RegionOwner(const void* region);
 // The match setup's seed, which the random draws and picks in driven ticks
 // start from (the same on every machine of a match).
 void SetMatchDrawSeed(uint64_t seed);

@@ -531,6 +531,7 @@ private:
             best->taken = true;
             if (bestDiff == 0) continue;
             differing++;
+            if (shown < 96) Log("replay: frame %d dump: %s owner %s", f, r.name.c_str(), RegionOwner(r.ptr).c_str());
             for (size_t w = 0; w + 8 <= r.size && shown < 96; w += 8) {
                 if (masked(w / 8) || std::memcmp(r.ptr + w, best->bytes + w, 8) == 0) continue;
                 uint64_t mine, theirs;

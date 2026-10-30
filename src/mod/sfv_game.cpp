@@ -364,7 +364,10 @@ bool SfvGame::RefreshRegions()
 
     // The registration order differs between battles (and so between peers),
     // so regions get a canonical order: by size, then by contents with
-    // pointer-like words ignored. Names follow that order.
+    // pointer-like words ignored. Names follow that order. Pooled effects
+    // (out of the checksum, IsEffectRegion) come first of their size whatever
+    // they hold: the peers can hold the same effects in other pool objects,
+    // and the regions after them then get the same names on both.
     struct Item {
         StateRegion region;
         uint64_t key;
@@ -375,6 +378,10 @@ bool SfvGame::RefreshRegions()
     for (size_t i = 0; i < gameCount; i++) {
         uint8_t* p = raw[i].first;
         const size_t size = raw[i].second;
+        if (IsEffectRegion({"", p, size, {}})) {
+            items.push_back({{"", p, size, {}}, 0});
+            continue;
+        }
         std::vector<uint8_t> copy(p, p + size);
         for (size_t w = 0; w + 8 <= size; w += 8) {
             uint64_t v;
@@ -414,6 +421,42 @@ bool SfvGame::RefreshRegions()
     return true;
 }
 
+// Visual effects the game keeps in pools: motion trails, effect objects and
+// an effect pool. Which pool object an effect gets is decided outside the
+// snapshot (the trail manager's pending requests, rva 0x484C70), so after a
+// rollback across a request the same effect can land in another object, and
+// the objects it did not take keep a finished effect's leftovers: the two
+// games then hold the same effects in different objects (R. Mika's trail,
+// netplay-testing.md finding 33). Nothing in a fight reads them back. The
+// script's effect records follow: a reused one goes on counting from an old
+// effect, and an effect's record can stay live in one game and be reused in
+// the other. A divergence in the fight still shows in the fighters'
+// regions. Each region of such an object is known by its size and where its
+// owner's vtable sits before it.
+struct EffectRegionKind {
+    size_t size;
+    size_t ownerBefore; // the owner's vtable pointer, this many bytes before the region
+    uint32_t vtable;    // rva
+};
+constexpr EffectRegionKind kEffectRegions[] = {
+    {44, 0x10, 0x2C6FC18},    // trail object (vtable 0x2C6FB88) +0xC0: timer, state
+    {136, 0x40, 0x2C6FC18},   // trail object +0xF0: transforms
+    {208, 0xE8, 0x2C6EAD0},   // effect object: transforms
+    {164, 0x1C8, 0x2C6EAD0},  // effect object: handles
+    {15808, 0x18, 0x2C6E6D8}, // effect pool
+    {224, 0x30, 0x3231618},   // script effect record
+};
+
+bool SfvGame::IsEffectRegion(const StateRegion& r) const
+{
+    for (const EffectRegionKind& k : kEffectRegions) {
+        if (r.size != k.size) continue;
+        const uint8_t* at = r.ptr - k.ownerBefore;
+        if (IsReadable(at, 8) && *reinterpret_cast<const uintptr_t*>(at) == image_.base + k.vtable) return true;
+    }
+    return false;
+}
+
 void SfvGame::SetStateMap(const StateMap* map)
 {
     stateMap_ = map;
@@ -443,6 +486,11 @@ void SfvGame::SetStateMap(const StateMap* map)
             // Restored on a rollback like the rest, but out of the checksum.
             r.ignore.resize(1, 0);
             r.ignore[0] |= 1;
+        }
+        if (IsEffectRegion(r)) {
+            // Restored on a rollback like the rest, but out of the checksum.
+            r.ignore.assign((r.size / 8 + 8) / 8, 0xFF);
+            continue;
         }
         auto it = noise_.find(r.size);
         if (it == noise_.end()) continue;
@@ -675,7 +723,7 @@ std::string SfvGame::BuildId() const
 {
     char buf[96];
     const uint64_t noise = NoiseHash();
-    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-4/map-%016llx/noise-%016llx", image_.timestamp,
+    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-5/map-%016llx/noise-%016llx", image_.timestamp,
                   static_cast<unsigned long long>(stateMap_ ? stateMap_->Fingerprint() : 0),
                   static_cast<unsigned long long>(noise));
     return buf;
