@@ -431,6 +431,7 @@ public:
         v.phase = state_;
         v.host = host_;
         v.spectator = role_ == Role::Spectator;
+        v.scripted = options_.autoReady;
         v.udp = options_.udp;
         v.code = code_;
         v.status = status_;

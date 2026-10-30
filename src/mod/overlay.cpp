@@ -2604,12 +2604,14 @@ void Draw(IDXGISwapChain* swapChain)
     }
     // Reaching a session's lobby sets this player's input delay to the
     // suggestion for the ping between them (once a session; it can be
-    // changed from there).
+    // changed from there). A session a command started (tests) keeps the
+    // delay its commands set.
     static bool delaySet = false;
     if (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) {
         delaySet = false;
     }
-    else if (!delaySet && phase == NetView::Phase::Lobby && view.linkPingMs && g_choices.initialised && !view.spectator) {
+    else if (!delaySet && phase == NetView::Phase::Lobby && view.linkPingMs && g_choices.initialised && !view.spectator &&
+             !view.scripted) {
         delaySet = true;
         const int delay = SuggestedDelay(view.linkPingMs);
         g_choices.delay = delay;
