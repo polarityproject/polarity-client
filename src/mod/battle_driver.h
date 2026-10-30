@@ -27,12 +27,19 @@ void SetFrameDriver(IFrameDriver* driver);
 IFrameDriver* CurrentFrameDriver();
 // Research (`regions <size>`): logs the snapshot regions of that size with their addresses.
 void LogRegionsOfSize(size_t size);
-// The match setup's seed, which the fighters' random draws in driven ticks
+// The match setup's seed, which the random draws and picks in driven ticks
 // start from (the same on every machine of a match).
 void SetMatchDrawSeed(uint64_t seed);
+// Starts a driven tick's counts of random draws (per stream) and global
+// picks (per call site), which key their seeds: called as each driven tick
+// begins.
+void SeedTickRandom();
 // Research: logs the next `count` random stream draws made in driven ticks
 // (tick, stream, caller).
 void LogRandomDraws(int count);
+// Research: logs every random draw (streams and global picks) in driven ticks
+// from..to, rollbacks' resimulations included.
+void LogRandomDrawsInTicks(uint32_t from, uint32_t to);
 // Research: logs the game's own per-pad input values for the next `ticks`
 // ticks, when they change.
 void LogGameInputs(int ticks);

@@ -23,6 +23,19 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 - The game could crash a few seconds after starting (about one start in
   five on some PCs), when the mod's overlay set itself up at the same moment
   as the game's graphics. The overlay now waits for the game's window.
+- Matches with random move outcomes desynced, or played differently after a
+  rollback: R. Mika against Akira picked a different variant of a move on
+  each PC for a few frames, and once the whole fight went a different way.
+  Characters' random numbers went to whichever object drew first in a frame,
+  and that order could change; a second, global random state the game uses
+  for move variants was never set. Both now come from the match and the
+  frame, the same on every PC and after any rollback. Players need the same
+  version to play together.
+- A match could start before both games had loaded both characters: a
+  game reported its characters loaded while it only knew its own pick, so
+  the other character loaded as the battle began, a few frames off on each
+  PC (spectators then desynced from the first frame). The match now waits
+  until both games have both characters (up to 90 seconds).
 - A desync report is saved in the background: writing it during the match
   froze the game for a tenth of a second or more.
 - Non-Latin systems and games: the game's own text (character, costume,

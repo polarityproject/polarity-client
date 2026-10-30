@@ -265,6 +265,7 @@ private:
             Finish(game);
             return false;
         }
+        if (frame_ == 0) Log("replay: frame 0 is driven tick %u", DrivenTicks() + 1);
         game.Advance(rf_.inputs[frame_], false);
         CheckFrame(game, frame_);
         WatchFrame(game, frame_);
@@ -289,6 +290,7 @@ private:
             Finish(game);
             return false;
         }
+        if (session_->NextFrame() == 0) Log("replay: frame 0 is driven tick %u", DrivenTicks() + 1);
         session_->Update();
         // The state now is the end of the newest frame (after its
         // resimulation): it must equal the recording too.

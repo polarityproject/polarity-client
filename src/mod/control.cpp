@@ -602,9 +602,17 @@ void RunNetCommand(const std::string& line)
         LogGameInputs(ticks);
     }
     else if (cmd == "drawlog") {
-        int count = 0;
-        ss >> count;
-        LogRandomDraws(count);
+        // drawlog <count> | drawlog ticks <from> <to> (every draw in those driven ticks)
+        std::string first;
+        ss >> first;
+        if (first == "ticks") {
+            uint32_t from = 0, to = 0;
+            ss >> from >> to;
+            LogRandomDrawsInTicks(from, to);
+        }
+        else {
+            LogRandomDraws(std::atoi(first.c_str()));
+        }
     }
     else if (cmd == "charcache") {
         LogCharaCache();

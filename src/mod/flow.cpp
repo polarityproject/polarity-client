@@ -955,22 +955,14 @@ void SetRoundDirectorPerTick(bool on, bool roundEndRollback)
     g_roundFlow.ticks = 0;
 }
 
-uint32_t g_tickDraws = 0; // random draws made in the current driven tick
-
 void BeginDrivenTick()
 {
     if (g_directorPerTick) g_roundFlow.ticks++;
-    g_tickDraws = 0;
 }
 
 uint32_t DrivenTicks()
 {
     return g_roundFlow.ticks;
-}
-
-uint32_t NextTickDraw()
-{
-    return g_tickDraws++;
 }
 
 void RunRoundDirector()

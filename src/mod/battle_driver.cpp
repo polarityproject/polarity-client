@@ -8,7 +8,10 @@
 
 #include <MinHook.h>
 
+#include <array>
 #include <atomic>
+#include <iterator>
+#include <utility>
 #include <set>
 #include <string>
 #include <intrin.h>
@@ -42,6 +45,33 @@ constexpr game::CodeSite kRoseSoulPick{
 constexpr game::CodeSite kRandomStreamDraw{
     "random stream draw", 0x32B2B0,
     {0x69, 0x41, 0x08, 0x0D, 0x66, 0x19, 0x00, 0x05, 0x5F, 0xF3, 0x6E, 0x3C, 0x89, 0x41, 0x08, 0xC1}};
+// A second random state, one global word (rva 0x3966540) drawn by inlined
+// copies of the same step in eight functions: the range pick at rva 0x391C30
+// and seven weighted picks next to it, reached through a table of selector
+// classes (one keeps `& 3`). Battle scripts pick move variants with them
+// (R. Mika vs Akira, 0x368/0x36A/0x36C/0x36E at the fighter's +0x3E30).
+// Nothing seeds the word, so it holds whatever the process drew before:
+// peers, and two replays of one match, picked different variants. Seeding it
+// once per tick was not enough: a resimulated tick picked differently, as
+// other draws earlier in the tick (effects, which rollbacks lose) moved it.
+// In driven ticks every pick first sets the word from the match seed, the
+// tick, its call site and its count there in the tick.
+constexpr uint32_t kGlobalRandomState = 0x3966540;
+constexpr uint8_t kPickPrologue[16] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74,
+                                       0x24, 0x20, 0x57, 0x48, 0x83, 0xEC, 0x40, 0x48};
+constexpr game::CodeSite kGlobalPicks[] = {
+    {"global random range pick", 0x391C30,
+     {0x69, 0x05, 0x06, 0x49, 0x5D, 0x03, 0x0D, 0x66, 0x19, 0x00, 0x2B, 0xCA, 0x44, 0x8B, 0xC2, 0x33}},
+    {"global random weighted pick 1", 0x3954F0, {}},
+    {"global random weighted pick 2", 0x3956A0, {}},
+    {"global random weighted pick 3", 0x395860, {}},
+    {"global random pick of 21", 0x395AD0,
+     {0x41, 0xC7, 0x40, 0x1C, 0x00, 0x00, 0x00, 0x00, 0x69, 0x0D, 0x5E, 0x0A, 0x5D, 0x03, 0x0D, 0x66}},
+    {"global random weighted pick 4", 0x395B20, {}},
+    {"global random weighted pick 5", 0x395D00, {}},
+    {"global random pick of 4", 0x395EB0,
+     {0x69, 0x05, 0x86, 0x06, 0x5D, 0x03, 0x0D, 0x66, 0x19, 0x00, 0x05, 0x5F, 0xF3, 0x6E, 0x3C, 0x89}},
+};
 constexpr uint32_t kBattleTicks = 0x1B8; // int, in the battle frame's state (battleframe::kStateBegin..)
 constexpr uint32_t kRoseSoulLevel = 0x444;
 constexpr uint32_t kStreamState = 0x8;
@@ -67,36 +97,127 @@ uint64_t PickDetour(uint8_t* entity, void* a2, void* a3, void* a4)
 }
 
 std::atomic<int> g_drawLog{0}; // research: draws left to log (`drawlog <count>`)
+std::atomic<uint32_t> g_drawLogFrom{1}, g_drawLogTo{0}; // research: driven ticks whose draws are all logged
+
+bool InDrawLogTicks()
+{
+    const uint32_t t = DrivenTicks();
+    return t >= g_drawLogFrom && t <= g_drawLogTo;
+}
 
 // Every fighter draws one number per tick from its own stream (rva 0x37D642
 // stores it at the fighter object's +0xC50), and moves with a random outcome
-// (Dan's) use it. The streams are not in the snapshot and are seeded per
-// process, so a replay diverged at the first such move and a peer that
-// rolled back drew again while resimulating and diverged from the other
-// (netplay-testing.md, finding 28). In driven ticks every draw first sets its
-// stream from the match seed, the tick and the draw's place in the tick: the
-// same on both machines and in any resimulation.
+// (Dan's) use it. The streams are seeded per process, so a replay diverged at
+// the first such move and a peer that rolled back drew again while
+// resimulating and diverged from the other (netplay-testing.md, finding 28).
+// In driven ticks every draw first sets its stream from the match seed, the
+// tick, the drawing object's slot and the draw's count on that stream in the
+// tick: the same on both machines and in any resimulation. Not the draw's
+// place in the tick: the objects that draw (fighters and helpers, four with
+// R. Mika vs Akira) update in an order that changed between a tick and its
+// resimulation, and they swapped numbers. Not the stream's last number
+// either: it is noise-masked, so the start state copy leaves it per process.
 std::atomic<uint64_t> g_drawSeed{0};
+constexpr uint32_t kStreamInOwner = 0xC40;
+constexpr uint32_t kOwnerVtable = 0x2C521F8; // rva; the fighters' and helpers' class
+constexpr uint32_t kOwnerSlot = 0xF8;        // 0..3: P1, P2, then the helpers
 
-uint32_t TickDrawState()
+uint32_t Mix(uint64_t x)
 {
-    uint64_t x = g_drawSeed ^ (static_cast<uint64_t>(DrivenTicks()) << 32 | NextTickDraw());
     x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull; // splitmix64's mix
     x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
     return static_cast<uint32_t>(x ^ (x >> 31));
+}
+
+// Draws or picks made in the current driven tick, per stream or call site
+// (SeedTickRandom resets). The keys are addresses: they only tell the
+// counters apart, and never reach a seed.
+struct TickCount {
+    uintptr_t key;
+    uint32_t count;
+};
+TickCount g_tickCounts[64];
+int g_tickCountUsed = 0;
+
+uint32_t NextInTick(uintptr_t key)
+{
+    for (int i = 0; i < g_tickCountUsed; i++) {
+        if (g_tickCounts[i].key == key) return g_tickCounts[i].count++;
+    }
+    if (g_tickCountUsed == static_cast<int>(std::size(g_tickCounts))) return 0xFFFF; // full: shares a count
+    g_tickCounts[g_tickCountUsed++] = {key, 1};
+    return 0;
+}
+
+// The slot of the object that holds the stream, or -1 when the stream is not
+// a fighter's or helper's.
+int64_t OwnerSlot(const uint8_t* stream)
+{
+    __try {
+        const uint8_t* owner = stream - kStreamInOwner;
+        if (*reinterpret_cast<const uintptr_t*>(owner) - g_imageBase != kOwnerVtable) return -1;
+        return *reinterpret_cast<const uint32_t*>(owner + kOwnerSlot);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+
+uint32_t TickDrawState(const uint8_t* stream)
+{
+    // Another stream (none seen so far) falls back to the order of such draws.
+    const int64_t slot = OwnerSlot(stream);
+    const uint64_t owner = slot >= 0 ? static_cast<uint64_t>(slot) : 0x10000 + NextInTick(0);
+    const uint64_t key = owner << 32 | NextInTick(reinterpret_cast<uintptr_t>(stream));
+    return Mix(g_drawSeed ^ (static_cast<uint64_t>(DrivenTicks()) << 32) ^ Mix(key));
+}
+
+uint32_t* g_globalRandom = nullptr; // kGlobalRandomState, once the picks are hooked
+
+// The integer arguments the picks take (rcx, rdx, r8), passed through.
+using GlobalPickFn = uint64_t (*)(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4);
+GlobalPickFn g_origGlobalPicks[std::size(kGlobalPicks)] = {};
+
+void SeedGlobalPick(uintptr_t site)
+{
+    // The site as an rva: the same in every process.
+    const uint32_t pick = NextInTick(site);
+    const uint64_t key = static_cast<uint64_t>(site - g_imageBase) << 16 | pick;
+    *g_globalRandom = Mix(g_drawSeed ^ (static_cast<uint64_t>(DrivenTicks()) << 32) ^ Mix(key));
+    const bool window = InDrawLogTicks();
+    if (window || g_drawLog > 0) {
+        if (!window) g_drawLog--;
+        Log("draw: tick %u, global pick %u at rva 0x%llX, state %08X", DrivenTicks(), pick,
+            static_cast<unsigned long long>(site - g_imageBase), *g_globalRandom);
+    }
+}
+
+template <int I>
+uint64_t GlobalPickDetour(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4)
+{
+    HookGuard guard;
+    if (g_inDriver && g_globalRandom) SeedGlobalPick(reinterpret_cast<uintptr_t>(_ReturnAddress()));
+    return g_origGlobalPicks[I](a1, a2, a3, a4);
+}
+
+template <size_t... I>
+std::array<void*, sizeof...(I)> GlobalPickDetours(std::index_sequence<I...>)
+{
+    return {reinterpret_cast<void*>(&GlobalPickDetour<I>)...};
 }
 
 uint32_t DrawDetour(uint8_t* stream)
 {
     HookGuard guard;
     if (t_picking) *reinterpret_cast<uint32_t*>(stream + kStreamState) = t_pickSeed;
-    else if (g_inDriver) *reinterpret_cast<uint32_t*>(stream + kStreamState) = TickDrawState();
-    if (g_drawLog > 0 && g_inDriver) {
+    else if (g_inDriver) *reinterpret_cast<uint32_t*>(stream + kStreamState) = TickDrawState(stream);
+    const bool window = g_inDriver && InDrawLogTicks();
+    if ((g_drawLog > 0 && g_inDriver) || window) {
         // The per-tick draw of every fighter (rva 0x37D642) only once per stream.
         static std::set<const void*> perTickSeen;
         const auto caller = reinterpret_cast<uintptr_t>(_ReturnAddress()) - g_imageBase;
-        if (caller != 0x37D642 || perTickSeen.insert(stream).second) {
-            g_drawLog--;
+        if (window || caller != 0x37D642 || perTickSeen.insert(stream).second) {
+            if (!window) g_drawLog--;
             std::string region = "not in the snapshot";
             for (const StateRegion& r : g_game->Regions()) {
                 if (stream + kStreamState >= r.ptr && stream + kStreamState < r.ptr + r.size) {
@@ -173,10 +294,22 @@ void SetMatchDrawSeed(uint64_t seed)
     g_drawSeed = seed;
 }
 
+void SeedTickRandom()
+{
+    g_tickCountUsed = 0;
+}
+
 void LogGameInputs(int ticks)
 {
     if (g_game) g_game->inputLog = ticks;
     Log("inputlog: the game's per-pad values for the next %d ticks, on change", ticks);
+}
+
+void LogRandomDrawsInTicks(uint32_t from, uint32_t to)
+{
+    g_drawLogFrom = from;
+    g_drawLogTo = to;
+    Log("draw: logging every draw in driven ticks %u..%u", from, to);
 }
 
 void LogRandomDraws(int count)
@@ -207,8 +340,17 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game)
         !Hook(image, kRandomStreamDraw, reinterpret_cast<void*>(&DrawDetour), reinterpret_cast<void**>(&g_origDraw))) {
         Log("battle driver: Rose's soul level and the fighters' random draws stay random per game");
     }
-    // SfvGame::Advance runs a tick through the original, not through the hook.
     g_imageBase = image.base;
+    const auto detours = GlobalPickDetours(std::make_index_sequence<std::size(kGlobalPicks)>());
+    bool picksHooked = true;
+    for (size_t i = 0; i < std::size(kGlobalPicks); i++) {
+        game::CodeSite site = kGlobalPicks[i];
+        if (site.bytes[0] == 0) std::memcpy(site.bytes, kPickPrologue, sizeof(site.bytes));
+        picksHooked = Hook(image, site, detours[i], reinterpret_cast<void**>(&g_origGlobalPicks[i])) && picksHooked;
+    }
+    if (picksHooked) g_globalRandom = image.At<uint32_t*>(kGlobalRandomState);
+    else Log("battle driver: move variant picks stay random per game");
+    // SfvGame::Advance runs a tick through the original, not through the hook.
     game->SetBattleFrameFunction(g_origBattleFrame);
     Log("battle driver %s", ok ? "installed" : "NOT installed");
     return ok;

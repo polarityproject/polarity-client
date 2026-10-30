@@ -1,6 +1,7 @@
 #include "mod/sfv_game.h"
 
 #include "core/state.h"
+#include "mod/battle_driver.h"
 #include "mod/flow.h"
 #include "mod/hitch.h"
 #include "mod/lifecycle.h"
@@ -674,7 +675,7 @@ std::string SfvGame::BuildId() const
 {
     char buf[96];
     const uint64_t noise = NoiseHash();
-    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-3/map-%016llx/noise-%016llx", image_.timestamp,
+    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-4/map-%016llx/noise-%016llx", image_.timestamp,
                   static_cast<unsigned long long>(stateMap_ ? stateMap_->Fingerprint() : 0),
                   static_cast<unsigned long long>(noise));
     return buf;
@@ -714,6 +715,7 @@ void SfvGame::Advance(const FrameInputs& inputs, bool rollingBack)
     if (inputUnit_) *reinterpret_cast<int32_t*>(inputUnit_ + game::inputunit::kRoundParam) = 0;
     injecting_ = true;
     BeginDrivenTick();
+    SeedTickRandom();
     // One tick: BattleFrame::Update runs 1 + [this+0x1A8] ticks.
     *reinterpret_cast<int32_t*>(battleFrame_ + game::battleframe::kExtraTicks) = 0;
     runFrame_(battleFrame_);

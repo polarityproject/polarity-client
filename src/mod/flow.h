@@ -157,9 +157,6 @@ void SetRoundDirectorPerTick(bool on, bool roundEndRollback);
 void BeginDrivenTick();
 // The driven ticks run so far (in the snapshot: restored with a load).
 uint32_t DrivenTicks();
-// The place of a random draw in the current driven tick (0, 1, ...; from 0
-// again each tick).
-uint32_t NextTickDraw();
 void RunRoundDirector();
 void RoundDirectorFromSnapshot();
 uint8_t* RoundFlowState();
