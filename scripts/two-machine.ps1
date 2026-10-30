@@ -8,10 +8,12 @@
 # must be allowed in this PC's firewall). -Deploy first copies this build's mod
 # DLL and noise file to the second PC and restarts its game. -Delay: both
 # players' input delay (default 0: the most rollbacks). -Choices with no
-# entries ('-Choices @()') plays one match.
+# entries ('-Choices @()') plays one match. -Commands: mod commands both games
+# run before the session ('skipcallbacks ...').
 param([Parameter(Mandatory)][string]$Agent, [Parameter(Mandatory)][string]$Token, [Parameter(Mandatory)][string]$Server,
       [string[]]$Choices = @('rematch', 'select'), [string[]]$Picks = @('RYU', 'KEN'), [string]$Stage = 'CHN',
-      [switch]$Deploy, [switch]$NoMash, [int]$EndHoldSeconds = 0, [int]$TimeoutSeconds = 1200, [string]$Out = '', [int]$Delay = 0)
+      [switch]$Deploy, [switch]$NoMash, [int]$EndHoldSeconds = 0, [int]$TimeoutSeconds = 1200, [string]$Out = '', [int]$Delay = 0,
+      [string]$Commands = '')
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'remote.ps1') -Agent $Agent -Token $Token
 . (Join-Path $PSScriptRoot 'lib.ps1')
@@ -53,11 +55,13 @@ Assert-GamesRunning 1
 # Nothing left over from an earlier run on either side.
 Reset-Instances 0
 RemoteCmd 0 'leave; mash 0; netsim 0 0 0' -Wait
-$code = Start-Host 0 "server 127.0.0.1:$($serverAddress.Split(':')[1]); delay $Delay; ${mash}pick $($Picks[0]) 0 1 0 1 1; stage $Stage" 
+$pre = if ($Commands) { "$Commands; " } else { '' }
+if ($Commands) { Say "both games first: $Commands" }
+$code = Start-Host 0 "${pre}server 127.0.0.1:$($serverAddress.Split(':')[1]); delay $Delay; ${mash}pick $($Picks[0]) 0 1 0 1 1; stage $Stage" 
 Say "code $code"
 $mash = if ($NoMash) { '' } else { 'mash 22; ' }
 # Its instance 0 is the session's second player.
-RemoteCmd 0 "server $serverAddress; name Player 2; delay $Delay; ${mash}pick $($Picks[1]) 0 1 0 1 1; join $code" 
+RemoteCmd 0 "${pre}server $serverAddress; name Player 2; delay $Delay; ${mash}pick $($Picks[1]) 0 1 0 1 1; join $code" 
 
 $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
 $decided = 0

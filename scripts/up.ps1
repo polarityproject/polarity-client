@@ -41,6 +41,7 @@ function Launch {
 $start = Get-Date
 $mark = $start.ToString('HH:mm:ss.fff')
 $pids = [System.Collections.Generic.List[int]]::new()
+$adopted = [System.Collections.Generic.HashSet[int]]::new()
 for ($i = $running; $i -lt $Count; $i++) {
   $pids.Add((Launch))
   if ($i + 1 -lt $Count) { Start-Sleep $StaggerSeconds }
@@ -66,10 +67,20 @@ while ($up.Count -lt $launched -and (Get-Date) -lt $deadline) {
     }
     if ($up.ContainsKey($i)) { "instance $i at the main menu after $([int]((Get-Date) - $start).TotalSeconds) s" }
   }
-  # One that died before its menu: start another in its place.
+  # One that died before its menu: start another in its place. (Where the
+  # game is started outside Steam, Steam starts it again as a new process and
+  # the first one exits: that new one is adopted, not replaced.)
   foreach ($p in @($pids)) {
     if (Get-Process -Id $p -ErrorAction SilentlyContinue) { continue }
     [void]$pids.Remove($p)
+    $successor = Get-Process StreetFighterV -ErrorAction SilentlyContinue |
+      Where-Object { $_.StartTime -ge $start -and -not $pids.Contains($_.Id) -and -not $adopted.Contains($_.Id) } | Select-Object -First 1
+    if ($successor) {
+      [void]$adopted.Add($successor.Id)
+      $pids.Add($successor.Id)
+      "a game (pid $p) handed over to pid $($successor.Id)"
+      continue
+    }
     if ($up.Count -ge $launched) { break }
     if ($retried -ge $Retries) { Write-Error "a game exited while starting, $retried retries used"; exit 1 }
     $retried++
