@@ -556,6 +556,28 @@ void TestLobbyMessages()
     back = lobby::Decode(bytes.data(), bytes.size());
     CHECK(back && back->name == std::string(95, 'a'));
 
+    // A spectator's match list: every kept match whole, in one message under
+    // the state chunk size (what stays under the transport's datagram).
+    lobby::Message list;
+    list.type = lobby::Type::Matches;
+    for (size_t i = 0; i < lobby::kKeptMatches; i++) {
+        lobby::MatchEntry e;
+        e.id = 0x1000 + i;
+        e.setup.players[0].character = PackCode("RMK");
+        e.setup.players[1].character = PackCode("KEN");
+        e.setup.players[1].color = 9;
+        e.setup.stage = static_cast<uint16_t>(i);
+        e.setup.seed = 0xABCDEF0000 + i;
+        e.frames = 9000 + static_cast<uint32_t>(i);
+        e.finished = i + 1 < lobby::kKeptMatches;
+        e.winner = static_cast<int8_t>(i % 2);
+        list.matches.push_back(e);
+    }
+    bytes = lobby::Encode(list);
+    CHECK(bytes.size() < lobby::kStateChunk + 64);
+    back = lobby::Decode(bytes.data(), bytes.size());
+    CHECK(back && back->type == lobby::Type::Matches && back->matches == list.matches);
+
     // The session's state: seats with names, picks and flags.
     lobby::Message state;
     state.type = lobby::Type::SessionState;

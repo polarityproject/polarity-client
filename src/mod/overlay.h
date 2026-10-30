@@ -54,6 +54,9 @@ bool OverlayVisible();
 // The overlay takes the keyboard, mouse and pads (the game sees neutral pads):
 // the panel is open, or the post-match vote waits for this player.
 bool OverlayTakesInput();
+// Research: a texture view drawn in a small window (null: none), with a
+// label; the overlay holds the view's reference until it is replaced.
+void SetOverlayTexture(void* srv, uint32_t width, uint32_t height, const std::string& label);
 // The mod's version, shown in the panel's title.
 void SetOverlayBuild(const std::string& version);
 // Frames the game presented per second, recently.

@@ -7,8 +7,21 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+
+- Spectators pick which match of the session they watch: Previous, Next and
+  Live in the panel, and the list of the session's matches (the last 12)
+  with who won. A picked match plays from its start; after it the next one
+  follows (a pick made while switching matches waits for the switch). Lobby
+  protocol 8.
+- The panel warns when your input delay is below the one suggested for the
+  connection (the game then rolls back most frames), and the log says so at
+  the start of each match.
+
 ### Fixed
 
+- A desync report is saved in the background: writing it during the match
+  froze the game for a tenth of a second or more.
 - Non-Latin systems and games: the game's own text (character, costume,
   stage, V-Skill and V-Trigger names) came out as question marks when the game
   runs in Chinese, Japanese or Korean; the panel now shows it, in the fonts of

@@ -186,6 +186,7 @@ const ImVec4 kP1(0.36f, 0.62f, 1.0f, 1.0f);
 const ImVec4 kP2(1.0f, 0.36f, 0.30f, 1.0f);
 const ImVec4 kRed(1.0f, 0.36f, 0.30f, 1.0f);
 const ImVec4 kGreen(0.55f, 0.86f, 0.45f, 1.0f);
+const ImVec4 kAmber(0.96f, 0.72f, 0.30f, 1.0f); // a warning short of an error
 const ImVec4 kDim(0.66f, 0.65f, 0.59f, 1.0f);
 
 float g_uiScale = 1.0f;          // sizes: 1 at 720 lines (render thread)
@@ -761,6 +762,8 @@ void LoadTables()
                 for (const auto& v : g_tables.settingLabels) note(v);
                 for (const auto& v : g_tables.vskills) note(v);
                 for (const auto& v : g_tables.vtriggers) note(v);
+                Log("overlay: character lists read: %zu characters, %zu stages (scene %s)", g_tables.charas.size(),
+                    g_tables.stages.size(), CurrentScene().c_str());
             }
             g_readTables.reset();
             g_readingTables = false; // not loaded yet (game still starting): read again later
@@ -1239,13 +1242,16 @@ void DrawDelay(Choices& c, const char* label = "Delay")
 
 // About half the round trip in frames covers the other's inputs on time;
 // prediction (rollback) does the rest. 1 to 3 frames.
-int SuggestedDelay(unsigned pingMs) { return std::clamp(static_cast<int>((pingMs / 2 + 8) / 17), 1, 3); }
-
 void DrawDelaySuggestion(const NetView& v)
 {
     if (!v.linkPingMs) return;
     const int suggested = SuggestedDelay(v.linkPingMs);
     ImGui::TextColored(kDim, "Suggested delay %d (ping %u ms)", suggested, v.linkPingMs);
+    // Below it the other player's inputs come late more often than not: the
+    // game rolls back most frames (CPU, and corrections you can see).
+    if (g_choices.delay < suggested) {
+        ImGui::TextColored(kAmber, "Delay %d is below that: expect frequent rollbacks", g_choices.delay);
+    }
 }
 
 void DrawDelay(Choices& c, const NetView& v)
@@ -1394,6 +1400,8 @@ const char* ChoiceText(lobby::Choice c)
 
 // The character's name ("CHUN-LI"), for the short pick lines.
 std::string ShortCharaName(const std::string& code) { return CharaLabel(code); }
+
+void DrawWatchControls(const NetView& v);
 
 // Both seats side by side, P1 left: name, pick in two lines and, in the
 // lobby, whether ready.
@@ -1572,6 +1580,7 @@ void DrawLobby(const NetView& v)
     if (v.spectator) {
         ImGui::TextColored(kDim, "Stage: %s", StageRuleText(v.stageRule).c_str());
         ImGui::Text("Watching. The next match shows here when it starts.");
+        DrawWatchControls(v);
         if (TileButton("Stop watching", -1)) Act([] { NetLeave(); });
         return;
     }
@@ -1595,6 +1604,52 @@ void DrawLobby(const NetView& v)
 }
 
 // After the match's last KO: the menu over the win screen.
+// Spectator: which of the session's matches is shown, and Previous / Next /
+// Live (each plays the match from its start), then the list to pick from.
+void DrawWatchControls(const NetView& v)
+{
+    if (v.matches.empty()) return;
+    const int count = static_cast<int>(v.matches.size());
+    int at = -1;
+    for (int i = 0; i < count; i++) {
+        if (v.matches[i].id == v.watchingMatch) at = i;
+    }
+    const bool live = at == count - 1;
+    if (at >= 0) {
+        ImGui::Text("Match %d of %d%s", at + 1, count, live ? "  (live)" : "");
+        if (!live) {
+            ImGui::SameLine();
+            ImGui::TextColored(kDim, "  %d behind the players", count - 1 - at);
+        }
+    }
+    else {
+        ImGui::Text("%d match%s in this session", count, count == 1 ? "" : "es");
+    }
+    const float third = (ImGui::GetContentRegionAvail().x - 2 * ImGui::GetStyle().ItemSpacing.x) / 3.0f;
+    auto watch = [](uint64_t id) { Act([id] { NetWatchMatch(id); }); };
+    ImGui::BeginDisabled(at <= 0);
+    if (TileButton("Previous", third)) watch(v.matches[at - 1].id);
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(at < 0 || at >= count - 1);
+    if (TileButton("Next", third)) watch(v.matches[at + 1].id);
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(live);
+    if (TileButton("Live", third)) watch(0);
+    ImGui::EndDisabled();
+    for (int i = 0; i < count; i++) {
+        const lobby::MatchEntry& e = v.matches[i];
+        const std::string p1 = ShortCharaName(UnpackCode(e.setup.players[0].character));
+        const std::string p2 = ShortCharaName(UnpackCode(e.setup.players[1].character));
+        std::string result = !e.finished ? "playing" : e.winner == 0 ? "P1 won" : e.winner == 1 ? "P2 won" : "over";
+        char label[160];
+        std::snprintf(label, sizeof(label), "%s%d  %s vs %s  (%s)##match%d", i == at ? "> " : "  ", i + 1, p1.c_str(),
+                      p2.c_str(), result.c_str(), i);
+        if (ImGui::Selectable(label, i == at) && i != at) watch(e.id);
+    }
+}
+
 void DrawPostMatch(const NetView& v)
 {
     static ULONGLONG shownAt = 0;
@@ -1609,6 +1664,7 @@ void DrawPostMatch(const NetView& v)
     ImGui::Spacing();
     if (v.spectator) {
         ImGui::Text("Waiting for the players' choice...");
+        DrawWatchControls(v);
         if (TileButton("Stop watching", -1)) Act([] { NetLeave(); });
         return;
     }
@@ -1745,6 +1801,25 @@ struct Preview {
 };
 Preview g_preview;
 bool g_sampleToasts = false; // add a few toasts on the next frame
+
+// Research: a game texture shown in a window (SetOverlayTexture).
+std::mutex g_textureMutex;
+ID3D11ShaderResourceView* g_texture = nullptr;
+uint32_t g_textureW = 0, g_textureH = 0;
+std::string g_textureLabel;
+
+void DrawTexturePreview()
+{
+    std::lock_guard lock(g_textureMutex);
+    if (!g_texture) return;
+    const float scale = std::min(1.0f, 512.0f * g_uiScale / std::max<uint32_t>(1, std::max(g_textureW, g_textureH)));
+    ImGui::SetNextWindowPos(ImVec2(20 * g_uiScale, 20 * g_uiScale), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Texture##research", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing)) {
+        ImGui::Text("%s  %ux%u", g_textureLabel.c_str(), g_textureW, g_textureH);
+        ImGui::Image(reinterpret_cast<ImTextureID>(g_texture), ImVec2(g_textureW * scale, g_textureH * scale));
+    }
+    ImGui::End();
+}
 
 void DrawPreviewControls()
 {
@@ -1958,6 +2033,7 @@ void DrawPanel()
             Heading(v.spectator ? "Watching" : "In a match");
             DrawSeats(v, false);
             DrawSession(v);
+            if (v.spectator) DrawWatchControls(v);
             if (TileButton("Leave", -1)) Act([] { NetLeave(); });
             break;
         case NetView::Phase::PostMatch:
@@ -2598,7 +2674,13 @@ void Draw(IDXGISwapChain* swapChain)
     if (hint) DrawMenuHint();
     DrawPreviews();
     DrawToasts();
-    const bool draw = visible || session || hint || !g_toasts.empty() || g_preview.Any();
+    DrawTexturePreview();
+    bool texture = false;
+    {
+        std::lock_guard lock(g_textureMutex);
+        texture = g_texture != nullptr;
+    }
+    const bool draw = visible || session || hint || !g_toasts.empty() || g_preview.Any() || texture;
     if (!draw || (!g_rtv && !CreateTarget(swapChain))) {
         ImGui::EndFrame();
         return;
@@ -2742,6 +2824,16 @@ void SetOverlayVisible(bool visible)
 void ToggleOverlay()
 {
     SetOverlayVisible(!g_visible);
+}
+
+void SetOverlayTexture(void* srv, uint32_t width, uint32_t height, const std::string& label)
+{
+    std::lock_guard lock(g_textureMutex);
+    if (g_texture) g_texture->Release();
+    g_texture = static_cast<ID3D11ShaderResourceView*>(srv);
+    g_textureW = width;
+    g_textureH = height;
+    g_textureLabel = label;
 }
 
 bool OverlayVisible()

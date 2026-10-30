@@ -90,10 +90,15 @@ void NetLeave();
 // In the lobby: ready to start (a player), and this player's pick.
 void NetSetReady(bool ready);
 void NetSetPick(bool hasPick, const PlayerSetup& pick);
+// The input delay a link's round trip calls for: its one-way trip in frames,
+// 1 to 3. Below it the other player's inputs come late on most frames.
+int SuggestedDelay(unsigned pingMs);
 // Between matches: this player's input delay for the next match; the host's
 // stage for the next matches (a stage code, "random", or "" as prepared).
 void NetSetDelay(uint8_t frames);
 void NetSetStage(const std::string& code);
+// Spectator: watch this match of the session (0: the newest) from its start.
+void NetWatchMatch(uint64_t id);
 // After a match: Rematch or CharacterSelect.
 void NetChoose(lobby::Choice choice);
 // Testing: leaves a running battle for stage select (pause menu).
@@ -145,6 +150,10 @@ struct NetView {
     int inputDelay = 0;
     int predictionWindow = 0; // in effect now (0 outside the fight)
     int behind = 0;           // spectator: frames in hand not yet played
+    // Spectator: the host's kept matches (oldest first), and the one being
+    // watched or loaded (0: none).
+    std::vector<lobby::MatchEntry> matches;
+    uint64_t watchingMatch = 0;
 };
 NetView NetViewNow();
 // Whether a battle is running and ticking, and its frame counters (diagnostics).

@@ -46,12 +46,15 @@
 namespace sfv::lobby {
 
 constexpr uint32_t kMagic = 0x4E564653; // "SFVN"
-constexpr uint16_t kProtocol = 7; // 7: names up to 96 bytes of UTF-8
+constexpr uint16_t kProtocol = 8; // 7: names up to 96 bytes of UTF-8; 8: the match list for spectators
 // Message size limits: under Weyvelength's 1024-byte datagrams.
 constexpr size_t kHashesPerMessage = 100;
 constexpr size_t kRegionsPerRequest = 200;
 constexpr size_t kStateChunk = 900;
 constexpr size_t kInputsPerMessage = 60;
+// The session's matches a host keeps for spectators (streams and starting
+// states): one Matches message holds them all.
+constexpr size_t kKeptMatches = 12;
 // Bytes of UTF-8: a 32-character Steam name in Japanese takes up to 96.
 constexpr size_t kMaxName = 96;
 constexpr uint16_t kAnyStage = 0xFFFF;    // whatever the game has prepared
@@ -71,6 +74,7 @@ enum class Type : uint8_t {
     SessionState = 11,
     Inputs = 12,
     InputsAck = 13,
+    Matches = 14,
 };
 enum class RejectReason : uint8_t {
     WrongCode = 1,
@@ -99,6 +103,16 @@ struct Seat {
     uint8_t inputDelay = 0; // the player's own input delay (frames)
     uint8_t fps = 0;        // rendered frames per second, as last measured
     Link link = Link::Unknown;
+};
+
+// A match of the session a spectator can watch (Matches, oldest first).
+struct MatchEntry {
+    uint64_t id = 0;
+    MatchSetup setup;
+    uint32_t frames = 0;   // confirmed frames the host has of it
+    bool finished = false; // decided (or left)
+    int8_t winner = -1;    // 0 P1, 1 P2, -1 not known
+    bool operator==(const MatchEntry&) const = default;
 };
 
 // One confirmed frame for spectators.
@@ -151,6 +165,8 @@ struct Message {
     // Inputs: frames first .. first + frames.size() - 1; InputsAck: `first`
     // is the next frame wanted
     std::vector<FrameRecord> frames;
+    // Matches: the host's kept matches, oldest first (at most kKeptMatches)
+    std::vector<MatchEntry> matches;
     // Reject
     RejectReason reason = RejectReason::WrongCode;
 };

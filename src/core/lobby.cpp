@@ -195,6 +195,17 @@ std::vector<uint8_t> Encode(const Message& m)
         o.Put(m.matchId);
         o.Put(m.first);
         break;
+    case Type::Matches:
+        o.Put(static_cast<uint8_t>(std::min(m.matches.size(), kKeptMatches)));
+        for (size_t i = 0; i < m.matches.size() && i < kKeptMatches; i++) {
+            const MatchEntry& e = m.matches[i];
+            o.Put(e.id);
+            PutSetup(o, e.setup);
+            o.Put(e.frames);
+            o.Put(static_cast<uint8_t>(e.finished));
+            o.Put(e.winner);
+        }
+        break;
     case Type::Welcome:
         o.Put(m.matchId);
         PutSetup(o, m.setup);
@@ -288,6 +299,19 @@ std::optional<Message> Decode(const uint8_t* data, size_t len)
         m.matchId = in.Get<uint64_t>();
         m.first = in.Get<uint32_t>();
         break;
+    case Type::Matches: {
+        const uint8_t n = in.Get<uint8_t>();
+        if (n > kKeptMatches) return std::nullopt;
+        for (uint8_t i = 0; i < n && in.ok; i++) {
+            MatchEntry& e = m.matches.emplace_back();
+            e.id = in.Get<uint64_t>();
+            e.setup = GetSetup(in);
+            e.frames = in.Get<uint32_t>();
+            e.finished = in.Get<uint8_t>() != 0;
+            e.winner = in.Get<int8_t>();
+        }
+        break;
+    }
     case Type::Welcome:
         m.matchId = in.Get<uint64_t>();
         m.setup = GetSetup(in);
