@@ -27,6 +27,7 @@
 #include <cmath>
 #include <atomic>
 #include <cstring>
+#include <cwchar>
 #include <functional>
 #include <map>
 #include <memory>
@@ -2793,12 +2794,29 @@ bool FindSwapChainFunctions()
 
 } // namespace
 
-bool InstallOverlay(const std::wstring& panelPath)
+// The game's main window, once it is visible.
+HWND GameWindow()
 {
-    g_panelPath = panelPath;
+    HWND found = nullptr;
+    EnumWindows(
+        [](HWND w, LPARAM param) -> BOOL {
+            DWORD pid = 0;
+            GetWindowThreadProcessId(w, &pid);
+            wchar_t cls[32] = {};
+            GetClassNameW(w, cls, 32);
+            if (pid != GetCurrentProcessId() || !IsWindowVisible(w) || std::wcscmp(cls, L"UnrealWindow") != 0) return TRUE;
+            *reinterpret_cast<HWND*>(param) = w;
+            return FALSE;
+        },
+        reinterpret_cast<LPARAM>(&found));
+    return found;
+}
+
+void InstallPresentHooks()
+{
     if (!FindSwapChainFunctions()) {
         Log("overlay: no D3D11 swap chain functions");
-        return false;
+        return;
     }
     const bool ok = MH_CreateHook(g_presentTarget, reinterpret_cast<void*>(&PresentDetour),
                                   reinterpret_cast<void**>(&g_origPresent)) == MH_OK &&
@@ -2806,7 +2824,31 @@ bool InstallOverlay(const std::wstring& panelPath)
                                   reinterpret_cast<void**>(&g_origResizeBuffers)) == MH_OK &&
                     MH_EnableHook(g_presentTarget) == MH_OK && MH_EnableHook(g_resizeTarget) == MH_OK;
     Log("overlay %s (F1 or Back + Start)", ok ? "installed" : "NOT installed");
-    return ok;
+}
+
+bool InstallOverlay(const std::wstring& panelPath)
+{
+    g_panelPath = panelPath;
+    // Finding Present takes a D3D11 device and swap chain of our own. Made
+    // while the game was creating its device (the mod starts alongside it),
+    // that crashed the game in ntdll now and then (access violation at
+    // ntdll+0x1A12D, several per day of test starts, every one just before
+    // "overlay installed"): it waits until the game's window has been up for
+    // two seconds, by then the game's device exists. ImGui starts on the
+    // first Present after that.
+    std::thread([] {
+        const auto start = std::chrono::steady_clock::now();
+        while (!GameWindow()) {
+            if (std::chrono::steady_clock::now() - start > std::chrono::minutes(5)) {
+                Log("overlay: no game window after 5 minutes; NOT installed");
+                return;
+            }
+            Sleep(100);
+        }
+        Sleep(2000);
+        InstallPresentHooks();
+    }).detach();
+    return true;
 }
 
 void ShutdownOverlay()

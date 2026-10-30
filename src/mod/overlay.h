@@ -28,7 +28,8 @@
 
 namespace sfv::mod {
 
-// panelPath: where the panel saves the player's choices (config.h).
+// panelPath: where the panel saves the player's choices (config.h). The
+// Present hooks go in from a thread once the game's window is up.
 bool InstallOverlay(const std::wstring& panelPath);
 // After the hooks are disabled and no detour runs (hot reload): releases ImGui
 // and its D3D objects.
