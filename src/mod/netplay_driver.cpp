@@ -72,7 +72,7 @@ constexpr auto kConnectTimeout = std::chrono::seconds(15);
 // Hello unanswered for this long: the host cannot be reached.
 constexpr auto kJoinTimeout = std::chrono::seconds(20);
 // Both ready but a game still loading characters: start anyway after this.
-constexpr auto kPreloadWait = std::chrono::seconds(20);
+constexpr auto kPreloadWait = std::chrono::seconds(90);
 constexpr size_t kMaxSpectators = 8;
 // Spectator stream: batches in flight per spectator before an ack, and how
 // long without progress before resending from the last ack.
@@ -530,8 +530,13 @@ public:
     // Preloading: this player's pick, and once known the other's.
     std::vector<PreloadPick> PreloadPicks()
     {
-        std::vector<PreloadPick> picks;
         std::lock_guard lock(mutex_);
+        return PreloadPicksLocked();
+    }
+
+    std::vector<PreloadPick> PreloadPicksLocked() const
+    {
+        std::vector<PreloadPick> picks;
         if (state_ != State::Lobby && state_ != State::Hosting && state_ != State::Joining &&
             state_ != State::Connecting && state_ != State::Ended) {
             return picks;
@@ -855,7 +860,16 @@ private:
         seat.hasPick = options_.hasPick;
         seat.pick = options_.pick;
         seat.ready = ready_;
-        seat.preloaded = PreloadsDone();
+        // Preloaded: both players' characters (a player's own pick alone,
+        // before the other's is known, does not count: both reported that,
+        // the match started at once and both games loaded the other's
+        // character while the battle was created, its objects after 3
+        // neutral ticks instead of 6 or more: a spectator desync from frame 0).
+        std::string picks;
+        for (const PreloadPick& p : PreloadPicksLocked()) picks += p.code + "/" + std::to_string(p.costume) + " ";
+        const bool otherKnown = options_.randomSetup || role_ != Role::Player ||
+                                (seats_[host_ ? 1 : 0].present && seats_[host_ ? 1 : 0].hasPick);
+        seat.preloaded = otherKnown && PreloadsDoneFor(picks);
         seat.choice = myChoice_;
         seat.inputDelay = nextDelay_ >= 0 ? static_cast<uint8_t>(nextDelay_.load()) : options_.inputDelay;
         seat.fps = static_cast<uint8_t>(std::clamp(RenderFps() + 0.5f, 0.0f, 255.0f));

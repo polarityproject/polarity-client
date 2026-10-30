@@ -65,6 +65,9 @@ void SetPreloadSource(std::function<std::vector<PreloadPick>()> source);
 // Every pick of the source is in the character cache (or would not stay
 // there), as of the last check (about twice a second).
 bool PreloadsDone();
+// PreloadsDone, and the check was made for these picks as the source gives
+// them ("RYU/0 KEN/0 "): false until it has seen a change of picks.
+bool PreloadsDoneFor(const std::string& picks);
 // The version a battle resolves this character's to when asked for its latest.
 int LatestCharaVersion(const std::string& code);
 // Diagnostics: logs every character's versions.

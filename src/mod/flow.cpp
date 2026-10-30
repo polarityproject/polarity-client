@@ -1133,6 +1133,7 @@ std::string g_preloadSeen;                   // the source's picks as last seen
 uint64_t g_preloadSeenAt = 0;                // ... since this queue run
 std::map<std::string, int> g_preloadTries;   // per character key, preloads started
 std::atomic<bool> g_preloadsDone{false};     // every pick of the source is in the cache (or tried enough)
+std::string g_preloadsDoneFor;               // ... the picks that was checked for (PreloadsDoneFor)
 constexpr int kPreloadStableFrames = 60;     // picks unchanged this long before preloading
 constexpr int kPreloadMaxTries = 2;          // per key, so one that never stays cached is not loaded forever
 
@@ -1219,7 +1220,9 @@ void PreloadTick()
         // screen a new pick cannot be preloaded: waiting for it would only hold
         // the match back (the jump loads it).
         if (LastScene() != "MainMenuState" && !g_preloading) done = true;
+        std::lock_guard lock(g_preloadMutex);
         g_preloadsDone = done;
+        g_preloadsDoneFor = seen;
     }
     if (seen != g_preloadSeen) {
         g_preloadSeen = seen;
@@ -1271,6 +1274,12 @@ void SetPreloadSource(std::function<std::vector<PreloadPick>()> source)
 }
 
 bool PreloadsDone() { return g_preloadsDone; }
+
+bool PreloadsDoneFor(const std::string& picks)
+{
+    std::lock_guard lock(g_preloadMutex);
+    return g_preloadsDone && g_preloadsDoneFor == picks;
+}
 
 void PreloadCharacter(const std::string& code, int costume)
 {
