@@ -70,6 +70,14 @@ public:
         keepTo_ = to;
     }
 
+    // `hold <frame> <seconds>`: the replay stands still after that frame for
+    // a while (the game keeps drawing it), for a screenshot.
+    void Hold(int frame, int seconds)
+    {
+        holdAt_ = frame;
+        holdMs_ = seconds * 1000ull;
+    }
+
     // `trap <frame> <region> <offset> <bytes>`: a write watch on those bytes
     // from that frame's tick on (debug registers, 8 bytes each, 4 in all);
     // the writers are logged when the replay ends.
@@ -97,6 +105,10 @@ public:
             Log("replay: battle created (%s)", RoundEndState().c_str());
         }
         if (!ready_) return Warmup(game);
+        if (holdUntil_) {
+            if (GetTickCount64() < holdUntil_) return true;
+            holdUntil_ = 0;
+        }
         if (stress_ > 0) return StressFrame(game);
         return StraightFrame(game);
     }
@@ -269,6 +281,7 @@ private:
         game.Advance(rf_.inputs[frame_], false);
         CheckFrame(game, frame_);
         WatchFrame(game, frame_);
+        MaybeHold(frame_);
         if (keepFrom_ >= 0) {
             std::vector<uint64_t> hashes(game.Regions().size());
             HashRegions(game.Regions(), hashes.data());
@@ -296,11 +309,20 @@ private:
         // resimulation): it must equal the recording too.
         const int f = session_->NextFrame() - 1;
         WatchFrame(game, f);
+        MaybeHold(f);
         if (f >= 0 && f != checked_) {
             CheckFrame(game, f);
             checked_ = f;
         }
         return true;
+    }
+
+    void MaybeHold(int f)
+    {
+        if (f != holdAt_ || holdMs_ == 0) return;
+        holdUntil_ = GetTickCount64() + holdMs_;
+        holdMs_ = 0;
+        Log("replay: holding at frame %d", f);
     }
 
     // `watch <from> <to> [region]`: per frame, the region's first 16 bytes
@@ -323,6 +345,10 @@ private:
                 static_cast<void*>(r->ptr + t.offset), t.frame);
         }
         if (f < watchFrom_ || f > watchTo_) return;
+        if (watchRegion_ == "trails") {
+            LogTrails(game, f);
+            return;
+        }
         std::string bytes = "-";
         for (const StateRegion& r : game.Regions()) {
             if (r.name != watchRegion_) continue;
@@ -337,6 +363,71 @@ private:
         HashRegions(game.Regions(), hashes.data());
         Log("replay: watch frame %d: %s %s | %s | state %08x | camera %s", f, watchRegion_.c_str(), bytes.c_str(),
             RoundEndState().c_str(), FoldChecksum(hashes.data(), hashes.size()), CameraText().c_str());
+    }
+
+    // `watch <from> <to> trails` (research, finding 33): the motion trail
+    // objects (vtable rva 0x2C6FB88, a pool; only +0xC0..+0xEB is in the
+    // snapshot, the 44-byte regions) and their KWTrailManager (+0x190), word
+    // by word, snapshotted or not: what changed since the last logged frame.
+    static constexpr uint32_t kTrailVtable = 0x2C6FB88;
+    static constexpr size_t kTrailBytes = 0x200, kManagerBytes = 0xB00;
+    std::map<const uint8_t*, std::vector<uint64_t>> trailSeen_;
+
+    void LogTrails(SfvGame& game, int f)
+    {
+        const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+        std::vector<const uint8_t*> objects;
+        for (const StateRegion& r : game.Regions()) {
+            if (r.size != 44) continue;
+            const uint8_t* obj = r.ptr - 0xC0;
+            if (!IsReadable(obj, kTrailBytes) || *reinterpret_cast<const uintptr_t*>(obj) - base != kTrailVtable) continue;
+            objects.push_back(obj);
+        }
+        std::sort(objects.begin(), objects.end());
+        const uint8_t* manager = objects.empty() ? nullptr : *reinterpret_cast<const uint8_t* const*>(objects[0] + 0x190);
+        auto diff = [&](const char* what, int index, const uint8_t* p, size_t size) {
+            if (!p || !IsReadable(p, size)) return;
+            std::vector<uint64_t> now(size / 8);
+            std::memcpy(now.data(), p, size);
+            auto& seen = trailSeen_[p];
+            if (seen.size() == now.size()) {
+                std::string changes;
+                for (size_t w = 0; w < now.size(); w++) {
+                    if (now[w] == seen[w]) continue;
+                    char b[80];
+                    std::snprintf(b, sizeof(b), " +0x%zx %llx>%llx", w * 8, static_cast<unsigned long long>(seen[w]),
+                                  static_cast<unsigned long long>(now[w]));
+                    changes += b;
+                }
+                if (!changes.empty()) Log("replay: trails frame %d %s %d%s", f, what, index, changes.c_str());
+            }
+            seen = std::move(now);
+        };
+        // Before the last logged frame: write watches on the state (+0xE8) of
+        // the first unused objects, to find what hands one out.
+        if (f == watchTo_ - 9 && trapSlots_ == 0) {
+            auto unused = [](const uint8_t* obj) {
+                for (size_t w = 0xC0; w < 0xEC; w += 4) {
+                    if (*reinterpret_cast<const uint32_t*>(obj + w) != 0) return false;
+                }
+                return true;
+            };
+            size_t after = 0; // past the last object in use
+            for (size_t i = 0; i < objects.size(); i++) {
+                if (!unused(objects[i])) after = i + 1;
+            }
+            for (size_t i = after; i < objects.size(); i++) {
+                const uint8_t* obj = objects[i];
+                if (trapSlots_ >= 4) break;
+                ArmWatch(trapSlots_++, obj + 0xE8, 4, base);
+                Log("replay: trails: watching %p +0xe8 from frame %d", static_cast<const void*>(obj), f + 1);
+            }
+        }
+        for (size_t i = 0; i < objects.size(); i++) diff("trail", static_cast<int>(i), objects[i], kTrailBytes);
+        diff("manager", 0, manager, kManagerBytes);
+        if (trailSeen_.size() == objects.size() + 1 && f == watchFrom_) {
+            Log("replay: trails frame %d: %zu trail objects, manager %p", f, objects.size(), static_cast<const void*>(manager));
+        }
     }
 
     // The battle camera as last drawn: KWBattleCameraManager's CameraCache.POV
@@ -547,6 +638,8 @@ private:
     // (<name>_kept.sfvr), with state dumps of those frames: a stress replay of
     // it names the words that differ there (CompareDump).
     int keepFrom_ = -1, keepTo_ = -1;
+    int holdAt_ = -1;
+    uint64_t holdMs_ = 0, holdUntil_ = 0;
     std::vector<Trap> traps_;
     int trapSlots_ = 0;
     ReplayFile kept_;
@@ -579,7 +672,7 @@ private:
 } // namespace
 
 void RequestReplay(const std::string& path, int stressDistance, int watchFrom, int watchTo, const std::string& watchRegion,
-                   int keepFrom, int keepTo, bool preload, const std::string& traps)
+                   int keepFrom, int keepTo, bool preload, const std::string& traps, int holdAt, int holdSeconds)
 {
     if (path == "stop") {
         g_stop = CurrentFrameDriver() != nullptr;
@@ -616,6 +709,7 @@ void RequestReplay(const std::string& path, int stressDistance, int watchFrom, i
     Log("replay: stage %s", rf.setup.stage == kKeepStage ? "as prepared" : StageCode(rf.setup.stage).c_str());
     auto* driver = new ReplayDriver(std::move(rf), name, stressDistance, watchFrom, watchTo, watchRegion);
     driver->Keep(keepFrom, keepTo);
+    driver->Hold(holdAt, holdSeconds);
     std::istringstream ts(traps);
     ReplayDriver::Trap t;
     while (ts >> t.frame >> t.region >> std::hex >> t.offset >> std::dec >> t.bytes) driver->AddTrap(t);

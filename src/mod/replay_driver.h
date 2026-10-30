@@ -34,8 +34,9 @@ namespace sfv::mod {
 // preload false: the jump without loading the characters first.
 // traps: "<frame> <region> <hex offset> <bytes>" groups, write watches armed
 // before that frame's tick, their writers logged at the end (research).
+// holdAt (>= 0): the replay stands still after that frame for holdSeconds.
 void RequestReplay(const std::string& path, int stressDistance, int watchFrom = -1, int watchTo = -1,
                    const std::string& watchRegion = "", int keepFrom = -1, int keepTo = -1, bool preload = true,
-                   const std::string& traps = "");
+                   const std::string& traps = "", int holdAt = -1, int holdSeconds = 0);
 
 } // namespace sfv::mod
