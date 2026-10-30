@@ -51,6 +51,11 @@ struct StateMap {
 void WatchRegionOfNextBattle(const std::string& name, size_t offset, int length);
 void ArmPendingRegionWatch(const std::vector<StateRegion>& regions, uintptr_t imageBase);
 
+// Research (`skipcallbacks`): game callbacks a load does not run, by key
+// (thunk rva << 32 | the rva of the function its context names), as the load
+// cost lines print them. Empty: all run (the default).
+void SetSkippedLoadCallbacks(std::vector<uint64_t> keys);
+
 class SfvGame : public IGame {
 public:
     explicit SfvGame(const GameImage& image) : image_(image) {}
@@ -101,6 +106,24 @@ public:
         }
     }
     int BattleFrameVersion() const { return battleFrameVersion_; }
+
+    // A new battle's warm-up (netplay and replays), once per frame after
+    // BeginWarmup: true while it runs a neutral tick, until the battle's
+    // objects (and so its state regions) exist; then it is frozen at frame 0
+    // as it is at that moment, which does not depend on how many ticks that
+    // took (12 or 14 give the same state). Ticks after that would start the
+    // round's flow (outside the snapshot). A battle whose objects came after
+    // only 3 ticks (its game busy loading) went on differently from frame 0
+    // than one that took 6 or more (2026-10-30: two players at 3, their
+    // spectator at 16, a desync from frame 0; cause open).
+    void BeginWarmup()
+    {
+        warmupTicks_ = 0;
+        objectsAt_ = -1;
+    }
+    bool WarmupStep();
+    int WarmupTicks() const { return warmupTicks_; }
+    int ObjectsAt() const { return objectsAt_; } // the neutral tick the objects showed up at, -1 before
     // A new battle that reuses the old BattleFrame object: forget the units.
     void ForgetBattleObjects()
     {
@@ -188,7 +211,16 @@ public:
     bool OutcomeDecided() override;
 
 private:
-    void RunPostRestoreCallbacks(const game::FrameId& id) const;
+    void RunPostRestoreCallbacks(const game::FrameId& id);
+    // Time after loads (performance counter ticks), per game callback (by rva)
+    // and for the round state the mod puts back (OnStateLoaded logs them).
+    struct CallbackCost {
+        int64_t ticks = 0;
+        int calls = 0;
+    };
+    std::map<uintptr_t, CallbackCost> callbackCosts_;
+    int64_t ownLoadTicks_ = 0;
+    int loadsTimed_ = 0;
 
     GameImage image_;
     uint8_t* unit_ = nullptr;
@@ -209,6 +241,8 @@ private:
     std::vector<std::pair<uint8_t*, size_t>> rawLayout_;
     int layoutVersion_ = 0;
     int battleFrameVersion_ = 0;
+    int warmupTicks_ = 0;
+    int objectsAt_ = -1;
     std::atomic<uint64_t> lastFrameMs_{0};
     std::map<size_t, std::set<size_t>> noise_;
     const StateMap* stateMap_ = nullptr;

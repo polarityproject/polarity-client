@@ -939,6 +939,18 @@ void RunNetCommand(const std::string& line)
         ss >> o.dumpEvery >> o.maxDumps;
         Log("netplay: recordings dump the state every %d frames, at most %d times", o.dumpEvery, o.maxDumps);
     }
+    else if (cmd == "skipcallbacks") {
+        // skipcallbacks <thunk rva>/<target rva> ... | off: game callbacks
+        // loads leave out (research: load cost).
+        std::vector<uint64_t> keys;
+        std::string word;
+        while (ss >> word) {
+            const size_t slash = word.find('/');
+            if (slash == std::string::npos) continue;
+            keys.push_back(std::stoull(word.substr(0, slash), nullptr, 16) << 32 | std::stoull(word.substr(slash + 1), nullptr, 16));
+        }
+        SetSkippedLoadCallbacks(std::move(keys));
+    }
     else if (cmd == "recordings") {
         // recordings full|compact: which frames' region hashes the next saved recordings keep.
         std::string what;
@@ -1107,7 +1119,7 @@ bool Parse(const std::string& line, Step& step)
         return !ss.fail();
     }
     if (cmd == "host" || cmd == "join" || cmd == "spectate" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
-        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo") {
+        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "skipcallbacks") {
         step.kind = Step::Net;
         step.line = line;
         return true;

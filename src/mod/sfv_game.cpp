@@ -11,6 +11,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -615,7 +616,28 @@ bool SfvGame::RestoreRingFrame(const game::FrameId& id, bool discardNewer)
     return image_.At<RestoreFn>(game::kManagerRestore.rva)(m, &id, discardNewer ? 1 : 0) != 0;
 }
 
-void SfvGame::RunPostRestoreCallbacks(const game::FrameId& id) const
+namespace {
+std::mutex g_skipMutex;
+std::vector<uint64_t> g_skipCallbacks;
+std::atomic<bool> g_skipAny{false};
+} // namespace
+
+void SetSkippedLoadCallbacks(std::vector<uint64_t> keys)
+{
+    std::lock_guard lock(g_skipMutex);
+    g_skipCallbacks = std::move(keys);
+    g_skipAny = !g_skipCallbacks.empty();
+    std::string text;
+    for (uint64_t k : g_skipCallbacks) {
+        char part[48];
+        std::snprintf(part, sizeof(part), " 0x%llx/0x%llx", static_cast<unsigned long long>(k >> 32),
+                      static_cast<unsigned long long>(k & 0xFFFFFFFF));
+        text += part;
+    }
+    Log("loads skip %zu game callbacks:%s", g_skipCallbacks.size(), text.c_str());
+}
+
+void SfvGame::RunPostRestoreCallbacks(const game::FrameId& id)
 {
     // Mirrors the loop at 0x48A45C in Restore.
     uint8_t* m = Manager();
@@ -626,7 +648,25 @@ void SfvGame::RunPostRestoreCallbacks(const game::FrameId& id) const
     for (const uint8_t* node = Read<uint8_t*>(sentinel, mgr::callback::kNext); node && node != sentinel;
          node = Read<uint8_t*>(node, mgr::callback::kNext)) {
         auto fn = Read<CallbackFn>(node, mgr::callback::kFunction);
-        if (fn && Read<uint64_t>(node, mgr::callback::kToken) != 0) fn(Read<void*>(node, mgr::callback::kContext), &id);
+        if (!fn || Read<uint64_t>(node, mgr::callback::kToken) == 0) continue;
+        // Timed per function (LoadCosts): where the time after a load goes,
+        // by the thunk and the function its context names (its first word,
+        // an rva in the image; 0 when not): 50 callbacks share two thunks.
+        void* ctx = Read<void*>(node, mgr::callback::kContext);
+        uintptr_t target = ctx && IsReadable(ctx, 8) ? *static_cast<const uintptr_t*>(ctx) : 0;
+        target = target > image_.base && target < image_.base + 0x8000000 ? target - image_.base : 0;
+        const uint64_t key = ((reinterpret_cast<uintptr_t>(fn) - image_.base) << 32) | target;
+        if (g_skipAny) {
+            std::lock_guard lock(g_skipMutex);
+            if (std::find(g_skipCallbacks.begin(), g_skipCallbacks.end(), key) != g_skipCallbacks.end()) continue;
+        }
+        LARGE_INTEGER a, b;
+        QueryPerformanceCounter(&a);
+        fn(ctx, &id);
+        QueryPerformanceCounter(&b);
+        CallbackCost& c = callbackCosts_[key];
+        c.ticks += b.QuadPart - a.QuadPart;
+        c.calls++;
     }
 }
 
@@ -709,14 +749,57 @@ bool SfvGame::MatchWins(uint32_t& left, uint32_t& right) const
     return false;
 }
 
+bool SfvGame::WarmupStep()
+{
+    RefreshRegions();
+    if (Regions().empty() || !InputUnit()) {
+        Advance(FrameInputs{}, false);
+        warmupTicks_++;
+        return true;
+    }
+    if (objectsAt_ < 0) objectsAt_ = warmupTicks_;
+    return false;
+}
+
 void SfvGame::OnStateLoaded(int frame)
 {
     // The callbacks receive the id of the restored frame. Ours are not ids the
     // game issued, so a callback that looks up its own per-frame data by id
     // would fail; the probe log lists the callbacks to check that statically.
+    LARGE_INTEGER a, b, c;
+    QueryPerformanceCounter(&a);
     RunPostRestoreCallbacks(game::FrameId{frame, 0x5346});
+    QueryPerformanceCounter(&b);
     RoundDirectorFromSnapshot();
     MatchStopToDirector(battleFrame_);
+    QueryPerformanceCounter(&c);
+    ownLoadTicks_ += c.QuadPart - b.QuadPart;
+    // Every 200 loads, the callbacks by cost (the game's own, and ours).
+    if (++loadsTimed_ % 200 == 0) {
+        LARGE_INTEGER f;
+        QueryPerformanceFrequency(&f);
+        const double us = 1e6 / static_cast<double>(f.QuadPart);
+        std::vector<std::pair<double, uintptr_t>> byCost;
+        double total = 0;
+        for (const auto& [rva, cost] : callbackCosts_) {
+            byCost.push_back({cost.ticks * us / 200.0, rva});
+            total += cost.ticks * us / 200.0;
+        }
+        std::sort(byCost.rbegin(), byCost.rend());
+        std::string text;
+        for (size_t k = 0; k < byCost.size() && k < 10; k++) {
+            const uintptr_t key = byCost[k].second;
+            const int calls = callbackCosts_[key].calls / 200;
+            char part[80];
+            std::snprintf(part, sizeof(part), "%s0x%zx/0x%zx x%d %.0f us", k ? ", " : "", static_cast<size_t>(key >> 32),
+                          static_cast<size_t>(key & 0xFFFFFFFF), calls, byCost[k].first);
+            text += part;
+        }
+        Log("load callbacks per load (last 200): %.0f us in %zu kinds of game callback (%s), %.0f us round state", total,
+            callbackCosts_.size(), text.c_str(), ownLoadTicks_ * us / 200.0);
+        callbackCosts_.clear();
+        ownLoadTicks_ = 0;
+    }
 }
 
 } // namespace sfv::mod
