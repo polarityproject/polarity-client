@@ -40,14 +40,19 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   and spectators), and over the results screen in place of the vote's windows
   when both choose Character select. The host picks the stage first (B on
   the grid goes back to it), then both pick a character and their loadout and
-  say ready; Start brings up the panel. Moving the grid's cursor only shows a
-  character on your screen; A picks it. Characters load only once picked for
-  good: your own once you are ready, the other's once both are ("Both ready:
-  loading the characters"), so trying out characters and costumes no longer
-  stalls either game. The character lists are read once the game reaches its
-  menus, and the screen's pictures load a few at a time, so the screen is
-  there and answers at once when someone joins. Lobby protocol
-  9 (the stage confirmation): both sides need this version.
+  say ready; B says not ready again until both are. Start brings up the
+  panel, and Start closes it. Each side shows where that player is on their
+  own screen: the fighter under their cursor while they browse the grid,
+  their loadout (and the row they are on) once they picked. A picks; the
+  characters load only once both are ready ("Both ready: loading the
+  characters"), so trying out characters and costumes no longer stalls
+  either game. Pads the game reads past XInput (DirectInput, Steam Input)
+  work on the screen and in the panel too, and the game's menus behind the
+  screen no longer react to them. The character lists are read once the game
+  reaches its menus, and the screen's pictures load a few at a time, so the
+  screen is there and answers at once when someone joins. Lobby protocol 10
+  (the stage confirmation, each player's place on the screen): both sides
+  need this version.
 
 ### Changed
 

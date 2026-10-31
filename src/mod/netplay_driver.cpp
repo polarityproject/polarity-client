@@ -67,6 +67,7 @@ constexpr int kMaxInputDelay = 10;
 constexpr int kReconcileSeconds = 15;
 // The heartbeat (PlayerState / SessionState) and the resends.
 constexpr auto kBeat = std::chrono::milliseconds(250);
+constexpr auto kMinBeat = std::chrono::milliseconds(33); // select screen changes go out at once, this often at most
 // Nothing heard from the other side for this long ends the session.
 constexpr auto kSilence = std::chrono::seconds(10);
 // The server (or the room) not answering for this long.
@@ -334,18 +335,32 @@ public:
         Log("netplay: simulating %d ms latency, %d ms jitter, %.1f%% loss", c.latencyMs, c.jitterMs, c.loss * 100.0);
     }
 
-    // Ready locks this player's pick in until the match starts: backing out
-    // while the host starts it (or preloads for it) left both sides waiting.
-    // (A session that readies by itself, for tests, is not locked.)
+    // Ready holds this player's pick (and the host's stage) until they say
+    // not ready, which they can until both are ready: from then on the match
+    // is locked in (both games load the characters, the host starts it), and
+    // backing out would leave both sides waiting.
     void SetReady(bool ready)
     {
-        if (!ready && lockedIn_) {
-            Log("netplay: ready is locked in until the match starts");
+        std::lock_guard lock(mutex_);
+        if (!ready && ready_ && BothReadyLocked()) {
+            Log("netplay: both are ready: locked in until the match starts");
             return;
         }
         if (ready != ready_) Log("netplay: %sready", ready ? "" : "not ");
         ready_ = ready;
         lockedIn_ = ready;
+    }
+
+    // Where this player is on the select screen (lobby::Seat::screen): sent
+    // at once when it changes, so the other screens follow it live.
+    void SetSelectState(uint8_t screen, uint8_t row, uint32_t hover)
+    {
+        std::lock_guard lock(mutex_);
+        if (selectScreen_ == screen && selectRow_ == row && selectHover_ == hover) return;
+        selectScreen_ = screen;
+        selectRow_ = row;
+        selectHover_ = hover;
+        beatNow_ = true;
     }
 
     void SetPick(bool hasPick, const PlayerSetup& pick)
@@ -537,9 +552,9 @@ public:
     }
 
     // Preloading: this player's pick, and once known the other's. In a
-    // session's lobby only picks locked in (loading each pick or costume a
-    // player tried out stalled both games): this player's once ready (their
-    // own game waits anyway), the other's once both are.
+    // session's lobby only once both players are ready, the match locked in
+    // (loading each pick or costume a player tried out stalled both games;
+    // a player alone ready can still say not ready).
     std::vector<PreloadPick> PreloadPicks()
     {
         std::lock_guard lock(mutex_);
@@ -555,7 +570,7 @@ public:
         auto add = [&](bool has, const PlayerSetup& p) {
             if (has && p.character) picks.push_back({UnpackCode(p.character), static_cast<int>(p.costume)});
         };
-        if (role_ == Role::Player && (!lobby || ready_)) add(options_.hasPick, options_.pick);
+        if (role_ == Role::Player && (!lobby || both)) add(options_.hasPick, options_.pick);
         for (int i = 0; i < kNumPlayers; i++) {
             if (role_ == Role::Player && i == (host_ ? 0 : 1)) continue;
             if (!lobby || both) add(seats_[i].present && seats_[i].hasPick, seats_[i].pick);
@@ -649,8 +664,10 @@ private:
         if (host_) StreamToWatchers();
         Transitions();
 
+        // A select screen change goes out at once (at most every kMinBeat).
         const auto now = Clock::now();
-        if (now - lastBeat_ < kBeat) return;
+        if (now - lastBeat_ < kMinBeat) return;
+        if (!beatNow_.exchange(false) && now - lastBeat_ < kBeat) return;
         lastBeat_ = now;
 
         // Tell the others this side gave up on the session.
@@ -894,6 +911,9 @@ private:
         const bool settled = options_.randomSetup || state_ != State::Lobby || BothReadyLocked();
         seat.preloaded = otherKnown && settled && PreloadsDoneFor(picks);
         seat.choice = myChoice_;
+        seat.screen = selectScreen_;
+        seat.row = selectRow_;
+        seat.hover = selectHover_;
         seat.inputDelay = nextDelay_ >= 0 ? static_cast<uint8_t>(nextDelay_.load()) : options_.inputDelay;
         seat.fps = static_cast<uint8_t>(std::clamp(RenderFps() + 0.5f, 0.0f, 255.0f));
         seat.link = link_;
@@ -1116,6 +1136,11 @@ private:
                 seat.inputDelay = m.seat.inputDelay;
                 seat.fps = m.seat.fps;
                 seat.link = m.seat.link;
+                // Spectators follow the joiner's select screen live too.
+                if (seat.screen != m.seat.screen || seat.row != m.seat.row || seat.hover != m.seat.hover) beatNow_ = true;
+                seat.screen = m.seat.screen;
+                seat.row = m.seat.row;
+                seat.hover = m.seat.hover;
             }
             break;
         case lobby::Type::Loaded:
@@ -1394,6 +1419,8 @@ private:
             lockedIn_ = false;
             {
                 std::lock_guard lock(mutex_);
+                selectScreen_ = 0;
+                selectHover_ = 0;
                 for (auto& seat : seats_) {
                     seat.choice = Choice::None;
                     seat.ready = false;
@@ -2368,7 +2395,10 @@ private:
     int played_ = 0;                       // guarded by mutex_
     std::atomic<bool> holdOverResults_{false}; // the lobby holds the last match's results screen (OnFrame)
     std::atomic<int> nextDelay_{-1};       // the input delay for the next match (-1: unchanged)
-    std::atomic<bool> lockedIn_{false};    // the player said ready: pick and ready hold until the next lobby
+    std::atomic<bool> lockedIn_{false};    // the player said ready: their pick (and the host's stage) hold
+    uint8_t selectScreen_ = 0, selectRow_ = 0; // SetSelectState, under mutex_
+    uint32_t selectHover_ = 0;
+    std::atomic<bool> beatNow_{false};     // the next ControlTick beats at once (a select screen change)
     std::atomic<int> hostStageRule_{-1};   // host: the stage rule set in the lobby (-1: from the options)
     uint16_t streaks_[kNumPlayers] = {};   // host: each player's current win streak this session
     uint32_t winsAtStart_[2] = {};         // the game's match win counts as the match started
@@ -2915,6 +2945,12 @@ void NetSetStageLocked(bool locked)
 {
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->SetStageLocked(locked);
+}
+
+void NetSetSelectState(uint8_t screen, uint8_t row, uint32_t hover)
+{
+    std::lock_guard lock(g_driverMutex);
+    if (g_driver) g_driver->SetSelectState(screen, row, hover);
 }
 
 void NetChoose(lobby::Choice choice)

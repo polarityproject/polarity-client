@@ -61,6 +61,14 @@ struct SelectSide {
     int chara = -1;     // into SelectData::charas; -1 no pick yet
     SelectRow rows[kSelectRows];
     bool ready = false;
+    // Where the other player is on their own screen (lobby::Seat::screen):
+    // 0 not known (drawn from the pick alone), 1 the grid (with the character
+    // under their cursor, -1 none, or the random tile), 2 their loadout (on
+    // `row`). This player's own comes from this screen.
+    int screen = 0;
+    int hover = -1;
+    bool hoverRandom = false;
+    int row = -1;
 };
 
 // A session's lobby, as of this frame.
@@ -70,6 +78,7 @@ struct SelectLive {
     SelectSide sides[2];
     int stage = 0;            // the host's stage: into SelectData::stages; == their count: random
     bool stageLocked = false; // the host confirmed it: on to the characters
+    bool bothReady = false;   // the match is locked in (nobody can say not ready)
     bool loading = false;     // both ready, the games loading the characters
     unsigned pingMs = 0;      // the link's round trip (a spectator's: to the host)
     bool relayed = false;
@@ -86,8 +95,15 @@ struct SelectInput {
     int stage = -1;          // the host's stage cursor (into the stages; their count: random)
     bool lockStage = false, unlockStage = false;
     bool ready = false;
-    bool menu = false; // Start: the panel (Leave, settings)
-    bool back = false; // B with nothing to go back to
+    bool unready = false; // B while ready, until both are
+    bool menu = false;    // Start: the panel (Leave, settings)
+    bool back = false;    // B with nothing to go back to
+    // Where this player is on the screen, every frame (for the others'
+    // screens): as SelectSide::screen, hover, hoverRandom and row.
+    int screen = 0;
+    int hover = -1;
+    bool hoverRandom = false;
+    int screenRow = -1;
 };
 
 // A session's select screen: its lists, once per session.

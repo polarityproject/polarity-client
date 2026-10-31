@@ -116,6 +116,9 @@ void PutSeat(Out& o, const Seat& s, bool withName)
     o.Put(s.inputDelay);
     o.Put(s.fps);
     o.Put(static_cast<uint8_t>(s.link));
+    o.Put(s.screen);
+    o.Put(s.row);
+    o.Put(s.hover);
 }
 
 Seat GetSeat(In& in, bool withName)
@@ -133,6 +136,9 @@ Seat GetSeat(In& in, bool withName)
     s.inputDelay = in.Get<uint8_t>();
     s.fps = in.Get<uint8_t>();
     s.link = static_cast<Link>(in.Get<uint8_t>());
+    s.screen = in.Get<uint8_t>();
+    s.row = in.Get<uint8_t>();
+    s.hover = in.Get<uint32_t>();
     return s;
 }
 

@@ -102,6 +102,9 @@ void NetSetStage(const std::string& code);
 // The host: the stage is confirmed (the select screen moves on to the
 // characters for everyone), or open again. Every new lobby starts open.
 void NetSetStageLocked(bool locked);
+// Where this player is on the select screen (lobby::Seat::screen, row,
+// hover): the others' screens follow it.
+void NetSetSelectState(uint8_t screen, uint8_t row, uint32_t hover);
 // Spectator: watch this match of the session (0: the newest) from its start.
 void NetWatchMatch(uint64_t id);
 // After a match: Rematch or CharacterSelect.

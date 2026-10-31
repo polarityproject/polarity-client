@@ -74,6 +74,11 @@ void SetPadIsolation(bool isolate);
 // The last state of pad `user` (real pad plus virtual buttons) as a game input
 // value (default button layout), also while isolated.
 PackedInput LocalPadInput(int user);
+// The game's pad keys as its input manager last read them, both pads
+// together (bit k = EKWKeyConfigPadKeyId k: up 1, down 2, left 4, right 8
+// (sticks included), X 0x10, Y 0x20, A 0x40, B 0x80, LB 0x100, RB 0x200,
+// LT 0x400, RT 0x800, Start 0x4000, Back 0x8000), from any pad the game reads.
+uint32_t GamePadKeys();
 // The local player's input as the game maps it (keyboard and pads, with the
 // player's button config: the input manager's pad 0, before netplay clears
 // it), with Start; the pad's default layout when the manager is not hooked.

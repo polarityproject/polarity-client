@@ -3,6 +3,7 @@
 
 #include "core/match_code.h"
 #include "mod/config.h"
+#include "mod/control.h"
 #include "mod/files.h"
 #include "mod/flow.h"
 #include "mod/hitch.h"
@@ -69,6 +70,8 @@ HWND g_window = nullptr;
 bool g_imgui = false;
 
 std::atomic<bool> g_visible{false};
+std::atomic<bool> g_menuFromSelect{false}; // the panel was opened with Start on the select screen: Start closes it
+std::atomic<ULONGLONG> g_xinputAt{0};      // when the XInput hook last saw a pad (OverlayPad)
 std::atomic<bool> g_voting{false};        // the post-match vote is up and takes input
 // A spectator over a watched match's results screen: the game gets no input
 // (a press there can open its own Results Menu, which players' votes keep
@@ -127,6 +130,43 @@ void FeedPads(ImGuiIO& io)
         {XINPUT_GAMEPAD_LEFT_SHOULDER, ImGuiKey_GamepadL1}, {XINPUT_GAMEPAD_RIGHT_SHOULDER, ImGuiKey_GamepadR1},
         {XINPUT_GAMEPAD_START, ImGuiKey_GamepadStart},  {XINPUT_GAMEPAD_BACK, ImGuiKey_GamepadBack},
     };
+    // The game's own pad keys too: a pad it reads past XInput (DirectInput,
+    // Steam Input) gave the overlay nothing (control.h GamePadKeys).
+    struct GameKey {
+        uint32_t key;
+        uint16_t button;
+    };
+    static const GameKey kGameKeys[] = {
+        {0x1, XINPUT_GAMEPAD_DPAD_UP},     {0x2, XINPUT_GAMEPAD_DPAD_DOWN},    {0x4, XINPUT_GAMEPAD_DPAD_LEFT},
+        {0x8, XINPUT_GAMEPAD_DPAD_RIGHT},  {0x10, XINPUT_GAMEPAD_X},           {0x20, XINPUT_GAMEPAD_Y},
+        {0x40, XINPUT_GAMEPAD_A},          {0x80, XINPUT_GAMEPAD_B},           {0x100, XINPUT_GAMEPAD_LEFT_SHOULDER},
+        {0x200, XINPUT_GAMEPAD_RIGHT_SHOULDER}, {0x4000, XINPUT_GAMEPAD_START}, {0x8000, XINPUT_GAMEPAD_BACK},
+    };
+    const uint32_t keys = GamePadKeys();
+    uint16_t game = 0;
+    for (const GameKey& k : kGameKeys) {
+        if (keys & k.key) game |= k.button;
+    }
+    buttons |= game;
+    // Back + Start from those keys, where no pad goes through XInput (with
+    // one, OverlayPad sees the same press: it would toggle twice).
+    constexpr uint16_t kChord = XINPUT_GAMEPAD_BACK | XINPUT_GAMEPAD_START;
+    static bool chordWas = false;
+    const bool chord = (game & kChord) == kChord && GetTickCount64() - g_xinputAt > 2000;
+    if (chord && !chordWas) ToggleOverlay();
+    chordWas = chord;
+    // A menu opened with Start on the select screen closes with Start, on its
+    // release (on its press, the select screen took that Start again and
+    // opened it once more).
+    static bool startWas = false, closeOnRelease = false;
+    const bool start = buttons & XINPUT_GAMEPAD_START;
+    if (!g_visible) g_menuFromSelect = closeOnRelease = false;
+    if (start && !startWas && g_visible && g_menuFromSelect) closeOnRelease = true;
+    if (!start && startWas && closeOnRelease) {
+        closeOnRelease = false;
+        SetOverlayVisible(false);
+    }
+    startWas = start;
     for (const Map& m : kButtons) io.AddKeyEvent(m.key, (buttons & m.button) != 0);
     constexpr float kDead = 7849.0f; // XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE
     auto axis = [&](ImGuiKey key, float v) {
@@ -2064,6 +2104,13 @@ SelectSide SelectSideFor(const NetView& v, int i)
     s.link = seat.link == lobby::Link::Wired ? 1 : seat.link == lobby::Link::WiFi ? 2 : 0;
     s.ready = seat.ready;
     const bool mine = i == v.you && !v.spectator;
+    s.screen = seat.screen;
+    s.row = seat.row;
+    s.hoverRandom = seat.screen == 1 && seat.hover == 0;
+    if (seat.hover) {
+        const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), UnpackCode(seat.hover));
+        s.hover = it == g_tables.charas.end() ? -1 : static_cast<int>(it - g_tables.charas.begin());
+    }
     const Choices& c = g_choices;
     int chara = -1;
     PlayerSetup pick;
@@ -2143,7 +2190,8 @@ SelectLive SelectLiveFor(const NetView& v)
     for (int i = 0; i < kNumPlayers; i++) live.sides[i] = SelectSideFor(v, i);
     live.stage = SelectStageFor(v);
     live.stageLocked = v.stageLocked;
-    live.loading = v.seats[0].ready && v.seats[1].ready && !(v.seats[0].preloaded && v.seats[1].preloaded);
+    live.bothReady = v.seats[0].ready && v.seats[1].ready;
+    live.loading = live.bothReady && !(v.seats[0].preloaded && v.seats[1].preloaded);
     live.pingMs = v.linkPingMs;
     live.relayed = v.linkPath == NetView::Path::Relayed;
     live.spectators = v.spectators;
@@ -2192,12 +2240,36 @@ void StepRow(Choices& c, int row, int delta)
 
 // What the player did on the select screen: into the panel's choices (sent as
 // they change, SyncChoices) and the session.
+// What NetSetSelectState was last given (a new lobby starts over: the driver
+// forgets it there).
+struct SentSelect {
+    int screen = -1;
+    uint8_t row = 0;
+    uint32_t hover = 0;
+} g_sentSelect;
+
+// Start on the select screen: the panel, which Start closes again.
+void OpenMenuFromSelect()
+{
+    SetOverlayVisible(true);
+    g_menuFromSelect = true;
+}
+
 void ApplySelectInput(const SelectInput& in, const NetView& v)
 {
     Choices& c = g_choices;
     if (v.spectator) {
-        if (in.menu) SetOverlayVisible(true);
+        if (in.menu) OpenMenuFromSelect();
         return;
+    }
+    // Where this player is, for the other screens (sent when it changes).
+    const uint32_t hover = in.screen != 1 || in.hoverRandom || in.hover < 0 || in.hover >= static_cast<int>(g_tables.charas.size())
+                               ? 0
+                               : PackCode(g_tables.charas[in.hover].c_str());
+    const uint8_t screen = static_cast<uint8_t>(in.screen), row = static_cast<uint8_t>(std::max(0, in.screenRow));
+    if (screen != g_sentSelect.screen || row != g_sentSelect.row || hover != g_sentSelect.hover) {
+        g_sentSelect = {screen, row, hover};
+        Act([screen, row, hover] { NetSetSelectState(screen, row, hover); });
     }
     const bool ready = v.you >= 0 && v.seats[v.you].ready;
     if (!ready) {
@@ -2222,7 +2294,8 @@ void ApplySelectInput(const SelectInput& in, const NetView& v)
     if (v.host && in.lockStage) Act([] { NetSetStageLocked(true); });
     if (v.host && in.unlockStage && !ready) Act([] { NetSetStageLocked(false); });
     if (in.ready && !ready) Act([] { NetSetReady(true); });
-    if (in.menu) SetOverlayVisible(true);
+    if (in.unready && ready) Act([] { NetSetReady(false); });
+    if (in.menu) OpenMenuFromSelect();
 }
 
 void DrawDebug()
@@ -2429,7 +2502,8 @@ void DrawPanel()
     }
     ImGui::EndTabBar();
     ImGui::Spacing();
-    ImGui::TextDisabled("F1 or Back + Start closes this; the game gets no input while it is open.");
+    ImGui::TextDisabled("%s closes this; the game gets no input while it is open.",
+                        g_menuFromSelect ? "Start, F1 or Back + Start" : "F1 or Back + Start");
     ImGui::End();
 }
 
@@ -3097,6 +3171,7 @@ void Draw(IDXGISwapChain* swapChain)
     if (lobby && !lobbyWas) {
         SetSelectData(PreviewSelectData());
         ResetSelectScreen();
+        g_sentSelect = {};
         SetOverlayVisible(false);
         g_toasts.clear(); // the vote's ("Host wants character select"): the screen says it
     }
@@ -3415,6 +3490,7 @@ bool OverlayWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 void OverlayPad(unsigned user, const XINPUT_GAMEPAD& pad)
 {
     if (user >= XUSER_MAX_COUNT) return;
+    g_xinputAt = GetTickCount64();
     g_pads[user].buttons = pad.wButtons;
     g_pads[user].lx = pad.sThumbLX;
     g_pads[user].ly = pad.sThumbLY;

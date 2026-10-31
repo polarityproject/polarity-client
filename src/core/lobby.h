@@ -46,7 +46,7 @@
 namespace sfv::lobby {
 
 constexpr uint32_t kMagic = 0x4E564653; // "SFVN"
-constexpr uint16_t kProtocol = 9; // 7: names up to 96 bytes of UTF-8; 8: the match list for spectators; 9: the stage lock
+constexpr uint16_t kProtocol = 10; // 7: names up to 96 bytes of UTF-8; 8: the match list for spectators; 9: the stage lock
 // Message size limits: under Weyvelength's 1024-byte datagrams.
 constexpr size_t kHashesPerMessage = 100;
 constexpr size_t kRegionsPerRequest = 200;
@@ -103,6 +103,13 @@ struct Seat {
     uint8_t inputDelay = 0; // the player's own input delay (frames)
     uint8_t fps = 0;        // rendered frames per second, as last measured
     Link link = Link::Unknown;
+    // Where the player is on their own select screen, so the others' screens
+    // follow it: 0 not there (or not known), 1 the character grid, 2 their
+    // loadout. On the grid, the character under their cursor (a packed code;
+    // 0 the random tile); in the loadout, the row they are on.
+    uint8_t screen = 0;
+    uint8_t row = 0;
+    uint32_t hover = 0;
 };
 
 // A match of the session a spectator can watch (Matches, oldest first).

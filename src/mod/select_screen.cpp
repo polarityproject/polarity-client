@@ -366,7 +366,9 @@ void DrawBackdrop(ImDrawList* d, int stage, ImU32 tint)
     Image(d, bg, g_v.P(0, 0), g_v.P(1600, 900), ImVec2(0.5f - visible / 2, 0), ImVec2(0.5f + visible / 2, 1), tint);
 }
 
-void DrawLoadout(ImDrawList* d, const SelectFonts& f, bool right, const SelectSide& side, bool interactive, SelectInput* in)
+// `highlight`: the row lit up (this player's, or the row the other is on), -1 none.
+void DrawLoadout(ImDrawList* d, const SelectFonts& f, bool right, const SelectSide& side, int highlight, bool interactive,
+                 SelectInput* in)
 {
     const float x0 = right ? 980.0f : 0.0f, top = 108, rowH = 40, gap = 4, w = 620;
     ImFont* font = f.text;
@@ -376,7 +378,7 @@ void DrawLoadout(ImDrawList* d, const SelectFonts& f, bool right, const SelectSi
         const ImVec2 a = g_v.P(x0, y), b = g_v.P(x0 + w, y + rowH);
         const ImU32 dark = Rgba(8, 9, 11, 235), fade = Rgba(8, 9, 11, 200);
         d->AddRectFilledMultiColor(a, b, right ? fade : dark, right ? dark : fade, right ? dark : fade, right ? fade : dark);
-        if (interactive && g_ui.row == r) {
+        if (r == highlight) {
             const ImVec2 gb = g_v.P(x0 + (right ? w - 280 : 280), y + rowH);
             const ImU32 gold = Rgba(240, 200, 90, 140), none = Rgba(240, 200, 90, 0);
             if (right) d->AddRectFilledMultiColor(ImVec2(gb.x, a.y), b, none, gold, gold, none);
@@ -715,13 +717,28 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             if (Up() || Down()) MoveCursor(1, 0);
             g_ui.onRandom = g_rows[g_ui.cursorRow][g_ui.cursorX].random;
         }
-        // Who each side shows: their pick; this player's under the cursor while
-        // on the grid (none on the random tile).
-        int shown[2];
-        for (int i = 0; i < 2; i++) shown[i] = live.sides[i].present ? live.sides[i].chara : -1;
+        // Each side as that player sees their own screen: on the grid the
+        // character under their cursor (none on the random tile), past it
+        // their pick and loadout. The other player's comes from the session
+        // (screen 0: not known, drawn from the pick as before).
         const int hover = g_ui.onRandom ? -1 : g_rows[g_ui.cursorRow][g_ui.cursorX].chara;
-        if (grid) shown[live.you] = hover;
-        else if (loadout) {
+        bool onGrid[2], onRandom[2], showLoadout[2];
+        int shown[2], lit[2];
+        for (int i = 0; i < 2; i++) {
+            const SelectSide& s = live.sides[i];
+            const bool mine = live.you == i;
+            onGrid[i] = mine ? grid : s.present && !s.ready && s.screen == 1;
+            onRandom[i] = onGrid[i] && (mine ? g_ui.onRandom : s.hoverRandom);
+            shown[i] = !s.present ? -1 : onGrid[i] ? (onRandom[i] ? -1 : mine ? hover : s.hover) : s.chara;
+            showLoadout[i] = s.present && s.chara >= 0 &&
+                             (mine ? !grid : s.ready || s.screen == 2 || (s.screen == 0 && (watching || !grid)));
+            lit[i] = mine ? (loadout ? g_ui.row : -1) : !s.ready && s.screen == 2 ? s.row : -1;
+        }
+        in->screen = grid ? 1 : me ? 2 : 0;
+        in->hover = hover;
+        in->hoverRandom = g_ui.onRandom;
+        in->screenRow = g_ui.row;
+        if (loadout) {
             if (Up()) g_ui.row = (g_ui.row + kSelectRows - 1) % kSelectRows;
             if (Down()) g_ui.row = (g_ui.row + 1) % kSelectRows;
             if (!me->rows[g_ui.row].fixed) {
@@ -737,31 +754,26 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         DrawRender(d, shown[1], true);
         d->AddRectFilledMultiColor(g_v.P(0, 500), g_v.P(1600, 640), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 230), Rgba(6, 8, 11, 230));
         d->AddRectFilled(g_v.P(0, 640), g_v.P(1600, 900), Rgba(6, 8, 11, 200));
-        // The loadouts: both once this player is past the grid; watching, each
-        // side as soon as it has a pick.
+        // The loadouts: each side's once that player is past the grid.
         for (int i = 0; i < 2; i++) {
-            const SelectSide& s = live.sides[i];
-            if (s.present && s.chara >= 0 && (watching || !grid)) DrawLoadout(d, f, i == 1, s, loadout && live.you == i, in);
+            if (showLoadout[i]) DrawLoadout(d, f, i == 1, live.sides[i], lit[i], loadout && live.you == i, in);
         }
         for (int i = 0; i < 2; i++) {
             DrawPlayerLine(d, f, live, i);
             const SelectChara* c = Chara(shown[i]);
-            const std::string name = live.you == i && grid && g_ui.onRandom ? "RANDOM" : c ? Upper(c->name) : "";
+            const std::string name = onRandom[i] ? "RANDOM" : c ? Upper(c->name) : "";
             Text(d, f.name, g_v.L(74), g_v.P(i ? 1482.0f : 118.0f, 496), Rgba(255, 255, 255), name, i ? 1.0f : 0.0f, true);
         }
         Text(d, f.name, g_v.L(42), g_v.P(800, 502), Rgba(255, 255, 255), "CHARACTER SELECT", 0.5f, true);
         Infinity(d, g_v.P(800, 578), g_v.L(56), Rgba(242, 201, 76));
-        // The grid: each side's tag on its pick; this player's on the random
-        // tile while the cursor is there.
+        // The grid: each side's tag on what it shows; on the random tile while
+        // that player's cursor is there.
         for (int r = 0; r < 2; r++) {
             for (int x = 0; x < static_cast<int>(g_rows[r].size()); x++) {
                 const Slot& t = g_rows[r][x];
                 if (r == 1 && t.random) continue; // drawn with the top row
                 bool tag[2];
-                for (int i = 0; i < 2; i++) {
-                    const bool onRandom = live.you == i && grid && g_ui.onRandom;
-                    tag[i] = t.random ? onRandom : t.chara >= 0 && t.chara == shown[i];
-                }
+                for (int i = 0; i < 2; i++) tag[i] = t.random ? onRandom[i] : t.chara >= 0 && t.chara == shown[i];
                 DrawTile(d, t, tag[0], tag[1], f);
                 if (grid && Clicked() && MouseInQuad(t.q)) {
                     // A click moves the cursor; on the tile under it, picks.
@@ -781,8 +793,13 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             prompts.push_back({"button_b", "Back", 1});
         }
         if (ready) {
-            // Locked in until the match starts (Leave is in the menu).
-            StatusPill(d, f, live.loading ? kLoadingText : "Locked in: the match starts once both players are ready");
+            // B says not ready, until both are: then the match is locked in
+            // (Leave is in the menu).
+            if (live.bothReady) StatusPill(d, f, live.loading ? kLoadingText : "Both ready: the match is starting");
+            else {
+                StatusPill(d, f, "Ready: the match starts once both players are");
+                prompts.push_back({"button_b", "Not ready", 1});
+            }
         }
         // A and B.
         const bool a = Confirm();
@@ -798,7 +815,8 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             in->ready = true;
         }
         if (Back()) {
-            if (loadout) g_ui.loadout = false;
+            if (ready) in->unready = !live.bothReady;
+            else if (loadout) g_ui.loadout = false;
             else if (grid && live.host) in->unlockStage = true;
             else in->back = true;
         }
@@ -1124,6 +1142,7 @@ void DrawSelectPreview(const SelectFonts& f)
         if (in.row == 0) g_mock.values[0][1] = 0;
     }
     if (in.ready) g_mock.ready[0] = true;
+    if (in.unready) g_mock.ready[0] = false;
     // Back with nothing to go back to (the stage select, watching) or Start
     // closes the preview.
     if (in.back || in.menu) g_previewOpen = false;

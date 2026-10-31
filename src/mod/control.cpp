@@ -56,6 +56,7 @@ struct Step {
     int user = 0;
     WORD buttons = 0;
     BYTE lt = 0, rt = 0;
+    SHORT lx = 0, ly = 0; // the left stick
     int holdMs = 0;
     int gapMs = 0;
     GameRequest request;
@@ -65,6 +66,7 @@ struct VirtualPad {
     std::atomic<bool> connected{false};
     std::atomic<WORD> buttons{0};
     std::atomic<BYTE> lt{0}, rt{0};
+    std::atomic<SHORT> lx{0}, ly{0};
     std::atomic<DWORD> packet{0};
     std::atomic<bool> scripted{false};
     std::atomic<ULONGLONG> scriptedAt{0}; // scripted state expires: a dead driver must not keep pressing
@@ -171,6 +173,7 @@ std::atomic<int> g_mappedLog{0}; // research (`mappedlog <updates>`): log the ma
 // The two pads' state as the last update left it, before the clearing (game thread only).
 uint8_t g_padsKept[2][kPadStateEnd - kPadStateBegin] = {};
 bool g_padsCleared = false;
+std::atomic<uint32_t> g_gameKeys{0}; // both pads' keys (kPadDown) as the last update made them
 
 uint64_t InputUpdateDetour(void* self, float deltaSeconds)
 {
@@ -190,13 +193,23 @@ uint64_t InputUpdateDetour(void* self, float deltaSeconds)
         const PackedInput local = *reinterpret_cast<const uint32_t*>(pads + kPadBattle);
         if (g_mappedLog > 0) {
             g_mappedLog--;
-            if (local != g_mappedInput) {
-                Log("mappedlog: pad 0 %08X, keys %08X (pad 1 %08X)", local, *reinterpret_cast<const uint32_t*>(pads + kPadDown),
-                    *reinterpret_cast<const uint32_t*>(pads + kPadStride + kPadBattle));
+            static uint32_t keysWere = 0;
+            const uint32_t keys = *reinterpret_cast<const uint32_t*>(pads + kPadDown);
+            if (local != g_mappedInput || keys != keysWere) {
+                Log("mappedlog: pad 0 %08X, keys %08X, stick %08X %08X (pad 1 %08X, keys %08X)", local, keys,
+                    *reinterpret_cast<const uint32_t*>(pads + 0x20), *reinterpret_cast<const uint32_t*>(pads + 0x24),
+                    *reinterpret_cast<const uint32_t*>(pads + kPadStride + kPadBattle),
+                    *reinterpret_cast<const uint32_t*>(pads + kPadStride + kPadDown));
             }
+            keysWere = keys;
         }
         g_mappedInput = local;
-        if (g_isolatePads) {
+        // The pads' keys for the overlay, from any pad the game reads (XInput,
+        // DirectInput, Steam Input): one PC's pad never went through XInput,
+        // and the select screen had no pad there. While the overlay takes the
+        // input, the game's menus behind it see none of it.
+        g_gameKeys = *reinterpret_cast<const uint32_t*>(pads + kPadDown) | *reinterpret_cast<const uint32_t*>(pads + kPadStride + kPadDown);
+        if (g_isolatePads || OverlayTakesInput()) {
             for (int pad = 0; pad < 2; pad++) {
                 std::memcpy(g_padsKept[pad], pads + pad * kPadStride + kPadStateBegin, sizeof(g_padsKept[pad]));
                 std::memset(pads + pad * kPadStride + kPadStateBegin, 0, kPadStateEnd - kPadStateBegin);
@@ -258,6 +271,8 @@ DWORD ComposeState(DWORD user, XINPUT_STATE* state)
     state->Gamepad.wButtons |= pad.buttons.load();
     state->Gamepad.bLeftTrigger = std::max(state->Gamepad.bLeftTrigger, pad.lt.load());
     state->Gamepad.bRightTrigger = std::max(state->Gamepad.bRightTrigger, pad.rt.load());
+    if (pad.lx) state->Gamepad.sThumbLX = pad.lx;
+    if (pad.ly) state->Gamepad.sThumbLY = pad.ly;
     return ERROR_SUCCESS;
 }
 
@@ -1221,6 +1236,10 @@ bool ParseButtons(const std::string& spec, Step& step)
         else if (b == "y") step.buttons |= XINPUT_GAMEPAD_Y;
         else if (b == "lt") step.lt = 255;
         else if (b == "rt") step.rt = 255;
+        else if (b == "sup") step.ly = 32767;
+        else if (b == "sdown") step.ly = -32768;
+        else if (b == "sleft") step.lx = -32768;
+        else if (b == "sright") step.lx = 32767;
         else if (b != "none") return false;
     }
     return true;
@@ -1367,6 +1386,8 @@ void Run(const Step& s)
             pad.buttons = s.buttons;
             pad.lt = s.lt;
             pad.rt = s.rt;
+            pad.lx = s.lx;
+            pad.ly = s.ly;
             pad.packet++;
         }
         // A negative hold leaves them pressed (until the next pad step).
@@ -1377,6 +1398,8 @@ void Run(const Step& s)
             pad.buttons = 0;
             pad.lt = 0;
             pad.rt = 0;
+            pad.lx = 0;
+            pad.ly = 0;
             pad.packet++;
         }
         Sleep(s.gapMs);
@@ -1595,6 +1618,8 @@ HWND RealForegroundWindow() { return g_origForeground ? g_origForeground() : Get
 void SetPadIsolation(bool isolate) { g_isolatePads = isolate; }
 
 PackedInput LocalPadInput(int user) { return user >= 0 && user < XUSER_MAX_COUNT ? g_padInput[user].load() : 0; }
+
+uint32_t GamePadKeys() { return g_gameKeys; }
 
 PackedInput MappedLocalInput(int)
 {

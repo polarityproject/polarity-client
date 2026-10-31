@@ -592,6 +592,9 @@ void TestLobbyMessages()
     state.matchId = 0xFEED;
     state.stage = 12;
     state.stageLocked = true;
+    state.seats[1].screen = 2;
+    state.seats[1].row = 4;
+    state.seats[1].hover = 0x4B454E;
     auto sb = lobby::Encode(state);
     back = lobby::Decode(sb.data(), sb.size());
     CHECK(back && back->time == 123456 && back->echo == 777 && back->echoAge == 12);
@@ -604,6 +607,8 @@ void TestLobbyMessages()
           back->seats[0].link == lobby::Link::Unknown);
     CHECK(back && back->phase == lobby::SessionPhase::PostMatch && back->played == 4 && back->spectators == 2 &&
           back->matchId == 0xFEED && back->stage == 12 && back->stageLocked);
+    CHECK(back && back->seats[1].screen == 2 && back->seats[1].row == 4 && back->seats[1].hover == 0x4B454E &&
+          back->seats[0].screen == 0);
 
     // Spectator inputs: a full batch fits a Weyvelength datagram.
     lobby::Message inputs;
