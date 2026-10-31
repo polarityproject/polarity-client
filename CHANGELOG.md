@@ -7,6 +7,13 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-31
+
+A new character select for sessions: the host picks the stage, both players
+see each other choose live, and characters load once both are ready. Desync
+and crash reports go to the SFVR server to help fix them (Settings, Logs turns
+that off). In a match, hold Start for the menu. Both players need 0.2.0.
+
 ### Added
 
 - Desync reports are sent to the SFVR server, so a desync can be traced from
