@@ -32,6 +32,9 @@ std::map<std::string, TextureView> g_textures;
 std::set<std::string> g_requested;
 std::deque<std::string> g_texQueue; // asked for, not loaded yet (in order)
 bool g_texLoading = false;          // LoadTextures is on its way
+// Since the queue last ran dry: how many loaded, in how long (the log line).
+int g_texBatch = 0;
+double g_texBatchMs = 0, g_texSlowestMs = 0;
 
 // On the game thread: the queue's textures, a few ms' worth a frame. The
 // screen's first frames ask for about 80: all in one frame held the game
@@ -45,6 +48,12 @@ void LoadTextures()
             std::lock_guard lock(g_texMutex);
             if (g_texQueue.empty()) {
                 g_texLoading = false;
+                if (g_texBatch >= 10) {
+                    Log("select screen: %d textures loaded, %.0f ms in all (slowest %.0f ms)", g_texBatch, g_texBatchMs,
+                        g_texSlowestMs);
+                }
+                g_texBatch = 0;
+                g_texBatchMs = g_texSlowestMs = 0;
                 return;
             }
             if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(4)) break;
@@ -53,9 +62,14 @@ void LoadTextures()
         }
         const size_t slash = path.rfind('/');
         const std::string name = path.substr(slash + 1);
+        const auto at = std::chrono::steady_clock::now();
         const TextureView view = ViewOfTexture(FindOrLoadTexture(path + "." + name), true);
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - at).count();
         std::lock_guard lock(g_texMutex);
         g_textures[path] = view;
+        g_texBatch++;
+        g_texBatchMs += ms;
+        g_texSlowestMs = std::max(g_texSlowestMs, ms);
     }
     RunOnGameThread(LoadTextures); // the rest next frame
 }
@@ -65,7 +79,16 @@ const TextureView* Texture(const std::string& path)
     std::lock_guard lock(g_texMutex);
     const auto it = g_textures.find(path);
     if (it != g_textures.end()) return it->second.srv ? &it->second : nullptr;
-    if (!g_requested.insert(path).second) return nullptr;
+    if (!g_requested.insert(path).second) {
+        // Asked for ahead of time (WarmSelectTextures) and drawn now: it
+        // loads next.
+        const auto queued = std::find(g_texQueue.begin(), g_texQueue.end(), path);
+        if (queued != g_texQueue.end() && queued != g_texQueue.begin()) {
+            g_texQueue.erase(queued);
+            g_texQueue.push_front(path);
+        }
+        return nullptr;
+    }
     g_texQueue.push_back(path);
     if (!g_texLoading) {
         g_texLoading = true;
@@ -1053,6 +1076,30 @@ void ResetSelectScreen()
 {
     std::lock_guard lock(g_dataMutex);
     g_ui = Ui{};
+}
+
+void WarmSelectTextures()
+{
+    std::lock_guard lock(g_dataMutex);
+    if (g_data.charas.empty()) return;
+    if (g_gridFor != &g_data) BuildGrid(g_data);
+    // The stage select: its frame, icons and prompts, then each stage's icon.
+    for (const char* name : {"StagePreviewWindowShadow", "StagePreviewWindow", "StageSelectCursor", "StageSelect_Random"}) {
+        Texture(MenuTex(name));
+    }
+    for (const char* icon : {"button_a", "button_b", "button_start"}) Texture(PadTex(icon));
+    for (const SelectStage& s : g_data.stages) Texture(StageTex(s.code, "StageSelectIcon"));
+    // The character grid's tiles, then each stage's backdrop, then each
+    // character's picture (what browsing the grid shows).
+    for (const auto& row : g_rows) {
+        for (const Slot& t : row) {
+            if (t.chara >= 0 && t.chara < static_cast<int>(g_data.charas.size())) {
+                Texture(CharaTex(g_data.charas[t.chara].code, t.right ? "CharaSelectIconRight" : "CharaSelectIconLeft"));
+            }
+        }
+    }
+    for (const SelectStage& s : g_data.stages) Texture(StageTex(s.code, "StageSelectBG"));
+    for (const SelectChara& c : g_data.charas) Texture(CharaTex(c.code, "PartCharacter"));
 }
 
 void DrawSelectLive(const SelectFonts& f, const SelectLive& live, float alpha, bool takeInput, SelectInput* input)

@@ -1886,7 +1886,7 @@ void DrawSession(const NetView& v)
         row("Frames ahead", buf);
         std::snprintf(buf, sizeof(buf), "%u (longest %u frames)", v.rollbacks, v.longestRollback);
         row("Rollbacks", buf);
-        std::snprintf(buf, sizeof(buf), "%d %s, prediction %d", v.inputDelay, v.inputDelay == 1 ? "frame" : "frames", v.predictionWindow);
+        std::snprintf(buf, sizeof(buf), "%d %s", v.inputDelay, v.inputDelay == 1 ? "frame" : "frames");
         row("Delay", buf);
         ImGui::EndTable();
     }
@@ -2566,8 +2566,6 @@ void AddToast(const std::string& text, ImVec4 color = ImVec4(1, 1, 1, 1), int se
 
 bool OnMenuScreen();
 
-bool OnMenuScreen();
-
 // Desync reports: once ever, at the main menu, that they are sent (and where
 // that is turned off); then each match's, as it is sent.
 void ToastReports()
@@ -3082,6 +3080,17 @@ void Draw(IDXGISwapChain* swapChain)
     }
     else if (OnMenuScreen()) {
         LoadTables();
+    }
+    // On the way to a session (the panel open at the menus, hosting,
+    // joining): the select screen's textures start loading, so nothing pops
+    // in when it opens. About 170, 40 ms each on the game thread: a joiner
+    // types the code meanwhile. Once a run: they stay loaded.
+    static bool warmed = false;
+    const bool onTheWay = phase != NetView::Phase::Idle ? phase != NetView::Phase::Ended : g_visible && OnMenuScreen();
+    if (!warmed && onTheWay && g_tables.loaded) {
+        warmed = true;
+        SetSelectData(PreviewSelectData());
+        WarmSelectTextures();
     }
     // Reaching a session's lobby sets this player's input delay to the
     // suggestion for the ping between them (once a session; it can be

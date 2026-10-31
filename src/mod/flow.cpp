@@ -2317,7 +2317,17 @@ void* LoadAsset(const std::string& className, const std::string& path)
         Log("flow: StaticLoadObject not where expected");
         return nullptr;
     }
-    const void* cls = ue4::FindObject(className, "Class");
+    // The class, found once: finding it walks every object (about 70 ms, as
+    // long as the load itself takes for a small texture).
+    static std::mutex classMutex;
+    static std::map<std::string, const void*> classes;
+    const void* cls = nullptr;
+    {
+        std::lock_guard lock(classMutex);
+        const void*& known = classes[className];
+        if (!known) known = ue4::FindObject(className, "Class");
+        cls = known;
+    }
     if (!cls) return nullptr;
     using LoadFn = void* (*)(const void* cls, void* outer, const wchar_t* name, const wchar_t* file, uint32_t flags, void* sandbox, bool reconcile);
     return reinterpret_cast<LoadFn>(g_base + kStaticLoadObject)(cls, nullptr, WideOf(path).c_str(), nullptr, 0, nullptr, true);

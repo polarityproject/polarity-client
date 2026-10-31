@@ -49,8 +49,10 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   either game. Pads the game reads past XInput (DirectInput, Steam Input)
   work on the screen and in the panel too, and the game's menus behind the
   screen no longer react to them. The character lists are read once the game
-  reaches its menus, and the screen's pictures load a few at a time, so the
-  screen is there and answers at once when someone joins. Lobby protocol 10
+  reaches its menus, and the screen's pictures load in the background on the
+  way to a session (with the panel open at the menus, while hosting or
+  joining; twice as fast as before), so the screen is complete and answers at
+  once when it opens. Lobby protocol 10
   (the stage confirmation, each player's place on the screen): both sides
   need this version.
 
@@ -59,6 +61,7 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 - The input delay in the panel and the status line is the match's, as the
   fights play it: between rounds, in intros and win poses the games run in
   lockstep with a higher delay of their own, which is no longer shown there.
+  The panel shows the delay alone (the prediction window is always 8).
 - The rollback number on the other player's bar (RBF) is the longest
   rollback in the last second, not the longest of the whole session: one
   long rollback early on kept it high for the rest of the match.

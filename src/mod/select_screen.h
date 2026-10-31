@@ -110,6 +110,11 @@ struct SelectInput {
 void SetSelectData(SelectData data);
 // Starts the screen over (a new lobby): the grid cursor on the player's pick.
 void ResetSelectScreen();
+// Asks for every texture the screen draws (with the lists SetSelectData
+// gave), the stage select's first: called while hosting or joining, so
+// nothing pops in when the screen opens. They load in the background, a few
+// ms' worth a frame.
+void WarmSelectTextures();
 // Render thread, in an ImGui frame: the screen at `alpha` (0..1, fades),
 // on the background draw list; with `takeInput` it reads the pads, keys and
 // mouse and fills `input`.
