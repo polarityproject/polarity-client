@@ -7,6 +7,14 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-31
+
+A new character select for sessions: the host picks the stage, both players
+see each other choose live, and characters load once both are ready. Desync
+and crash reports go to the SFVR server to help fix them (Settings, Logs turns
+that off). In a match, hold Start for the menu. Pads work on the Steam Deck.
+Both players need 0.2.1.
+
 ### Fixed
 
 - No pad input on the Steam Deck (Proton) with SFVR installed: the
