@@ -98,7 +98,7 @@ function RemoteDeploy {
   $dll = Join-Path $PSScriptRoot '..\build\Release\sfv_rollback.dll'
   RemotePut $dll 'sfv_rollback.dll' | Out-Null
   RemotePut $dll 'sfv-rollback\build\Release\sfv_rollback.dll' | Out-Null
-  foreach ($s in 'cmd.ps1', 'up.ps1', 'lib.ps1', 'logtail.ps1', 'win.ps1', 'weyve-server.ps1') {
+  foreach ($s in 'agent.ps1', 'cmd.ps1', 'up.ps1', 'lib.ps1', 'logtail.ps1', 'win.ps1', 'weyve-server.ps1') {
     RemotePut (Join-Path $PSScriptRoot $s) "sfv-rollback\scripts\$s" | Out-Null
   }
 }
