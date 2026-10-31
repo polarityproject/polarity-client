@@ -1,5 +1,6 @@
 #include "mod/control.h"
 #include "mod/battle_driver.h"
+#include "mod/crash_report.h"
 #include "mod/files.h"
 #include "mod/pacing.h"
 #include "mod/report_upload.h"
@@ -203,7 +204,9 @@ uint64_t InputUpdateDetour(void* self, float deltaSeconds)
             }
             keysWere = keys;
         }
-        g_mappedInput = local;
+        // While the overlay takes the input, the match gets none of it either
+        // (an XInput pad is neutral by then; a pad read past XInput is not).
+        g_mappedInput = OverlayTakesInput() ? 0 : local;
         // The pads' keys for the overlay, from any pad the game reads (XInput,
         // DirectInput, Steam Input): one PC's pad never went through XInput,
         // and the select screen had no pad there. While the overlay takes the
@@ -1602,7 +1605,9 @@ LRESULT CALLBACK ActiveWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     case WM_CLOSE:
     case WM_ENDSESSION:
         // The game is closing: tell the others now (Bye) rather than let
-        // them wait for the silence timeout.
+        // them wait for the silence timeout. A fault from here on is the
+        // game's exit, not a crash to report.
+        OnQuitting("window closed");
         NetLeave();
         break;
     default:

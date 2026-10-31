@@ -38,9 +38,12 @@ std::atomic<bool> g_writing{false};
 std::atomic<int> g_dumps{0};
 std::atomic<ULONGLONG> g_lastFault{0};
 std::atomic<bool> g_exited{false};
+std::atomic<bool> g_quitting{false}; // OnQuitting
 
 using TerminateProcessFn = BOOL(WINAPI*)(HANDLE, UINT);
 TerminateProcessFn g_origTerminate = nullptr;
+using ExitFn = void(__cdecl*)(int);
+ExitFn g_origExit = nullptr;
 
 std::wstring RunningPath() { return g_dir + L"\\running" + g_suffix + L".txt"; }
 std::wstring PendingPath(const wchar_t* ext) { return g_dir + L"\\pending" + g_suffix + ext; }
@@ -199,7 +202,7 @@ bool Fatal(DWORD code) { return CodeName(code) != nullptr; }
 
 LONG CALLBACK Handler(EXCEPTION_POINTERS* e)
 {
-    if (t_guarded > 0 || !Fatal(e->ExceptionRecord->ExceptionCode)) return EXCEPTION_CONTINUE_SEARCH;
+    if (t_guarded > 0 || g_quitting || !Fatal(e->ExceptionRecord->ExceptionCode)) return EXCEPTION_CONTINUE_SEARCH;
     g_lastFault = GetTickCount64();
     if (g_dumps >= kMaxDumps || g_writing.exchange(true)) return EXCEPTION_CONTINUE_SEARCH;
     g_dumps++;
@@ -322,7 +325,7 @@ void OnProcessExit(const char* how)
     (void)how;
     if (g_dir.empty() || g_exited.exchange(true)) return;
     const ULONGLONG fault = g_lastFault;
-    if (fault && GetTickCount64() - fault < kFaultBeforeExitMs) return; // the engine ends it for that fault
+    if (!g_quitting && fault && GetTickCount64() - fault < kFaultBeforeExitMs) return; // the engine ends it for that fault
     DeleteFileW(RunningPath().c_str());
     DeleteFileW(PendingPath(L".dmp").c_str());
     DeleteFileW(PendingPath(L".txt").c_str());
@@ -334,14 +337,34 @@ BOOL WINAPI TerminateDetour(HANDLE process, UINT code)
     if (process == GetCurrentProcess() || GetProcessId(process) == GetCurrentProcessId()) OnProcessExit("terminate");
     return g_origTerminate(process, code);
 }
+
+void __cdecl ExitDetour(int code)
+{
+    OnQuitting("exit");
+    g_origExit(code);
+}
 } // namespace
+
+void OnQuitting(const char* how)
+{
+    if (!g_quitting.exchange(true) && !g_dir.empty()) Log("crash report: the game is quitting (%s): faults from here are not reported", how);
+}
 
 void HookProcessEnd()
 {
-    if (MH_CreateHookApi(L"kernel32", "TerminateProcess", reinterpret_cast<LPVOID>(&TerminateDetour),
-                         reinterpret_cast<LPVOID*>(&g_origTerminate)) != MH_OK ||
-        MH_EnableHook(MH_ALL_HOOKS) != MH_OK) {
+    LPVOID target = nullptr;
+    if (MH_CreateHookApiEx(L"kernel32", "TerminateProcess", reinterpret_cast<LPVOID>(&TerminateDetour),
+                           reinterpret_cast<LPVOID*>(&g_origTerminate), &target) != MH_OK ||
+        MH_EnableHook(target) != MH_OK) {
         Log("crash report: cannot hook TerminateProcess (an engine exit then counts as a bad end)");
+    }
+    // The game's runtime (Visual C++ 2013): its exit runs the static
+    // destructors, where the game faulted now and then.
+    LPVOID exitTarget = nullptr;
+    if (MH_CreateHookApiEx(L"msvcr120", "exit", reinterpret_cast<LPVOID>(&ExitDetour), reinterpret_cast<LPVOID*>(&g_origExit),
+                           &exitTarget) != MH_OK ||
+        MH_EnableHook(exitTarget) != MH_OK) {
+        Log("crash report: cannot hook the runtime's exit (a fault while quitting may be reported)");
     }
 }
 

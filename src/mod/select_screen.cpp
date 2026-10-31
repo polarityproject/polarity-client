@@ -33,6 +33,7 @@ std::mutex g_texMutex;
 std::map<std::string, TextureView> g_textures;
 std::set<std::string> g_requested;
 std::deque<std::string> g_texQueue; // asked for, not loaded yet (in order)
+std::set<std::string> g_texDrawn;   // asked for again by drawing: moved to the queue's front once
 bool g_texLoading = false;          // LoadTextures is on its way
 // A texture loaded without its view yet (the render thread had not made its
 // resource): asked for again a little later, a few times. Once failed it
@@ -122,11 +123,13 @@ const TextureView* Texture(const std::string& path)
     if (it != g_textures.end()) return it->second.srv ? &it->second : nullptr;
     if (!g_requested.insert(path).second) {
         // Asked for ahead of time (WarmSelectTextures) and drawn now: it
-        // loads next.
-        const auto queued = std::find(g_texQueue.begin(), g_texQueue.end(), path);
-        if (queued != g_texQueue.end() && queued != g_texQueue.begin()) {
-            g_texQueue.erase(queued);
-            g_texQueue.push_front(path);
+        // loads next (looked for once: drawing asks every frame).
+        if (g_texDrawn.insert(path).second) {
+            const auto queued = std::find(g_texQueue.begin(), g_texQueue.end(), path);
+            if (queued != g_texQueue.end() && queued != g_texQueue.begin()) {
+                g_texQueue.erase(queued);
+                g_texQueue.push_front(path);
+            }
         }
         return nullptr;
     }

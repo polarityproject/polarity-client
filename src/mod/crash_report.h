@@ -36,8 +36,13 @@ void OnProcessExit(const char* how);
 // Before a hot reload: a clean end, and the handler and writer go.
 void RemoveCrashHandler();
 // Hooks TerminateProcess (the engine ends the game with it, also after a
-// crash): needs MinHook initialised.
+// crash) and the C runtime's exit (the game quitting): needs MinHook
+// initialised.
 void HookProcessEnd();
+// The game is quitting (its window closed, or the runtime's exit): a fault
+// from here on is not reported, and the run ends well. The game itself
+// faulted in its exit now and then (quit while a character loads).
+void OnQuitting(const char* how);
 
 // Around code that faults on purpose and catches it (guarded reads; calls,
 // not an object: a function with __try cannot hold one): the fault handler
