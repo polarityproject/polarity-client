@@ -1214,6 +1214,34 @@ bool PickValid(Choices& c)
     return true;
 }
 
+// The other player's pick in this session, as last seen (render thread,
+// each frame): their color on the same character and costume is not offered
+// here (two of the same look alike).
+bool g_otherHasPick = false;
+PlayerSetup g_otherPick;
+
+// The color the other player wears on this pick's character and costume, or -1.
+int TakenColor(const Choices& c)
+{
+    if (!g_otherHasPick || !g_tables.loaded || c.chara < 0 || c.chara >= static_cast<int>(g_tables.charas.size()) || IsEleven(c.chara)) {
+        return -1;
+    }
+    if (g_otherPick.character != PackCode(g_tables.charas[c.chara].c_str()) || g_otherPick.costume != c.costume) return -1;
+    return g_otherPick.color;
+}
+
+// After a change of character or costume: off the other player's color, to
+// the next one free (this player made the change, so this player moves).
+void AvoidTakenColor(Choices& c)
+{
+    const int taken = TakenColor(c);
+    if (taken < 0 || c.color != taken) return;
+    const std::vector<int>& ids = g_tables.colors[c.chara][std::max(0, CostumeSlot(c.chara, c.costume))];
+    const int n = static_cast<int>(ids.size());
+    const int at = static_cast<int>(std::find(ids.begin(), ids.end(), c.color) - ids.begin());
+    if (n > 1 && at < n) c.color = ids[(at + 1) % n];
+}
+
 // Another character: the one left keeps its loadout for later, the new one
 // gets its own as last saved or left (else the first costume and color, V-Skill
 // and V-Trigger I).
@@ -1237,6 +1265,8 @@ void SwitchCharacter(Choices& c, int chara)
     c.vtrigger = saved.vtrigger + 1;
     c.variant = saved.variation;
     c.comment = saved.comment;
+    PickValid(c);
+    AvoidTakenColor(c);
 }
 
 void PickCharacter(Choices& c, const char* label)
@@ -1260,7 +1290,11 @@ void PickCostume(Choices& c, const char* label)
     const std::vector<std::string>& names = g_tables.costumeNames[c.chara];
     if (ImGui::BeginCombo(label, names[CostumeSlot(c.chara, c.costume)].c_str())) {
         for (size_t k = 0; k < costumes.size(); k++) {
-            if (ImGui::Selectable(names[k].c_str(), costumes[k] == c.costume)) c.costume = costumes[k];
+            if (ImGui::Selectable(names[k].c_str(), costumes[k] == c.costume)) {
+                c.costume = costumes[k];
+                PickValid(c);
+                AvoidTakenColor(c);
+            }
         }
         ImGui::EndCombo();
     }
@@ -1271,9 +1305,12 @@ void PickCostume(Choices& c, const char* label)
 void PickColor(Choices& c, const char* label)
 {
     const std::vector<int>& colors = g_tables.colors[c.chara][CostumeSlot(c.chara, c.costume)];
+    const int taken = TakenColor(c);
     if (ImGui::BeginCombo(label, ColorLabel(c.color).c_str())) {
         for (int id : colors) {
-            if (ImGui::Selectable(ColorLabel(id).c_str(), id == c.color)) c.color = id;
+            // The other player's color on this costume: shown, not offered.
+            const std::string text = id == taken ? ColorLabel(id) + " (the other player's)" : ColorLabel(id);
+            if (ImGui::Selectable(text.c_str(), id == c.color, id == taken ? ImGuiSelectableFlags_Disabled : 0)) c.color = id;
         }
         ImGui::EndCombo();
     }
@@ -2207,12 +2244,22 @@ void StepRow(Choices& c, int row, int delta)
         const std::vector<int>& list = g_tables.costumes[c.chara];
         c.costume = list[cycle(std::max(0, CostumeSlot(c.chara, c.costume)), static_cast<int>(list.size()))];
         c.variant = 0;
+        PickValid(c);
+        AvoidTakenColor(c);
         break;
     }
     case 1: {
+        // The other player's color on this costume is stepped over; at the
+        // list's end that way, the step does not happen.
         const std::vector<int>& ids = g_tables.colors[c.chara][std::max(0, CostumeSlot(c.chara, c.costume))];
+        const int n = static_cast<int>(ids.size());
         const int at = static_cast<int>(std::find(ids.begin(), ids.end(), c.color) - ids.begin());
-        c.color = ids[cycle(at < static_cast<int>(ids.size()) ? at : 0, static_cast<int>(ids.size()))];
+        int next = cycle(at < n ? at : 0, n);
+        if (ids[next] == TakenColor(c)) {
+            if (delta > 0 ? next == n - 1 : next == 0) break;
+            next = cycle(next, n);
+        }
+        c.color = ids[next];
         break;
     }
     case 2: {
@@ -3068,6 +3115,12 @@ void Draw(IDXGISwapChain* swapChain)
     // A frame every time, also with nothing to show: it consumes the input
     // events queued above, which would otherwise pile up.
     const NetView view = NetViewNow();
+    {
+        const int other = view.you == 0 ? 1 : 0;
+        const bool player = !view.spectator && view.you >= 0 && view.phase != NetView::Phase::Idle && view.phase != NetView::Phase::Ended;
+        g_otherHasPick = player && view.seats[other].present && view.seats[other].hasPick;
+        g_otherPick = view.seats[other].pick;
+    }
     const NetView::Phase phase = view.phase;
     g_inMatch = phase == NetView::Phase::Running;
     // A session's windows pick from the game's lists, also when the panel

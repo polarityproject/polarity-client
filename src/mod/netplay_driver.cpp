@@ -1510,6 +1510,24 @@ private:
             // bronze one), so the two can be told apart. Not a choice in the
             // loadout: Eleven's color is fixed.
             if (IsElevenPick(s.players[0]) && IsElevenPick(s.players[1])) s.players[1].color = kElevenMirrorColor;
+            else if (s.players[0].character == s.players[1].character && s.players[0].costume == s.players[1].costume &&
+                     s.players[0].color == s.players[1].color) {
+                // Both on one look (the select screen keeps them apart, but
+                // they may have moved onto it at the same moment): P2 takes
+                // the costume's next color.
+                const int index = CharaIndex(UnpackCode(s.players[1].character));
+                const auto specs = index >= 0 ? CharaCostumeSpecs(index) : std::map<int, CostumeSpec>{};
+                const auto spec = specs.find(s.players[1].costume);
+                std::vector<int> ids = spec != specs.end() ? spec->second.colors : std::vector<int>{};
+                if (ids.empty()) {
+                    for (int k = 0; index >= 0 && k < CostumeColorCount(index, s.players[1].costume); k++) ids.push_back(k);
+                }
+                const auto at = std::find(ids.begin(), ids.end(), s.players[1].color);
+                if (ids.size() > 1 && at != ids.end()) {
+                    s.players[1].color = static_cast<uint8_t>(ids[(at - ids.begin() + 1) % ids.size()]);
+                    Log("netplay: both players on the same color: P2 plays color %u", s.players[1].color + 1u);
+                }
+            }
             const uint16_t rule = StageRule();
             s.stage = rule == lobby::kAnyStage ? kKeepStage : rule;
             if (rule == lobby::kRandomStage) {

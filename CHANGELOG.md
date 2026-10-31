@@ -28,6 +28,11 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   Eleven). The other player sees ELEVEN. Each time it is picked it rolls again.
   When both players are Eleven, Player 2 wears the silver model's second
   palette (bronze), so the two can be told apart.
+- Two players on the same character and costume cannot take the same color:
+  stepping through colors skips the other player's (at the list's end, the
+  step does not happen), the panel's list shows it greyed out, and a change
+  of character or costume that lands on it moves on to the next. Should both
+  still match when the match starts, Player 2 plays the next color.
 - V-Comment: a row in the loadout with Auto and each character's own
   comments, by number with the chosen one's text under it. Both players see
   each other's.
