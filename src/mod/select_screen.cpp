@@ -69,6 +69,13 @@ struct State {
     int row = 0;               // the loadout row
     int value[6] = {0, 0, 0, 0, 0, 2}; // costume, color, V-Skill, V-Trigger, V-Comment, delay
     bool randomOn = false;
+    // Watching: the other player's loadout, both sides' ready, and the clock
+    // the mock players act on.
+    int value2[6] = {1, 0, 1, 0, 0, 3};
+    bool p1Ready = false, p2Ready = false;
+    int shownPhase = -1;
+    float inPhase = 0, nextAct = 0;
+    uint32_t roll = 1;
 } g_s;
 
 constexpr int kRows = 6;
@@ -479,7 +486,7 @@ void DrawGrid(ImDrawList* d, const SelectFonts& f)
             const bool p1 = t.random ? cursor || (g_s.randomOn && g_s.phase != Phase::Grid) : t.chara == g_s.p1 && !g_s.randomOn;
             const bool p2 = !t.random && t.chara == g_s.p2;
             DrawTile(d, t, p1, p2, f);
-            if (g_s.phase == Phase::Grid && Clicked() && MouseInQuad(t.q)) {
+            if (!g_data.spectator && g_s.phase == Phase::Grid && Clicked() && MouseInQuad(t.q)) {
                 g_s.cursorRow = r;
                 g_s.cursorX = x;
                 if (t.random) g_s.randomOn = true;
@@ -497,19 +504,28 @@ void DrawNames(ImDrawList* d, const SelectFonts& f)
 {
     const float y = 470;
     const ImU32 white = Rgba(244, 241, 232), dim = Rgba(168, 162, 147);
-    // You: name (you), connection type.
-    std::string you = g_data.you.empty() ? "YOU" : g_data.you;
+    // You (or, watching, the host): name, connection type.
+    std::string you = g_data.spectator ? "MOCK HOST" : g_data.you.empty() ? "YOU" : g_data.you;
     for (char& ch : you) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
     Text(d, f.text, g_v.L(16), g_v.P(120, y + 4), white, you);
     float x = 120 + f.text->CalcTextSizeA(g_v.L(16), FLT_MAX, 0, you.c_str()).x / g_v.s + 10;
-    Text(d, f.text, g_v.L(16), g_v.P(x, y + 4), dim, "(you)");
-    x += f.text->CalcTextSizeA(g_v.L(16), FLT_MAX, 0, "(you)").x / g_v.s + 10;
+    if (!g_data.spectator) {
+        Text(d, f.text, g_v.L(16), g_v.P(x, y + 4), dim, "(you)");
+        x += f.text->CalcTextSizeA(g_v.L(16), FLT_MAX, 0, "(you)").x / g_v.s + 10;
+    }
     Pill(d, g_v.P(x, y), g_v.P(x + 34, y + 26));
     IconWired(d, g_v.P(x + 17, y + 13), g_v.s, Rgba(217, 212, 198));
     // The other player: one pill (connection type | link path | ping), name.
+    // A spectator knows each player's connection type, not their link.
     const std::string them = "MOCK OPPONENT";
     const float nameW = f.text->CalcTextSizeA(g_v.L(16), FLT_MAX, 0, them.c_str()).x / g_v.s;
     Text(d, f.text, g_v.L(16), g_v.P(1480, y + 4), white, them, 1);
+    if (g_data.spectator) {
+        const float px = 1480 - nameW - 12 - 34;
+        Pill(d, g_v.P(px, y), g_v.P(px + 34, y + 26));
+        IconWifi(d, g_v.P(px + 17, y + 12), g_v.s, Rgba(217, 212, 198));
+    }
+    else {
     const char* ping = "38 ms \xC2\xB1" "3";
     const float pingW = f.text->CalcTextSizeA(g_v.L(15), FLT_MAX, 0, ping).x / g_v.s;
     const float pw = 22 + 1 + 22 + 1 + 12 + pingW + 20;
@@ -520,6 +536,7 @@ void DrawNames(ImDrawList* d, const SelectFonts& f)
     IconLink(d, g_v.P(px + 48, y + 13), g_v.s, Rgba(217, 212, 198));
     d->AddLine(g_v.P(px + 63, y + 6), g_v.P(px + 63, y + 20), Rgba(93, 90, 82), g_v.L(1));
     Text(d, f.text, g_v.L(15), g_v.P(px + 72, y + 5), Rgba(127, 216, 139), ping);
+    }
     // The characters' names.
     auto upper = [](std::string v) {
         for (char& ch : v) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
@@ -543,8 +560,8 @@ void DrawRender(ImDrawList* d, int chara, bool right)
 void DrawStageSelect(ImDrawList* d, const SelectFonts& f)
 {
     const int count = static_cast<int>(g_data.stages.size());
-    if (Left()) g_s.stage = (g_s.stage + count) % (count + 1);
-    if (Right()) g_s.stage = (g_s.stage + 1) % (count + 1);
+    if (!g_data.spectator && Left()) g_s.stage = (g_s.stage + count) % (count + 1);
+    if (!g_data.spectator && Right()) g_s.stage = (g_s.stage + 1) % (count + 1);
     Text(d, f.title, g_v.L(40), g_v.P(800, 84), Rgba(255, 255, 255), "STAGE SELECT", 0.5f, true);
     const float bx = 40, by = 136, bw = 1520, bh = 423;
     if (const TextureView* shadow = Texture(MenuTex("StagePreviewWindowShadow"))) Image(d, shadow, g_v.P(bx, by), g_v.P(bx + bw, by + bh));
@@ -590,9 +607,10 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f)
         if (on) {
             if (const TextureView* cursor = Texture(MenuTex("StageSelectCursor"))) Image(d, cursor, ImVec2(a.x - g_v.L(1), a.y - g_v.L(1)), ImVec2(b.x + g_v.L(1), b.y + g_v.L(1)));
         }
-        if (Clicked() && MouseIn(g_v.P(x, sy), g_v.P(x + sw, sy + sh))) g_s.stage = i;
+        if (!g_data.spectator && Clicked() && MouseIn(g_v.P(x, sy), g_v.P(x + sw, sy + sh))) g_s.stage = i;
     }
-    Text(d, f.text, g_v.L(16), g_v.P(800, sy + sh + 18), Rgba(189, 184, 170), "You host: you pick the stage, then both players pick characters", 0.5f);
+    Text(d, f.text, g_v.L(16), g_v.P(800, sy + sh + 18), Rgba(189, 184, 170),
+         g_data.spectator ? "The host is picking the stage" : "You host: you pick the stage, then both players pick characters", 0.5f);
 }
 
 void MoveCursor(int dr, int dx)
@@ -676,9 +694,9 @@ void DrawChrome(ImDrawList* d, const SelectFonts& f)
     struct Prompt {
         const char* icon;
         const char* label;
-    } prompts[] = {{"button_a", confirm}, {"button_b", "Back"}};
+    } prompts[] = {{"button_a", confirm}, {"button_b", g_data.spectator ? "Stop watching" : "Back"}};
     float right = 1572;
-    for (int i = 1; i >= 0; i--) {
+    for (int i = 1; i >= (g_data.spectator ? 1 : 0); i--) {
         const float w = f.text->CalcTextSizeA(g_v.L(17), FLT_MAX, 0, prompts[i].label).x / g_v.s + 50;
         const ImVec2 a = g_v.P(right - w, 14), b = g_v.P(right, 56);
         d->AddRectFilled(a, b, Rgba(0, 0, 0, 150), g_v.L(21));
@@ -686,9 +704,77 @@ void DrawChrome(ImDrawList* d, const SelectFonts& f)
         Text(d, f.text, g_v.L(17), g_v.P(right - w + 42, 24), Rgba(244, 241, 232), prompts[i].label);
         if (Clicked() && MouseIn(a, b)) {
             if (i == 0) Advance();
+            else if (g_data.spectator) g_open = false;
             else Retreat();
         }
         right -= w + 18;
+    }
+    if (g_data.spectator) {
+        // Watching: the spectator's own link to the host, and who else watches.
+        const char* text = "WATCHING";
+        const char* detail = "120 ms to the host  \xC2\xB7  3 watching";
+        const float tw = f.text->CalcTextSizeA(g_v.L(16), FLT_MAX, 0, text).x / g_v.s;
+        const float dw = f.text->CalcTextSizeA(g_v.L(15), FLT_MAX, 0, detail).x / g_v.s;
+        const float w = 24 + tw + 18 + 30 + dw + 24;
+        const float bx = 800 - w / 2;
+        Pill(d, g_v.P(bx, 18), g_v.P(bx + w, 50));
+        Text(d, f.text, g_v.L(16), g_v.P(bx + 24, 25), Rgba(242, 201, 76), text);
+        const float ix = bx + 24 + tw + 18;
+        IconLink(d, g_v.P(ix + 10, 34), g_v.s, Rgba(217, 212, 198));
+        Text(d, f.text, g_v.L(15), g_v.P(ix + 28, 26), Rgba(217, 212, 198), detail);
+    }
+}
+
+// Watching: the mock players act on their own, on a clock that starts over
+// with each phase. The host browses the stages; both players move between
+// picks; each changes a few loadout rows, then readies up (the other player
+// first).
+void SpectatorTick(float dt)
+{
+    if (g_s.shownPhase != static_cast<int>(g_s.phase)) {
+        g_s.shownPhase = static_cast<int>(g_s.phase);
+        g_s.inPhase = 0;
+        g_s.nextAct = 0.6f;
+        g_s.p1Ready = g_s.p2Ready = g_s.phase == Phase::Ready;
+    }
+    g_s.inPhase += dt;
+    if (g_s.phase == Phase::Ready || g_s.inPhase < g_s.nextAct) return;
+    auto next = [] {
+        g_s.roll = g_s.roll * 1664525u + 1013904223u;
+        return g_s.roll >> 8;
+    };
+    const int stages = static_cast<int>(g_data.stages.size());
+    switch (g_s.phase) {
+    case Phase::Stage:
+        g_s.stage = (g_s.stage + 1) % (stages + 1);
+        g_s.nextAct += 0.55f;
+        break;
+    case Phase::Grid: {
+        // Either player moves to another fighter in the grid.
+        std::vector<int> picks;
+        for (const auto& row : g_rows) {
+            for (const Slot& t : row) {
+                if (t.chara >= 0) picks.push_back(t.chara);
+            }
+        }
+        if (!picks.empty()) (next() & 1 ? g_s.p1 : g_s.p2) = picks[next() % picks.size()];
+        g_s.nextAct += 0.8f;
+        break;
+    }
+    case Phase::Loadout: {
+        if (g_s.inPhase > 3.0f) g_s.p2Ready = true;
+        if (g_s.inPhase > 6.0f) g_s.p1Ready = true;
+        const bool left = !g_s.p1Ready && (g_s.p2Ready || next() & 1);
+        if (left || !g_s.p2Ready) {
+            int* v = left ? g_s.value : g_s.value2;
+            const int row = static_cast<int>(next() % 5);
+            v[row] = (v[row] + 1) % RowCount(Chara(left ? g_s.p1 : g_s.p2), row, v[0]);
+            if (row == 0) v[1] = 0;
+        }
+        g_s.nextAct += 0.7f;
+        break;
+    }
+    case Phase::Ready: break;
     }
 }
 
@@ -729,8 +815,12 @@ void DrawSelectPreview(const SelectFonts& f)
     d->AddRectFilled(ImVec2(0, 0), screen, Rgba(6, 8, 11));
     d->PushClipRect(g_v.P(0, 0), g_v.P(1600, 900), true);
 
-    // Keys: A on, B back; the phase's own moves.
-    if (Back()) Retreat();
+    // Keys: A on, B back; the phase's own moves. Watching: B leaves.
+    if (g_data.spectator) {
+        if (Back()) g_open = false;
+        SpectatorTick(ImGui::GetIO().DeltaTime);
+    }
+    else if (Back()) Retreat();
     else if (Confirm()) Advance();
     else if (g_s.phase == Phase::Grid) {
         if (Left()) MoveCursor(0, -1);
@@ -763,7 +853,11 @@ void DrawSelectPreview(const SelectFonts& f)
         DrawRender(d, g_s.p2, true);
         d->AddRectFilledMultiColor(g_v.P(0, 500), g_v.P(1600, 640), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 230), Rgba(6, 8, 11, 230));
         d->AddRectFilled(g_v.P(0, 640), g_v.P(1600, 900), Rgba(6, 8, 11, 240));
-        if (g_s.phase != Phase::Grid) {
+        if (g_s.phase != Phase::Grid && g_data.spectator) {
+            DrawLoadout(d, f, false, g_s.p1, g_s.value, false, g_s.p1Ready);
+            DrawLoadout(d, f, true, g_s.p2, g_s.value2, false, g_s.p2Ready);
+        }
+        else if (g_s.phase != Phase::Grid) {
             DrawLoadout(d, f, false, g_s.p1, g_s.value, true, g_s.phase == Phase::Ready);
             DrawLoadout(d, f, true, g_s.p2, kMockP2Values, false, true);
         }

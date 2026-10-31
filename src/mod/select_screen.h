@@ -32,6 +32,9 @@ struct SelectData {
     std::vector<SelectChara> charas;
     std::vector<SelectStage> stages;
     std::string you; // the local player's name
+    // Watching instead of playing: both players are mock ones acting on their
+    // own (the host's stage, both picks and loadouts, ready), nothing to pick.
+    bool spectator = false;
 };
 
 struct SelectFonts {

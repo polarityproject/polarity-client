@@ -200,7 +200,7 @@ ImFont* g_fontSmall = nullptr;   // the player bars' details
 ImFont* g_fontTiny = nullptr;    // ... their frame rate and rollback numbers
 ImFont* g_fontHuge = nullptr;    // the select screen's character names
 ImFont* g_fontBody = nullptr;    // the default font
-std::atomic<int> g_selectRequest{-1}; // RequestSelectPreview: the phase to open at
+std::atomic<int> g_selectRequest{-1}; // RequestSelectPreview: the phase to open at (+4: watching)
 // Characters beyond Latin-1 that names have shown (NoteText): the fonts get
 // them from Windows' fonts on the next build, so names in any script draw.
 std::vector<ImWchar> g_extraChars;
@@ -2068,6 +2068,13 @@ void DrawDebug()
         OpenSelectPreview(PreviewSelectData());
         SetOverlayVisible(false);
     }
+    ImGui::SameLine();
+    if (ImGui::Button("... as a spectator")) {
+        SelectData data = PreviewSelectData();
+        data.spectator = true;
+        OpenSelectPreview(std::move(data));
+        SetOverlayVisible(false);
+    }
     ImGui::EndDisabled();
     ImGui::SeparatorText("Log");
     ImGui::TextColored(kDim, "instance %d, %.0f fps", StatusInstance(), ImGui::GetIO().Framerate);
@@ -2829,7 +2836,9 @@ void Draw(IDXGISwapChain* swapChain)
     static bool previewWas = false;
     if (const int wanted = g_selectRequest.load(); wanted >= 0 && g_tables.loaded) {
         g_selectRequest = -1;
-        OpenSelectPreview(PreviewSelectData(), wanted);
+        SelectData data = PreviewSelectData();
+        data.spectator = wanted >= 4;
+        OpenSelectPreview(std::move(data), wanted % 4);
         SetOverlayVisible(false);
     }
     const bool preview = SelectPreviewOpen();
@@ -3039,7 +3048,7 @@ void ShutdownOverlay()
     ReleaseImGui();
 }
 
-void RequestSelectPreview(int phase) { g_selectRequest = phase; }
+void RequestSelectPreview(int phase, bool spectator) { g_selectRequest = phase + (spectator ? 4 : 0); }
 
 void SetOverlayVisible(bool visible)
 {

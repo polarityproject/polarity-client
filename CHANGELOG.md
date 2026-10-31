@@ -19,7 +19,10 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   the game draws its own, with the game's art, real characters, costumes,
   colors, V-Skills, V-Triggers and V-Comments, and a mock opponent. Stage
   select first, then the character grid in the game's arrangement, each side's
-  loadout and ready; pad, keyboard or mouse. Not used by sessions yet.
+  loadout and ready; pad, keyboard or mouse. "... as a spectator" shows the
+  same screens watching: two mock players pick and ready up on their own, a
+  WATCHING banner gives the spectator's link to the host, and Back leaves.
+  Not used by sessions yet.
 
 ### Changed
 

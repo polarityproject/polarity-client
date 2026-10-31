@@ -701,14 +701,14 @@ void RunNetCommand(const std::string& line)
         WatchRegionOfNextBattle(name, offset, bytes);
     }
     else if (cmd == "overlay") {
-        // overlay show|hide|toggle|preview <words>|select [stage|grid|loadout|ready]
+        // overlay show|hide|toggle|preview <words>|select [stage|grid|loadout|ready] [spectate]
         std::string what;
         ss >> what;
         if (what == "show") SetOverlayVisible(true);
         else if (what == "select") {
-            std::string phase;
-            ss >> phase;
-            RequestSelectPreview(phase == "grid" ? 1 : phase == "loadout" ? 2 : phase == "ready" ? 3 : 0);
+            std::string phase, watching;
+            ss >> phase >> watching;
+            RequestSelectPreview(phase == "grid" ? 1 : phase == "loadout" ? 2 : phase == "ready" ? 3 : 0, watching == "spectate");
         }
         else if (what == "hide") SetOverlayVisible(false);
         else if (what == "preview") {

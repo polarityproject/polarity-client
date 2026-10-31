@@ -45,8 +45,9 @@ void ToggleOverlay();
 // end, off turns every preview off.
 void PreviewOverlay(const std::string& words);
 // Opens the select screen preview (as the Debug tab's button) at a phase:
-// 0 stage select, 1 the grid, 2 the loadout, 3 ready.
-void RequestSelectPreview(int phase);
+// 0 stage select, 1 the grid, 2 the loadout, 3 ready; `spectator`: as one
+// watching.
+void RequestSelectPreview(int phase, bool spectator = false);
 // Vsync: off presents every frame at once (sync interval 0) instead of
 // waiting for the display's refresh, whatever the game asked for.
 void SetVsync(bool on);
