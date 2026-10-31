@@ -106,8 +106,15 @@ struct Slot {
 };
 std::vector<Slot> g_rows[2]; // left to right
 
-constexpr float kC = 800, kY0 = 606, kTH = 112, kY1 = 726, kSlant = 14, kTopW = 50, kPitch = 58, kHalf = 48;
+// The tiles lean as the portraits do: CharaSelectIconLeft/Right (116x144) hold
+// a parallelogram 62 px wide over rows 2..142 leaning 12 px every 62 rows.
+constexpr float kArtSlope = 12.0f / 62.0f;
+constexpr float kC = 800, kY0 = 606, kTH = 112, kY1 = 726, kSlant = kTH * kArtSlope, kTopW = 52, kPitch = 60, kHalf = 58;
 constexpr float kK = kSlant / kTH;
+// The portrait's corners in the texture (pixels): top left, top right, bottom
+// right, bottom left; the right-hand version leans the other way.
+constexpr ImVec2 kArtLeft[4] = {{6.45f, 2}, {68.45f, 2}, {95.55f, 142}, {33.55f, 142}};
+constexpr ImVec2 kArtRight[4] = {{47.55f, 2}, {109.55f, 2}, {82.45f, 142}, {20.45f, 142}};
 
 void BuildGrid()
 {
@@ -440,13 +447,10 @@ void DrawTile(ImDrawList* d, const Slot& t, bool p1, bool p2, const SelectFonts&
     if (t.chara >= 0) {
         const std::string& code = Chara(t.chara).code;
         if (const TextureView* tex = Texture(CharaTex(code, t.right ? "CharaSelectIconRight" : "CharaSelectIconLeft"))) {
-            // The 116x144 art at the inner height, centered across.
-            const float top = iq[0].y, h = iq[3].y - iq[0].y;
-            const float drawnW = h * 116.0f / 144.0f;
-            const float cx = (std::min(iq[0].x, iq[3].x) + std::max(iq[1].x, iq[2].x)) / 2;
-            auto uv = [&](ImVec2 p) { return ImVec2((p.x - (cx - drawnW / 2)) / drawnW, (p.y - top) / h); };
-            d->AddImageQuad(Id(tex), iq[0], iq[1], iq[2], iq[3], uv(iq[0]), uv(iq[1]), uv(iq[2]), uv(iq[3]),
-                            on ? IM_COL32_WHITE : Rgba(205, 205, 205));
+            // The portrait corner to corner: same angle as the frame, no gaps.
+            const ImVec2* art = t.right ? kArtRight : kArtLeft;
+            auto uv = [&](int i) { return ImVec2(art[i].x / 116.0f, art[i].y / 144.0f); };
+            d->AddImageQuad(Id(tex), iq[0], iq[1], iq[2], iq[3], uv(0), uv(1), uv(2), uv(3), on ? IM_COL32_WHITE : Rgba(205, 205, 205));
         }
     }
     // The bottom fade.
@@ -455,12 +459,12 @@ void DrawTile(ImDrawList* d, const Slot& t, bool p1, bool p2, const SelectFonts&
                        ImVec2(iq[1].x + (iq[2].x - iq[1].x) * mid, iq[1].y + (iq[2].y - iq[1].y) * mid), iq[2], iq[3]};
     GradientQuad(d, lower, Rgba(0, 0, 0, 0), Rgba(0, 0, 0, on ? 40 : 150));
     if (p1) {
-        const ImVec2 at(iq[0].x + g_v.L(t.right ? 13.0f : 2.0f), iq[0].y + g_v.L(2));
+        const ImVec2 at(iq[0].x + g_v.L(t.right ? kSlant - 6 : 2.0f), iq[0].y + g_v.L(2));
         d->AddRectFilled(at, ImVec2(at.x + g_v.L(20), at.y + g_v.L(15)), Rgba(47, 111, 228));
         Text(d, f.text, g_v.L(12), ImVec2(at.x + g_v.L(10), at.y + g_v.L(1)), Rgba(255, 255, 255), "1P", 0.5f);
     }
     if (p2) {
-        const ImVec2 at(iq[2].x - g_v.L(t.right ? 13.0f : 2.0f), iq[2].y - g_v.L(2));
+        const ImVec2 at(iq[2].x - g_v.L(t.right ? kSlant - 6 : 2.0f), iq[2].y - g_v.L(2));
         d->AddRectFilled(ImVec2(at.x - g_v.L(20), at.y - g_v.L(15)), at, Rgba(210, 59, 49));
         Text(d, f.text, g_v.L(12), ImVec2(at.x - g_v.L(10), at.y - g_v.L(14)), Rgba(255, 255, 255), "2P", 0.5f);
     }
