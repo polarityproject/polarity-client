@@ -7,6 +7,20 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+
+- Eleven: pick it like any character and you play a random fighter in the
+  silver model, with its V-Skill and V-Trigger at random (as the game's own
+  Eleven). The other player sees ELEVEN. Each time it is picked it rolls again.
+- V-Comment: a row in the loadout with Auto and each character's own
+  comments, by number with the chosen one's text under it. Both players see
+  each other's.
+- The panel's Debug tab has a Character select preview: the select screen as
+  the game draws its own, with the game's art, real characters, costumes,
+  colors, V-Skills, V-Triggers and V-Comments, and a mock opponent. Stage
+  select first, then the character grid in the game's arrangement, each side's
+  loadout and ready; pad, keyboard or mouse. Not used by sessions yet.
+
 ### Changed
 
 - The rollback number on the other player's bar (RBF) is the longest

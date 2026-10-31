@@ -44,6 +44,9 @@ void ToggleOverlay();
 // toasts adds sample toasts, fade plays the player bars' fade at a match's
 // end, off turns every preview off.
 void PreviewOverlay(const std::string& words);
+// Opens the select screen preview (as the Debug tab's button) at a phase:
+// 0 stage select, 1 the grid, 2 the loadout, 3 ready.
+void RequestSelectPreview(int phase);
 // Vsync: off presents every frame at once (sync interval 0) instead of
 // waiting for the display's refresh, whatever the game asked for.
 void SetVsync(bool on);

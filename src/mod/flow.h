@@ -128,6 +128,25 @@ std::string StageName(int index);
 // A character's V-Skill (or V-Trigger) names in the game's order ("" for one
 // without a name; empty when unknown).
 std::vector<std::string> SkillNames(const std::string& charaCode, bool vtrigger);
+// A character's V-Comments as the menus list them after Auto (the battle
+// setup's comment n is the n-th; empty when unknown). Loads the character's
+// subtitle asset (DA_<code>_Subtitle) on the game thread when needed and
+// waits for it, so not from the game thread.
+std::vector<std::string> VCommentNames(const std::string& charaCode);
+// The colour preview's two swatch colours (0xAARRGGBB) per colour of a costume:
+// its colours, then its EX colours (ids 100..). Empty without a preview.
+struct CostumeSwatches {
+    std::vector<std::pair<uint32_t, uint32_t>> colors, ex;
+};
+CostumeSwatches CostumeSwatchColors(int index, int costume);
+// The index of character `index`'s costume in SkelMesh folder `folder` ("0C",
+// the silver model Eleven wears), or -1.
+int CostumeInFolder(int index, const std::string& folder);
+// Index of a character code in the character table, or -1.
+int CharaIndex(const std::string& code);
+// Eleven's stand-in: the `roll`-th (modulo) of the fighters that have a 0C
+// costume, and that costume's index. False when there is none.
+bool ElevenStandIn(uint32_t roll, std::string* code, int* costume);
 // Index of a stage code, or -1.
 int StageIndex(const std::string& code);
 constexpr uint16_t kKeepStage = 0xFFFF; // MatchSetup::stage: whatever the game has prepared

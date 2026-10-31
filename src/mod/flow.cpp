@@ -16,6 +16,7 @@
 #include <chrono>
 #include <functional>
 #include <map>
+#include <memory>
 #include <cstring>
 #include <deque>
 #include <mutex>
@@ -2047,6 +2048,7 @@ namespace {
 // DA_RYU_CostumeColorPreview_01.
 std::mutex g_previewMutex;
 std::map<std::string, int> g_previewColors;
+std::map<std::string, const uint8_t*> g_previewAssets; // the same assets, by name
 bool g_previewsRead = false;
 
 int PreviewColors(const std::string& name)
@@ -2058,6 +2060,7 @@ int PreviewColors(const std::string& name)
             const auto* o = static_cast<const uint8_t*>(object);
             if (ue4::ObjectName(ue4::ClassOf(object)) == "KWCharaCostumeColorPreviewDataAsset" && IsReadable(o + 0x28, 16)) {
                 g_previewColors[ue4::ObjectName(object)] = *reinterpret_cast<const int32_t*>(o + 0x30);
+                g_previewAssets[ue4::ObjectName(object)] = o;
             }
         });
         if (g_previewColors.empty()) Log("flow: no costume colour previews loaded");
@@ -2082,6 +2085,75 @@ int CostumeColorCount(int index, int costume)
     // The 30-37 costumes name a preview the game does not have; their colour
     // clusters (KWColorCustomizeClusterDataAsset::GetMaxColorNum) hold 2.
     return colors > 0 ? colors : 2;
+}
+
+CostumeSwatches CostumeSwatchColors(int index, int costume)
+{
+    // KWCharaCostumeColorPreviewDataAsset: PreviewColorList +0x28 and
+    // PreviewSpecialColorList +0x38, TArrays of {FColor Color1, Color2}
+    // (BGRA bytes, so 0xAARRGGBB read as one word).
+    CostumeSwatches out;
+    int count = 0;
+    const uint8_t* entries = CharaEntries(&count);
+    if (!entries || index < 0 || index >= count) return out;
+    const uint8_t* e = entries + index * kCharaEntrySize;
+    const auto* keys = *reinterpret_cast<const uint8_t* const*>(e + 0x70);
+    if (!keys || costume < 0 || costume >= *reinterpret_cast<const int32_t*>(e + 0x78)) return out;
+    const std::string key = FStringText(keys + costume * 16);
+    if (key.size() != 5) return out;
+    PreviewColors(""); // reads the previews on the first call
+    std::lock_guard lock(g_previewMutex);
+    const auto it = g_previewAssets.find("DA_" + key.substr(0, 3) + "_CostumeColorPreview_" + key.substr(3));
+    if (it == g_previewAssets.end()) return out;
+    auto read = [](const uint8_t* array, std::vector<std::pair<uint32_t, uint32_t>>& to) {
+        if (!IsReadable(array, 16)) return;
+        const auto* data = *reinterpret_cast<const uint32_t* const*>(array);
+        const int n = *reinterpret_cast<const int32_t*>(array + 8);
+        if (!data || n <= 0 || n > 64 || !IsReadable(data, n * 8)) return;
+        for (int k = 0; k < n; k++) to.emplace_back(data[k * 2] | 0xFF000000u, data[k * 2 + 1] | 0xFF000000u);
+    };
+    read(it->second + 0x28, out.colors);
+    read(it->second + 0x38, out.ex);
+    return out;
+}
+
+int CostumeInFolder(int index, const std::string& folder)
+{
+    int count = 0;
+    const uint8_t* entries = CharaEntries(&count);
+    if (!entries || index < 0 || index >= count) return -1;
+    const uint8_t* e = entries + index * kCharaEntrySize;
+    const auto* paths = *reinterpret_cast<const uint8_t* const*>(e + kCharaCostumes);
+    const int n = *reinterpret_cast<const int32_t*>(e + kCharaCostumes + 8);
+    const std::string part = "/SkelMesh/" + folder + "/";
+    for (int k = 0; paths && k < n && k < 64; k++) {
+        if (FStringText(paths + k * 16).find(part) != std::string::npos) return k;
+    }
+    return -1;
+}
+
+bool ElevenStandIn(uint32_t roll, std::string* code, int* costume)
+{
+    std::vector<std::pair<std::string, int>> fighters;
+    for (int i = 0; i < CharaCount(); i++) {
+        // Fighters only (random select and dummies have a handful of costumes).
+        if (CharaCostumeCount(i) < 10 || CharaCode(i).rfind('X', 0) == 0) continue;
+        const int k = CostumeInFolder(i, "0C");
+        if (k >= 0) fighters.emplace_back(CharaCode(i), k);
+    }
+    if (fighters.empty()) return false;
+    const auto& f = fighters[roll % fighters.size()];
+    *code = f.first;
+    *costume = f.second;
+    return true;
+}
+
+int CharaIndex(const std::string& code)
+{
+    for (int i = 0; i < CharaCount(); i++) {
+        if (CharaCode(i) == code) return i;
+    }
+    return -1;
 }
 
 namespace {
@@ -2410,6 +2482,37 @@ std::vector<std::string> SkillNames(const std::string& charaCode, bool vtrigger)
         const int n = *reinterpret_cast<const int32_t*>(e + 0x18);
         for (int k = 0; texts && k < n && k < 8; k++) names.push_back(FTextText(texts + k * 0x28));
         break;
+    }
+    return names;
+}
+
+std::vector<std::string> VCommentNames(const std::string& charaCode)
+{
+    // KWSubtitleDataAsset DA_<code>_Subtitle: FixedVCommentLocalizeIds at
+    // +0x48, a TArray<FText> (0x28 bytes each). Only the character's own
+    // battle data loads it, so load it here when the menus have not.
+    const std::string name = "DA_" + charaCode + "_Subtitle";
+    const auto* asset = static_cast<const uint8_t*>(CachedObject(name, "KWSubtitleDataAsset"));
+    if (!asset) {
+        auto done = std::make_shared<std::atomic<bool>>(false);
+        const std::string path = "/Game/Chara/" + charaCode + "/DataAsset/" + name + "." + name;
+        RunOnGameThread([path, done] {
+            LoadAsset("KWSubtitleDataAsset", path);
+            *done = true;
+        });
+        for (int i = 0; i < 200 && !*done; i++) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        asset = static_cast<const uint8_t*>(CachedObject(name, "KWSubtitleDataAsset"));
+    }
+    std::vector<std::string> names;
+    if (!asset || !IsReadable(asset + 0x48, 16)) return names;
+    const uint8_t* texts = *reinterpret_cast<const uint8_t* const*>(asset + 0x48);
+    const int n = *reinterpret_cast<const int32_t*>(asset + 0x50);
+    for (int k = 0; texts && k < n && k < 32; k++) {
+        // Some are written over two lines for the versus screen.
+        std::string text = FTextText(texts + k * 0x28);
+        std::replace(text.begin(), text.end(), '\n', ' ');
+        text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+        names.push_back(std::move(text));
     }
     return names;
 }

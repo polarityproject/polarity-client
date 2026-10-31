@@ -701,10 +701,15 @@ void RunNetCommand(const std::string& line)
         WatchRegionOfNextBattle(name, offset, bytes);
     }
     else if (cmd == "overlay") {
-        // overlay show|hide|toggle|preview <words>
+        // overlay show|hide|toggle|preview <words>|select [stage|grid|loadout|ready]
         std::string what;
         ss >> what;
         if (what == "show") SetOverlayVisible(true);
+        else if (what == "select") {
+            std::string phase;
+            ss >> phase;
+            RequestSelectPreview(phase == "grid" ? 1 : phase == "loadout" ? 2 : phase == "ready" ? 3 : 0);
+        }
         else if (what == "hide") SetOverlayVisible(false);
         else if (what == "preview") {
             std::string rest;
@@ -1091,6 +1096,20 @@ void RunNetCommand(const std::string& line)
         o.pick.comment = static_cast<uint8_t>(comment);
         o.pick.vskill = static_cast<uint8_t>(vskill - 1);
         o.pick.vtrigger = static_cast<uint8_t>(vtrigger - 1);
+        if (code == "ELV") {
+            // Eleven: a random fighter in silver, V-Skill and V-Trigger at random.
+            const uint32_t roll = static_cast<uint32_t>(GetTickCount64());
+            std::string as;
+            int silver = 0;
+            if (ElevenStandIn(roll, &as, &silver)) {
+                o.pick = PlayerSetup{};
+                o.pick.character = PackCode(as.c_str());
+                o.pick.costume = static_cast<uint16_t>(silver);
+                o.pick.vskill = static_cast<uint8_t>((roll >> 8) & 1);
+                o.pick.vtrigger = static_cast<uint8_t>((roll >> 9) & 1);
+                Log("netplay: Eleven plays %s in costume %d", as.c_str(), silver);
+            }
+        }
         NetSetPick(o.hasPick, o.pick);
     }
     else if (cmd == "stage") {

@@ -9,6 +9,7 @@
 #include "mod/lifecycle.h"
 #include "mod/log.h"
 #include "mod/netplay_driver.h"
+#include "mod/select_screen.h"
 #include "mod/status.h"
 #include "mod/updater.h"
 #include "mod/weyve_service.h"
@@ -31,6 +32,7 @@
 #include <cwchar>
 #include <functional>
 #include <map>
+#include <random>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -196,6 +198,9 @@ ImFont* g_fontHeading = nullptr; // bold italic, as the menus' entries
 ImFont* g_fontBig = nullptr;     // match codes
 ImFont* g_fontSmall = nullptr;   // the player bars' details
 ImFont* g_fontTiny = nullptr;    // ... their frame rate and rollback numbers
+ImFont* g_fontHuge = nullptr;    // the select screen's character names
+ImFont* g_fontBody = nullptr;    // the default font
+std::atomic<int> g_selectRequest{-1}; // RequestSelectPreview: the phase to open at
 // Characters beyond Latin-1 that names have shown (NoteText): the fonts get
 // them from Windows' fonts on the next build, so names in any script draw.
 std::vector<ImWchar> g_extraChars;
@@ -403,6 +408,9 @@ void BuildFonts(float scale)
     if (!g_fontSmall) g_fontSmall = body;
     g_fontTiny = add("bahnschrift.ttf", 12);
     if (!g_fontTiny) g_fontTiny = g_fontSmall;
+    g_fontHuge = add("seguibl.ttf", 64); // Segoe UI Black, as heavy as the game's names
+    if (!g_fontHuge) g_fontHuge = g_fontBig;
+    g_fontBody = body;
     io.FontDefault = body;
     io.FontGlobalScale = 1.0f;
     ApplyTheme(scale);
@@ -648,6 +656,9 @@ struct Tables {
     std::vector<std::vector<std::string>> settingLabels; // their names ("The Grid Alternative")
     std::vector<std::vector<std::string>> vskills;   // per character, the game's names
     std::vector<std::vector<std::string>> vtriggers;
+    std::vector<std::vector<std::string>> vcomments; // the V-Comments after Auto
+    std::vector<int> elevenCostume;                   // the 0C costume Eleven wears in each fighter (-1: none)
+    std::vector<std::vector<CostumeSwatches>> swatches; // per costume (as listed): the colors' swatches
     bool loaded = false;
 };
 Tables g_tables;
@@ -683,6 +694,11 @@ Tables ReadTables()
             colors.push_back(std::move(ids));
         }
         if (costumes.empty()) continue;
+        std::vector<CostumeSwatches> swatches;
+        for (int k : costumes) swatches.push_back(CostumeSwatchColors(i, k));
+        t.swatches.push_back(std::move(swatches));
+        t.vcomments.push_back(VCommentNames(CharaCode(i)));
+        t.elevenCostume.push_back(CostumeInFolder(i, "0C"));
         t.charas.push_back(CharaCode(i));
         t.charaIndex.push_back(i);
         t.labels.push_back(name);
@@ -715,6 +731,25 @@ Tables ReadTables()
     reorder(t.colors);
     reorder(t.vskills);
     reorder(t.vtriggers);
+    reorder(t.vcomments);
+    reorder(t.elevenCostume);
+    reorder(t.swatches);
+    // Eleven: random select in the silver model (each fighter's 0C costume).
+    // The player's own game picks the fighter (ChosenOptions), so the pick
+    // others see is an ordinary one; labels show it as Eleven.
+    if (const int eleven = CharaIndex("ELV"); eleven >= 0) {
+        t.charas.push_back("ELV");
+        t.charaIndex.push_back(eleven);
+        t.labels.push_back("ELEVEN");
+        t.costumes.push_back({0});
+        t.costumeNames.push_back({"Silver"});
+        t.colors.push_back({{0}});
+        t.vskills.emplace_back();
+        t.vtriggers.emplace_back();
+        t.vcomments.emplace_back();
+        t.elevenCostume.push_back(-1);
+        t.swatches.push_back({CostumeSwatches{}});
+    }
     for (int i = 0; i < StageCount() && !Stopping(); i++) {
         if (!IsMenuStage(i)) continue;
         t.stages.push_back(StageCode(i));
@@ -800,6 +835,8 @@ struct Choices {
     int vskill = 1;   // from 1
     int vtrigger = 1; // from 1
     int variant = 0;  // the costume's variant (dress state), 0: none
+    int comment = 0;  // V-Comment: 0 Auto, n the n-th
+    int elevenAs = -1; // Eleven: the fighter it copies (a table index), rolled when picked
     int stage = 1;    // 1 random, 2.. a stage
     int setting = 0;  // 0 the stage's default, n its n-th setting
     int delay = 2;
@@ -809,6 +846,11 @@ struct Choices {
     bool showFps = false;
 };
 Choices g_choices;
+bool IsEleven(int chara);
+void RollEleven(Choices& c);
+PlayerSetup ElevenPick(Choices& c);
+bool IsElevenSetup(const PlayerSetup& p);
+std::string CommentText(const std::string& code, int comment);
 // Each character's loadout as last saved with it, and as left in the panel
 // this run (by code): picking a character again brings its loadout back.
 std::map<std::string, PlayerSetup> g_loadouts;
@@ -830,6 +872,7 @@ void InitChoices()
         g_choices.vskill = o.pick.vskill + 1;
         g_choices.vtrigger = o.pick.vtrigger + 1;
         g_choices.variant = o.pick.variation;
+        g_choices.comment = o.pick.comment;
     }
     // A saved stage is a stage select stage or one of its settings.
     g_choices.stage = 1;
@@ -862,7 +905,8 @@ NetplayOptions ChosenOptions()
         o.pick.vskill = static_cast<uint8_t>(c.vskill - 1);
         o.pick.vtrigger = static_cast<uint8_t>(c.vtrigger - 1);
         o.pick.variation = static_cast<uint8_t>(c.variant);
-        o.pick.comment = 0;
+        o.pick.comment = static_cast<uint8_t>(c.comment);
+        if (IsEleven(c.chara)) o.pick = ElevenPick(g_choices); // may roll the copied fighter
     }
     o.stage = kKeepStage;
     o.stageCode = "random"; // the host picks one per match
@@ -1074,6 +1118,45 @@ int VariantsOf(int chara, int costume)
 // The pick's parts, one widget each, for the lobby's rows and the side
 // windows; `label` as ImGui's ("##..." hides it). PickValid first: it keeps
 // the pick to what the game offers and says whether the lists are there.
+bool IsEleven(int chara) { return chara >= 0 && chara < static_cast<int>(g_tables.charas.size()) && g_tables.charas[chara] == "ELV"; }
+
+// Eleven copies a fighter picked at random each time it is picked, with that
+// fighter's V-Skill and V-Trigger at random too.
+void RollEleven(Choices& c)
+{
+    static std::mt19937 rng{std::random_device{}()};
+    std::vector<int> fighters;
+    for (int i = 0; i < static_cast<int>(g_tables.charas.size()); i++) {
+        if (g_tables.elevenCostume[i] >= 0) fighters.push_back(i);
+    }
+    c.elevenAs = fighters.empty() ? -1 : fighters[rng() % fighters.size()];
+    c.vskill = 1 + static_cast<int>(rng() % 2);
+    c.vtrigger = 1 + static_cast<int>(rng() % 2);
+}
+
+// The pick Eleven plays: the copied fighter in its 0C costume.
+PlayerSetup ElevenPick(Choices& c)
+{
+    if (c.elevenAs < 0 || c.elevenAs >= static_cast<int>(g_tables.charas.size())) RollEleven(c);
+    PlayerSetup p;
+    if (c.elevenAs < 0) return p;
+    p.character = PackCode(g_tables.charas[c.elevenAs].c_str());
+    p.costume = static_cast<uint16_t>(g_tables.elevenCostume[c.elevenAs]);
+    p.vskill = static_cast<uint8_t>(c.vskill - 1);
+    p.vtrigger = static_cast<uint8_t>(c.vtrigger - 1);
+    return p;
+}
+
+// A pick in a fighter's 0C costume: Eleven's.
+bool IsElevenSetup(const PlayerSetup& p)
+{
+    const std::string code = UnpackCode(p.character);
+    const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), code);
+    if (it == g_tables.charas.end()) return false;
+    const int costume = g_tables.elevenCostume[it - g_tables.charas.begin()];
+    return costume >= 0 && p.costume == costume;
+}
+
 bool PickValid(Choices& c)
 {
     if (!g_tables.loaded || !c.initialised) return false;
@@ -1096,7 +1179,9 @@ void SwitchCharacter(Choices& c, int chara)
     left.vskill = static_cast<uint8_t>(c.vskill - 1);
     left.vtrigger = static_cast<uint8_t>(c.vtrigger - 1);
     left.variation = static_cast<uint8_t>(c.variant);
+    left.comment = static_cast<uint8_t>(c.comment);
     c.chara = chara;
+    if (IsEleven(chara)) RollEleven(c);
     const auto it = g_loadouts.find(g_tables.charas[chara]);
     const PlayerSetup saved = it != g_loadouts.end() ? it->second : PlayerSetup{};
     c.costume = saved.costume;
@@ -1104,6 +1189,7 @@ void SwitchCharacter(Choices& c, int chara)
     c.vskill = saved.vskill + 1;
     c.vtrigger = saved.vtrigger + 1;
     c.variant = saved.variation;
+    c.comment = saved.comment;
 }
 
 void PickCharacter(Choices& c, const char* label)
@@ -1179,6 +1265,29 @@ bool PickVariant(Choices& c, const char* label)
 void PickVSkill(Choices& c, const char* label) { SkillStepper(label, g_tables.vskills[c.chara], &c.vskill); }
 void PickVTrigger(Choices& c, const char* label) { SkillStepper(label, g_tables.vtriggers[c.chara], &c.vtrigger); }
 
+// Auto, then the character's own comments by number (the text rarely fits),
+// with the chosen one's text under it.
+void PickComment(Choices& c, const char* label)
+{
+    const std::vector<std::string>& names = g_tables.vcomments[c.chara];
+    c.comment = std::clamp(c.comment, 0, static_cast<int>(names.size()));
+    Stepper(label, &c.comment, 0, static_cast<int>(names.size()),
+            [&](int n) { return n == 0 ? std::string("Auto") : "Comment " + std::to_string(n); });
+    if (c.comment > 0) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(kDim, "\"%s\"", names[c.comment - 1].c_str());
+        ImGui::PopTextWrapPos();
+    }
+}
+
+std::string CommentText(const std::string& code, int comment)
+{
+    if (comment == 0) return "Auto";
+    const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), code);
+    if (it == g_tables.charas.end()) return "Comment " + std::to_string(comment);
+    return "Comment " + std::to_string(comment);
+}
+
 // This player's pick as a column of labelled widgets (the side windows).
 void DrawPick(Choices& c)
 {
@@ -1187,11 +1296,16 @@ void DrawPick(Choices& c)
         return;
     }
     PickCharacter(c, "Character");
+    if (IsEleven(c.chara)) {
+        ImGui::TextColored(kDim, "A random fighter in silver, its V-Skill and V-Trigger at random.");
+        return;
+    }
     PickCostume(c, "Costume");
     PickColor(c, "Color");
     PickVariant(c, "Variant");
     PickVSkill(c, "V-Skill");
     PickVTrigger(c, "V-Trigger");
+    PickComment(c, "V-Comment");
 }
 
 // The host's stage for the next matches: random, or a stage select stage
@@ -1546,18 +1660,28 @@ void DrawLobby(const NetView& v)
             }
         };
         Choices& c = g_choices;
-        row("Character", [&] { PickCharacter(c, "##character"); }, [](const lobby::Seat&, const std::string& code) { return ShortCharaName(code); });
-        row("Costume", [&] { PickCostume(c, "##costume"); }, [](const lobby::Seat& s, const std::string& code) { return CostumeLabel(code, s.pick.costume); });
-        row("Color", [&] { PickColor(c, "##color"); }, [](const lobby::Seat& s, const std::string&) { return ColorLabel(s.pick.color); });
+        const bool eleven = IsEleven(c.chara);
+        auto random = [] {
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextColored(kDim, "random");
+        };
+        row("Character", [&] { PickCharacter(c, "##character"); },
+            [](const lobby::Seat& s, const std::string& code) { return IsElevenSetup(s.pick) ? std::string("ELEVEN") : ShortCharaName(code); });
+        row("Costume", [&] { if (eleven) random(); else PickCostume(c, "##costume"); },
+            [](const lobby::Seat& s, const std::string& code) { return IsElevenSetup(s.pick) ? std::string("Silver") : CostumeLabel(code, s.pick.costume); });
+        row("Color", [&] { if (eleven) random(); else PickColor(c, "##color"); }, [](const lobby::Seat& s, const std::string&) { return ColorLabel(s.pick.color); });
         row("Variant", [&] {
-                if (!PickVariant(c, "##variant")) {
+                if (eleven) random();
+                else if (!PickVariant(c, "##variant")) {
                     ImGui::AlignTextToFramePadding();
                     ImGui::TextColored(kDim, "none");
                 }
             },
             [](const lobby::Seat& s, const std::string& code) { return VariantLabel(code, s.pick.variation); });
-        row("V-Skill", [&] { PickVSkill(c, "##vskill"); }, [](const lobby::Seat& s, const std::string& code) { return SkillText(code, false, s.pick.vskill); });
-        row("V-Trigger", [&] { PickVTrigger(c, "##vtrigger"); }, [](const lobby::Seat& s, const std::string& code) { return SkillText(code, true, s.pick.vtrigger); });
+        row("V-Skill", [&] { if (eleven) random(); else PickVSkill(c, "##vskill"); }, [](const lobby::Seat& s, const std::string& code) { return SkillText(code, false, s.pick.vskill); });
+        row("V-Trigger", [&] { if (eleven) random(); else PickVTrigger(c, "##vtrigger"); }, [](const lobby::Seat& s, const std::string& code) { return SkillText(code, true, s.pick.vtrigger); });
+        row("V-Comment", [&] { if (eleven) random(); else PickComment(c, "##comment"); },
+            [](const lobby::Seat& s, const std::string& code) { return CommentText(code, s.pick.comment); });
         row("Delay", [&] { DrawDelay(c, "##delay"); }, [](const lobby::Seat& s, const std::string&) { return FramesText(s.inputDelay); });
         // Ready, for both.
         ImGui::TableNextRow();
@@ -1864,6 +1988,32 @@ void DrawPreviewControls()
 }
 
 // Testing aids: simulated network, mashing, quick scene switches, the log.
+// The select screen preview's data: the panel's characters (Eleven included)
+// with their costumes, swatches, V-Skills, V-Triggers and V-Comments, and the
+// stage select's stages.
+SelectData PreviewSelectData()
+{
+    SelectData data;
+    for (size_t i = 0; i < g_tables.charas.size(); i++) {
+        SelectChara c;
+        c.code = g_tables.charas[i];
+        c.name = g_tables.labels[i];
+        c.costumes = g_tables.costumeNames[i];
+        for (const CostumeSwatches& sw : g_tables.swatches[i]) {
+            std::vector<std::pair<uint32_t, uint32_t>> both = sw.colors;
+            both.insert(both.end(), sw.ex.begin(), sw.ex.end());
+            c.swatches.push_back(std::move(both));
+        }
+        c.vskills = g_tables.vskills[i];
+        c.vtriggers = g_tables.vtriggers[i];
+        c.vcomments = g_tables.vcomments[i];
+        data.charas.push_back(std::move(c));
+    }
+    for (size_t i = 0; i < g_tables.stages.size(); i++) data.stages.push_back({g_tables.stages[i], g_tables.stageLabels[i]});
+    data.you = g_choices.name;
+    return data;
+}
+
 void DrawDebug()
 {
     static bool initialised = false;
@@ -1911,6 +2061,14 @@ void DrawDebug()
     if (ImGui::Button("Main menu")) ReturnToMainMenu(1);
     ImGui::SameLine();
     if (ImGui::Button("Battle now")) Act([] { JumpToBattle(); });
+    ImGui::SameLine();
+    // The select screen as the game draws its own, with mock players.
+    ImGui::BeginDisabled(!g_tables.loaded);
+    if (ImGui::Button("Character select preview")) {
+        OpenSelectPreview(PreviewSelectData());
+        SetOverlayVisible(false);
+    }
+    ImGui::EndDisabled();
     ImGui::SeparatorText("Log");
     ImGui::TextColored(kDim, "instance %d, %.0f fps", StatusInstance(), ImGui::GetIO().Framerate);
     ImGui::BeginChild("log", ImVec2(720 * g_uiScale, 260 * g_uiScale), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
@@ -2316,12 +2474,18 @@ void DrawPickText(const PlayerSetup& p)
         return;
     }
     const std::string code = UnpackCode(p.character);
+    if (IsElevenSetup(p)) {
+        ImGui::TextUnformatted("ELEVEN");
+        ImGui::TextColored(kDim, "random fighter in silver");
+        return;
+    }
     ImGui::TextUnformatted(ShortCharaName(code).c_str());
     const std::string variant = p.variation ? "   " + VariantLabel(code, p.variation) : "";
     ImGui::TextColored(kDim, "%s", CostumeLabel(code, p.costume).c_str());
     ImGui::TextColored(kDim, "%s%s", ColorLabel(p.color).c_str(), variant.c_str());
     ImGui::TextColored(kDim, "V-Skill %s", SkillText(code, false, p.vskill).c_str());
     ImGui::TextColored(kDim, "V-Trigger %s", SkillText(code, true, p.vtrigger).c_str());
+    ImGui::TextColored(kDim, "V-Comment %s", CommentText(code, p.comment).c_str());
 }
 
 // After a match, over its results screen: P1's side on the left and P2's on
@@ -2641,7 +2805,7 @@ void Draw(IDXGISwapChain* swapChain)
     }
     const bool visible = g_visible;
     const bool session = phase != NetView::Phase::Idle;
-    io.MouseDrawCursor = visible || g_voting; // the game hides the system cursor
+    io.MouseDrawCursor = visible || g_voting || SelectPreviewOpen(); // the game hides the system cursor
     // Fonts for the game's resolution (1.0 at 720 lines): again when it
     // changed (last frame's size; the backend makes the new atlas).
     // ... and when a name brings characters the fonts lack.
@@ -2661,7 +2825,20 @@ void Draw(IDXGISwapChain* swapChain)
     ToastChanges(view);
     // Not over a match: it waits for a menu.
     if (OnMenuScreen()) ToastUpdate();
-    if (visible) {
+    // The select screen preview covers everything; closing it brings the panel back.
+    static bool previewWas = false;
+    if (const int wanted = g_selectRequest.load(); wanted >= 0 && g_tables.loaded) {
+        g_selectRequest = -1;
+        OpenSelectPreview(PreviewSelectData(), wanted);
+        SetOverlayVisible(false);
+    }
+    const bool preview = SelectPreviewOpen();
+    if (previewWas && !preview) SetOverlayVisible(true);
+    previewWas = preview;
+    if (preview) {
+        DrawSelectPreview(SelectFonts{g_fontBig, g_fontHuge, g_fontBody});
+    }
+    else if (visible) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, panelAlpha);
         DrawPanel();
         ImGui::PopStyleVar();
@@ -2675,7 +2852,7 @@ void Draw(IDXGISwapChain* swapChain)
     if (session && view.desyncFrame >= 0 && (phase == NetView::Phase::Running || phase == NetView::Phase::PostMatch)) {
         DrawDesyncBanner(view);
     }
-    const bool hint = !visible && (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) && OnMenuScreen();
+    const bool hint = !visible && !preview && (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) && OnMenuScreen();
     if (hint) DrawMenuHint();
     DrawPreviews();
     DrawToasts();
@@ -2685,7 +2862,7 @@ void Draw(IDXGISwapChain* swapChain)
         std::lock_guard lock(g_textureMutex);
         texture = g_texture != nullptr;
     }
-    const bool draw = visible || session || hint || !g_toasts.empty() || g_preview.Any() || texture;
+    const bool draw = visible || preview || session || hint || !g_toasts.empty() || g_preview.Any() || texture;
     if (!draw || (!g_rtv && !CreateTarget(swapChain))) {
         ImGui::EndFrame();
         return;
@@ -2862,6 +3039,8 @@ void ShutdownOverlay()
     ReleaseImGui();
 }
 
+void RequestSelectPreview(int phase) { g_selectRequest = phase; }
+
 void SetOverlayVisible(bool visible)
 {
     if (visible && !g_visible) g_focusPanel = true;
@@ -2890,7 +3069,7 @@ bool OverlayVisible()
 
 bool OverlayTakesInput()
 {
-    return g_visible || g_voting || g_watchHold;
+    return g_visible || g_voting || g_watchHold || SelectPreviewOpen();
 }
 
 void SetVsync(bool on)
@@ -2956,7 +3135,7 @@ bool OverlayWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         if (g_input.size() < 1024) g_input.push_back({msg, wp, lp});
     }
     // Open: the game sees no keyboard or mouse (WM_INPUT is its raw mouse).
-    return (g_visible || g_voting || g_watchHold) && (keyboard || mouse);
+    return (g_visible || g_voting || g_watchHold || SelectPreviewOpen()) && (keyboard || mouse);
 }
 
 void OverlayPad(unsigned user, const XINPUT_GAMEPAD& pad)

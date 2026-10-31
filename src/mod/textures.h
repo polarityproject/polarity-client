@@ -23,8 +23,9 @@ struct TextureView {
     uint32_t width = 0, height = 0;
 };
 // The texture's shader resource view, found by walking its render resource
-// (FTextureResource -> RHI texture -> D3D11 objects); logs the chain.
-TextureView ViewOfTexture(const void* texture);
+// (FTextureResource -> RHI texture -> D3D11 objects); logs the chain unless
+// `quiet` (failures are always logged).
+TextureView ViewOfTexture(const void* texture, bool quiet = false);
 
 // Research (`savetex`): writes the texture's top mip to SFVR\textures\<name>.dds
 // as it is in memory (BC formats stay compressed). Takes over the view's

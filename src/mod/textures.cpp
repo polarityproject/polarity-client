@@ -77,7 +77,7 @@ const void* FindOrLoadTexture(const std::string& nameOrPath)
     return ue4::FindObject(nameOrPath, "Texture2D");
 }
 
-TextureView ViewOfTexture(const void* texture)
+TextureView ViewOfTexture(const void* texture, bool quiet)
 {
     TextureView out;
     if (!texture) return out;
@@ -114,7 +114,8 @@ TextureView ViewOfTexture(const void* texture)
                 }
                 if (r) r->Release();
                 out.srv = srv;
-                Log("texture %s: view %p, %ux%u (texture +0x%zx -> resource +0x%zx -> RHI +0x%zx)",
+                if (!quiet)
+                    Log("texture %s: view %p, %ux%u (texture +0x%zx -> resource +0x%zx -> RHI +0x%zx)",
                     ue4::ObjectName(texture).c_str(), static_cast<void*>(srv), out.width, out.height, a, b, c);
                 return out;
             }
