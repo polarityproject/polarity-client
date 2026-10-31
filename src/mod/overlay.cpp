@@ -70,8 +70,10 @@ HWND g_window = nullptr;
 bool g_imgui = false;
 
 std::atomic<bool> g_visible{false};
-std::atomic<bool> g_menuFromSelect{false}; // the panel was opened with Start on the select screen: Start closes it
-std::atomic<ULONGLONG> g_xinputAt{0};      // when the XInput hook last saw a pad (OverlayPad)
+std::atomic<bool> g_startCloses{false};  // the panel was opened with Start (the select screen, held in a match): Start closes it
+std::atomic<float> g_startHold{0};       // in a match: how far Start is held towards opening the panel (0..1)
+std::atomic<bool> g_selectMatchTab{true}; // the panel opens on its Match tab next time
+std::atomic<ULONGLONG> g_xinputAt{0};    // when the XInput hook last saw a pad (OverlayPad)
 std::atomic<bool> g_voting{false};        // the post-match vote is up and takes input
 // A spectator over a watched match's results screen: the game gets no input
 // (a press there can open its own Results Menu, which players' votes keep
@@ -80,7 +82,7 @@ std::atomic<bool> g_watchHold{false};
 std::atomic<HWND> g_inputWindow{nullptr}; // the window ImGui reads input for
 std::string g_build;                      // the mod's version (SetOverlayBuild)
 std::atomic<float> g_fps{0};              // presented frames per second (RenderFps)
-bool g_inMatch = false;                   // render thread: a netplay match runs (for the frame-drop log)
+std::atomic<bool> g_inMatch{false};       // a netplay match runs (the frame-drop log, Start held for the panel)
 std::string g_packResult;                 // render thread: what the last "Pack logs to share" did
 std::atomic<bool> g_noVsync{false};       // present without waiting for the display's refresh
 std::atomic<UINT> g_gameSyncInterval{0};  // the sync interval and flags the game presents with (VsyncInfo)
@@ -153,20 +155,44 @@ void FeedPads(ImGuiIO& io)
     constexpr uint16_t kChord = XINPUT_GAMEPAD_BACK | XINPUT_GAMEPAD_START;
     static bool chordWas = false;
     const bool chord = (game & kChord) == kChord && GetTickCount64() - g_xinputAt > 2000;
-    if (chord && !chordWas) ToggleOverlay();
+    if (chord && !chordWas && (g_visible || !g_inMatch)) ToggleOverlay(); // in a match it opens by Start held
     chordWas = chord;
     // A menu opened with Start on the select screen closes with Start, on its
     // release (on its press, the select screen took that Start again and
     // opened it once more).
     static bool startWas = false, closeOnRelease = false;
     const bool start = buttons & XINPUT_GAMEPAD_START;
-    if (!g_visible) g_menuFromSelect = closeOnRelease = false;
-    if (start && !startWas && g_visible && g_menuFromSelect) closeOnRelease = true;
+    if (!g_visible) g_startCloses = closeOnRelease = false;
+    if (start && !startWas && g_visible && g_startCloses) closeOnRelease = true;
     if (!start && startWas && closeOnRelease) {
         closeOnRelease = false;
         SetOverlayVisible(false);
     }
     startWas = start;
+    // In a match the panel opens with Start held kHoldToOpenMs (a tap is the
+    // match's: it skips intros and win poses); the stripe at the bottom
+    // (DrawStartHold) fills meanwhile. Once open, a new press of Start closes
+    // it.
+    constexpr ULONGLONG kHoldToOpenMs = 2000;
+    static ULONGLONG heldSince = 0;
+    static bool opened = false; // by this hold: nothing more until Start is let go
+    if (!start || !g_inMatch || g_visible) {
+        heldSince = 0;
+        if (!start) opened = false;
+        g_startHold = 0;
+    }
+    else if (!opened) {
+        const ULONGLONG now = GetTickCount64();
+        if (!heldSince) heldSince = now;
+        g_startHold = static_cast<float>(now - heldSince) / kHoldToOpenMs;
+        if (now - heldSince >= kHoldToOpenMs) {
+            opened = true;
+            g_startHold = 0;
+            g_selectMatchTab = true;
+            SetOverlayVisible(true);
+            g_startCloses = true;
+        }
+    }
     for (const Map& m : kButtons) io.AddKeyEvent(m.key, (buttons & m.button) != 0);
     constexpr float kDead = 7849.0f; // XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE
     auto axis = [&](ImGuiKey key, float v) {
@@ -1930,8 +1956,6 @@ void DrawSession(const NetView& v)
     if (v.desyncFrame >= 0) ImGui::TextColored(kRed, "DESYNC at frame %d (report saved)", v.desyncFrame);
 }
 
-std::atomic<bool> g_selectMatchTab{true};
-
 // The Debug tab's server switch: which Weyvelength server the next host,
 // join or watch goes to, with the ones used before; saved with the panel's
 // choices. And relay only, to test TURN.
@@ -2299,7 +2323,7 @@ struct SentSelect {
 void OpenMenuFromSelect()
 {
     SetOverlayVisible(true);
-    g_menuFromSelect = true;
+    g_startCloses = true;
 }
 
 void ApplySelectInput(const SelectInput& in, const NetView& v)
@@ -2538,20 +2562,36 @@ void DrawPanel()
         }
         ImGui::EndTabItem();
     }
-    if (ImGui::BeginTabItem("Settings")) {
+    // In a match only the match's own tab.
+    const bool inMatch = v.phase == NetView::Phase::Running;
+    if (!inMatch && ImGui::BeginTabItem("Settings")) {
         ImGui::Spacing();
         DrawSettings(inSession);
         ImGui::EndTabItem();
     }
-    if (ImGui::BeginTabItem("Debug")) {
+    if (!inMatch && ImGui::BeginTabItem("Debug")) {
         DrawDebug();
         ImGui::EndTabItem();
     }
     ImGui::EndTabBar();
     ImGui::Spacing();
     ImGui::TextDisabled("%s closes this; the game gets no input while it is open.",
-                        g_menuFromSelect ? "Start, F1 or Back + Start" : "F1 or Back + Start");
+                        g_startCloses ? "Start, F1 or Back + Start" : "F1 or Back + Start");
     ImGui::End();
+}
+
+// In a match, while Start is held towards the panel: a thin stripe along the
+// screen's bottom edge, filling (shown once the hold is longer than a tap).
+void DrawStartHold()
+{
+    const float part = g_startHold;
+    if (part < 0.1f) return;
+    const ImGuiIO& io = ImGui::GetIO();
+    ImDrawList* d = ImGui::GetForegroundDrawList();
+    const float h = std::max(5.0f, 8.0f * g_uiScale);
+    d->AddRectFilled(ImVec2(0, io.DisplaySize.y - h), io.DisplaySize, IM_COL32(0, 0, 0, 140));
+    d->AddRectFilled(ImVec2(0, io.DisplaySize.y - h), ImVec2(io.DisplaySize.x * std::min(part, 1.0f), io.DisplaySize.y),
+                     ImGui::GetColorU32(kGold));
 }
 
 // While the panel is closed: one line in a corner during a session.
@@ -3299,6 +3339,7 @@ void Draw(IDXGISwapChain* swapChain)
     if (hint) DrawMenuHint();
     DrawPreviews();
     DrawToasts(liveAlpha > 0);
+    DrawStartHold();
     DrawTexturePreview();
     bool texture = false;
     {
@@ -3593,7 +3634,8 @@ void OverlayPad(unsigned user, const XINPUT_GAMEPAD& pad)
     const bool now = (buttons & kChord) == kChord;
     const bool before = (g_lastButtons[user] & kChord) == kChord;
     g_lastButtons[user] = buttons;
-    if (now && !before) ToggleOverlay();
+    // In a match the chord only closes: the panel opens by Start held (FeedPads).
+    if (now && !before && (g_visible || !g_inMatch)) ToggleOverlay();
 }
 
 } // namespace sfv::mod

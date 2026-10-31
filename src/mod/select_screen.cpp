@@ -4,6 +4,8 @@
 #include "mod/log.h"
 #include "mod/textures.h"
 
+#include <unknwn.h>
+
 #include <imgui.h>
 #include <imgui_internal.h> // IM_PI, the draw list's white pixel
 
@@ -32,9 +34,11 @@ std::map<std::string, TextureView> g_textures;
 std::set<std::string> g_requested;
 std::deque<std::string> g_texQueue; // asked for, not loaded yet (in order)
 bool g_texLoading = false;          // LoadTextures is on its way
-// A texture loaded without a view yet (the render thread had not made its
+// A texture loaded without its view yet (the render thread had not made its
 // resource): asked for again a little later, a few times. Once failed it
-// stayed blank for the whole run (Gill's grid icon, once).
+// stayed blank for the whole run (Gill's grid icon, once). A view of a few
+// pixels is the engine's stand-in until then (white): kept, the stage
+// frame's shadow showed as a white box behind "Random" on one PC.
 struct TexRetry {
     std::string path;
     std::chrono::steady_clock::time_point due;
@@ -42,6 +46,7 @@ struct TexRetry {
 std::vector<TexRetry> g_texRetries;
 std::map<std::string, int> g_texTries;
 constexpr int kTextureTries = 6;
+constexpr uint32_t kStandInSize = 8; // a view this small (either side) is a stand-in
 constexpr auto kTextureRetryAfter = std::chrono::milliseconds(250);
 // Since the queue last ran dry: how many loaded, in how long (the log line).
 int g_texBatch = 0;
@@ -83,7 +88,12 @@ void LoadTextures()
         const size_t slash = path.rfind('/');
         const std::string name = path.substr(slash + 1);
         const auto at = std::chrono::steady_clock::now();
-        const TextureView view = ViewOfTexture(FindOrLoadTexture(path + "." + name), true);
+        TextureView view = ViewOfTexture(FindOrLoadTexture(path + "." + name), true);
+        if (view.srv && (view.width < kStandInSize || view.height < kStandInSize)) {
+            Log("select screen: %s has a %ux%u view for now: asking again", path.c_str(), view.width, view.height);
+            static_cast<IUnknown*>(view.srv)->Release();
+            view = {};
+        }
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - at).count();
         std::lock_guard lock(g_texMutex);
         if (!view.srv) {

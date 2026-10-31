@@ -66,6 +66,10 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ### Changed
 
+- In a match the panel opens by holding Start for 2 seconds (a stripe fills
+  along the bottom of the screen meanwhile; a tap still skips intros and win
+  poses), shows only its Match tab, and Start closes it again. Back + Start
+  no longer opens it there; F1 still does.
 - The game connects to the public server on 5555 alone, and on 443 too only
   when 5555 does not answer within 1.5 s. Both at once doubled the
   connections, and the server's firewall refused two PCs behind one router
@@ -86,6 +90,9 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ### Fixed
 
+- The stage select's frame could show a white box behind "Random" on one PC:
+  its shadow texture was taken while still the engine's white stand-in. A
+  view that small now counts as not loaded yet and is asked for again.
 - A character's grid icon on the select screen could stay blank for the
   whole run (Gill's, once): a texture the render thread had not set up yet
   counted as missing. It is now asked for again a few times.
