@@ -73,6 +73,7 @@ struct State {
     // the mock players act on.
     int value2[6] = {1, 0, 1, 0, 0, 3};
     bool p1Ready = false, p2Ready = false;
+    int backdrop = 0; // the stage behind the screen (the last real one while Random is chosen)
     int shownPhase = -1;
     float inPhase = 0, nextAct = 0;
     uint32_t roll = 1;
@@ -555,6 +556,20 @@ void DrawRender(ImDrawList* d, int chara, bool right)
     else Image(d, t, g_v.P(-60, -70), g_v.P(720, 710));
 }
 
+// The stage's picture over the whole screen (cropped at the sides: it is 4:1),
+// darkened; the screen draws over it.
+void DrawBackdrop(ImDrawList* d, ImU32 tint)
+{
+    const int count = static_cast<int>(g_data.stages.size());
+    if (g_s.stage < count) g_s.backdrop = g_s.stage;
+    if (count == 0) return;
+    const TextureView* bg = Texture(StageTex(g_data.stages[std::clamp(g_s.backdrop, 0, count - 1)].code, "StageSelectBG"));
+    if (!bg) return;
+    const float aspect = bg->height ? static_cast<float>(bg->width) / bg->height : 4.0f;
+    const float visible = (1600.0f / 900.0f) / aspect; // the share of the width that fits
+    Image(d, bg, g_v.P(0, 0), g_v.P(1600, 900), ImVec2(0.5f - visible / 2, 0), ImVec2(0.5f + visible / 2, 1), tint);
+}
+
 // The stage select: the stage's picture inside the game's curved frame, its
 // name, and the strip of stages.
 void DrawStageSelect(ImDrawList* d, const SelectFonts& f)
@@ -839,20 +854,20 @@ void DrawSelectPreview(const SelectFonts& f)
     }
 
     if (g_s.phase == Phase::Stage) {
+        // Darker here, so the framed picture stands out from the same stage behind it.
+        DrawBackdrop(d, Rgba(70, 69, 67));
+        d->AddRectFilledMultiColor(g_v.P(0, 0), g_v.P(1600, 450), Rgba(6, 8, 11, 90), Rgba(6, 8, 11, 90), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 0));
+        d->AddRectFilledMultiColor(g_v.P(0, 450), g_v.P(1600, 900), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 170), Rgba(6, 8, 11, 170));
         DrawStageSelect(d, f);
     }
     else {
-        // The chosen stage, dark and wide behind everything.
-        const int count = static_cast<int>(g_data.stages.size());
-        const std::string code = count == 0 ? "" : g_data.stages[g_s.stage < count ? g_s.stage : 0].code;
-        if (const TextureView* bg = code.empty() ? nullptr : Texture(StageTex(code, "StageSelectBG"))) {
-            Image(d, bg, g_v.P(800 - 1240, -20), g_v.P(800 + 1240, 600), ImVec2(0, 0), ImVec2(1, 1), Rgba(118, 116, 112));
-        }
+        // The chosen stage behind everything.
+        DrawBackdrop(d, Rgba(118, 116, 112));
         d->AddRectFilledMultiColor(g_v.P(0, 0), g_v.P(1600, 300), Rgba(6, 8, 11, 120), Rgba(6, 8, 11, 120), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 0));
         DrawRender(d, g_s.p1, false);
         DrawRender(d, g_s.p2, true);
         d->AddRectFilledMultiColor(g_v.P(0, 500), g_v.P(1600, 640), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 230), Rgba(6, 8, 11, 230));
-        d->AddRectFilled(g_v.P(0, 640), g_v.P(1600, 900), Rgba(6, 8, 11, 240));
+        d->AddRectFilled(g_v.P(0, 640), g_v.P(1600, 900), Rgba(6, 8, 11, 200));
         if (g_s.phase != Phase::Grid && g_data.spectator) {
             DrawLoadout(d, f, false, g_s.p1, g_s.value, false, g_s.p1Ready);
             DrawLoadout(d, f, true, g_s.p2, g_s.value2, false, g_s.p2Ready);
