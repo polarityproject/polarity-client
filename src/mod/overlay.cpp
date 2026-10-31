@@ -2580,18 +2580,24 @@ void DrawPanel()
     ImGui::End();
 }
 
-// In a match, while Start is held towards the panel: a thin stripe along the
-// screen's bottom edge, filling (shown once the hold is longer than a tap).
+// In a match, while Start is held towards the panel: a short bar in the
+// bottom center, filling, with "Hold for menu..." over it (shown once the
+// hold is longer than a tap).
 void DrawStartHold()
 {
     const float part = g_startHold;
     if (part < 0.1f) return;
     const ImGuiIO& io = ImGui::GetIO();
     ImDrawList* d = ImGui::GetForegroundDrawList();
-    const float h = std::max(5.0f, 8.0f * g_uiScale);
-    d->AddRectFilled(ImVec2(0, io.DisplaySize.y - h), io.DisplaySize, IM_COL32(0, 0, 0, 140));
-    d->AddRectFilled(ImVec2(0, io.DisplaySize.y - h), ImVec2(io.DisplaySize.x * std::min(part, 1.0f), io.DisplaySize.y),
-                     ImGui::GetColorU32(kGold));
+    const float w = 220 * g_uiScale, h = std::max(4.0f, 6.0f * g_uiScale);
+    const float x = (io.DisplaySize.x - w) / 2, y = io.DisplaySize.y - 36 * g_uiScale;
+    const char* text = "Hold for menu...";
+    ImFont* font = g_fontSmall ? g_fontSmall : ImGui::GetFont();
+    const ImVec2 size = font->CalcTextSizeA(font->FontSize, FLT_MAX, 0, text);
+    d->AddText(font, font->FontSize, ImVec2((io.DisplaySize.x - size.x) / 2 + 1, y - size.y - 4 * g_uiScale + 1), IM_COL32(0, 0, 0, 160), text);
+    d->AddText(font, font->FontSize, ImVec2((io.DisplaySize.x - size.x) / 2, y - size.y - 4 * g_uiScale), IM_COL32(230, 226, 214, 200), text);
+    d->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), IM_COL32(0, 0, 0, 150), h / 2);
+    d->AddRectFilled(ImVec2(x, y), ImVec2(x + w * std::min(part, 1.0f), y + h), ImGui::GetColorU32(kGold), h / 2);
 }
 
 // While the panel is closed: one line in a corner during a session.
