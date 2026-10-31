@@ -7,6 +7,14 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-30
+
+Matches stay in step far more often: random move outcomes, Rose, R. Mika
+against Akira and screen shakes now play the same on both PCs after
+rollbacks, and visual effects no longer cause false desync warnings.
+Rollbacks take less time, keyboard players can skip intros, and several
+crashes are fixed. Both players need this version to play each other.
+
 ### Added
 
 - Spectators pick which match of the session they watch: Previous, Next and
