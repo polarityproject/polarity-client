@@ -311,6 +311,84 @@ void SetMatchDrawSeed(uint64_t seed)
 using SrandFn = void(__cdecl*)(unsigned int);
 SrandFn g_srand = nullptr;
 
+// Research (`phasecost 1`): the time each part of BattleFrame::Update takes
+// in driven ticks, normal and replayed apart: the update's start (rva
+// 0x4DC2D0), scheduler phases 1, 2, 4 and 8 (rva 0x4CD890) and the tick
+// proper (rva 0x4D2850). Logged every 600 driven ticks.
+constexpr game::CodeSite kUpdateStart{"battle update start", 0x4DC2D0,
+    {0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x28, 0x4C, 0x8B, 0xF1, 0x48, 0x8B, 0x49, 0x18, 0x48}};
+constexpr game::CodeSite kSchedulerPhase{"scheduler phase", 0x4CD890,
+    {0x4C, 0x8B, 0xDC, 0x53, 0x57, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x48, 0x8B, 0x05, 0xDE, 0x49}};
+constexpr game::CodeSite kTickProper{"battle tick", 0x4D2850,
+    {0x83, 0xB9, 0x90, 0x01, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xC1, 0x74, 0x0C, 0x83, 0xB9, 0x94, 0x01}};
+using UpdateStartFn = uint64_t (*)(void*);
+using PhaseFn = uint64_t (*)(void* scheduler, int phase);
+using TickProperFn = uint64_t (*)(void* battleFrame);
+UpdateStartFn g_origUpdateStart = nullptr;
+PhaseFn g_origPhase = nullptr;
+TickProperFn g_origTickProper = nullptr;
+std::atomic<bool> g_phaseTiming{false};
+bool g_replayingTick = false;
+// Experiment (`resimskip 1`): replayed ticks leave out scheduler phases 4 and
+// 8 (presentation: animation, effects, camera), as the game's own update
+// does for all but its last tick when it runs several; the newest tick of
+// the frame runs them.
+std::atomic<bool> g_skipResimPresentation{false};
+enum PhasePart { kPartStart, kPart1, kPart2, kPart4, kPart8, kPartTick, kPartCount };
+const char* const kPartNames[kPartCount] = {"start", "phase 1", "phase 2", "phase 4", "phase 8", "tick"};
+uint64_t g_partTicks[2][kPartCount] = {}; // [replayed][part], performance counter ticks
+uint64_t g_partCalls[2] = {};             // driven ticks counted, [replayed]
+uint64_t g_profiledTicks = 0;             // driven ticks since timing started (task profile)
+
+template <typename F> uint64_t Timed(PhasePart part, F call)
+{
+    if (!g_phaseTiming || !g_inDriver) return call();
+    LARGE_INTEGER a, b;
+    QueryPerformanceCounter(&a);
+    const uint64_t r = call();
+    QueryPerformanceCounter(&b);
+    g_partTicks[g_replayingTick ? 1 : 0][part] += b.QuadPart - a.QuadPart;
+    return r;
+}
+
+uint64_t UpdateStartDetour(void* frame) { return Timed(kPartStart, [&] { return g_origUpdateStart(frame); }); }
+uint64_t PhaseDetour(void* scheduler, int phase)
+{
+    const PhasePart part = phase == 1 ? kPart1 : phase == 2 ? kPart2 : phase == 4 ? kPart4 : kPart8;
+    if (phase != 1 && phase != 2 && phase != 4 && phase != 8) return g_origPhase(scheduler, phase);
+    if (g_skipResimPresentation && g_inDriver && g_replayingTick && (phase == 4 || phase == 8)) return 0;
+    if (g_inDriver) SetSchedulerPhase(phase, g_replayingTick);
+    const uint64_t r = Timed(part, [&] { return g_origPhase(scheduler, phase); });
+    SetSchedulerPhase(0);
+    return r;
+}
+uint64_t TickProperDetour(void* frame) { return Timed(kPartTick, [&] { return g_origTickProper(frame); }); }
+
+void CountPhaseTick()
+{
+    if (!g_phaseTiming) return;
+    g_partCalls[g_replayingTick ? 1 : 0]++;
+    g_profiledTicks++;
+    if (g_partCalls[0] + g_partCalls[1] < 600) return;
+    LARGE_INTEGER f;
+    QueryPerformanceFrequency(&f);
+    for (int rep = 0; rep < 2; rep++) {
+        if (!g_partCalls[rep]) continue;
+        std::string text;
+        uint64_t sum = 0;
+        for (int p = 0; p < kPartCount; p++) {
+            sum += g_partTicks[rep][p];
+            char b[48];
+            std::snprintf(b, sizeof(b), " %s %.0f", kPartNames[p], g_partTicks[rep][p] * 1e6 / f.QuadPart / g_partCalls[rep]);
+            text += b;
+        }
+        Log("phasecost: %s ticks (%llu), us per tick:%s; sum %.0f", rep ? "replayed" : "normal",
+            static_cast<unsigned long long>(g_partCalls[rep]), text.c_str(), sum * 1e6 / f.QuadPart / g_partCalls[rep]);
+    }
+    std::memset(g_partTicks, 0, sizeof(g_partTicks));
+    std::memset(g_partCalls, 0, sizeof(g_partCalls));
+}
+
 void SeedTickRandom()
 {
     g_tickCountUsed = 0;
@@ -370,6 +448,11 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game)
     if (HMODULE crt = GetModuleHandleW(L"msvcr120.dll")) g_srand = reinterpret_cast<SrandFn>(GetProcAddress(crt, "srand"));
     if (!picksHooked) Log("battle driver: move variant picks stay random per game");
     if (!g_srand) Log("battle driver: the game's srand not found; its rand() stays per game");
+    if (!Hook(image, kUpdateStart, reinterpret_cast<void*>(&UpdateStartDetour), reinterpret_cast<void**>(&g_origUpdateStart)) ||
+        !Hook(image, kSchedulerPhase, reinterpret_cast<void*>(&PhaseDetour), reinterpret_cast<void**>(&g_origPhase)) ||
+        !Hook(image, kTickProper, reinterpret_cast<void*>(&TickProperDetour), reinterpret_cast<void**>(&g_origTickProper))) {
+        Log("battle driver: phasecost unavailable");
+    }
     // SfvGame::Advance runs a tick through the original, not through the hook.
     game->SetBattleFrameFunction(g_origBattleFrame);
     Log("battle driver %s", ok ? "installed" : "NOT installed");
@@ -377,6 +460,26 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game)
 }
 
 void SetFrameDriver(IFrameDriver* driver) { g_driver = driver; }
+
+void SetReplayingTick(bool replaying)
+{
+    g_replayingTick = replaying;
+    CountPhaseTick();
+}
+
+void SetResimPresentationSkip(bool on)
+{
+    g_skipResimPresentation = on;
+    Log("resimskip: replayed ticks %s scheduler phases 4 and 8", on ? "leave out" : "run");
+}
+
+void SetPhaseTiming(bool on)
+{
+    g_phaseTiming = on;
+    SetTaskProfiling(on, g_profiledTicks);
+    g_profiledTicks = 0;
+    Log("phasecost: %s", on ? "timing the battle update's parts" : "off");
+}
 
 void DetachFrameDriver()
 {

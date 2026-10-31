@@ -185,6 +185,13 @@ void LogWorldContext();
 // The scene state changes seen so far, oldest first.
 // Diagnostics: logs the battle tasks run by the next `calls` task calls.
 void TaskCensus(int calls);
+// Research (`phasecost`): the scheduler phase now running (0: none), and
+// per-task timing by phase, logged when turned off (over `ticks` driven ticks).
+void SetSchedulerPhase(int phase, bool replaying = false);
+// Experiment (`resimtasks`): task functions (rvas) that replayed ticks leave
+// out in scheduler phases 4 and 8.
+void SetResimTaskSkip(std::vector<uintptr_t> rvas);
+void SetTaskProfiling(bool on, uint64_t ticks = 0);
 // Research: logs the battle's phase machine and its phases (`phases`), with
 // the snapshot region each lies in (from the lookup SfvGame's driver sets).
 void LogPhaseMachine();

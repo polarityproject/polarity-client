@@ -808,6 +808,7 @@ void SfvGame::Advance(const FrameInputs& inputs, bool rollingBack)
 {
     if (!CanRunTicks()) return;
     hitch::AddTick(rollingBack); // the frame-drop log: ticks per frame, and how many replayed
+    SetReplayingTick(rollingBack);
     // Start reaches the game only when both players pressed it outside the
     // fight (flow.h): one player cannot skip the intro, or pause the fight.
     const PackedInput start = PresentationStart(inputs.p[0], inputs.p[1]);

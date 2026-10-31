@@ -698,6 +698,24 @@ void UndoRoundOvers(uint32_t tick)
     }
 }
 
+constexpr uintptr_t kVirtualTask = 0x3EB3F4; // a task that calls its object's virtual +0x38
+
+// Research (`phasecost`): each task's time by the scheduler phase it ran in
+// (battle_driver.cpp tells the phase), game thread only.
+std::atomic<int> g_schedPhase{0};
+std::atomic<bool> g_schedReplaying{false};
+std::atomic<bool> g_taskProfiling{false};
+// Experiment (`resimtasks <rva>... | off`): tasks replayed ticks leave out
+// in phases 4 and 8 (game thread reads; set from the command thread).
+std::mutex g_resimSkipMutex;
+std::vector<uintptr_t> g_resimSkip;
+std::atomic<bool> g_resimSkipAny{false};
+struct TaskCost {
+    uint64_t ticks = 0, calls = 0;
+    uintptr_t object = 0;
+};
+std::map<uint64_t, TaskCost> g_taskCosts; // phase << 32 | task function rva (or 0x80000000 | class vtable rva)
+
 // The thunk passes its other arguments (rdx, r8, r9, xmm) on to the task:
 // take and forward them untouched, and record only after the call.
 uint64_t TaskThunkDetour(void* closure, void* a2, void* a3, void* a4)
@@ -732,7 +750,42 @@ uint64_t TaskThunkDetour(void* closure, void* a2, void* a3, void* a4)
             }
         }
     }
-    const uint64_t result = g_origThunk(closure, a2, a3, a4);
+    if (g_resimSkipAny && g_schedReplaying && (g_schedPhase == 4 || g_schedPhase == 8)) {
+        const auto* c = static_cast<const uint8_t*>(closure);
+        uintptr_t key = *reinterpret_cast<const uintptr_t*>(c) - g_base;
+        if (key == kVirtualTask) {
+            // By the class of the object the generic task runs on.
+            const auto* object = reinterpret_cast<const uint8_t*>(*reinterpret_cast<const uintptr_t*>(c + 0x10) +
+                                                                  *reinterpret_cast<const int32_t*>(c + 8));
+            key = 0x80000000u | (*reinterpret_cast<const uintptr_t*>(object) - g_base);
+        }
+        std::lock_guard lock(g_resimSkipMutex);
+        if (std::find(g_resimSkip.begin(), g_resimSkip.end(), key) != g_resimSkip.end()) return 0;
+    }
+    uint64_t result;
+    if (g_taskProfiling && g_schedPhase) {
+        LARGE_INTEGER a, b;
+        QueryPerformanceCounter(&a);
+        result = g_origThunk(closure, a2, a3, a4);
+        QueryPerformanceCounter(&b);
+        const auto* c = static_cast<const uint8_t*>(closure);
+        const uintptr_t fn = *reinterpret_cast<const uintptr_t*>(c);
+        uint64_t key = static_cast<uint64_t>(g_schedPhase.load()) << 32 | (fn - g_base);
+        if (fn - g_base == kVirtualTask) {
+            // The generic task calls the object's +0x38: by the object's class.
+            const auto* object = reinterpret_cast<const uint8_t*>(*reinterpret_cast<const uintptr_t*>(c + 0x10) +
+                                                                  *reinterpret_cast<const int32_t*>(c + 8));
+            key = static_cast<uint64_t>(g_schedPhase.load()) << 32 | 0x80000000u |
+                  (*reinterpret_cast<const uintptr_t*>(object) - g_base);
+        }
+        TaskCost& cost = g_taskCosts[key];
+        cost.ticks += b.QuadPart - a.QuadPart;
+        cost.calls++;
+        if (!cost.object) cost.object = *reinterpret_cast<const uintptr_t*>(c + 0x10) + *reinterpret_cast<const int32_t*>(c + 8);
+    }
+    else {
+        result = g_origThunk(closure, a2, a3, a4);
+    }
     if (g_taskCensus > 0) {
         g_taskCensus--;
         const auto* c = static_cast<const uint8_t*>(closure);
@@ -2403,6 +2456,56 @@ void LogWorldContext()
             std::memcpy(&a, ctx + off, 8);
             std::memcpy(&b, ctx + off + 8, 8);
             Log("worldctx +0x%x: %016llx %016llx", off, (unsigned long long)a, (unsigned long long)b);
+        }
+    });
+}
+
+void SetSchedulerPhase(int phase, bool replaying)
+{
+    g_schedPhase = phase;
+    g_schedReplaying = replaying;
+}
+
+void SetResimTaskSkip(std::vector<uintptr_t> rvas)
+{
+    std::lock_guard lock(g_resimSkipMutex);
+    g_resimSkip = std::move(rvas);
+    g_resimSkipAny = !g_resimSkip.empty();
+    std::string text;
+    for (uintptr_t r : g_resimSkip) text += " 0x" + [r] { char b[16]; std::snprintf(b, sizeof(b), "%llx", static_cast<unsigned long long>(r)); return std::string(b); }();
+    Log("resimtasks: replayed ticks leave out %zu tasks in phases 4 and 8:%s", g_resimSkip.size(), text.c_str());
+}
+
+void SetTaskProfiling(bool on, uint64_t ticks)
+{
+    if (on) {
+        RunOnGameThread([] { g_taskCosts.clear(); });
+        g_taskProfiling = true;
+        return;
+    }
+    g_taskProfiling = false;
+    RunOnGameThread([ticks] {
+        LARGE_INTEGER f;
+        QueryPerformanceFrequency(&f);
+        for (int phase : {1, 2, 4, 8}) {
+            std::vector<std::pair<uint64_t, const TaskCost*>> rows;
+            uint64_t total = 0;
+            for (const auto& [key, cost] : g_taskCosts) {
+                if (static_cast<int>(key >> 32) != phase) continue;
+                rows.push_back({key, &cost});
+                total += cost.ticks;
+            }
+            std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) { return a.second->ticks > b.second->ticks; });
+            Log("phasecost: phase %d: %zu tasks, %.0f us per driven tick", phase, rows.size(),
+                ticks ? total * 1e6 / f.QuadPart / ticks : 0.0);
+            for (size_t i = 0; i < rows.size() && i < 25; i++) {
+                const TaskCost& c = *rows[i].second;
+                const uint32_t low = static_cast<uint32_t>(rows[i].first);
+                Log("phasecost:   %s 0x%x: %.1f us per tick, %llu calls, on %s", low & 0x80000000u ? "virtual task, class vtable" : "rva",
+                    low & 0x7FFFFFFFu,
+                    ticks ? c.ticks * 1e6 / f.QuadPart / ticks : 0.0, static_cast<unsigned long long>(c.calls),
+                    ue4::Describe(reinterpret_cast<void*>(c.object)).c_str());
+            }
         }
     });
 }

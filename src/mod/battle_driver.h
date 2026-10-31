@@ -24,6 +24,12 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game);
 // The driver used from the next frame on; nullptr gives the frame loop back
 // to the game. The caller keeps ownership.
 void SetFrameDriver(IFrameDriver* driver);
+// The driven tick about to run is a replay of a rolled-back frame (SfvGame::Advance).
+void SetReplayingTick(bool replaying);
+// Research (`phasecost 0|1`): logs the battle update's parts' cost per tick.
+void SetPhaseTiming(bool on);
+// Experiment (`resimskip 0|1`): replayed ticks leave out the presentation phases.
+void SetResimPresentationSkip(bool on);
 // SetFrameDriver(nullptr), then waits until the game thread has left the
 // frame it was running with the driver (up to 5 s): after it, no OnFrame of
 // the old driver runs.
