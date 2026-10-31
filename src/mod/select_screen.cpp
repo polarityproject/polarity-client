@@ -577,16 +577,20 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f)
     const int count = static_cast<int>(g_data.stages.size());
     if (!g_data.spectator && Left()) g_s.stage = (g_s.stage + count) % (count + 1);
     if (!g_data.spectator && Right()) g_s.stage = (g_s.stage + 1) % (count + 1);
-    Text(d, f.title, g_v.L(40), g_v.P(800, 84), Rgba(255, 255, 255), "STAGE SELECT", 0.5f, true);
-    const float bx = 40, by = 136, bw = 1520, bh = 423;
+    Text(d, f.name, g_v.L(42), g_v.P(800, 76), Rgba(255, 255, 255), "STAGE SELECT", 0.5f, true);
+    // The frame across the whole screen (its texture is 1920x534).
+    const float bx = 0, by = 132, bw = 1600, bh = 1600.0f * 534 / 1920;
     if (const TextureView* shadow = Texture(MenuTex("StagePreviewWindowShadow"))) Image(d, shadow, g_v.P(bx, by), g_v.P(bx + bw, by + bh));
     const bool random = g_s.stage >= count;
     const std::string code = random || count == 0 ? "" : g_data.stages[g_s.stage].code;
     if (const TextureView* bg = code.empty() ? nullptr : Texture(StageTex(code, "StageSelectBG"))) {
         // The mask's curves (StagePreviewBG): 2 px from the edge at the sides,
         // 43 px at the middle (of 512), top and bottom alike. Slices follow them.
-        const float my = by + 9, mh = 405;
-        const float u0 = 0.031f, u1 = 0.969f; // cover: the picture is wider than the window
+        // The mask (1920x512) sits 11 px into the frame; the picture covers it,
+        // cropped at the sides.
+        const float my = by + bh * 11 / 534, mh = bh * 512 / 534;
+        const float visible = (bw / mh) / (static_cast<float>(bg->width) / std::max(1u, bg->height));
+        const float u0 = 0.5f - visible / 2, u1 = 0.5f + visible / 2;
         const int slices = 64;
         for (int i = 0; i < slices; i++) {
             auto edge = [&](float t) {
@@ -877,7 +881,7 @@ void DrawSelectPreview(const SelectFonts& f)
             DrawLoadout(d, f, true, g_s.p2, kMockP2Values, false, true);
         }
         DrawNames(d, f);
-        Text(d, f.title, g_v.L(38), g_v.P(800, 506), Rgba(255, 255, 255), "CHARACTER SELECT", 0.5f, true);
+        Text(d, f.name, g_v.L(42), g_v.P(800, 502), Rgba(255, 255, 255), "CHARACTER SELECT", 0.5f, true);
         Infinity(d, g_v.P(800, 578), g_v.L(56), Rgba(242, 201, 76));
         DrawGrid(d, f);
     }
