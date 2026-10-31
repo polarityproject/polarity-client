@@ -1,5 +1,6 @@
 #include "mod/battle_driver.h"
 
+#include "mod/crash_report.h"
 #include "mod/flow.h"
 #include "mod/hitch.h"
 #include "mod/lifecycle.h"
@@ -156,12 +157,16 @@ uint32_t NextInTick(uintptr_t key)
 // a fighter's or helper's.
 int64_t OwnerSlot(const uint8_t* stream)
 {
+    CrashGuardEnter(); // a fault here is expected, not a crash
     __try {
         const uint8_t* owner = stream - kStreamInOwner;
-        if (*reinterpret_cast<const uintptr_t*>(owner) - g_imageBase != kOwnerVtable) return -1;
-        return *reinterpret_cast<const uint32_t*>(owner + kOwnerSlot);
+        int64_t slot = -1;
+        if (*reinterpret_cast<const uintptr_t*>(owner) - g_imageBase == kOwnerVtable) slot = *reinterpret_cast<const uint32_t*>(owner + kOwnerSlot);
+        CrashGuardLeave();
+        return slot;
     }
     __except (EXCEPTION_EXECUTE_HANDLER) {
+        CrashGuardLeave();
         return -1;
     }
 }

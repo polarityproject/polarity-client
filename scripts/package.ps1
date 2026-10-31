@@ -45,9 +45,11 @@ Both players need the same version to play each other.
 Problems: in the panel, Settings, Logs, "Pack logs to share", then send the
 zip it makes (in Binaries\Win64\SFVR\).
 
-Desync reports: after a match with a desync, its recording and match log
-(player names, picks, inputs) are sent to the SFVR server so it can be fixed.
-To turn that off: in the panel, Settings, Logs, untick "Send desync reports".
+Reports: after a match with a desync, its recording and match log (player
+names, picks, inputs) are sent to the SFVR server so it can be fixed; after a
+crash, the end of the log and a small crash dump, at the next start. To turn
+that off: in the panel, Settings, Logs, untick "Send desync and crash
+reports".
 
 Uninstall: delete xinput1_3.dll, sfv_rollback.dll, sfv_noise.txt (0.1.0) and
 sfv_rollback.ini from Binaries\Win64\ (and the SFVR folder, with the logs).

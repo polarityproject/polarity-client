@@ -5,6 +5,7 @@
 //             instance n), earlier runs as sfvr_<start>.log
 //   matches\  per match a recording (.sfvr) and its log (.log), named by date,
 //             players, characters and match id
+//   crashes\  reports of runs that ended badly (crash_report.h)
 // Plus "Pack logs to share": a zip of the logs and the latest matches.
 
 #include <string>
@@ -17,11 +18,14 @@ constexpr size_t kKeptRunLogs = 20;      // earlier runs' event logs
 constexpr size_t kKeptRecordings = 300;  // .sfvr files in the matches folder (a match, its desync reports)
 constexpr size_t kKeptMatchLogs = 200;   // .log files in the matches folder
 constexpr size_t kSharedMatches = 10;    // the latest matches in a shared zip
+constexpr size_t kKeptCrashReports = 20;  // crash reports (.log, and .dmp with a fault)
+constexpr size_t kSharedCrashFiles = 6;   // the latest crash reports' files in a shared zip
 
 void SetDataDir(const std::wstring& dir);
 std::wstring DataDir();                   // ...\Win64\SFVR
 std::wstring LogsDir();                   // ...\SFVR\logs
 std::wstring MatchesDir();                // ...\SFVR\matches
+std::wstring CrashesDir();                // ...\SFVR\crashes
 
 // Creates the folder and any missing parents.
 bool EnsureDirectory(const std::wstring& path);

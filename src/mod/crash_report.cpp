@@ -1,0 +1,362 @@
+#include "mod/crash_report.h"
+
+#include "mod/files.h"
+#include "mod/log.h"
+
+#include <MinHook.h>
+#include <windows.h>
+
+#include <dbghelp.h>
+
+#include <atomic>
+#include <cstdio>
+#include <string>
+#include <vector>
+
+namespace sfv::mod {
+
+namespace {
+
+constexpr int kMaxDumps = 5;                     // a run's pending dumps (the latest stays)
+constexpr ULONGLONG kFaultBeforeExitMs = 15000;  // an exit this soon after a fault is that fault's
+constexpr size_t kLogTailBytes = 256 * 1024;     // of the run's log, into its report
+constexpr size_t kLogTailLines = 400;
+
+std::wstring g_dir; // SFVR\crashes
+std::wstring g_suffix;
+std::string g_version;
+thread_local int t_guarded = 0;
+
+// The fault, copied by the faulting thread for the writer.
+EXCEPTION_RECORD g_record;
+alignas(16) CONTEXT g_context;
+DWORD g_faultThread = 0;
+HANDLE g_request = nullptr, g_done = nullptr, g_writer = nullptr;
+PVOID g_handler = nullptr;
+std::atomic<bool> g_stop{false};
+std::atomic<bool> g_writing{false};
+std::atomic<int> g_dumps{0};
+std::atomic<ULONGLONG> g_lastFault{0};
+std::atomic<bool> g_exited{false};
+
+using TerminateProcessFn = BOOL(WINAPI*)(HANDLE, UINT);
+TerminateProcessFn g_origTerminate = nullptr;
+
+std::wstring RunningPath() { return g_dir + L"\\running" + g_suffix + L".txt"; }
+std::wstring PendingPath(const wchar_t* ext) { return g_dir + L"\\pending" + g_suffix + ext; }
+
+const char* CodeName(DWORD code)
+{
+    switch (code) {
+    case EXCEPTION_ACCESS_VIOLATION: return "access violation";
+    case EXCEPTION_STACK_OVERFLOW: return "stack overflow";
+    case EXCEPTION_ILLEGAL_INSTRUCTION: return "illegal instruction";
+    case EXCEPTION_PRIV_INSTRUCTION: return "privileged instruction";
+    case EXCEPTION_INT_DIVIDE_BY_ZERO: return "integer divide by zero";
+    case EXCEPTION_IN_PAGE_ERROR: return "in-page error";
+    case EXCEPTION_DATATYPE_MISALIGNMENT: return "misaligned data";
+    case EXCEPTION_NONCONTINUABLE_EXCEPTION: return "noncontinuable exception";
+    case 0xC0000374: return "heap corruption";
+    case 0xC0000409: return "stack buffer overrun";
+    }
+    return nullptr;
+}
+
+// "module+offset" for an address.
+std::string Where(DWORD64 address)
+{
+    HMODULE module = nullptr;
+    char buf[MAX_PATH + 32];
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<LPCWSTR>(address), &module) &&
+        module) {
+        wchar_t path[MAX_PATH];
+        const DWORD n = GetModuleFileNameW(module, path, MAX_PATH);
+        std::wstring name(path, n);
+        name = name.substr(name.find_last_of(L'\\') + 1);
+        std::string narrow;
+        for (wchar_t c : name) narrow += c < 128 ? static_cast<char>(c) : '_';
+        std::snprintf(buf, sizeof(buf), "%s+%llX", narrow.c_str(),
+                      static_cast<unsigned long long>(address - reinterpret_cast<DWORD64>(module)));
+    }
+    else {
+        std::snprintf(buf, sizeof(buf), "%016llX", static_cast<unsigned long long>(address));
+    }
+    return buf;
+}
+
+// One unwind step from `c` (false: no caller found, or the stack was
+// unreadable).
+bool Unwind(CONTEXT* c)
+{
+    __try {
+        DWORD64 base = 0;
+        RUNTIME_FUNCTION* fn = RtlLookupFunctionEntry(c->Rip, &base, nullptr);
+        if (!fn) {
+            // A leaf function: the return address is at the stack's top.
+            c->Rip = *reinterpret_cast<DWORD64*>(c->Rsp);
+            c->Rsp += 8;
+        }
+        else {
+            PVOID handlerData = nullptr;
+            DWORD64 frame = 0;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, c->Rip, fn, c, &handlerData, &frame, nullptr);
+        }
+        return c->Rip != 0;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+void WriteText(const std::wstring& path, const std::string& text)
+{
+    if (FILE* f = _wfopen(path.c_str(), L"wb")) {
+        std::fwrite(text.data(), 1, text.size(), f);
+        std::fclose(f);
+    }
+}
+
+std::string ReadText(const std::wstring& path, size_t tailBytes = 0)
+{
+    std::string text;
+    FILE* f = _wfopen(path.c_str(), L"rb");
+    if (!f) return text;
+    if (tailBytes) {
+        _fseeki64(f, 0, SEEK_END);
+        const long long size = _ftelli64(f);
+        if (size > static_cast<long long>(tailBytes)) _fseeki64(f, size - static_cast<long long>(tailBytes), SEEK_SET);
+        else _fseeki64(f, 0, SEEK_SET);
+    }
+    char buf[65536];
+    size_t n;
+    while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) text.append(buf, n);
+    std::fclose(f);
+    return text;
+}
+
+std::string Stamp(const SYSTEMTIME& t, const char* format = "%04d-%02d-%02d_%02d-%02d-%02d")
+{
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), format, t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+    return buf;
+}
+
+// On the writer thread, the faulting thread waiting: the minidump and the
+// note.
+void WritePending()
+{
+    t_guarded++; // a fault while walking is this thread's own business
+    EXCEPTION_POINTERS pointers{&g_record, &g_context};
+    MINIDUMP_EXCEPTION_INFORMATION info{g_faultThread, &pointers, FALSE};
+    const HANDLE file = CreateFileW(PendingPath(L".dmp").c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                                    FILE_ATTRIBUTE_NORMAL, nullptr);
+    bool dumped = false;
+    if (file != INVALID_HANDLE_VALUE) {
+        const auto type = static_cast<MINIDUMP_TYPE>(MiniDumpNormal | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules);
+        dumped = MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), file, type, &info, nullptr, nullptr);
+        CloseHandle(file);
+    }
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+    const char* name = CodeName(g_record.ExceptionCode);
+    char line[256];
+    std::string note;
+    std::snprintf(line, sizeof(line), "pid %lu\n", GetCurrentProcessId());
+    note += line;
+    std::snprintf(line, sizeof(line), "fault %s (%08lX) at %s, thread %lu, %s\n", name ? name : "?", g_record.ExceptionCode,
+                  Where(reinterpret_cast<DWORD64>(g_record.ExceptionAddress)).c_str(), g_faultThread,
+                  Stamp(t, "%04d-%02d-%02d %02d:%02d:%02d").c_str());
+    note += line;
+    if (g_record.ExceptionCode == EXCEPTION_ACCESS_VIOLATION && g_record.NumberParameters >= 2) {
+        const ULONG_PTR kind = g_record.ExceptionInformation[0];
+        std::snprintf(line, sizeof(line), "%s %016llX\n", kind == 0 ? "reading" : kind == 1 ? "writing" : "executing",
+                      static_cast<unsigned long long>(g_record.ExceptionInformation[1]));
+        note += line;
+    }
+    note += dumped ? "minidump written\n" : "no minidump (" + std::to_string(GetLastError()) + ")\n";
+    note += "stack:\n";
+    CONTEXT c = g_context;
+    for (int i = 0; i < 48; i++) {
+        note += "  " + Where(c.Rip) + "\n";
+        if (!Unwind(&c)) break;
+    }
+    WriteText(PendingPath(L".txt"), note);
+    t_guarded--;
+}
+
+DWORD WINAPI Writer(LPVOID)
+{
+    for (;;) {
+        WaitForSingleObject(g_request, INFINITE);
+        if (g_stop) return 0;
+        WritePending();
+        SetEvent(g_done);
+    }
+}
+
+bool Fatal(DWORD code) { return CodeName(code) != nullptr; }
+
+LONG CALLBACK Handler(EXCEPTION_POINTERS* e)
+{
+    if (t_guarded > 0 || !Fatal(e->ExceptionRecord->ExceptionCode)) return EXCEPTION_CONTINUE_SEARCH;
+    g_lastFault = GetTickCount64();
+    if (g_dumps >= kMaxDumps || g_writing.exchange(true)) return EXCEPTION_CONTINUE_SEARCH;
+    g_dumps++;
+    g_record = *e->ExceptionRecord;
+    g_context = *e->ContextRecord;
+    g_faultThread = GetCurrentThreadId();
+    SetEvent(g_request);
+    WaitForSingleObject(g_done, 30000);
+    g_writing = false;
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+// Lines of a "key value" file.
+std::string Value(const std::string& text, const char* key)
+{
+    const std::string k = std::string(key) + " ";
+    for (size_t at = 0; at < text.size();) {
+        size_t end = text.find('\n', at);
+        if (end == std::string::npos) end = text.size();
+        if (text.compare(at, k.size(), k) == 0) return text.substr(at + k.size(), end - at - k.size());
+        at = end + 1;
+    }
+    return "";
+}
+
+} // namespace
+
+void CrashGuardEnter() { t_guarded++; }
+void CrashGuardLeave() { t_guarded--; }
+
+std::string CheckPreviousRun(const std::wstring& suffix, const std::string& version)
+{
+    g_dir = CrashesDir();
+    g_suffix = suffix;
+    EnsureDirectory(g_dir);
+    const std::string running = ReadText(RunningPath());
+    const std::string pending = ReadText(PendingPath(L".txt"));
+    if (running.empty()) {
+        DeleteFileW(PendingPath(L".dmp").c_str());
+        DeleteFileW(PendingPath(L".txt").c_str());
+        return "";
+    }
+    // The pending fault is that run's when it names its process.
+    const bool fault = !pending.empty() && Value(pending, "pid") == Value(running, "pid");
+    const std::wstring logPath = LogsDir() + L"\\sfvr" + suffix + L".log";
+    SYSTEMTIME when{};
+    WIN32_FILE_ATTRIBUTE_DATA info;
+    if (GetFileAttributesExW(logPath.c_str(), GetFileExInfoStandard, &info)) {
+        FILETIME local;
+        FileTimeToLocalFileTime(&info.ftLastWriteTime, &local);
+        FileTimeToSystemTime(&local, &when);
+    }
+    else {
+        GetLocalTime(&when);
+    }
+    LARGE_INTEGER counter;
+    QueryPerformanceCounter(&counter);
+    char id[16];
+    std::snprintf(id, sizeof(id), "%08lx", static_cast<unsigned long>(counter.QuadPart ^ (counter.QuadPart >> 32) ^ GetCurrentProcessId()));
+    const std::string name = Stamp(when) + "_crash_" + id;
+
+    std::string report = "SFVR " + Value(running, "version") + " crash report\n";
+    report += "run started " + Value(running, "started") + ", last logged " + Stamp(when, "%04d-%02d-%02d %02d:%02d:%02d") + "\n";
+    report += "reported by SFVR " + version + "\n";
+    if (fault) {
+        report += "how it ended: a fault\n";
+        const size_t at = pending.find('\n');
+        report += pending.substr(at == std::string::npos ? 0 : at + 1);
+    }
+    else {
+        report += "how it ended: no clean exit and no fault seen (closed by force, a freeze ended by force, or a crash "
+                  "past the handlers)\n";
+    }
+    // The end of the run's log.
+    std::string tail = ReadText(logPath, kLogTailBytes);
+    size_t lines = 0, from = tail.size();
+    while (from > 0 && lines <= kLogTailLines) {
+        from = tail.rfind('\n', from - 1);
+        if (from == std::string::npos) {
+            from = 0;
+            break;
+        }
+        lines++;
+    }
+    report += "\nthe end of the run's log:\n" + tail.substr(from == 0 ? 0 : from + 1);
+    WriteText(g_dir + L"\\" + std::wstring(name.begin(), name.end()) + L".log", report);
+    if (fault) MoveFileExW(PendingPath(L".dmp").c_str(), (g_dir + L"\\" + std::wstring(name.begin(), name.end()) + L".dmp").c_str(), MOVEFILE_REPLACE_EXISTING);
+    DeleteFileW(PendingPath(L".dmp").c_str());
+    DeleteFileW(PendingPath(L".txt").c_str());
+    DeleteFileW(RunningPath().c_str());
+    PruneOldest(g_dir, L"*_crash_*.log", kKeptCrashReports);
+    PruneOldest(g_dir, L"*_crash_*.dmp", kKeptCrashReports);
+    std::string found = "crash report: the last run (SFVR " + Value(running, "version") + ") ended " +
+                        (fault ? "with a fault: " + Value(pending, "fault") : "without a clean exit (no fault seen)") +
+                        "; " + name + ".log";
+    return found;
+}
+
+void InstallCrashHandler(const std::wstring& suffix, const std::string& version)
+{
+    g_dir = CrashesDir();
+    g_suffix = suffix;
+    g_version = version;
+    EnsureDirectory(g_dir);
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+    char text[256];
+    std::snprintf(text, sizeof(text), "pid %lu\nversion %s\nstarted %s\n", GetCurrentProcessId(), version.c_str(),
+                  Stamp(t, "%04d-%02d-%02d %02d:%02d:%02d").c_str());
+    WriteText(RunningPath(), text);
+    g_request = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    g_done = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    // Its own thread with room on its stack: the faulting one may have none.
+    g_writer = CreateThread(nullptr, 256 * 1024, Writer, nullptr, 0, nullptr);
+    if (g_request && g_done && g_writer) g_handler = AddVectoredExceptionHandler(0, Handler);
+}
+
+void OnProcessExit(const char* how)
+{
+    (void)how;
+    if (g_dir.empty() || g_exited.exchange(true)) return;
+    const ULONGLONG fault = g_lastFault;
+    if (fault && GetTickCount64() - fault < kFaultBeforeExitMs) return; // the engine ends it for that fault
+    DeleteFileW(RunningPath().c_str());
+    DeleteFileW(PendingPath(L".dmp").c_str());
+    DeleteFileW(PendingPath(L".txt").c_str());
+}
+
+namespace {
+BOOL WINAPI TerminateDetour(HANDLE process, UINT code)
+{
+    if (process == GetCurrentProcess() || GetProcessId(process) == GetCurrentProcessId()) OnProcessExit("terminate");
+    return g_origTerminate(process, code);
+}
+} // namespace
+
+void HookProcessEnd()
+{
+    if (MH_CreateHookApi(L"kernel32", "TerminateProcess", reinterpret_cast<LPVOID>(&TerminateDetour),
+                         reinterpret_cast<LPVOID*>(&g_origTerminate)) != MH_OK ||
+        MH_EnableHook(MH_ALL_HOOKS) != MH_OK) {
+        Log("crash report: cannot hook TerminateProcess (an engine exit then counts as a bad end)");
+    }
+}
+
+void RemoveCrashHandler()
+{
+    OnProcessExit("reload");
+    if (g_handler) RemoveVectoredExceptionHandler(g_handler);
+    g_handler = nullptr;
+    if (g_writer) {
+        g_stop = true;
+        SetEvent(g_request);
+        WaitForSingleObject(g_writer, 2000);
+        CloseHandle(g_writer);
+        g_writer = nullptr;
+    }
+}
+
+} // namespace sfv::mod

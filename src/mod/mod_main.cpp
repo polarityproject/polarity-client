@@ -6,6 +6,7 @@
 #include "mod/boot.h"
 #include "mod/config.h"
 #include "mod/control.h"
+#include "mod/crash_report.h"
 #include "mod/flow.h"
 #include "mod/overlay.h"
 #include "mod/image.h"
@@ -64,8 +65,13 @@ DWORD WINAPI ModMain(LPVOID self)
     SetDataDir(dir + L"\\SFVR");
     EnsureDirectory(LogsDir());
     EnsureDirectory(MatchesDir());
+    // A report of the last run if it ended badly (from its log, before the
+    // log moves aside), then this run counts as running.
+    const std::string lastRun = CheckPreviousRun(suffix, kModVersion);
     RotateLog(LogsDir(), L"sfvr" + suffix);
     LogOpen(LogsDir() + L"\\sfvr" + suffix + L".log");
+    if (!lastRun.empty()) Log("%s", lastRun.c_str());
+    InstallCrashHandler(suffix, kModVersion);
     std::wstring iniPath = dir + L"\\sfv_rollback" + suffix + L".ini";
     if (GetFileAttributesW(iniPath.c_str()) == INVALID_FILE_ATTRIBUTES) iniPath = dir + L"\\sfv_rollback.ini";
     const std::wstring panelPath = dir + L"\\sfv_rollback.panel" + suffix + L".ini";
@@ -124,6 +130,7 @@ DWORD WINAPI ModMain(LPVOID self)
     }
 
     if (!InstallProbes(image, config, &game, &stateMap, stateMapPath)) return 0;
+    HookProcessEnd();
     InstallControl(dir + L"\\sfv_cmd" + suffix + L".txt", config.virtualPads, config.alwaysActive);
     InstallOverlay(panelPath);
     SetOverlayBuild(std::string("SFVR ") + kModVersion);

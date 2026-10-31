@@ -358,6 +358,42 @@ void RunNetCommand(const std::string& line)
         std::getline(ss >> std::ws, g_testName);
         Log("netplay: test sessions play as %s", TestName().c_str());
     }
+    else if (cmd == "crash") {
+        // crash game|thread|overflow|hang|fastfail: testing crash reports
+        // (crash_report.h). The game ends (or freezes) for real.
+        std::string how;
+        ss >> how;
+        Log("crash: %s on purpose (testing)", how.c_str());
+        if (how == "thread") {
+            std::thread([] { *reinterpret_cast<volatile int*>(16) = 1; }).detach();
+        }
+        else if (how == "overflow") {
+            RunOnGameThread([] {
+                struct Deep {
+#pragma warning(suppress : 4717) // endless on purpose
+                    static int Down(volatile int n)
+                    {
+                        volatile char pad[4096];
+                        pad[0] = static_cast<char>(n);
+                        return Down(n + 1) + pad[0];
+                    }
+                };
+                Deep::Down(0);
+            });
+        }
+        else if (how == "hang") {
+            RunOnGameThread([] {
+                for (volatile bool spin = true; spin;) {
+                }
+            });
+        }
+        else if (how == "fastfail") {
+            RunOnGameThread([] { __fastfail(7); });
+        }
+        else {
+            RunOnGameThread([] { *reinterpret_cast<volatile int*>(16) = 1; });
+        }
+    }
     else if (cmd == "reports") {
         // reports [send] [url <address>]: desync report uploads (report_upload.h).
         std::string what, url;
@@ -1266,7 +1302,7 @@ bool Parse(const std::string& line, Step& step)
         step.setup.stage = static_cast<uint16_t>(stage);
         return !ss.fail();
     }
-    if (cmd == "host" || cmd == "join" || cmd == "spectate" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
+    if (cmd == "host" || cmd == "join" || cmd == "spectate" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "crash" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
         cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "skipcallbacks") {
         step.kind = Step::Net;
         step.line = line;

@@ -143,10 +143,27 @@ bool SideKey(const std::string& name, std::string* key, bool* desync, bool* log)
     return true;
 }
 
-std::set<std::string> SentList()
+// "<date>_<time>_crash_<id>.<log|dmp>" (crash_report.h).
+bool CrashName(const std::string& name)
+{
+    if (name.size() != 38 || (name.compare(34, 4, ".log") != 0 && name.compare(34, 4, ".dmp") != 0)) return false;
+    if (name.compare(19, 7, "_crash_") != 0) return false;
+    for (size_t i = 0; i < 19; i++) {
+        const char c = name[i];
+        const bool digit = c >= '0' && c <= '9';
+        if (i == 4 || i == 7 || i == 13 || i == 16 ? c != '-' : i == 10 ? c != '_' : !digit) return false;
+    }
+    for (size_t i = 26; i < 34; i++) {
+        const char c = name[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+    }
+    return true;
+}
+
+std::set<std::string> SentList(const std::wstring& dir)
 {
     std::set<std::string> sent;
-    FILE* f = _wfopen((g_dir + L"\\uploaded.txt").c_str(), L"r");
+    FILE* f = _wfopen((dir + L"\\uploaded.txt").c_str(), L"r");
     if (!f) return sent;
     char line[512];
     while (std::fgets(line, sizeof(line), f)) {
@@ -158,12 +175,66 @@ std::set<std::string> SentList()
     return sent;
 }
 
-void MarkSent(const std::string& name)
+void MarkSent(const std::wstring& dir, const std::string& name)
 {
-    FILE* f = _wfopen((g_dir + L"\\uploaded.txt").c_str(), L"a");
+    FILE* f = _wfopen((dir + L"\\uploaded.txt").c_str(), L"a");
     if (!f) return;
     std::fprintf(f, "%s\n", name.c_str());
     std::fclose(f);
+}
+
+enum class Sent { Now, Refused, Later };
+
+// One file of `dir` to the server's `path` ("reports", "crashes").
+Sent SendFile(const std::string& url, const char* path, const std::wstring& dir, const std::string& name)
+{
+    std::vector<uint8_t> body;
+    if (!ReadFile(dir + L"\\" + Wide(name), &body)) return Sent::Refused;
+    std::string error;
+    const DWORD status = Post(url + "/v1/" + path + "/" + name, body, &error);
+    if (status == 200 || status == 201) {
+        Log("reports: sent %s (%zu KB)", name.c_str(), body.size() / 1024);
+        MarkSent(dir, name);
+        return Sent::Now;
+    }
+    if (status == 400 || status == 404 || status == 411 || status == 413) {
+        // Refused for what it is: sending it again would not help.
+        Log("reports: the server refused %s (%lu)", name.c_str(), status);
+        MarkSent(dir, name);
+        return Sent::Refused;
+    }
+    Log("reports: %s not sent: %s", name.c_str(), status ? ("the server answered " + std::to_string(status)).c_str() : error.c_str());
+    return Sent::Later;
+}
+
+// The crash reports (crash_report.h), each report's .log and .dmp.
+bool SendCrashes(const std::string& url)
+{
+    const std::wstring dir = CrashesDir();
+    std::vector<std::string> names;
+    WIN32_FIND_DATAW fd;
+    HANDLE find = FindFirstFileW((dir + L"\\*_crash_*").c_str(), &fd);
+    if (find == INVALID_HANDLE_VALUE) return true;
+    FILETIME nowFt;
+    GetSystemTimeAsFileTime(&nowFt);
+    const int64_t now = Seconds(nowFt);
+    do {
+        std::string name;
+        if (!Ascii(fd.cFileName, &name) || !CrashName(name)) continue;
+        if ((uint64_t(fd.nFileSizeHigh) << 32 | fd.nFileSizeLow) > kMaxFileBytes) continue;
+        if (now - Seconds(fd.ftLastWriteTime) > kMaxAgeSeconds) continue;
+        names.push_back(name);
+    } while (FindNextFileW(find, &fd));
+    FindClose(find);
+    const std::set<std::string> sent = SentList(dir);
+    for (const std::string& name : names) {
+        if (sent.count(name)) continue;
+        if (!g_on || Stopping()) return true;
+        const Sent s = SendFile(url, "crashes", dir, name);
+        if (s == Sent::Later) return false;
+        if (s == Sent::Now && name.compare(34, 4, ".log") == 0) g_sent++;
+    }
+    return true;
 }
 
 // Sends every side that is ready; false when the server could not take more
@@ -179,7 +250,7 @@ bool SendRound()
     std::map<std::string, Side> sides;
     WIN32_FIND_DATAW fd;
     HANDLE find = FindFirstFileW((g_dir + L"\\*").c_str(), &fd);
-    if (find == INVALID_HANDLE_VALUE) return true;
+    if (find == INVALID_HANDLE_VALUE) return SendCrashes(url);
     do {
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
         std::string name, key;
@@ -199,7 +270,7 @@ bool SendRound()
     FILETIME nowFt;
     GetSystemTimeAsFileTime(&nowFt);
     const int64_t now = Seconds(nowFt);
-    const std::set<std::string> sent = SentList();
+    const std::set<std::string> sent = SentList(g_dir);
     for (const auto& [key, s] : sides) {
         if (!s.desync || now - s.newest > kMaxAgeSeconds) continue;
         if (!s.log && now - s.newest < kNoLogAfterSeconds) continue; // the match is still on
@@ -207,28 +278,13 @@ bool SendRound()
         for (const std::string& name : s.files) {
             if (sent.count(name)) continue;
             if (!g_on || Stopping()) return true;
-            std::vector<uint8_t> body;
-            if (!ReadFile(g_dir + L"\\" + Wide(name), &body)) continue;
-            std::string error;
-            const DWORD status = Post(url + "/v1/reports/" + name, body, &error);
-            if (status == 200 || status == 201) {
-                Log("reports: sent %s (%zu KB)", name.c_str(), body.size() / 1024);
-                MarkSent(name);
-                fresh++;
-            }
-            else if (status == 400 || status == 404 || status == 411 || status == 413) {
-                // Refused for what it is: sending it again would not help.
-                Log("reports: the server refused %s (%lu)", name.c_str(), status);
-                MarkSent(name);
-            }
-            else {
-                Log("reports: %s not sent: %s", name.c_str(), status ? ("the server answered " + std::to_string(status)).c_str() : error.c_str());
-                return false;
-            }
+            const Sent result = SendFile(url, "reports", g_dir, name);
+            if (result == Sent::Later) return false;
+            if (result == Sent::Now) fresh++;
         }
         if (fresh) g_sent++;
     }
-    return true;
+    return SendCrashes(url);
 }
 
 void Round()

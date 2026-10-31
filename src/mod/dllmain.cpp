@@ -1,5 +1,6 @@
 #include "mod/battle_driver.h"
 #include "mod/control.h"
+#include "mod/crash_report.h"
 #include "mod/lifecycle.h"
 #include "mod/log.h"
 #include "mod/netplay_driver.h"
@@ -19,6 +20,11 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
         DisableThreadLibraryCalls(module);
         // Hooks and file I/O happen off the loader lock.
         if (HANDLE t = CreateThread(nullptr, 0, sfv::mod::ModMain, module, 0, nullptr)) CloseHandle(t);
+    }
+    else if (reason == DLL_PROCESS_DETACH) {
+        // The game exits (or the DLL unloads): this run ended well, unless a
+        // fault came just before (crash_report.h).
+        sfv::mod::OnProcessExit("exit");
     }
     return TRUE;
 }
@@ -51,6 +57,7 @@ extern "C" __declspec(dllexport) void SfvShutdown()
     g_stopping = true;
     // Its threads and frame driver go first, while the hooks still run.
     NetLeave();
+    RemoveCrashHandler();
     RemoveWatchHandler();
     RestoreWindowProc();
     MH_DisableHook(MH_ALL_HOOKS);

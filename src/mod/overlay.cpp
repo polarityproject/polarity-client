@@ -1403,10 +1403,11 @@ void DrawSettings(bool locked)
     ImGui::TextColored(kDim, "Event logs and match recordings are in the SFVR folder next to the game. "
                              "To report a problem, pack them and send the zip.");
     ImGui::PopTextWrapPos();
-    if (ImGui::Checkbox("Send desync reports to the SFVR server", &g_choices.uploadReports)) SaveChoices();
+    if (ImGui::Checkbox("Send desync and crash reports to the SFVR server", &g_choices.uploadReports)) SaveChoices();
     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440 * g_uiScale);
     ImGui::TextColored(kDim, "After a match with a desync, its recording and match log (names, picks, inputs) "
-                             "go to the server so both players' halves can be compared.");
+                             "go to the server so both players' halves can be compared. After a crash, the "
+                             "end of the log and a small crash dump go at the next start.");
     ImGui::PopTextWrapPos();
     if (TileButton("Open folder")) OpenDataFolder();
     ImGui::SameLine();
@@ -2503,14 +2504,14 @@ void ToastReports()
         if (!g_panelPath.empty() && NetOptions().uploadReports &&
             !GetPrivateProfileIntW(L"report", L"notice_shown", 0, g_panelPath.c_str())) {
             WritePrivateProfileStringW(L"report", L"notice_shown", L"1", g_panelPath.c_str());
-            AddToast("Desync reports are sent to the SFVR server to help fix them. Settings, Logs turns this off.", kGold, 15);
+            AddToast("Desync and crash reports are sent to the SFVR server to help fix them. Settings, Logs turns this off.", kGold, 15);
         }
     }
     static int toasted = 0;
     const int sent = ReportsSent();
     if (sent == toasted) return;
     toasted = sent;
-    AddToast("Desync report sent to the SFVR server (Settings, Logs)", kDim, 6);
+    AddToast("Report sent to the SFVR server (Settings, Logs)", kDim, 6);
 }
 
 // Notices from what changed in the session since the last frame.

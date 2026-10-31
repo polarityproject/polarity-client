@@ -34,6 +34,15 @@ function Inside([string]$path) {
   $full
 }
 
+# Deletes the crash reports' "running" marks of these game processes
+# (SFVR\crashes\running*.txt, crash_report.h): games killed on purpose did
+# not crash.
+function Clear-CrashMarks([string]$win64, [int[]]$ids) {
+  foreach ($f in Get-ChildItem (Join-Path $win64 'SFVR\crashes') -Filter 'running*.txt' -ErrorAction SilentlyContinue) {
+    $id = (Select-String -Path $f.FullName -Pattern '^pid (\d+)' | Select-Object -First 1).Matches.Groups[1].Value
+    if ($id -and $ids -contains [int]$id) { Remove-Item $f.FullName -ErrorAction SilentlyContinue }
+  }
+}
 function Handle($q) {
   switch ($q.op) {
     'ping' {
@@ -46,7 +55,10 @@ function Handle($q) {
       return @{ output = $out }
     }
     'stop' {
-      Get-Process StreetFighterV -ErrorAction SilentlyContinue | Stop-Process -Force
+      $games = @(Get-Process StreetFighterV -ErrorAction SilentlyContinue)
+      $games | Stop-Process -Force
+      $games | ForEach-Object { $_.WaitForExit(30000) | Out-Null }
+      Clear-CrashMarks $game ($games | ForEach-Object { $_.Id })
       return @{ output = 'stopped' }
     }
     'cmd' {

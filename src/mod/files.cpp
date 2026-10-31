@@ -93,6 +93,7 @@ void SetDataDir(const std::wstring& dir) { g_dataDir = dir; }
 std::wstring DataDir() { return g_dataDir; }
 std::wstring LogsDir() { return g_dataDir + L"\\logs"; }
 std::wstring MatchesDir() { return g_dataDir + L"\\matches"; }
+std::wstring CrashesDir() { return g_dataDir + L"\\crashes"; }
 
 bool EnsureDirectory(const std::wstring& path)
 {
@@ -240,6 +241,11 @@ std::wstring PackLogsToShare(std::string* error)
     std::vector<std::pair<std::wstring, std::string>> files;
     // The event logs: this run's and the earlier ones kept.
     for (const auto& f : ListNewestFirst(LogsDir(), L"*.log")) files.push_back({LogsDir() + L"\\" + f.name, "logs/" + Narrow(f.name)});
+    // The latest crash reports (crash_report.h): notes and minidumps.
+    const auto crashes = ListNewestFirst(CrashesDir(), L"*_crash_*");
+    for (size_t i = 0; i < crashes.size() && i < kSharedCrashFiles; i++) {
+        files.push_back({CrashesDir() + L"\\" + crashes[i].name, "crashes/" + Narrow(crashes[i].name)});
+    }
     // The latest matches: their logs, and every recording with the same match
     // id (the match's own and its desync reports). File names are
     // <date>_<time>_<P1>_vs_<P2>_<id>_<side>[_<kind>], with '_' only between

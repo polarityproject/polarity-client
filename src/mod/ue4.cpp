@@ -1,5 +1,6 @@
 #include "mod/ue4.h"
 
+#include "mod/crash_report.h"
 #include "mod/log.h"
 
 #include <windows.h>
@@ -35,11 +36,14 @@ constexpr int kItemChunk = 64 * 1024;
 // that way, 2026-10-30).
 bool CopyGuarded(void* out, const void* p, size_t size)
 {
+    CrashGuardEnter(); // a fault here is expected, not a crash
     __try {
         std::memcpy(out, p, size);
+        CrashGuardLeave();
         return true;
     }
     __except (EXCEPTION_EXECUTE_HANDLER) {
+        CrashGuardLeave();
         return false;
     }
 }

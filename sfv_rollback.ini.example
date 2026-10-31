@@ -45,7 +45,8 @@ url=
 check=1
 
 [report]
-; Where desync reports go (report_upload.h): sfvr-reports on the rooms server.
+; Where desync and crash reports go (report_upload.h): sfvr-reports on the
+; rooms server.
 ; Empty: the build's default, http://159.69.32.141:5580. Whether they are sent
 ; at all is [netplay] upload_reports (Settings, Logs in the panel).
 url=
@@ -66,7 +67,8 @@ name=
 transport=weyve
 ; Host: others may watch the session (up to 8)
 allow_spectators=1
-; After a match with a desync, send its reports to the SFVR server (see [report])
+; Send desync reports (after a match with a desync) and crash reports (at the
+; start after a crash) to the SFVR server (see [report])
 upload_reports=1
 udp_port=47001
 udp_host=127.0.0.1

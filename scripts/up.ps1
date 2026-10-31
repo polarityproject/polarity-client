@@ -14,6 +14,15 @@ if ($Count -gt 1 -and -not (Select-String -Path (Join-Path $w 'sfv_rollback.ini'
   Write-Error "$Count instances need multi_instance=1 in sfv_rollback.ini (lib.ps1: Use-TestSettings)"
   exit 1
 }
+# Deletes the crash reports' "running" marks of these game processes
+# (SFVR\crashes\running*.txt, crash_report.h): games killed on purpose did
+# not crash.
+function Clear-CrashMarks([string]$win64, [int[]]$ids) {
+  foreach ($f in Get-ChildItem (Join-Path $win64 'SFVR\crashes') -Filter 'running*.txt' -ErrorAction SilentlyContinue) {
+    $id = (Select-String -Path $f.FullName -Pattern '^pid (\d+)' | Select-Object -First 1).Matches.Groups[1].Value
+    if ($id -and $ids -contains [int]$id) { Remove-Item $f.FullName -ErrorAction SilentlyContinue }
+  }
+}
 if ($Restart) {
   # A killed game can take a while to go (and while it is there it counts as
   # running: one instance fewer would be started).
@@ -28,6 +37,9 @@ if ($Restart) {
     Start-Sleep -Milliseconds 250
   }
   $took = ((Get-Date) - $killed).TotalSeconds
+  # Killed on purpose: not crashes. Their "running" marks go (the mod would
+  # report each as a run that ended badly, crash_report.h).
+  Clear-CrashMarks $w ($old | ForEach-Object { $_.Id })
   if ($took -gt 2) { "the closed games took $([int]$took) s to exit" }
 }
 $running = @(Get-Process StreetFighterV -ErrorAction SilentlyContinue).Count
