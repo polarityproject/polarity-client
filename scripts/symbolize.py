@@ -1,7 +1,10 @@
 # Names functions and lines in the mod DLL for crash stack addresses.
 #   python symbolize.py <sfv_rollback.dll> <module base hex> <address hex>...
-# The base is logged at startup ("module at ..."); the PDB is found through the
-# path recorded in the DLL (build\Release\sfv_rollback.pdb).
+# The base is logged at startup ("module at ..."); an address written +<hex>
+# is that far from the base (a crash report's sfv_rollback...dll+<offset>:
+# any base will do). The PDB is found through the path recorded in the DLL
+# (build\Release\sfv_rollback.pdb), else on _NT_SYMBOL_PATH (a release's:
+# dist\symbols\<version>).
 import ctypes, ctypes.wintypes as wt, sys
 
 dbghelp = ctypes.WinDLL('dbghelp')
@@ -28,7 +31,7 @@ dll, base = sys.argv[1], int(sys.argv[2], 16)
 if not dbghelp.SymLoadModuleEx(process, None, dll.encode(), None, ctypes.c_uint64(base), 0, None, 0):
     sys.exit('cannot load symbols for ' + dll)
 for a in sys.argv[3:]:
-    address = int(a, 16)
+    address = base + int(a[1:], 16) if a.startswith('+') else int(a, 16)
     sym = SYMBOL_INFO(SizeOfStruct=ctypes.sizeof(SYMBOL_INFO) - 512, MaxNameLen=511)
     disp = ctypes.c_uint64()
     name = '?'

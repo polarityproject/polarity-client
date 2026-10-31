@@ -14,7 +14,7 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   log (player names, picks, inputs). Settings, Logs turns it off; a notice
   says so once. Reports not sent (no network) go after the next match or at
   the next launch; `[report] url` sends them elsewhere. Needs sfvr-server with
-  `sfvr-reports` (TCP 5580). `scripts/pull-reports.ps1` pulls them to this PC.
+  `sfvr-reports` (TCP 5580).
 - Crash reports: when the game crashes, a small minidump and the fault with
   its stack are saved in SFVR\crashes, and at the next start a report with
   the end of the log goes to the SFVR server (the same setting turns it off).
