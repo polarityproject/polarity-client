@@ -43,8 +43,10 @@ if ($Restart) {
   if ($took -gt 2) { "the closed games took $([int]$took) s to exit" }
 }
 $running = @(Get-Process StreetFighterV -ErrorAction SilentlyContinue).Count
-# The loader runs a copy of the DLL, so this one is never in use.
+# The loader runs a copy of the DLL, so this one is never in use. The loader
+# itself (xinput1_3.dll) is the game's while it runs: copied with none running.
 Copy-Item (Join-Path $PSScriptRoot '..\build\Release\sfv_rollback.dll') $w -Force
+if (-not $running) { Copy-Item (Join-Path $PSScriptRoot '..\build\Release\xinput1_3.dll') $w -Force }
 function Launch {
   $r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = "`"$exe`""; CurrentDirectory = $w }
   if ($r.ReturnValue -ne 0) { Write-Error "cannot start the game (Win32_Process.Create returned $($r.ReturnValue))"; exit 1 }

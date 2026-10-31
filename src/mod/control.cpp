@@ -5,6 +5,7 @@
 #include "mod/pacing.h"
 #include "mod/report_upload.h"
 #include "mod/updater.h"
+#include "proxy/real_xinput.h"
 #include "mod/flow.h"
 
 #include "mod/lifecycle.h"
@@ -1678,6 +1679,28 @@ void KeepWindowActive()
 
 } // namespace
 
+// Where the game exe's import of `module`'s function (by ordinal or by name)
+// leads, or null.
+void* GameImport(const char* module, WORD ordinal, const char* name)
+{
+    auto* base = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr));
+    auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + reinterpret_cast<IMAGE_DOS_HEADER*>(base)->e_lfanew);
+    const IMAGE_DATA_DIRECTORY& dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (!dir.VirtualAddress) return nullptr;
+    for (auto* d = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(base + dir.VirtualAddress); d->Name; d++) {
+        if (_stricmp(reinterpret_cast<const char*>(base + d->Name), module) != 0) continue;
+        auto* names = reinterpret_cast<IMAGE_THUNK_DATA*>(base + (d->OriginalFirstThunk ? d->OriginalFirstThunk : d->FirstThunk));
+        auto* iat = reinterpret_cast<IMAGE_THUNK_DATA*>(base + d->FirstThunk);
+        for (; names->u1.AddressOfData; names++, iat++) {
+            const bool match = IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal)
+                                   ? IMAGE_ORDINAL(names->u1.Ordinal) == ordinal
+                                   : std::strcmp(reinterpret_cast<IMAGE_IMPORT_BY_NAME*>(base + names->u1.AddressOfData)->Name, name) == 0;
+            if (match) return reinterpret_cast<void*>(iat->u1.Function);
+        }
+    }
+    return nullptr;
+}
+
 bool InstallControl(const std::wstring& commandFile, int virtualPads, bool alwaysActive)
 {
     g_gameWindow = FindGameWindow();
@@ -1698,8 +1721,15 @@ bool InstallControl(const std::wstring& commandFile, int virtualPads, bool alway
             g_gameWindow.load());
     }
     for (int u = 0; u < virtualPads && u < XUSER_MAX_COUNT; u++) g_pads[u].connected = true;
-    HMODULE xinput = LoadLibraryW(L"C:\\Windows\\System32\\xinput1_3.dll");
-    void* target = xinput ? reinterpret_cast<void*>(GetProcAddress(xinput, "XInputGetState")) : nullptr;
+    // Hooked where the game's import leads (the proxy's export), ahead of the
+    // Steam overlay's patch there: Steam answers for its pads without calling
+    // on, so hooked further in (the real XInput) they never showed. Without
+    // the import, the real XInput's (real_xinput.h).
+    void* target = GameImport("xinput1_3.dll", 2, "XInputGetState");
+    if (!target) {
+        HMODULE xinput = sfv::proxy::RealXInput();
+        target = xinput ? reinterpret_cast<void*>(GetProcAddress(xinput, "XInputGetState")) : nullptr;
+    }
     if (!target || MH_CreateHook(target, reinterpret_cast<void*>(&GetStateDetour),
                                  reinterpret_cast<void**>(&g_origGetState)) != MH_OK ||
         MH_EnableHook(target) != MH_OK) {

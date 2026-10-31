@@ -7,6 +7,14 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Fixed
+
+- No pad input on the Steam Deck (Proton) with SFVR installed: the
+  xinput1_3=n,b override that loads SFVR also made the game's XInput load as
+  a copy that sees no pads. Under Wine SFVR now passes the game's XInput calls
+  to Wine's own xinput1_4. The game's pad reading is hooked where the game's
+  import leads, ahead of the Steam overlay's own patch there.
+
 ## [0.2.0] - 2026-10-31
 
 A new character select for sessions: the host picks the stage, both players
