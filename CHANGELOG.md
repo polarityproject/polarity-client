@@ -39,6 +39,11 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   for move variants was never set. Both now come from the match and the
   frame, the same on every PC and after any rollback. Players need the same
   version to play together.
+- A screen shake after a big hit could shake the other way on one PC after
+  a rollback (a short desync warning, seen in a Rose mirror match): the
+  counter that flips the shake's direction was not restored by rollbacks.
+  It is now. The engine's own random numbers and other objects' random
+  draws in a frame are also set from the match and the frame now.
 - Rose's matches desynced every time after a rollback (a short warning
   around her soul level change): a countdown that applies her new soul
   level was not restored by rollbacks, so the level changed a frame early

@@ -10,6 +10,7 @@
 #include "mod/control.h"
 #include "mod/files.h"
 #include "mod/flow.h"
+#include "mod/lifecycle.h"
 #include "mod/log.h"
 #include "mod/sfv_game.h"
 #include "mod/ue4.h"
@@ -25,6 +26,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace sfv::mod {
@@ -325,6 +327,16 @@ private:
         Log("replay: holding at frame %d", f);
     }
 
+    // ArmWatch sets every thread's debug registers but the caller's, and the
+    // ticks run on this (the game) thread: arm from another and wait.
+    static void ArmFromHelper(int slot, const void* address, int length, uintptr_t base)
+    {
+        std::thread([=] {
+            ThreadGuard running;
+            ArmWatch(slot, address, length, base);
+        }).join();
+    }
+
     // `watch <from> <to> [region]`: per frame, the region's first 16 bytes
     // (by name) and the round's end state.
     void WatchFrame(SfvGame& game, int f)
@@ -339,7 +351,7 @@ private:
             }
             const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
             for (int done = 0; done < t.bytes && trapSlots_ < 4; done += 8) {
-                ArmWatch(trapSlots_++, r->ptr + t.offset + done, std::min(8, t.bytes - done), base);
+                ArmFromHelper(trapSlots_++, r->ptr + t.offset + done, std::min(8, t.bytes - done), base);
             }
             Log("replay: trap armed on %s +0x%zx (%d bytes) at %p before frame %d", t.region.c_str(), t.offset, t.bytes,
                 static_cast<void*>(r->ptr + t.offset), t.frame);
@@ -423,7 +435,7 @@ private:
             for (size_t i = after; i < objects.size(); i++) {
                 const uint8_t* obj = objects[i];
                 if (trapSlots_ >= 4) break;
-                ArmWatch(trapSlots_++, obj + 0xE8, 4, base);
+                ArmFromHelper(trapSlots_++, obj + 0xE8, 4, base);
                 Log("replay: trails: watching %p +0xe8 from frame %d", static_cast<const void*>(obj), f + 1);
             }
         }

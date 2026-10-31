@@ -39,8 +39,8 @@ std::string RegionOwner(const void* region);
 // start from (the same on every machine of a match).
 void SetMatchDrawSeed(uint64_t seed);
 // Starts a driven tick's counts of random draws (per stream) and global
-// picks (per call site), which key their seeds: called as each driven tick
-// begins.
+// picks (per call site), which key their seeds, and seeds the engine's
+// rand() for the tick: called as each driven tick begins (game thread).
 void SeedTickRandom();
 // Research: logs the next `count` random stream draws made in driven ticks
 // (tick, stream, caller).

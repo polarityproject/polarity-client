@@ -166,12 +166,16 @@ int64_t OwnerSlot(const uint8_t* stream)
     }
 }
 
-uint32_t TickDrawState(const uint8_t* stream)
+uint32_t TickDrawState(const uint8_t* stream, uintptr_t site)
 {
-    // Another stream (none seen so far) falls back to the order of such draws.
+    // Another object's stream (the battle camera's shake, a Rose mirror
+    // match) by the draw's call site (an rva) and its count there in the
+    // tick: by the order of all such draws, effects that a rollback loses
+    // moved the camera's numbers.
     const int64_t slot = OwnerSlot(stream);
-    const uint64_t owner = slot >= 0 ? static_cast<uint64_t>(slot) : 0x10000 + NextInTick(0);
-    const uint64_t key = owner << 32 | NextInTick(reinterpret_cast<uintptr_t>(stream));
+    const uint64_t who = slot >= 0 ? static_cast<uint64_t>(slot)
+                                   : 1ull << 63 | static_cast<uint64_t>(site - g_imageBase) << 24 | NextInTick(site);
+    const uint64_t key = static_cast<uint64_t>(Mix(who)) << 32 | NextInTick(reinterpret_cast<uintptr_t>(stream));
     return Mix(g_drawSeed ^ (static_cast<uint64_t>(DrivenTicks()) << 32) ^ Mix(key));
 }
 
@@ -213,7 +217,7 @@ uint32_t DrawDetour(uint8_t* stream)
 {
     HookGuard guard;
     if (t_picking) *reinterpret_cast<uint32_t*>(stream + kStreamState) = t_pickSeed;
-    else if (g_inDriver) *reinterpret_cast<uint32_t*>(stream + kStreamState) = TickDrawState(stream);
+    else if (g_inDriver) *reinterpret_cast<uint32_t*>(stream + kStreamState) = TickDrawState(stream, reinterpret_cast<uintptr_t>(_ReturnAddress()));
     const bool window = g_inDriver && InDrawLogTicks();
     if ((g_drawLog > 0 && g_inDriver) || window) {
         // The per-tick draw of every fighter (rva 0x37D642) only once per stream.
@@ -299,9 +303,18 @@ void SetMatchDrawSeed(uint64_t seed)
     g_drawSeed = seed;
 }
 
+// The engine's C runtime rand() (MSVCR120.dll, state per thread) is called
+// in battle ticks (rva 0xEB2D64, 0xEE7F6E, 0x1E288CA, 0x1E48A27); its state
+// is outside the snapshot, so a resimulated tick would draw from wherever it
+// had got to. Each driven tick starts the game thread's state from the match
+// seed and the tick.
+using SrandFn = void(__cdecl*)(unsigned int);
+SrandFn g_srand = nullptr;
+
 void SeedTickRandom()
 {
     g_tickCountUsed = 0;
+    if (g_srand) g_srand(Mix(g_drawSeed ^ (static_cast<uint64_t>(DrivenTicks()) << 32 | 0x52414E44u)));
 }
 
 void LogGameInputs(int ticks)
@@ -354,7 +367,9 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game)
         picksHooked = Hook(image, site, detours[i], reinterpret_cast<void**>(&g_origGlobalPicks[i])) && picksHooked;
     }
     if (picksHooked) g_globalRandom = image.At<uint32_t*>(kGlobalRandomState);
-    else Log("battle driver: move variant picks stay random per game");
+    if (HMODULE crt = GetModuleHandleW(L"msvcr120.dll")) g_srand = reinterpret_cast<SrandFn>(GetProcAddress(crt, "srand"));
+    if (!picksHooked) Log("battle driver: move variant picks stay random per game");
+    if (!g_srand) Log("battle driver: the game's srand not found; its rand() stays per game");
     // SfvGame::Advance runs a tick through the original, not through the hook.
     game->SetBattleFrameFunction(g_origBattleFrame);
     Log("battle driver %s", ok ? "installed" : "NOT installed");

@@ -333,6 +333,14 @@ uint8_t* SfvGame::SingletonTicks() const
 constexpr uint32_t kSoulEntityVtable = 0x2C5E2A8;
 constexpr size_t kSoulEntityRegionSize = 884, kSoulEntityRegionAt = 0xF0;
 constexpr size_t kSoulEntityTailAt = 0x5C8, kSoulEntityTailSize = 0xA8;
+// The battle camera: the game snapshots 528 bytes of it from +0x100 (its
+// sub-object with vtable rva 0x2C4F4A0 sits at +0xE8). The screen shake's
+// flip period, counter and stop flag (+0x310, +0x314, +0x318: 0x339514,
+// 0x33E0A3) lie after it, so after a rollback the shake flipped direction on
+// another frame (a Rose mirror match, both PCs). +0x310..+0x31F is added.
+constexpr uint32_t kCameraPartVtable = 0x2C4F4A0;
+constexpr size_t kCameraRegionSize = 528, kCameraRegionAt = 0x100, kCameraPartAt = 0xE8;
+constexpr size_t kCameraShakeAt = 0x310, kCameraShakeSize = 0x10;
 
 bool SfvGame::RefreshRegions()
 {
@@ -375,6 +383,15 @@ bool SfvGame::RefreshRegions()
             if (IsReadable(entity, 8) && *reinterpret_cast<const uintptr_t*>(entity) == image_.base + kSoulEntityVtable &&
                 IsReadable(entity + kSoulEntityTailAt, kSoulEntityTailSize)) {
                 flow.push_back({"rose.soul", entity + kSoulEntityTailAt, kSoulEntityTailSize});
+            }
+        }
+        for (size_t i = 0; i < gameRegions; i++) {
+            if (raw[i].second != kCameraRegionSize) continue;
+            uint8_t* camera = raw[i].first - kCameraRegionAt;
+            if (IsReadable(camera + kCameraPartAt, 8) &&
+                *reinterpret_cast<const uintptr_t*>(camera + kCameraPartAt) == image_.base + kCameraPartVtable &&
+                IsReadable(camera + kCameraShakeAt, kCameraShakeSize)) {
+                flow.push_back({"camera.shake", camera + kCameraShakeAt, kCameraShakeSize});
             }
         }
     }
@@ -762,7 +779,7 @@ std::string SfvGame::BuildId() const
 {
     char buf[96];
     const uint64_t noise = NoiseHash();
-    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-6/map-%016llx/noise-%016llx", image_.timestamp,
+    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-7/map-%016llx/noise-%016llx", image_.timestamp,
                   static_cast<unsigned long long>(stateMap_ ? stateMap_->Fingerprint() : 0),
                   static_cast<unsigned long long>(noise));
     return buf;
