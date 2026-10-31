@@ -25,6 +25,7 @@
 #include <windows.h>
 #include <xinput.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -505,11 +506,10 @@ public:
     // Game thread, once per rendered battle frame.
     bool OnFrame(SfvGame& game) override
     {
-        // The lobby over the last match's results screen: the battle runs on
-        // by itself, so its win pose plays out; its own results menu stays
-        // closed (the hold drops the events that open it, and no pad reaches
-        // the game meanwhile).
-        if (holdOverResults_ && !matchLive_) return false;
+        // The lobby over the last match's results screen: the battle holds
+        // still there, as during the vote (run on, it opens the game's own
+        // Results Menu).
+        if (holdOverResults_ && !matchLive_) return true;
         if (next_ != Next::None && matchLive_) {
             // A spectator watches the match to its end first, unless the
             // session itself ended.
@@ -1674,6 +1674,8 @@ private:
         waitFrames_ = 0;
         waitCooldown_ = 0;
         desyncFrame_ = -1;
+        recentRollbacks_ = {};
+        rollbacksSeen_ = 0;
         {
             std::lock_guard lock(mutex_);
             desyncReport_.clear();
@@ -1720,6 +1722,8 @@ private:
         waitFrames_ = 0;
         waitCooldown_ = 0;
         desyncFrame_ = -1;
+        recentRollbacks_ = {};
+        rollbacksSeen_ = 0;
         {
             std::lock_guard lock(mutex_);
             desyncReport_.clear();
@@ -1817,8 +1821,9 @@ private:
         if (host_) Stream();
         Publish(ahead);
         // Past the results event the session holds still (a rematch starts a
-        // new one) and the game runs the frames itself: the win pose goes on.
-        return !ResultsHeld();
+        // new one) and so does the battle: run on, its results screen opens
+        // the game's own Results Menu at once, with or without a press.
+        return true;
     }
 
     // Host: confirmed frames into the spectators' stream.
@@ -1936,18 +1941,23 @@ private:
         live_.desyncFrame = desyncFrame_;
         live_.inputDelay = inputDelay_;
         live_.predictionWindow = predictionWindow_;
+        // This frame's rollback (its length, 0 for none) into the last
+        // second's, for the longest of them.
+        const auto rb = session_->RollbackStats();
+        recentRollbacks_[framesRun_ % recentRollbacks_.size()] =
+            rb.total_count != rollbacksSeen_ ? static_cast<uint8_t>(std::min(rb.last_frames, 255u)) : 0;
+        rollbacksSeen_ = rb.total_count;
         if (framesRun_ % 10 == 0) {
             const auto net = session_->NetworkStats();
-            const auto rb = session_->RollbackStats();
             live_.pingMs = net.last_ping;
             live_.avgPingMs = net.avg_ping;
             live_.jitterMs = net.jitter;
             live_.rollbacks = rb.total_count;
             live_.longestRollback = rb.max_frames;
+            live_.recentRollback = *std::max_element(recentRollbacks_.begin(), recentRollbacks_.end());
         }
         if (framesRun_ % 30 == 0) {
             const auto net = session_->NetworkStats();
-            const auto rb = session_->RollbackStats();
             char buf[200];
             std::snprintf(buf, sizeof(buf), "P%d | frame %d | ping %u ms | rollbacks %u (max %u) | ahead %.1f%s",
                           host_ ? 1 : 2, session_->NextFrame(), net.last_ping, rb.total_count, rb.max_frames, ahead,
@@ -2008,7 +2018,7 @@ private:
                           desyncFrame_ >= 0 ? (" | DESYNC at " + std::to_string(desyncFrame_)).c_str() : "");
             SetStatus(buf);
         }
-        return !ResultsHeld(); // as for the players (FrameWhileRunning)
+        return true; // as for the players (FrameWhileRunning)
     }
 
     // The intro, round call and round end are not rolled back with the battle
@@ -2385,6 +2395,8 @@ private:
     int waitFrames_ = 0;   // time sync: frames still to wait
     int waitCooldown_ = 0; // time sync: frames before the next wait may start
     int desyncFrame_ = -1;
+    std::array<uint8_t, 60> recentRollbacks_{}; // frames rolled back in each of the last 60 frames
+    unsigned rollbacksSeen_ = 0;                // the session's rollback count at the last frame
     std::string desyncReport_; // guarded by mutex_
     uint8_t predictionWindow_ = 0;
     uint8_t inputDelay_ = 0; // the local delay now (UpdatePredictionWindow)

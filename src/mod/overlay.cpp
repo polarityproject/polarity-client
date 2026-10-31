@@ -68,8 +68,8 @@ bool g_imgui = false;
 std::atomic<bool> g_visible{false};
 std::atomic<bool> g_voting{false};        // the post-match vote is up and takes input
 // A spectator over a watched match's results screen: the game gets no input
-// (a press there opens its own Results Menu, which players' votes keep shut
-// by taking the pads), but nothing is voted on here.
+// (a press there can open its own Results Menu, which players' votes keep
+// shut by taking the pads), but nothing is voted on here.
 std::atomic<bool> g_watchHold{false};
 std::atomic<HWND> g_inputWindow{nullptr}; // the window ImGui reads input for
 std::string g_build;                      // the mod's version (SetOverlayBuild)
@@ -188,7 +188,6 @@ const ImVec4 kP1(0.36f, 0.62f, 1.0f, 1.0f);
 const ImVec4 kP2(1.0f, 0.36f, 0.30f, 1.0f);
 const ImVec4 kRed(1.0f, 0.36f, 0.30f, 1.0f);
 const ImVec4 kGreen(0.55f, 0.86f, 0.45f, 1.0f);
-const ImVec4 kAmber(0.96f, 0.72f, 0.30f, 1.0f); // a warning short of an error
 const ImVec4 kDim(0.66f, 0.65f, 0.59f, 1.0f);
 
 float g_uiScale = 1.0f;          // sizes: 1 at 720 lines (render thread)
@@ -1252,11 +1251,6 @@ void DrawDelaySuggestion(const NetView& v)
     // Wrapped at the window's edge: the post-match side windows are narrow.
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextColored(kDim, "Suggested delay %d (ping %u ms)", suggested, v.linkPingMs);
-    // Below it the other player's inputs come late more often than not: the
-    // game rolls back most frames (CPU, and corrections you can see).
-    if (g_choices.delay < suggested) {
-        ImGui::TextColored(kAmber, "Delay %d is below that: expect frequent rollbacks", g_choices.delay);
-    }
     ImGui::PopTextWrapPos();
 }
 
@@ -2192,8 +2186,8 @@ void DrawToasts()
 // dark plate fading out toward the timer over a gold rule, as the game's own
 // name plates, on one line: the player, their connection's icon and, on the
 // other player's bar, the ping (colored by latency), their frame rate (over
-// the last 3 s) and the longest rollback. They fade out once the match is
-// over (its last round's outro).
+// the last 3 s) and the longest rollback in the last second. They fade out
+// once the match is over (its last round's outro).
 constexpr ULONGLONG kBarsFadeMs = 800;
 
 void DrawPlayerBars(const NetView& v)
@@ -2237,7 +2231,7 @@ void DrawPlayerBars(const NetView& v)
         // shows P1/P2 itself), the connection's icon, then the other
         // player's numbers: a cloud when the link is relayed (nothing when
         // it is peer to peer), the ping, and in smaller type their frame
-        // rate and the longest rollback.
+        // rate and the longest rollback in the last second.
         enum class Kind { Text, Link, Relay };
         struct Part {
             std::string text;
@@ -2266,7 +2260,7 @@ void DrawPlayerBars(const NetView& v)
                 parts.push_back({line, text, color(PingColor(ping))});
             }
             if (s.fps) parts.push_back({std::to_string(SmoothedFps(i, s.fps)) + " fps", g_fontTiny, color(detail)});
-            parts.push_back({std::to_string(v.longestRollback) + " RBF", g_fontTiny, color(detail)});
+            parts.push_back({std::to_string(v.recentRollback) + " RBF", g_fontTiny, color(detail)});
         }
         d->PushClipRect(ImVec2(x0, top), ImVec2(x1, bottom), true);
         const float mid = top + (bottom - rule - top) * 0.5f;
@@ -2620,10 +2614,13 @@ void Draw(IDXGISwapChain* swapChain)
     }
     // After a match, over its results screen (the vote, then character
     // select's lobby): both sides' windows; they take the pads while this
-    // player chooses.
-    const bool sides = (phase == NetView::Phase::PostMatch || (phase == NetView::Phase::Lobby && view.overResults)) && !g_visible;
-    g_voting = sides && !view.spectator;
-    g_watchHold = sides && view.spectator;
+    // player chooses. Also while the panel covers them: else the press that
+    // closes the panel reached the game for a frame, and a press on its
+    // results screen can open its own Results Menu.
+    const bool overResults = phase == NetView::Phase::PostMatch || (phase == NetView::Phase::Lobby && view.overResults);
+    const bool sides = overResults && !g_visible;
+    g_voting = overResults && !view.spectator;
+    g_watchHold = overResults && view.spectator;
     // Once the session goes into the battle the panel fades out and closes.
     static bool wasInBattle = false;
     static ULONGLONG panelFadeAt = 0;

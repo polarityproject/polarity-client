@@ -7,6 +7,25 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Changed
+
+- The rollback number on the other player's bar (RBF) is the longest
+  rollback in the last second, not the longest of the whole session: one
+  long rollback early on kept it high for the rest of the match.
+- The panel no longer warns when your input delay is below the suggested
+  one: rollbacks cost little enough now that a lower delay is a fair choice.
+  The log still notes it at the start of each match.
+
+### Fixed
+
+- The game's own Results Menu opened over the post-match vote and the lobby
+  (since 0.1.1, about 30 seconds after the KO): the battle ran on past the
+  results screen, which opens the menu by itself. The battle now holds still
+  once its results screen is up, until both players have chosen; the win
+  pose before it still plays out. The vote also keeps the pads from the game
+  while the panel is open over it (the press that closed the panel reached
+  the results screen).
+
 ## [0.1.5] - 2026-10-30
 
 Matches stay in step far more often: random move outcomes, Rose, R. Mika

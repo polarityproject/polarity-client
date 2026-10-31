@@ -147,6 +147,7 @@ struct NetView {
     float framesAhead = 0;
     unsigned rollbacks = 0;
     unsigned longestRollback = 0;
+    unsigned recentRollback = 0; // the longest in the last second
     int desyncFrame = -1;
     std::string desyncReport; // where the desync report was saved
     int inputDelay = 0;
