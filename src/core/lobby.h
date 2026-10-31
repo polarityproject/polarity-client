@@ -46,7 +46,7 @@
 namespace sfv::lobby {
 
 constexpr uint32_t kMagic = 0x4E564653; // "SFVN"
-constexpr uint16_t kProtocol = 8; // 7: names up to 96 bytes of UTF-8; 8: the match list for spectators
+constexpr uint16_t kProtocol = 9; // 7: names up to 96 bytes of UTF-8; 8: the match list for spectators; 9: the stage lock
 // Message size limits: under Weyvelength's 1024-byte datagrams.
 constexpr size_t kHashesPerMessage = 100;
 constexpr size_t kRegionsPerRequest = 200;
@@ -142,6 +142,7 @@ struct Message {
     uint16_t played = 0;  // matches finished this session
     uint8_t spectators = 0;
     uint16_t stage = kAnyStage; // the host's stage rule: a stage table index, kRandomStage or kAnyStage
+    bool stageLocked = false;   // the host confirmed the stage: on to character select
     // Welcome: the agreed setup; Loaded: the setup the game loaded
     MatchSetup setup;
     uint8_t inputDelay = 2; // Welcome: the host's own (each player keeps its own)

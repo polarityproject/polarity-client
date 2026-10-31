@@ -98,6 +98,9 @@ int SuggestedDelay(unsigned pingMs);
 // stage for the next matches (a stage code, "random", or "" as prepared).
 void NetSetDelay(uint8_t frames);
 void NetSetStage(const std::string& code);
+// The host: the stage is confirmed (the select screen moves on to the
+// characters for everyone), or open again. Every new lobby starts open.
+void NetSetStageLocked(bool locked);
 // Spectator: watch this match of the session (0: the newest) from its start.
 void NetWatchMatch(uint64_t id);
 // After a match: Rematch or CharacterSelect.
@@ -135,6 +138,7 @@ struct NetView {
     Path linkPath = Path::Unknown;
     std::string relayHost;
     uint16_t stageRule = 0xFFFF; // the host's: a stage table index, lobby::kRandomStage or kAnyStage
+    bool stageLocked = false;    // the host confirmed the stage (NetSetStageLocked)
     bool overResults = false; // the lobby after a match: over its results screen (character select stays there)
     bool haveSetup = false;
     MatchSetup setup;     // what both sides play, once agreed

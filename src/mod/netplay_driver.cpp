@@ -413,6 +413,12 @@ public:
         Log("netplay: stage %s", code.empty() ? "as prepared" : code.c_str());
     }
 
+    void SetStageLocked(bool locked)
+    {
+        if (!host_) return;
+        if (stageLocked_.exchange(locked) != locked) Log("netplay: stage %s", locked ? "confirmed" : "open again");
+    }
+
     void Choose(Choice c)
     {
         myChoice_ = c;
@@ -456,6 +462,7 @@ public:
         v.linkPath = linkPath_;
         v.relayHost = relayHost_;
         v.stageRule = host_ ? StageRule() : stageRule_;
+        v.stageLocked = stageLocked_;
         v.overResults = state_ == State::Lobby && game_.BattleRunning();
         v.haveSetup = state_ >= State::Jumping && state_ <= State::PostMatch;
         v.setup = setup_;
@@ -909,6 +916,7 @@ private:
                                                                 : SessionPhase::Lobby;
         st.matchId = matchId_;
         st.stage = StageRule();
+        st.stageLocked = stageLocked_;
         if (peer_) {
             Echo(st, heardTime_, heardTimeAt_);
             Send(st);
@@ -1200,6 +1208,7 @@ private:
                 spectators_ = m.spectators;
                 stageRule_ = m.stage;
             }
+            stageLocked_ = m.stageLocked;
             // The host went back to the lobby (character select).
             if (m.phase == SessionPhase::Lobby && s >= State::Jumping && s <= State::PostMatch && next_ == Next::None) {
                 Log("netplay: back to the lobby");
@@ -2296,6 +2305,8 @@ private:
         else if (s == State::Hosting) SetStatus("HOST " + code_ + " (copied) - waiting for a player");
         else if (s == State::Joining) SetStatus("joining " + code_);
         else if (s == State::Lobby) SetStatus(role_ == Role::Spectator ? "watching: waiting for a match" : "lobby");
+        // Each lobby starts at stage select.
+        if (s == State::Lobby && host_) stageLocked_ = false;
         else if (s == State::Jumping) SetStatus("jumping into battle");
         else if (s == State::PostMatch) SetStatus("match over: rematch or character select?");
     }
@@ -2348,6 +2359,7 @@ private:
     bool winsKnown_ = false;
     int spectators_ = 0;                   // guest: as the host says
     uint16_t stageRule_ = lobby::kAnyStage;
+    std::atomic<bool> stageLocked_{false}; // the host's stage confirmed (the host's own, or as last heard)
     std::map<uint64_t, Watcher> watchers_; // host; guarded by mutex_
     std::atomic<bool> ready_{false};
     std::atomic<Choice> myChoice_{Choice::None};
@@ -2881,6 +2893,12 @@ void NetSetStage(const std::string& code)
     g_options.stageCode = code;
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->SetStage(code);
+}
+
+void NetSetStageLocked(bool locked)
+{
+    std::lock_guard lock(g_driverMutex);
+    if (g_driver) g_driver->SetStageLocked(locked);
 }
 
 void NetChoose(lobby::Choice choice)

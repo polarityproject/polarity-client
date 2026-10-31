@@ -22,7 +22,15 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   loadout and ready; pad, keyboard or mouse. "... as a spectator" shows the
   same screens watching: two mock players pick and ready up on their own, a
   WATCHING banner gives the spectator's link to the host, and Back leaves.
-  Not used by sessions yet.
+- Sessions use that select screen: it fades in when a session starts (players
+  and spectators), and over the results screen in place of the vote's windows
+  when both choose Character select. The host picks the stage first (B on
+  the grid goes back to it), then both pick a character and their loadout and
+  say ready; Start brings up the panel. Moving the grid's cursor only shows a
+  character on your screen; A picks it (both games load each pick). The
+  character lists are read once the game reaches its menus, so the screen is
+  there as soon as someone joins. Lobby protocol
+  9 (the stage confirmation): both sides need this version.
 
 ### Changed
 

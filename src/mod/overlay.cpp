@@ -201,6 +201,7 @@ ImFont* g_fontTiny = nullptr;    // ... their frame rate and rollback numbers
 ImFont* g_fontHuge = nullptr;    // the select screen's character names
 ImFont* g_fontBody = nullptr;    // the default font
 std::atomic<int> g_selectRequest{-1}; // RequestSelectPreview: the phase to open at (+4: watching)
+std::atomic<bool> g_selectLive{false}; // a session's select screen is up and takes input
 // Characters beyond Latin-1 that names have shown (NoteText): the fonts get
 // them from Windows' fonts on the next build, so names in any script draw.
 std::vector<ImWchar> g_extraChars;
@@ -2014,6 +2015,203 @@ SelectData PreviewSelectData()
     return data;
 }
 
+// ----- a session's select screen -------------------------------------------
+
+int ElevenIndex()
+{
+    const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), "ELV");
+    return it == g_tables.charas.end() ? -1 : static_cast<int>(it - g_tables.charas.begin());
+}
+
+std::pair<uint32_t, uint32_t> SwatchOf(int chara, int slot, int color)
+{
+    if (chara < 0 || slot < 0 || chara >= static_cast<int>(g_tables.swatches.size()) || slot >= static_cast<int>(g_tables.swatches[chara].size())) {
+        return {0, 0};
+    }
+    const CostumeSwatches& sw = g_tables.swatches[chara][slot];
+    const auto& list = color >= 100 ? sw.ex : sw.colors;
+    const int k = color >= 100 ? color - 100 : color;
+    return k >= 0 && k < static_cast<int>(list.size()) ? list[k] : std::pair<uint32_t, uint32_t>{0, 0};
+}
+
+std::string CommentLine(int chara, int comment)
+{
+    if (comment == 0) return "Comment changes automatically based on opponent's character.";
+    const auto& names = g_tables.vcomments[chara];
+    return comment <= static_cast<int>(names.size()) ? "\"" + names[comment - 1] + "\"" : "Comment " + std::to_string(comment);
+}
+
+// One seat for the select screen: this player's from the panel's choices (it
+// answers at once), the other's from the session.
+SelectSide SelectSideFor(const NetView& v, int i)
+{
+    SelectSide s;
+    const lobby::Seat& seat = v.seats[i];
+    s.present = seat.present;
+    s.player = seat.name;
+    s.link = seat.link == lobby::Link::Wired ? 1 : seat.link == lobby::Link::WiFi ? 2 : 0;
+    s.ready = seat.ready;
+    const bool mine = i == v.you && !v.spectator;
+    const Choices& c = g_choices;
+    int chara = -1;
+    PlayerSetup pick;
+    if (mine) {
+        if (!PickValid(g_choices)) return s;
+        chara = c.chara;
+        pick.costume = static_cast<uint16_t>(c.costume);
+        pick.color = static_cast<uint8_t>(c.color);
+        pick.vskill = static_cast<uint8_t>(c.vskill - 1);
+        pick.vtrigger = static_cast<uint8_t>(c.vtrigger - 1);
+        pick.variation = static_cast<uint8_t>(c.variant);
+        pick.comment = static_cast<uint8_t>(c.comment);
+    }
+    else if (seat.hasPick && seat.pick.character) {
+        pick = seat.pick;
+        const std::string code = UnpackCode(pick.character);
+        const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), code);
+        chara = IsElevenSetup(pick) ? ElevenIndex() : it == g_tables.charas.end() ? -1 : static_cast<int>(it - g_tables.charas.begin());
+    }
+    s.chara = chara;
+    const int delay = mine ? c.delay : seat.inputDelay;
+    s.rows[6].value = FramesText(delay);
+    const int suggested = v.linkPingMs ? SuggestedDelay(v.linkPingMs) : -1;
+    s.rows[6].hint = suggested >= 0 ? "Suggested: " + FramesText(suggested) + " for a " + std::to_string(v.linkPingMs) + " ms ping. Lower reacts sooner, with more rollbacks."
+                                    : "Input delay: how many frames your inputs wait (fewer: sooner, with more rollbacks).";
+    if (chara < 0) return s;
+    if (IsEleven(chara)) {
+        for (int r = 0; r < 6; r++) {
+            s.rows[r].value = "Random";
+            s.rows[r].fixed = true;
+            s.rows[r].hint = "A random fighter in silver, its V-Skill and V-Trigger at random.";
+        }
+        return s;
+    }
+    const std::string& code = g_tables.charas[chara];
+    const int slot = std::max(0, CostumeSlot(chara, pick.costume));
+    s.rows[0].value = g_tables.costumeNames[chara][slot];
+    s.rows[0].hint = "Pick a costume.";
+    s.rows[1].value = ColorLabel(pick.color);
+    const auto swatch = SwatchOf(chara, slot, pick.color);
+    s.rows[1].swatch1 = swatch.first;
+    s.rows[1].swatch2 = swatch.second;
+    s.rows[1].hint = "Pick a color.";
+    const int variants = mine ? VariantsOf(chara, pick.costume) : 1;
+    s.rows[2].value = variants < 0 ? "checking..." : VariantLabel(code, pick.variation);
+    s.rows[2].fixed = mine && variants <= 0;
+    s.rows[2].hint = variants == 0 ? "This costume has no variant." : "A variant of this costume (the menus' held button while loading).";
+    s.rows[3].value = SkillText(code, false, pick.vskill);
+    s.rows[3].hint = "V-Skill.";
+    s.rows[4].value = SkillText(code, true, pick.vtrigger);
+    s.rows[4].hint = "V-Trigger.";
+    s.rows[5].value = pick.comment == 0 ? "AUTO" : std::to_string(pick.comment);
+    s.rows[5].hint = CommentLine(chara, pick.comment);
+    return s;
+}
+
+// The host's stage as an index into the stage select's stages (their count:
+// random).
+int SelectStageFor(const NetView& v)
+{
+    const int count = static_cast<int>(g_tables.stages.size());
+    if (v.host) return g_choices.stage >= 2 && g_choices.stage - 2 < count ? g_choices.stage - 2 : count;
+    if (v.stageRule == lobby::kRandomStage || v.stageRule == lobby::kAnyStage) return count;
+    const std::string code = StageCode(v.stageRule);
+    for (int i = 0; i < count; i++) {
+        const auto& settings = g_tables.settings[i];
+        if (g_tables.stages[i] == code || std::find(settings.begin(), settings.end(), code) != settings.end()) return i;
+    }
+    return count;
+}
+
+SelectLive SelectLiveFor(const NetView& v)
+{
+    SelectLive live;
+    live.you = v.spectator ? -1 : v.you;
+    live.host = v.host;
+    for (int i = 0; i < kNumPlayers; i++) live.sides[i] = SelectSideFor(v, i);
+    live.stage = SelectStageFor(v);
+    live.stageLocked = v.stageLocked;
+    live.pingMs = v.linkPingMs;
+    live.relayed = v.linkPath == NetView::Path::Relayed;
+    live.spectators = v.spectators;
+    return live;
+}
+
+// A loadout row one step on (or back): what the panel's pickers offer.
+void StepRow(Choices& c, int row, int delta)
+{
+    auto cycle = [delta](int at, int n) { return n <= 0 ? 0 : ((at + delta) % n + n) % n; };
+    switch (row) {
+    case 0: {
+        const std::vector<int>& list = g_tables.costumes[c.chara];
+        c.costume = list[cycle(std::max(0, CostumeSlot(c.chara, c.costume)), static_cast<int>(list.size()))];
+        c.variant = 0;
+        break;
+    }
+    case 1: {
+        const std::vector<int>& ids = g_tables.colors[c.chara][std::max(0, CostumeSlot(c.chara, c.costume))];
+        const int at = static_cast<int>(std::find(ids.begin(), ids.end(), c.color) - ids.begin());
+        c.color = ids[cycle(at < static_cast<int>(ids.size()) ? at : 0, static_cast<int>(ids.size()))];
+        break;
+    }
+    case 2: {
+        const int variants = VariantsOf(c.chara, c.costume);
+        if (variants <= 0) break;
+        std::vector<int> options;
+        for (int n = 0; n <= variants; n++) {
+            if ((n & variants) == n) options.push_back(n);
+        }
+        const int at = static_cast<int>(std::find(options.begin(), options.end(), c.variant) - options.begin());
+        c.variant = options[cycle(at < static_cast<int>(options.size()) ? at : 0, static_cast<int>(options.size()))];
+        break;
+    }
+    case 3:
+    case 4: {
+        int& value = row == 3 ? c.vskill : c.vtrigger;
+        const auto& names = row == 3 ? g_tables.vskills[c.chara] : g_tables.vtriggers[c.chara];
+        value = 1 + cycle(value - 1, std::max(2, static_cast<int>(names.size())));
+        break;
+    }
+    case 5: c.comment = cycle(c.comment, 1 + static_cast<int>(g_tables.vcomments[c.chara].size())); break;
+    default: c.delay = std::clamp(c.delay + delta, 0, kMaxDelayFrames); break;
+    }
+}
+
+// What the player did on the select screen: into the panel's choices (sent as
+// they change, SyncChoices) and the session.
+void ApplySelectInput(const SelectInput& in, const NetView& v)
+{
+    Choices& c = g_choices;
+    if (v.spectator) {
+        if (in.menu) SetOverlayVisible(true);
+        return;
+    }
+    const bool ready = v.you >= 0 && v.seats[v.you].ready;
+    if (!ready) {
+        if (in.chara >= 0 && in.chara < static_cast<int>(g_tables.charas.size())) SwitchCharacter(c, in.chara);
+        if (in.randomPick) {
+            static std::mt19937 rng{std::random_device{}()};
+            std::vector<int> fighters;
+            for (int i = 0; i < static_cast<int>(g_tables.charas.size()); i++) {
+                if (!IsEleven(i)) fighters.push_back(i);
+            }
+            if (!fighters.empty()) SwitchCharacter(c, fighters[rng() % fighters.size()]);
+        }
+        if (in.row >= 0 && in.delta) StepRow(c, in.row, in.delta);
+        if (v.host && in.stage >= 0) {
+            const int count = static_cast<int>(g_tables.stages.size());
+            c.stage = in.stage < count ? 2 + in.stage : 1;
+            c.setting = 0;
+        }
+        PickValid(c);
+    }
+    SyncChoices(v);
+    if (v.host && in.lockStage) Act([] { NetSetStageLocked(true); });
+    if (v.host && in.unlockStage && !ready) Act([] { NetSetStageLocked(false); });
+    if (in.ready && !ready) Act([] { NetSetReady(true); });
+    if (in.menu) SetOverlayVisible(true);
+}
+
 void DrawDebug()
 {
     static bool initialised = false;
@@ -2317,20 +2515,22 @@ void ToastChanges(const NetView& now)
                                                     : std::to_string(now.spectators) + " watching",
                  kDim);
     }
-    if (now.phase == P::Lobby && before.phase >= P::Jumping && before.phase <= P::PostMatch) AddToast("Back to character select");
     if (now.phase == P::Ended && before.phase != P::Ended && !now.result.empty()) AddToast("Session over: " + now.result, kRed, 6);
     before = now;
 }
 
-void DrawToasts()
+// `top`: the select screen is up (the bottom has its grid and stages).
+void DrawToasts(bool top)
 {
     const ULONGLONG now = GetTickCount64();
     g_toasts.erase(std::remove_if(g_toasts.begin(), g_toasts.end(), [&](const Toast& t) { return t.until <= now; }),
                    g_toasts.end());
     if (g_toasts.empty()) return;
-    // All notices in one place: the bottom center, above the game's gauges.
+    // All notices in one place: the bottom center, above the game's gauges;
+    // on the select screen the top center, under the prompts.
     const ImGuiIO& io = ImGui::GetIO();
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.86f), ImGuiCond_Always, ImVec2(0.5f, 1));
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * (top ? 0.135f : 0.86f)), ImGuiCond_Always,
+                            ImVec2(0.5f, top ? 0.0f : 1.0f));
     ImGui::SetNextWindowBgAlpha(0.7f);
     ImGui::Begin("##toasts", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
@@ -2762,10 +2962,15 @@ void Draw(IDXGISwapChain* swapChain)
     const NetView::Phase phase = view.phase;
     g_inMatch = phase == NetView::Phase::Running;
     // A session's windows pick from the game's lists, also when the panel
-    // was never opened.
+    // was never opened. They are read once the game is at a menu, so that the
+    // select screen is there as soon as a session starts (the read takes a
+    // while: every character's costume names, colors, comments).
     if (phase != NetView::Phase::Idle) {
         LoadTables();
         InitChoices();
+    }
+    else if (OnMenuScreen()) {
+        LoadTables();
     }
     // Reaching a session's lobby sets this player's input delay to the
     // suggestion for the ping between them (once a session; it can be
@@ -2789,7 +2994,8 @@ void Draw(IDXGISwapChain* swapChain)
     // closes the panel reached the game for a frame, and a press on its
     // results screen can open its own Results Menu.
     const bool overResults = phase == NetView::Phase::PostMatch || (phase == NetView::Phase::Lobby && view.overResults);
-    const bool sides = overResults && !g_visible;
+    // The vote's windows; the lobby after it is the select screen.
+    const bool sides = phase == NetView::Phase::PostMatch && !g_visible;
     g_voting = overResults && !view.spectator;
     g_watchHold = overResults && view.spectator;
     // Once the session goes into the battle the panel fades out and closes.
@@ -2812,7 +3018,7 @@ void Draw(IDXGISwapChain* swapChain)
     }
     const bool visible = g_visible;
     const bool session = phase != NetView::Phase::Idle;
-    io.MouseDrawCursor = visible || g_voting || SelectPreviewOpen(); // the game hides the system cursor
+    io.MouseDrawCursor = visible || g_voting || g_selectLive || SelectPreviewOpen(); // the game hides the system cursor
     // Fonts for the game's resolution (1.0 at 720 lines): again when it
     // changed (last frame's size; the backend makes the new atlas).
     // ... and when a name brings characters the fonts lack.
@@ -2844,6 +3050,27 @@ void Draw(IDXGISwapChain* swapChain)
     const bool preview = SelectPreviewOpen();
     if (previewWas && !preview) SetOverlayVisible(true);
     previewWas = preview;
+    // A session's lobby is the select screen: it fades in (over the last
+    // match's results screen after Character select), the panel closes as it
+    // comes (Start brings it back), and it fades out as the match loads.
+    static float liveAlpha = 0;
+    static bool lobbyWas = false;
+    const bool lobby = phase == NetView::Phase::Lobby && g_tables.loaded && g_choices.initialised && !preview;
+    if (lobby && !lobbyWas) {
+        SetSelectData(PreviewSelectData());
+        ResetSelectScreen();
+        SetOverlayVisible(false);
+        g_toasts.clear(); // the vote's ("Host wants character select"): the screen says it
+    }
+    lobbyWas = lobby;
+    liveAlpha = std::clamp(liveAlpha + (lobby ? 1.0f : -1.0f) * io.DeltaTime / 0.4f, 0.0f, 1.0f);
+    if (preview) liveAlpha = 0;
+    g_selectLive = lobby && !g_visible;
+    if (liveAlpha > 0) {
+        SelectInput in;
+        DrawSelectLive(SelectFonts{g_fontBig, g_fontHuge, g_fontBody}, SelectLiveFor(view), liveAlpha, lobby && !g_visible, &in);
+        if (lobby) ApplySelectInput(in, view);
+    }
     if (preview) {
         DrawSelectPreview(SelectFonts{g_fontBig, g_fontHuge, g_fontBody});
     }
@@ -2855,7 +3082,7 @@ void Draw(IDXGISwapChain* swapChain)
     else if (session) {
         const bool inMatch = phase == NetView::Phase::Running || phase == NetView::Phase::PostMatch;
         if (inMatch) DrawPlayerBars(view);
-        else if (!sides) DrawStrip(view);
+        else if (!sides && liveAlpha <= 0) DrawStrip(view);
         if (sides) DrawSides(view);
     }
     if (session && view.desyncFrame >= 0 && (phase == NetView::Phase::Running || phase == NetView::Phase::PostMatch)) {
@@ -2864,14 +3091,14 @@ void Draw(IDXGISwapChain* swapChain)
     const bool hint = !visible && !preview && (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) && OnMenuScreen();
     if (hint) DrawMenuHint();
     DrawPreviews();
-    DrawToasts();
+    DrawToasts(liveAlpha > 0);
     DrawTexturePreview();
     bool texture = false;
     {
         std::lock_guard lock(g_textureMutex);
         texture = g_texture != nullptr;
     }
-    const bool draw = visible || preview || session || hint || !g_toasts.empty() || g_preview.Any() || texture;
+    const bool draw = visible || preview || liveAlpha > 0 || session || hint || !g_toasts.empty() || g_preview.Any() || texture;
     if (!draw || (!g_rtv && !CreateTarget(swapChain))) {
         ImGui::EndFrame();
         return;
@@ -3078,7 +3305,7 @@ bool OverlayVisible()
 
 bool OverlayTakesInput()
 {
-    return g_visible || g_voting || g_watchHold || SelectPreviewOpen();
+    return g_visible || g_voting || g_watchHold || g_selectLive || SelectPreviewOpen();
 }
 
 void SetVsync(bool on)
@@ -3144,7 +3371,7 @@ bool OverlayWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         if (g_input.size() < 1024) g_input.push_back({msg, wp, lp});
     }
     // Open: the game sees no keyboard or mouse (WM_INPUT is its raw mouse).
-    return (g_visible || g_voting || g_watchHold || SelectPreviewOpen()) && (keyboard || mouse);
+    return (g_visible || g_voting || g_watchHold || g_selectLive || SelectPreviewOpen()) && (keyboard || mouse);
 }
 
 void OverlayPad(unsigned user, const XINPUT_GAMEPAD& pad)

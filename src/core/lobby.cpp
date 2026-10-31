@@ -180,6 +180,7 @@ std::vector<uint8_t> Encode(const Message& m)
         o.Put(m.played);
         o.Put(m.spectators);
         o.Put(m.stage);
+        o.Put(static_cast<uint8_t>(m.stageLocked));
         o.Put(m.matchId);
         break;
     case Type::Inputs:
@@ -281,6 +282,7 @@ std::optional<Message> Decode(const uint8_t* data, size_t len)
         m.played = in.Get<uint16_t>();
         m.spectators = in.Get<uint8_t>();
         m.stage = in.Get<uint16_t>();
+        m.stageLocked = in.Get<uint8_t>() != 0;
         m.matchId = in.Get<uint64_t>();
         break;
     case Type::Inputs: {
