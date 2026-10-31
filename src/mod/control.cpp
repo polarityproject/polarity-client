@@ -131,6 +131,9 @@ std::deque<GameRequest> g_gameRequests;
 
 std::atomic<bool> g_isolatePads{false};
 std::atomic<PackedInput> g_padInput[XUSER_MAX_COUNT];
+// The keyboard's Start (Enter) held down while the window procedure keeps it
+// from the game (a netplay match: SetBlockPause).
+std::atomic<bool> g_keyboardStart{false};
 
 // The game's input manager (rva 0x3A750C0; its +8 holds two pads of 0x200
 // bytes) maps the keyboard and the pads, with the player's button config,
@@ -1470,13 +1473,19 @@ LRESULT CALLBACK ActiveWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     case WM_ACTIVATE:
         if (active && LOWORD(wp) == WA_INACTIVE) return 0;
         break;
-    case WM_KILLFOCUS:
-        if (active) return 0;
-        break;
     case WM_KEYDOWN:
     case WM_KEYUP:
         // Keyboard Start (Enter) and Back (Escape) would pause one side only.
-        if (g_blockPause && (wp == VK_RETURN || wp == VK_ESCAPE)) return 0;
+        // Start still goes to the match as this player's (MappedLocalInput):
+        // the intro skip when both press it.
+        if (g_blockPause && (wp == VK_RETURN || wp == VK_ESCAPE)) {
+            if (wp == VK_RETURN) g_keyboardStart = msg == WM_KEYDOWN;
+            return 0;
+        }
+        break;
+    case WM_KILLFOCUS:
+        g_keyboardStart = false;
+        if (active) return 0;
         break;
     case WM_CLOSE:
     case WM_ENDSESSION:
@@ -1500,12 +1509,20 @@ PackedInput LocalPadInput(int user) { return user >= 0 && user < XUSER_MAX_COUNT
 
 PackedInput MappedLocalInput(int)
 {
-    if (!g_origInputUpdate) return LocalPadInput(0);
-    // Start as the player pressed it (the pause filter keeps it from the game).
-    return g_mappedInput.load() | (g_padInput[0].load() & kStart);
+    // Start as the player pressed it (the pause filter keeps it from the
+    // game): on any pad, or the keyboard's Enter. Players with a keyboard
+    // could not skip an intro (2026-10-30), nor a pad in another slot.
+    PackedInput start = g_keyboardStart ? kStart : 0;
+    for (int u = 0; u < XUSER_MAX_COUNT; u++) start |= g_padInput[u].load() & kStart;
+    if (!g_origInputUpdate) return LocalPadInput(0) | start;
+    return g_mappedInput.load() | start;
 }
 
-void SetBlockPause(bool block) { g_blockPause = block; }
+void SetBlockPause(bool block)
+{
+    g_blockPause = block;
+    if (!block) g_keyboardStart = false;
+}
 
 void PressUiButtons(uint16_t buttons, int ms)
 {

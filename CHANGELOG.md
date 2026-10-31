@@ -39,6 +39,11 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   for move variants was never set. Both now come from the match and the
   frame, the same on every PC and after any rollback. Players need the same
   version to play together.
+- Keyboard players could not skip an intro or the win poses online: the
+  mod kept the keyboard's Start (Enter) from the game so it could not pause
+  one side, and the skip never saw it. Enter now counts as Start for the
+  skip (both players still need to press it), and so does Start on a pad in
+  any controller slot.
 - A screen shake after a big hit could shake the other way on one PC after
   a rollback (a short desync warning, seen in a Rose mirror match): the
   counter that flips the shake's direction was not restored by rollbacks.
