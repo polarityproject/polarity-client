@@ -26,6 +26,8 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 - Eleven: pick it like any character and you play a random fighter in the
   silver model, with its V-Skill and V-Trigger at random (as the game's own
   Eleven). The other player sees ELEVEN. Each time it is picked it rolls again.
+  When both players are Eleven, Player 2 wears the silver model's second
+  palette (bronze), so the two can be told apart.
 - V-Comment: a row in the loadout with Auto and each character's own
   comments, by number with the chosen one's text under it. Both players see
   each other's.
@@ -78,6 +80,9 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ### Fixed
 
+- A character's grid icon on the select screen could stay blank for the
+  whole run (Gill's, once): a texture the render thread had not set up yet
+  counted as missing. It is now asked for again a few times.
 - The game's own Results Menu opened over the post-match vote and the lobby
   (since 0.1.1, about 30 seconds after the KO): the battle ran on past the
   results screen, which opens the menu by itself. The battle now holds still

@@ -32,6 +32,17 @@ std::map<std::string, TextureView> g_textures;
 std::set<std::string> g_requested;
 std::deque<std::string> g_texQueue; // asked for, not loaded yet (in order)
 bool g_texLoading = false;          // LoadTextures is on its way
+// A texture loaded without a view yet (the render thread had not made its
+// resource): asked for again a little later, a few times. Once failed it
+// stayed blank for the whole run (Gill's grid icon, once).
+struct TexRetry {
+    std::string path;
+    std::chrono::steady_clock::time_point due;
+};
+std::vector<TexRetry> g_texRetries;
+std::map<std::string, int> g_texTries;
+constexpr int kTextureTries = 6;
+constexpr auto kTextureRetryAfter = std::chrono::milliseconds(250);
 // Since the queue last ran dry: how many loaded, in how long (the log line).
 int g_texBatch = 0;
 double g_texBatchMs = 0, g_texSlowestMs = 0;
@@ -46,6 +57,15 @@ void LoadTextures()
         std::string path;
         {
             std::lock_guard lock(g_texMutex);
+            for (auto r = g_texRetries.begin(); r != g_texRetries.end();) {
+                if (start < r->due) {
+                    ++r;
+                    continue;
+                }
+                g_texQueue.push_back(std::move(r->path));
+                r = g_texRetries.erase(r);
+            }
+            if (g_texQueue.empty() && !g_texRetries.empty()) break; // the next frame looks again
             if (g_texQueue.empty()) {
                 g_texLoading = false;
                 if (g_texBatch >= 10) {
@@ -66,6 +86,17 @@ void LoadTextures()
         const TextureView view = ViewOfTexture(FindOrLoadTexture(path + "." + name), true);
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - at).count();
         std::lock_guard lock(g_texMutex);
+        if (!view.srv) {
+            const int tries = ++g_texTries[path];
+            if (tries < kTextureTries) {
+                g_texRetries.push_back({path, std::chrono::steady_clock::now() + kTextureRetryAfter});
+                continue;
+            }
+            Log("select screen: no texture at %s (%d tries)", path.c_str(), tries);
+        }
+        else if (g_texTries.count(path)) {
+            Log("select screen: %s loaded on try %d", path.c_str(), g_texTries[path] + 1);
+        }
         g_textures[path] = view;
         g_texBatch++;
         g_texBatchMs += ms;
@@ -604,7 +635,6 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
     if (const TextureView* frame = Texture(MenuTex("StagePreviewWindow"))) Image(d, frame, g_v.P(bx, by), g_v.P(bx + bw, by + bh));
     const std::string name = random ? "Random" : count ? g_draw->stages[stage].name : "";
     Text(d, f.name, g_v.L(46), g_v.P(800, by + bh - 106), Rgba(255, 255, 255), name, 0.5f, true);
-    if (random) Text(d, f.text, g_v.L(17), g_v.P(800, by + bh - 50), Rgba(232, 228, 216), "Any stage, picked when the match starts", 0.5f, true);
     Infinity(d, g_v.P(800, by + bh + 30), g_v.L(56), Rgba(242, 201, 76));
     // The strip: each stage's thin picture, then random.
     const float sw = 29, sh = 168, gap = 3;
@@ -625,7 +655,7 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
         if (picking && Clicked() && MouseIn(g_v.P(x, sy), g_v.P(x + sw, sy + sh))) in->stage = i;
     }
     Text(d, f.text, g_v.L(16), g_v.P(800, sy + sh + 18), Rgba(189, 184, 170),
-         picking ? "You host: you pick the stage, then both players pick characters" : "The host is picking the stage", 0.5f);
+         picking ? "You select the stage." : "Player 1 is selecting the stage...", 0.5f);
     if (picking && Confirm()) in->lockStage = true;
 }
 

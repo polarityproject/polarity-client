@@ -1470,6 +1470,14 @@ private:
         next_ = Next::End;
     }
 
+    // Eleven plays a fighter in its 0C costume (the silver model).
+    static bool IsElevenPick(const PlayerSetup& p)
+    {
+        const int index = CharaIndex(UnpackCode(p.character));
+        return index >= 0 && p.costume == CostumeInFolder(index, "0C");
+    }
+    static constexpr uint8_t kElevenMirrorColor = 1; // the 0C costume's color 2 of 2
+
     MatchSetup ChooseSetup()
     {
         MatchSetup s;
@@ -1498,6 +1506,10 @@ private:
                 s.players[0] = options_.hasPick ? options_.pick : current.players[0];
             }
             s.players[1] = joiner.hasPick ? joiner.pick : current.players[1];
+            // Both Eleven: P2 wears the silver costume's second palette (a
+            // bronze one), so the two can be told apart. Not a choice in the
+            // loadout: Eleven's color is fixed.
+            if (IsElevenPick(s.players[0]) && IsElevenPick(s.players[1])) s.players[1].color = kElevenMirrorColor;
             const uint16_t rule = StageRule();
             s.stage = rule == lobby::kAnyStage ? kKeepStage : rule;
             if (rule == lobby::kRandomStage) {
