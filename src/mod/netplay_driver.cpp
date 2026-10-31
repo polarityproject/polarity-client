@@ -535,7 +535,10 @@ public:
         return false;
     }
 
-    // Preloading: this player's pick, and once known the other's.
+    // Preloading: this player's pick, and once known the other's. In a
+    // session's lobby only picks locked in (loading each pick or costume a
+    // player tried out stalled both games): this player's once ready (their
+    // own game waits anyway), the other's once both are.
     std::vector<PreloadPick> PreloadPicks()
     {
         std::lock_guard lock(mutex_);
@@ -545,20 +548,28 @@ public:
     std::vector<PreloadPick> PreloadPicksLocked() const
     {
         std::vector<PreloadPick> picks;
-        if (state_ != State::Lobby && state_ != State::Hosting && state_ != State::Joining &&
-            state_ != State::Connecting && state_ != State::Ended) {
-            return picks;
-        }
+        if (state_ != State::Lobby && state_ != State::Hosting && state_ != State::Ended) return picks;
         if (options_.randomSetup) return picks;
+        const bool lobby = state_ == State::Lobby, both = BothReadyLocked();
         auto add = [&](bool has, const PlayerSetup& p) {
             if (has && p.character) picks.push_back({UnpackCode(p.character), static_cast<int>(p.costume)});
         };
-        if (role_ == Role::Player) add(options_.hasPick, options_.pick);
+        if (role_ == Role::Player && (!lobby || ready_)) add(options_.hasPick, options_.pick);
         for (int i = 0; i < kNumPlayers; i++) {
             if (role_ == Role::Player && i == (host_ ? 0 : 1)) continue;
-            add(seats_[i].present && seats_[i].hasPick, seats_[i].pick);
+            if (!lobby || both) add(seats_[i].present && seats_[i].hasPick, seats_[i].pick);
         }
         return picks;
+    }
+
+    // Both players ready, as this game knows it (its own seat's from here).
+    bool BothReadyLocked() const
+    {
+        for (int i = 0; i < kNumPlayers; i++) {
+            const bool own = role_ == Role::Player && i == (host_ ? 0 : 1);
+            if (own ? !ready_ : !(seats_[i].present && seats_[i].ready)) return false;
+        }
+        return true;
     }
 
 private:
@@ -875,9 +886,12 @@ private:
         // neutral ticks instead of 6 or more: a spectator desync from frame 0).
         std::string picks;
         for (const PreloadPick& p : PreloadPicksLocked()) picks += p.code + "/" + std::to_string(p.costume) + " ";
+        // In the lobby the picks are only loaded once both are ready: before
+        // that, none loaded is not "loaded".
         const bool otherKnown = options_.randomSetup || role_ != Role::Player ||
                                 (seats_[host_ ? 1 : 0].present && seats_[host_ ? 1 : 0].hasPick);
-        seat.preloaded = otherKnown && PreloadsDoneFor(picks);
+        const bool settled = options_.randomSetup || state_ != State::Lobby || BothReadyLocked();
+        seat.preloaded = otherKnown && settled && PreloadsDoneFor(picks);
         seat.choice = myChoice_;
         seat.inputDelay = nextDelay_ >= 0 ? static_cast<uint8_t>(nextDelay_.load()) : options_.inputDelay;
         seat.fps = static_cast<uint8_t>(std::clamp(RenderFps() + 0.5f, 0.0f, 255.0f));

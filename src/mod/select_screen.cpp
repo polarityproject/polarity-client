@@ -10,8 +10,10 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <deque>
 #include <map>
 #include <mutex>
 #include <random>
@@ -28,22 +30,47 @@ namespace {
 std::mutex g_texMutex;
 std::map<std::string, TextureView> g_textures;
 std::set<std::string> g_requested;
+std::deque<std::string> g_texQueue; // asked for, not loaded yet (in order)
+bool g_texLoading = false;          // LoadTextures is on its way
 
-const TextureView* Texture(const std::string& path)
+// On the game thread: the queue's textures, a few ms' worth a frame. The
+// screen's first frames ask for about 80: all in one frame held the game
+// ~5 s after a join (presses lost).
+void LoadTextures()
 {
-    {
-        std::lock_guard lock(g_texMutex);
-        const auto it = g_textures.find(path);
-        if (it != g_textures.end()) return it->second.srv ? &it->second : nullptr;
-        if (!g_requested.insert(path).second) return nullptr;
-    }
-    RunOnGameThread([path] {
+    const auto start = std::chrono::steady_clock::now();
+    for (;;) {
+        std::string path;
+        {
+            std::lock_guard lock(g_texMutex);
+            if (g_texQueue.empty()) {
+                g_texLoading = false;
+                return;
+            }
+            if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(4)) break;
+            path = std::move(g_texQueue.front());
+            g_texQueue.pop_front();
+        }
         const size_t slash = path.rfind('/');
         const std::string name = path.substr(slash + 1);
         const TextureView view = ViewOfTexture(FindOrLoadTexture(path + "." + name), true);
         std::lock_guard lock(g_texMutex);
         g_textures[path] = view;
-    });
+    }
+    RunOnGameThread(LoadTextures); // the rest next frame
+}
+
+const TextureView* Texture(const std::string& path)
+{
+    std::lock_guard lock(g_texMutex);
+    const auto it = g_textures.find(path);
+    if (it != g_textures.end()) return it->second.srv ? &it->second : nullptr;
+    if (!g_requested.insert(path).second) return nullptr;
+    g_texQueue.push_back(path);
+    if (!g_texLoading) {
+        g_texLoading = true;
+        RunOnGameThread(LoadTextures);
+    }
     return nullptr;
 }
 
@@ -610,6 +637,16 @@ struct Prompt {
     int action; // 0 confirm (A), 1 back (B), 2 menu (Start)
 };
 
+constexpr const char* kLoadingText = "Both ready: loading the characters";
+
+// A line of status over the bottom strip.
+void StatusPill(ImDrawList* d, const SelectFonts& f, const char* text)
+{
+    const float w = TextW(f.text, 16, text) + 40;
+    Pill(d, g_v.P(800 - w / 2, 860), g_v.P(800 + w / 2, 890));
+    Text(d, f.text, g_v.L(16), g_v.P(800, 866), Rgba(233, 196, 106), text, 0.5f);
+}
+
 void DrawPrompts(ImDrawList* d, const SelectFonts& f, const std::vector<Prompt>& prompts, SelectInput* in)
 {
     float right = 1572;
@@ -645,7 +682,12 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
 
     std::vector<Prompt> prompts;
     if (!live.stageLocked) {
-        // What the character select draws, loading while the stage is picked.
+        DrawBackdrop(d, live.stage, Rgba(70, 69, 67));
+        d->AddRectFilledMultiColor(g_v.P(0, 0), g_v.P(1600, 450), Rgba(6, 8, 11, 90), Rgba(6, 8, 11, 90), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 0));
+        d->AddRectFilledMultiColor(g_v.P(0, 450), g_v.P(1600, 900), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 170), Rgba(6, 8, 11, 170));
+        DrawStageSelect(d, f, live, in);
+        // What the character select draws, loading while the stage is picked
+        // (after this screen's own: the textures load in the order asked).
         for (const auto& row : g_rows) {
             for (const Slot& t : row) {
                 if (const SelectChara* c = Chara(t.chara)) Texture(CharaTex(c->code, t.right ? "CharaSelectIconRight" : "CharaSelectIconLeft"));
@@ -655,10 +697,6 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             if (const SelectChara* c = s.present ? Chara(s.chara) : nullptr) Texture(CharaTex(c->code, "PartCharacter"));
         }
         for (const char* icon : {"button_a", "button_b"}) Texture(PadTex(icon));
-        DrawBackdrop(d, live.stage, Rgba(70, 69, 67));
-        d->AddRectFilledMultiColor(g_v.P(0, 0), g_v.P(1600, 450), Rgba(6, 8, 11, 90), Rgba(6, 8, 11, 90), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 0));
-        d->AddRectFilledMultiColor(g_v.P(0, 450), g_v.P(1600, 900), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 170), Rgba(6, 8, 11, 170));
-        DrawStageSelect(d, f, live, in);
         if (live.host && !watching) prompts.push_back({"button_a", "Confirm stage", 0});
         if (Back()) in->back = true;
     }
@@ -744,10 +782,7 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         }
         if (ready) {
             // Locked in until the match starts (Leave is in the menu).
-            const char* text = "Locked in: the match starts once both players are ready";
-            const float w = TextW(f.text, 16, text) + 40;
-            Pill(d, g_v.P(800 - w / 2, 860), g_v.P(800 + w / 2, 890));
-            Text(d, f.text, g_v.L(16), g_v.P(800, 866), Rgba(233, 196, 106), text, 0.5f);
+            StatusPill(d, f, live.loading ? kLoadingText : "Locked in: the match starts once both players are ready");
         }
         // A and B.
         const bool a = Confirm();
@@ -784,6 +819,7 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         else IconLink(d, g_v.P(ix + 10, 34), g_v.s, Rgba(217, 212, 198));
         Text(d, f.text, g_v.L(15), g_v.P(ix + 28, 26), Rgba(217, 212, 198), detail);
     }
+    if (watching && live.loading) StatusPill(d, f, kLoadingText);
     prompts.push_back({"button_start", "Menu", 2});
     DrawPrompts(d, f, prompts, in);
     if (Menu()) in->menu = true;

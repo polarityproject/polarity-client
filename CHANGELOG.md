@@ -27,9 +27,12 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   when both choose Character select. The host picks the stage first (B on
   the grid goes back to it), then both pick a character and their loadout and
   say ready; Start brings up the panel. Moving the grid's cursor only shows a
-  character on your screen; A picks it (both games load each pick). The
-  character lists are read once the game reaches its menus, so the screen is
-  there as soon as someone joins. Lobby protocol
+  character on your screen; A picks it. Characters load only once picked for
+  good: your own once you are ready, the other's once both are ("Both ready:
+  loading the characters"), so trying out characters and costumes no longer
+  stalls either game. The character lists are read once the game reaches its
+  menus, and the screen's pictures load a few at a time, so the screen is
+  there and answers at once when someone joins. Lobby protocol
   9 (the stage confirmation): both sides need this version.
 
 ### Changed

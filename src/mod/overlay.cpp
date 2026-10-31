@@ -2131,6 +2131,7 @@ SelectLive SelectLiveFor(const NetView& v)
     for (int i = 0; i < kNumPlayers; i++) live.sides[i] = SelectSideFor(v, i);
     live.stage = SelectStageFor(v);
     live.stageLocked = v.stageLocked;
+    live.loading = v.seats[0].ready && v.seats[1].ready && !(v.seats[0].preloaded && v.seats[1].preloaded);
     live.pingMs = v.linkPingMs;
     live.relayed = v.linkPath == NetView::Path::Relayed;
     live.spectators = v.spectators;

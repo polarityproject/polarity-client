@@ -70,6 +70,7 @@ struct SelectLive {
     SelectSide sides[2];
     int stage = 0;            // the host's stage: into SelectData::stages; == their count: random
     bool stageLocked = false; // the host confirmed it: on to the characters
+    bool loading = false;     // both ready, the games loading the characters
     unsigned pingMs = 0;      // the link's round trip (a spectator's: to the host)
     bool relayed = false;
     int spectators = 0;
@@ -78,7 +79,7 @@ struct SelectLive {
 // What the local player did this frame.
 struct SelectInput {
     // Picked this character (A on its tile; the cursor alone only shows a
-    // character here: each pick has both games load it). -2: no change.
+    // character here). -2: no change.
     int chara = -2;
     bool randomPick = false; // picked the random tile
     int row = -1, delta = 0; // changed a loadout row
