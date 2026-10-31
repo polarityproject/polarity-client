@@ -159,7 +159,7 @@ struct NetView {
     int desyncFrame = -1;
     std::string desyncReport; // where the desync report was saved
     int inputDelay = 0;
-    int predictionWindow = 0; // in effect now (0 outside the fight)
+    int predictionWindow = 0; // the fight's (the lockstep outside the fight uses 0)
     int behind = 0;           // spectator: frames in hand not yet played
     // Spectator: the host's kept matches (oldest first), and the one being
     // watched or loaded (0: none).

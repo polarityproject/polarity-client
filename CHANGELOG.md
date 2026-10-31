@@ -56,6 +56,9 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ### Changed
 
+- The input delay in the panel and the status line is the match's, as the
+  fights play it: between rounds, in intros and win poses the games run in
+  lockstep with a higher delay of their own, which is no longer shown there.
 - The rollback number on the other player's bar (RBF) is the longest
   rollback in the last second, not the longest of the whole session: one
   long rollback early on kept it high for the rest of the match.

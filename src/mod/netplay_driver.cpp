@@ -1990,8 +1990,10 @@ private:
         live_.frame = session_->NextFrame();
         live_.framesAhead = ahead;
         live_.desyncFrame = desyncFrame_;
-        live_.inputDelay = inputDelay_;
-        live_.predictionWindow = predictionWindow_;
+        // The match's own delay and window, as in the fight: the lockstep's
+        // between the rounds (UpdatePredictionWindow) is not the players'.
+        live_.inputDelay = options_.inputDelay;
+        live_.predictionWindow = options_.predictionWindow;
         // This frame's rollback (its length, 0 for none) into the last
         // second's, for the longest of them.
         const auto rb = session_->RollbackStats();
