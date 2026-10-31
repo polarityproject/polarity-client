@@ -58,6 +58,13 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ### Changed
 
+- The game connects to the public server on 5555 alone, and on 443 too only
+  when 5555 does not answer within 1.5 s. Both at once doubled the
+  connections, and the server's firewall refused two PCs behind one router
+  for a minute after a few quick hosts and joins.
+- Debug, Relay only now holds when only one side ticks it: that side offers
+  no direct addresses either, so the link goes through the TURN relay (before,
+  the other side reached it directly and the link came up peer to peer).
 - The input delay in the panel and the status line is the match's, as the
   fights play it: between rounds, in intros and win poses the games run in
   lockstep with a higher delay of their own, which is no longer shown there.

@@ -36,8 +36,8 @@ class SfvGame;
 // install hosts and joins unless [weyve] server or the panel's Debug tab
 // says otherwise.
 inline constexpr const char* kDefaultServer = "159.69.32.141:5555";
-// The public server answers on 443 too, for
-// networks that block 5555: tried at the same time when the server is kDefaultServer.
+// The public server answers on 443 too, for networks that block 5555: tried
+// when 5555 does not answer within a moment, for kDefaultServer.
 inline constexpr uint16_t kDefaultServerAlsoPort = 443;
 
 struct NetplayOptions {

@@ -84,7 +84,7 @@ bool ParseServer(const std::string& text, std::string* host, uint16_t* port)
 struct WeyveService::Impl {
     std::string host;
     uint16_t port = kDefaultPort;
-    uint16_t alsoPort = 0; // tried at the same time as `port` (Start)
+    uint16_t alsoPort = 0; // tried too when `port` does not answer soon (Start, Connect)
     std::string name;
 
     std::mutex mutex; // guards everything below and every call into the client
@@ -162,11 +162,15 @@ struct WeyveService::Impl {
         }
     }
 
-    // Connects to `port`, and to `alsoPort` at the same time when set: a
-    // connect that gets no answer blocks for about 21 s (the system's TCP
-    // timeout), longer than a session waits, so the ports cannot take turns.
-    // The first client to connect is kept; the other is closed when its
-    // connect returns. Null if neither connects.
+    // Connects to `port`; with `alsoPort` set, to that one too when `port`
+    // has not connected within kAlsoAfter (or failed sooner). A connect that
+    // gets no answer blocks for about 21 s (the system's TCP timeout), longer
+    // than a session waits, so the second may not wait for the first to give
+    // up. Both at once doubled the connections, and the public server's
+    // firewall refuses an address after 6 in 30 s (two PCs behind one router,
+    // a few quick hosts and joins). The first client to connect is kept; the
+    // other is closed when its connect returns. Null if neither connects.
+    static constexpr auto kAlsoAfter = std::chrono::milliseconds(1500);
     WeyveClient* Connect()
     {
         if (!alsoPort) {
@@ -185,7 +189,7 @@ struct WeyveService::Impl {
             bool abandoned = false; // the service stopped waiting: a late connect closes itself
         };
         auto race = std::make_shared<Race>();
-        for (const uint16_t p : {port, alsoPort}) {
+        auto dial = [&](uint16_t p) {
             std::thread([race, p, h = host] {
                 ThreadGuard running; // a connect can block ~21 s: no unload meanwhile
                 WeyveClient* c = weyve_client_create();
@@ -202,9 +206,22 @@ struct WeyveService::Impl {
                 race->finished++;
                 race->done.notify_all();
             }).detach();
-        }
+        };
+        dial(port);
         std::unique_lock lock(race->m);
-        while (!race->winner && race->finished < 2 && !stop) race->done.wait_for(lock, std::chrono::milliseconds(100));
+        const auto alsoAt = std::chrono::steady_clock::now() + kAlsoAfter;
+        int dialed = 1;
+        while (!race->winner && !stop && (dialed == 1 || race->finished < dialed)) {
+            if (dialed == 1 && (race->finished == 1 || std::chrono::steady_clock::now() >= alsoAt)) {
+                Log("weyve: no answer on port %u yet: trying port %u too", port, alsoPort);
+                lock.unlock();
+                dial(alsoPort);
+                lock.lock();
+                dialed = 2;
+                continue;
+            }
+            race->done.wait_for(lock, std::chrono::milliseconds(100));
+        }
         if (stop) {
             race->abandoned = true;
             if (race->winner) weyve_client_destroy(race->winner);
@@ -220,7 +237,7 @@ struct WeyveService::Impl {
     void Run()
     {
         ThreadGuard running;
-        if (alsoPort) Log("weyve: connecting to %s:%u (and port %u)", host.c_str(), port, alsoPort);
+        if (alsoPort) Log("weyve: connecting to %s:%u (then port %u if it does not answer)", host.c_str(), port, alsoPort);
         else Log("weyve: connecting to %s:%u", host.c_str(), port);
         WeyveClient* c = Connect();
         if (!c) {
@@ -232,7 +249,7 @@ struct WeyveService::Impl {
         weyve_set_name(c, name.c_str());
         if (WeyveService::RelayOnly()) {
             weyve_set_relay_only(c, true);
-            Log("weyve: relay only: links take only the peers' relay candidates");
+            Log("weyve: relay only: links offer and take only relay candidates");
         }
         {
             std::lock_guard lock(mutex);

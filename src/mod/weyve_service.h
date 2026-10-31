@@ -51,8 +51,9 @@ class WeyveService : public ITransport {
 public:
     // Starts connecting to `server` ("host[:port]", port 5555 by default) as
     // `name`. Never fails here: a failed connection shows in View().
-    // `alsoPort`: the same host on this port too, at the same time (some
-    // networks let only common ports through); the first to connect is used.
+    // `alsoPort`: the same host on this port too when the first does not
+    // answer within a moment (some networks let only common ports through);
+    // the first to connect is used.
     static std::unique_ptr<WeyveService> Start(const std::string& server, const std::string& name,
                                                uint16_t alsoPort = 0);
     ~WeyveService() override; // leaves the room and disconnects
