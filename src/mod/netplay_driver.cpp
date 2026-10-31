@@ -16,6 +16,7 @@
 #include "mod/lifecycle.h"
 #include "mod/log.h"
 #include "mod/overlay.h"
+#include "mod/report_upload.h"
 #include "mod/sfv_game.h"
 #include "mod/status.h"
 #include "mod/sfv_offsets.h"
@@ -2299,6 +2300,7 @@ private:
         for (const std::string& line : lines) std::fprintf(f, "%s\n", line.c_str());
         std::fclose(f);
         PruneOldest(reportDir_, L"*.log", kKeptMatchLogs);
+        SendReadyReports(); // a desync's files, now with the match's log
     }
 
     // ----- state -------------------------------------------------------------

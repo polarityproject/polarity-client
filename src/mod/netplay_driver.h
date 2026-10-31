@@ -75,6 +75,7 @@ struct NetplayOptions {
     bool menuAfterMatch = true;            // back to the main menu when a session ends or on leave
     bool reconcileStart = true;            // joiner takes the host's values where the frozen states differ (lobby.h)
     bool allowSpectators = true;           // host: others may watch
+    bool uploadReports = true;             // desync reports go to the SFVR server (report_upload.h)
     bool autoReady = false;                // ready as soon as the lobby is reached (commands, tests)
     bool showOwnFps = false;               // the match HUD also shows this game's frame rate
 };

@@ -9,6 +9,13 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ### Added
 
+- Desync reports are sent to the SFVR server, so a desync can be traced from
+  both players' sides: after a match with a desync, its recording and match
+  log (player names, picks, inputs). Settings, Logs turns it off; a notice
+  says so once. Reports not sent (no network) go after the next match or at
+  the next launch; `[report] url` sends them elsewhere. Needs sfvr-server with
+  `sfvr-reports` (TCP 5580). `scripts/pull-reports.ps1` pulls them to this PC.
+
 - Eleven: pick it like any character and you play a random fighter in the
   silver model, with its V-Skill and V-Trigger at random (as the game's own
   Eleven). The other player sees ELEVEN. Each time it is picked it rolls again.

@@ -11,6 +11,7 @@
 #include "mod/netplay_driver.h"
 #include "mod/select_screen.h"
 #include "mod/status.h"
+#include "mod/report_upload.h"
 #include "mod/updater.h"
 #include "mod/weyve_service.h"
 
@@ -844,6 +845,7 @@ struct Choices {
     char code[64] = "";
     char name[lobby::kMaxName + 1] = "";
     bool allowSpectators = true;
+    bool uploadReports = true;
     bool showFps = false;
 };
 Choices g_choices;
@@ -889,6 +891,7 @@ void InitChoices()
     g_choices.delay = o.inputDelay;
     std::snprintf(g_choices.name, sizeof(g_choices.name), "%s", o.name.c_str());
     g_choices.allowSpectators = o.allowSpectators;
+    g_choices.uploadReports = o.uploadReports;
     g_choices.showFps = o.showOwnFps;
     g_choices.initialised = true;
 }
@@ -919,6 +922,7 @@ NetplayOptions ChosenOptions()
     o.inputDelay = static_cast<uint8_t>(c.delay);
     o.name = c.name;
     o.allowSpectators = c.allowSpectators;
+    o.uploadReports = c.uploadReports;
     o.showOwnFps = c.showFps;
     return o;
 }
@@ -1082,6 +1086,8 @@ void SaveChoices()
     Act([o] {
         NetOptions().name = o.name;
         NetOptions().allowSpectators = o.allowSpectators;
+        NetOptions().uploadReports = o.uploadReports;
+        SetReportUploads(o.uploadReports);
         NetOptions().showOwnFps = o.showOwnFps;
         NetOptions().inputDelay = o.inputDelay;
         if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, o, o.stageCode);
@@ -1396,6 +1402,11 @@ void DrawSettings(bool locked)
     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440 * g_uiScale);
     ImGui::TextColored(kDim, "Event logs and match recordings are in the SFVR folder next to the game. "
                              "To report a problem, pack them and send the zip.");
+    ImGui::PopTextWrapPos();
+    if (ImGui::Checkbox("Send desync reports to the SFVR server", &g_choices.uploadReports)) SaveChoices();
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440 * g_uiScale);
+    ImGui::TextColored(kDim, "After a match with a desync, its recording and match log (names, picks, inputs) "
+                             "go to the server so both players' halves can be compared.");
     ImGui::PopTextWrapPos();
     if (TileButton("Open folder")) OpenDataFolder();
     ImGui::SameLine();
@@ -2478,6 +2489,30 @@ void AddToast(const std::string& text, ImVec4 color = ImVec4(1, 1, 1, 1), int se
     g_toasts.push_back({text, color, GetTickCount64() + seconds * 1000ull});
 }
 
+bool OnMenuScreen();
+
+bool OnMenuScreen();
+
+// Desync reports: once ever, at the main menu, that they are sent (and where
+// that is turned off); then each match's, as it is sent.
+void ToastReports()
+{
+    static bool noticed = false;
+    if (!noticed && OnMenuScreen()) {
+        noticed = true;
+        if (!g_panelPath.empty() && NetOptions().uploadReports &&
+            !GetPrivateProfileIntW(L"report", L"notice_shown", 0, g_panelPath.c_str())) {
+            WritePrivateProfileStringW(L"report", L"notice_shown", L"1", g_panelPath.c_str());
+            AddToast("Desync reports are sent to the SFVR server to help fix them. Settings, Logs turns this off.", kGold, 15);
+        }
+    }
+    static int toasted = 0;
+    const int sent = ReportsSent();
+    if (sent == toasted) return;
+    toasted = sent;
+    AddToast("Desync report sent to the SFVR server (Settings, Logs)", kDim, 6);
+}
+
 // Notices from what changed in the session since the last frame.
 // Once per version the site offers: a toast pointing at Settings.
 void ToastUpdate()
@@ -3039,6 +3074,7 @@ void Draw(IDXGISwapChain* swapChain)
     ToastChanges(view);
     // Not over a match: it waits for a menu.
     if (OnMenuScreen()) ToastUpdate();
+    ToastReports();
     // The select screen preview covers everything; closing it brings the panel back.
     static bool previewWas = false;
     if (const int wanted = g_selectRequest.load(); wanted >= 0 && g_tables.loaded) {

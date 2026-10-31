@@ -46,6 +46,9 @@ struct Config {
     std::wstring updateUrl;
     bool updateCheck = true;
 
+    // [report] url (report_upload.h): where desync reports go
+    std::wstring reportUrl;
+
     NetplayOptions netplay; // [netplay] and [netsim]
 
     int virtualPads = 0; // XInput pads driven by sfv_cmd.txt, connected at startup

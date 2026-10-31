@@ -2,6 +2,7 @@
 #include "mod/battle_driver.h"
 #include "mod/files.h"
 #include "mod/pacing.h"
+#include "mod/report_upload.h"
 #include "mod/updater.h"
 #include "mod/flow.h"
 
@@ -356,6 +357,17 @@ void RunNetCommand(const std::string& line)
     else if (cmd == "name") {
         std::getline(ss >> std::ws, g_testName);
         Log("netplay: test sessions play as %s", TestName().c_str());
+    }
+    else if (cmd == "reports") {
+        // reports [send] [url <address>]: desync report uploads (report_upload.h).
+        std::string what, url;
+        ss >> what;
+        if (what == "url") {
+            ss >> url;
+            SetReportUrl(url);
+            Log("reports: server %s", url.empty() ? "as configured" : url.c_str());
+        }
+        else SendReadyReports();
     }
     else if (cmd == "update") {
         // update [check [url]] | update install: the updater (updater.h).
@@ -1254,7 +1266,7 @@ bool Parse(const std::string& line, Step& step)
         step.setup.stage = static_cast<uint16_t>(stage);
         return !ss.fail();
     }
-    if (cmd == "host" || cmd == "join" || cmd == "spectate" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
+    if (cmd == "host" || cmd == "join" || cmd == "spectate" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
         cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "skipcallbacks") {
         step.kind = Step::Net;
         step.line = line;

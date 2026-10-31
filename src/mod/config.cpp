@@ -128,6 +128,7 @@ void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPr
         else if (has(L"name")) n.name = ReadUtf8(path, "netplay", "name");
     }
     if (onlyPresent && has(L"allow_spectators")) n.allowSpectators = ReadInt(path, L"netplay", L"allow_spectators", 1) != 0;
+    if (onlyPresent && has(L"upload_reports")) n.uploadReports = ReadInt(path, L"netplay", L"upload_reports", 1) != 0;
     // The Debug tab's server switch, and the servers used before.
     if (onlyPresent && has(L"server")) {
         const std::string server = Ascii(ReadString(path, L"netplay", L"server", L""));
@@ -186,6 +187,7 @@ void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const
     Write(path, L"name", ascii ? n.name : "");
     Write(path, L"name_utf8", ascii ? "" : hex);
     Write(path, L"allow_spectators", n.allowSpectators ? "1" : "0");
+    Write(path, L"upload_reports", n.uploadReports ? "1" : "0");
     Write(path, L"show_fps", n.showOwnFps ? "1" : "0");
     Write(path, L"server", n.savedServer);
     std::string recent;
@@ -256,6 +258,7 @@ Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const st
     if (n.server.empty()) n.server = kDefaultServer;
     n.name = ReadUtf8(path, "weyve", "name"); // UTF-8 (Notepad's default)
     n.allowSpectators = ReadInt(path, L"netplay", L"allow_spectators", 1) != 0;
+    n.uploadReports = ReadInt(path, L"netplay", L"upload_reports", 1) != 0;
     n.udpPort = static_cast<uint16_t>(ReadInt(path, L"netplay", L"udp_port", 47001));
     const std::wstring host = ReadString(path, L"netplay", L"udp_host", L"127.0.0.1");
     n.udpHost = Ascii(host);
@@ -283,6 +286,7 @@ Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const st
     if (c.reportDir.empty()) c.reportDir = dllDir + L"\\SFVR\\matches";
     c.updateUrl = ReadString(path, L"update", L"url", L"");
     c.updateCheck = ReadInt(path, L"update", L"check", 1) != 0;
+    c.reportUrl = ReadString(path, L"report", L"url", L"");
     return c;
 }
 

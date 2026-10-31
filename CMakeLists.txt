@@ -150,6 +150,7 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/boot.cpp
     src/mod/files.cpp
     src/mod/updater.cpp
+    src/mod/report_upload.cpp
     src/mod/flow.cpp
     src/mod/hitch.cpp
     src/mod/pacing.cpp

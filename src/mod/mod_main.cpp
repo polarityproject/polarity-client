@@ -15,6 +15,7 @@
 #include "mod/log.h"
 #include "mod/probes.h"
 #include "mod/sfv_game.h"
+#include "mod/report_upload.h"
 #include "mod/updater.h"
 #include "mod/status.h"
 #include "mod/stress_driver.h"
@@ -135,6 +136,7 @@ DWORD WINAPI ModMain(LPVOID self)
     InstallBattleDriver(image, &game);
     if (config.netplay.skipLoadCallbacks) SetSkippedLoadCallbacks(DefaultSkippedLoadCallbacks());
     InstallNetplay(&game, config.reportDir, kModVersion, config.netplay);
+    InstallReportUploads(config.reportDir, Narrow(config.reportUrl), kModVersion, config.netplay.uploadReports);
 
     switch (config.mode) {
     case Mode::Netplay:
