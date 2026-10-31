@@ -263,6 +263,7 @@ std::mutex g_sceneMutex;
 std::string g_lastScene;
 
 std::atomic<uint64_t> g_sceneChangedAt{0}; // queue run (about a frame) of the last scene change
+std::atomic<uint64_t> g_battleSwitches{0};  // jumps switched to the battle scene (BattleSceneSwitches)
 
 void RememberScene(const std::string& stateClassName)
 {
@@ -1427,6 +1428,8 @@ void ReturnToMainMenu(int delayFrames)
 
 std::string CurrentScene() { return LastScene(); }
 
+uint64_t BattleSceneSwitches() { return g_battleSwitches; }
+
 void JumpToBattle()
 {
     // Netplay and replays set what is played first. A bare jump (`battlenow`,
@@ -1658,6 +1661,7 @@ void WaitForStageThenSwitch(void* manager, void* stateClass, uint8_t* loader, in
     g_loaderAfterReset = from != "VersusBattleState" && from != "VersusBattleSetupState";
     RememberScene("VersusBattleState");
     g_origChange(manager, stateClass, nullptr);
+    g_battleSwitches++;
     StartLoaderWhenReady(0, nullptr, 0);
 }
 

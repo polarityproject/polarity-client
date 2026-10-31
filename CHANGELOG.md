@@ -45,7 +45,8 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   WATCHING banner gives the spectator's link to the host, and Back leaves.
 - Sessions use that select screen: it fades in when a session starts (players
   and spectators), and over the results screen in place of the vote's windows
-  when both choose Character select. The host picks the stage first (B on
+  when both choose Character select. Into a match it stays up while the stage
+  loads, then fades to black as the game's loading screen comes. The host picks the stage first (B on
   the grid goes back to it), then both pick a character and their loadout and
   say ready; B says not ready again until both are. Start brings up the
   panel, and Start closes it. Each side shows where that player is on their

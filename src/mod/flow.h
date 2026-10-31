@@ -44,6 +44,9 @@ void ChangeScene(const std::string& stateClassName, const std::string& paramName
 // The scene state class the game last switched to ("MainMenuState",
 // "VersusBattleState"); empty before the first switch.
 std::string CurrentScene();
+// How many jumps switched to the battle scene so far: the screen goes black
+// for the battle's loading right after (the menus fade out just before).
+uint64_t BattleSceneSwitches();
 // The stage the next stage request loads, by code from the stage table
 // ("S25", "LVS"; empty: what the game asks for).
 void SetPendingStage(const std::string& code);

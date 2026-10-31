@@ -3238,13 +3238,45 @@ void Draw(IDXGISwapChain* swapChain)
         g_toasts.clear(); // the vote's ("Host wants character select"): the screen says it
     }
     lobbyWas = lobby;
-    liveAlpha = std::clamp(liveAlpha + (lobby ? 1.0f : -1.0f) * io.DeltaTime / 0.4f, 0.0f, 1.0f);
+    // Into a match, it stays until the jump switches to the battle scene
+    // (gone at the jump, it showed the menus for the seconds the stage
+    // loads), then fades to black as the game's screen does for the battle's
+    // loading, and goes once the game's is black too (about half a second
+    // after the switch: its menus fade out just before it).
+    constexpr double kToBlack = 0.3, kBlackHeld = 0.6;
+    static bool holding = false;
+    static uint64_t switchesAtJump = 0;
+    static double blackFrom = -1;
+    const double now = ImGui::GetTime();
+    if (lobby) {
+        holding = true;
+        switchesAtJump = BattleSceneSwitches();
+        blackFrom = -1;
+    }
+    else if (holding && phase == NetView::Phase::Jumping && BattleSceneSwitches() != switchesAtJump) {
+        holding = false;
+        blackFrom = now;
+    }
+    else if (holding && phase != NetView::Phase::Jumping) {
+        holding = false; // no switch seen (left, or a jump another way): it fades out
+    }
+    const bool toBlack = blackFrom >= 0 && now - blackFrom < kToBlack + kBlackHeld;
+    const bool shown = lobby || holding || toBlack;
+    liveAlpha = std::clamp(liveAlpha + (shown ? 1.0f : -1.0f) * io.DeltaTime / 0.4f, 0.0f, 1.0f);
+    if (blackFrom >= 0 && !toBlack) {
+        liveAlpha = 0; // the game's screen is black: gone at once
+        blackFrom = -1;
+    }
     if (preview) liveAlpha = 0;
     g_selectLive = lobby && !g_visible;
     if (liveAlpha > 0) {
         SelectInput in;
         DrawSelectLive(SelectFonts{g_fontBig, g_fontHuge, g_fontBody}, SelectLiveFor(view), liveAlpha, lobby && !g_visible, &in);
         if (lobby) ApplySelectInput(in, view);
+        if (toBlack) {
+            const float black = static_cast<float>(std::min(1.0, (now - blackFrom) / kToBlack));
+            ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, static_cast<int>(black * 255)));
+        }
     }
     if (preview) {
         DrawSelectPreview(SelectFonts{g_fontBig, g_fontHuge, g_fontBody});
