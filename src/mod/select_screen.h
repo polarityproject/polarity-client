@@ -27,6 +27,9 @@ struct SelectChara {
 struct SelectStage {
     std::string code; // "TAI"
     std::string name; // "Ring of Destiny"
+    // Its other settings, each a stage of its own (The Grid: The Grid
+    // Alternative, S25), as the game's stage select offers them.
+    std::vector<SelectStage> settings;
 };
 
 struct SelectData {
@@ -77,6 +80,7 @@ struct SelectLive {
     bool host = false;
     SelectSide sides[2];
     int stage = 0;            // the host's stage: into SelectData::stages; == their count: random
+    int setting = 0;          // its setting: 0 the stage itself, k its settings[k - 1]
     bool stageLocked = false; // the host confirmed it: on to the characters
     bool bothReady = false;   // the match is locked in (nobody can say not ready)
     bool loading = false;     // both ready, the games loading the characters
@@ -93,6 +97,7 @@ struct SelectInput {
     bool randomPick = false; // picked the random tile
     int row = -1, delta = 0; // changed a loadout row
     int stage = -1;          // the host's stage cursor (into the stages; their count: random)
+    int setting = -1;        // the host's setting for it (as SelectLive::setting)
     bool lockStage = false, unlockStage = false;
     bool ready = false;
     bool unready = false; // B while ready, until both are

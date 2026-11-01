@@ -2123,7 +2123,13 @@ SelectData PreviewSelectData()
         c.vcomments = g_tables.vcomments[i];
         data.charas.push_back(std::move(c));
     }
-    for (size_t i = 0; i < g_tables.stages.size(); i++) data.stages.push_back({g_tables.stages[i], g_tables.stageLabels[i]});
+    for (size_t i = 0; i < g_tables.stages.size(); i++) {
+        SelectStage stage{g_tables.stages[i], g_tables.stageLabels[i], {}};
+        for (size_t k = 0; k < g_tables.settings[i].size(); k++) {
+            stage.settings.push_back({g_tables.settings[i][k], g_tables.settingLabels[i][k], {}});
+        }
+        data.stages.push_back(std::move(stage));
+    }
     data.you = g_choices.name;
     return data;
 }
@@ -2229,16 +2235,23 @@ SelectSide SelectSideFor(const NetView& v, int i)
 }
 
 // The host's stage as an index into the stage select's stages (their count:
-// random).
-int SelectStageFor(const NetView& v)
+// random), and its setting (SelectLive::setting).
+int SelectStageFor(const NetView& v, int* setting)
 {
     const int count = static_cast<int>(g_tables.stages.size());
-    if (v.host) return g_choices.stage >= 2 && g_choices.stage - 2 < count ? g_choices.stage - 2 : count;
+    *setting = 0;
+    if (v.host) {
+        if (g_choices.stage < 2 || g_choices.stage - 2 >= count) return count;
+        *setting = g_choices.setting;
+        return g_choices.stage - 2;
+    }
     if (v.stageRule == lobby::kRandomStage || v.stageRule == lobby::kAnyStage) return count;
     const std::string code = StageCode(v.stageRule);
     for (int i = 0; i < count; i++) {
         const auto& settings = g_tables.settings[i];
-        if (g_tables.stages[i] == code || std::find(settings.begin(), settings.end(), code) != settings.end()) return i;
+        const auto it = std::find(settings.begin(), settings.end(), code);
+        if (it != settings.end()) *setting = 1 + static_cast<int>(it - settings.begin());
+        if (g_tables.stages[i] == code || it != settings.end()) return i;
     }
     return count;
 }
@@ -2249,7 +2262,7 @@ SelectLive SelectLiveFor(const NetView& v)
     live.you = v.spectator ? -1 : v.you;
     live.host = v.host;
     for (int i = 0; i < kNumPlayers; i++) live.sides[i] = SelectSideFor(v, i);
-    live.stage = SelectStageFor(v);
+    live.stage = SelectStageFor(v, &live.setting);
     live.stageLocked = v.stageLocked;
     live.bothReady = v.seats[0].ready && v.seats[1].ready;
     live.loading = live.bothReady && !(v.seats[0].preloaded && v.seats[1].preloaded);
@@ -2359,6 +2372,7 @@ void ApplySelectInput(const SelectInput& in, const NetView& v)
             c.stage = in.stage < count ? 2 + in.stage : 1;
             c.setting = 0;
         }
+        if (v.host && in.setting >= 0) c.setting = in.setting;
         PickValid(c);
     }
     SyncChoices(v);

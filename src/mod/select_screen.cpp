@@ -161,7 +161,7 @@ struct Ui {
     int cursorRow = 0, cursorX = 0;
     bool onRandom = false; // the cursor on the random tile
     int lastChara = -2;    // the pick the cursor last followed (it starts there, and moves when the pick changes)
-    int lastStage = 0;     // the stage behind the screen (the last real one while random is chosen)
+    std::string lastStage; // the stage behind the screen (the last real one while random is chosen)
     bool wasLocked = false;
 } g_ui;
 
@@ -273,7 +273,7 @@ bool CursorTo(int chara)
 // ----- input ----------------------------------------------------------------
 
 bool g_inputOn = false;                         // this frame reads input
-bool g_clickConfirm = false, g_clickBack = false; // a prompt clicked last frame: A or B this frame
+bool g_clickConfirm = false, g_clickBack = false, g_clickSetting = false; // a prompt clicked last frame: A, B or Y this frame
 
 // Directions repeat while held; A, B and Start count once per press (a long
 // frame, a character loading, would make a held A a repeat: the loadout's
@@ -301,6 +301,12 @@ bool Back()
     return clicked || Pressed({ImGuiKey_Escape, ImGuiKey_Backspace, ImGuiKey_GamepadFaceRight}, false);
 }
 bool Menu() { return Pressed({ImGuiKey_GamepadStart}, false); }
+// Y: the stage's next setting.
+bool NextSetting()
+{
+    const bool clicked = std::exchange(g_clickSetting, false) && g_inputOn;
+    return clicked || Pressed({ImGuiKey_GamepadFaceUp}, false);
+}
 
 bool Clicked() { return g_inputOn && ImGui::IsMouseClicked(ImGuiMouseButton_Left); }
 bool MouseIn(ImVec2 a, ImVec2 b)
@@ -419,14 +425,22 @@ const SelectChara* Chara(int i)
     return &g_draw->charas[i];
 }
 
+// Stage `stage` in setting `setting` (0: the stage itself); null for random.
+const SelectStage* Shown(int stage, int setting)
+{
+    if (!g_draw || stage < 0 || stage >= static_cast<int>(g_draw->stages.size())) return nullptr;
+    const SelectStage& s = g_draw->stages[stage];
+    return setting > 0 && setting <= static_cast<int>(s.settings.size()) ? &s.settings[setting - 1] : &s;
+}
+
 // The stage's picture over the whole screen (cropped at the sides: it is 4:1),
 // darkened; the screen draws over it.
-void DrawBackdrop(ImDrawList* d, int stage, ImU32 tint)
+void DrawBackdrop(ImDrawList* d, int stage, int setting, ImU32 tint)
 {
-    const int count = static_cast<int>(g_draw->stages.size());
-    if (stage >= 0 && stage < count) g_ui.lastStage = stage;
-    if (count == 0) return;
-    const TextureView* bg = Texture(StageTex(g_draw->stages[std::clamp(g_ui.lastStage, 0, count - 1)].code, "StageSelectBG"));
+    if (const SelectStage* s = Shown(stage, setting)) g_ui.lastStage = s->code;
+    if (g_ui.lastStage.empty() && !g_draw->stages.empty()) g_ui.lastStage = g_draw->stages[0].code;
+    if (g_ui.lastStage.empty()) return;
+    const TextureView* bg = Texture(StageTex(g_ui.lastStage, "StageSelectBG"));
     if (!bg) return;
     const float aspect = bg->height ? static_cast<float>(bg->width) / bg->height : 4.0f;
     const float visible = (1600.0f / 900.0f) / aspect; // the share of the width that fits
@@ -610,20 +624,31 @@ void DrawRender(ImDrawList* d, int chara, bool right)
 }
 
 // The stage select: the stage's picture inside the game's curved frame, its
-// name, and the strip of stages. Only the host moves it.
+// name, and the strip of stages. Only the host moves it; up, down and Y
+// change a stage's setting (The Grid: The Grid Alternative), shown in its
+// place.
 void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectInput* in)
 {
     const int count = static_cast<int>(g_draw->stages.size());
     const bool picking = live.host && live.you >= 0;
     int stage = std::clamp(live.stage, 0, count);
-    if (picking && Left()) in->stage = stage = (stage + count) % (count + 1);
-    if (picking && Right()) in->stage = stage = (stage + 1) % (count + 1);
+    int setting = live.setting;
+    if (picking && Left()) in->stage = stage = (stage + count) % (count + 1), setting = 0;
+    if (picking && Right()) in->stage = stage = (stage + 1) % (count + 1), setting = 0;
+    const int settings = stage < count ? static_cast<int>(g_draw->stages[stage].settings.size()) : 0;
+    setting = std::clamp(setting, 0, settings);
+    if (picking && settings) {
+        const bool up = Up(), down = Down(), next = NextSetting();
+        if (up) in->setting = setting = (setting + settings) % (settings + 1);
+        else if (down || next) in->setting = setting = (setting + 1) % (settings + 1);
+    }
+    const SelectStage* shown = Shown(stage, setting);
     Text(d, f.name, g_v.L(42), g_v.P(800, 76), Rgba(255, 255, 255), "STAGE SELECT", 0.5f, true);
     // The frame across the whole screen (its texture is 1920x534).
     const float bx = 0, by = 132, bw = 1600, bh = 1600.0f * 534 / 1920;
     if (const TextureView* shadow = Texture(MenuTex("StagePreviewWindowShadow"))) Image(d, shadow, g_v.P(bx, by), g_v.P(bx + bw, by + bh));
     const bool random = stage >= count;
-    const std::string code = random || count == 0 ? "" : g_draw->stages[stage].code;
+    const std::string code = shown ? shown->code : "";
     if (const TextureView* bg = code.empty() ? nullptr : Texture(StageTex(code, "StageSelectBG"))) {
         // The mask (StagePreviewBG, 1920x512, 11 px into the frame) curves 2 px
         // from the edge at the sides and 43 px at the middle, top and bottom
@@ -646,8 +671,15 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
         }
     }
     if (const TextureView* frame = Texture(MenuTex("StagePreviewWindow"))) Image(d, frame, g_v.P(bx, by), g_v.P(bx + bw, by + bh));
-    const std::string name = random ? "Random" : count ? g_draw->stages[stage].name : "";
+    const std::string name = random ? "Random" : shown ? shown->name : "";
     Text(d, f.name, g_v.L(46), g_v.P(800, by + bh - 106), Rgba(255, 255, 255), name, 0.5f, true);
+    if (settings) {
+        char line[32];
+        std::snprintf(line, sizeof(line), "Setting %d / %d", setting + 1, settings + 1);
+        const float w = TextW(f.text, 16, line) + 36, y = by + bh - 146;
+        Pill(d, g_v.P(800 - w / 2, y), g_v.P(800 + w / 2, y + 30));
+        Text(d, f.text, g_v.L(16), g_v.P(800, y + 6), Rgba(233, 196, 106), line, 0.5f);
+    }
     Infinity(d, g_v.P(800, by + bh + 30), g_v.L(56), Rgba(242, 201, 76));
     // The strip: each stage's thin picture, then random.
     const float sw = 29, sh = 168, gap = 3;
@@ -659,7 +691,8 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
         const float lift = on ? 8.0f : 0.0f, grow = on ? 1.12f : 1.0f;
         const float cx = x + sw / 2, cy = sy + sh / 2 - lift;
         const ImVec2 a = g_v.P(cx - sw * grow / 2, cy - sh * grow / 2), b = g_v.P(cx + sw * grow / 2, cy + sh * grow / 2);
-        const TextureView* t = i < count ? Texture(StageTex(g_draw->stages[i].code, "StageSelectIcon")) : Texture(MenuTex("StageSelect_Random"));
+        const std::string icon = on && shown ? shown->code : i < count ? g_draw->stages[i].code : "";
+        const TextureView* t = i < count ? Texture(StageTex(icon, "StageSelectIcon")) : Texture(MenuTex("StageSelect_Random"));
         if (t) Image(d, t, a, b);
         else d->AddRectFilled(a, b, Rgba(30, 32, 36));
         if (on) {
@@ -702,7 +735,7 @@ void MoveCursor(int dr, int dx)
 struct Prompt {
     const char* icon;
     std::string label;
-    int action; // 0 confirm (A), 1 back (B), 2 menu (Start)
+    int action; // 0 confirm (A), 1 back (B), 2 menu (Start), 3 the stage's next setting (Y)
 };
 
 constexpr const char* kLoadingText = "Both ready: loading the characters";
@@ -728,6 +761,7 @@ void DrawPrompts(ImDrawList* d, const SelectFonts& f, const std::vector<Prompt>&
         if (Clicked() && MouseIn(a, b)) {
             if (p.action == 0) g_clickConfirm = true;
             else if (p.action == 1) g_clickBack = true;
+            else if (p.action == 3) g_clickSetting = true;
             else in->menu = true;
         }
         right -= w + 18;
@@ -750,7 +784,7 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
 
     std::vector<Prompt> prompts;
     if (!live.stageLocked) {
-        DrawBackdrop(d, live.stage, Rgba(70, 69, 67));
+        DrawBackdrop(d, live.stage, live.setting, Rgba(70, 69, 67));
         d->AddRectFilledMultiColor(g_v.P(0, 0), g_v.P(1600, 450), Rgba(6, 8, 11, 90), Rgba(6, 8, 11, 90), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 0));
         d->AddRectFilledMultiColor(g_v.P(0, 450), g_v.P(1600, 900), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 170), Rgba(6, 8, 11, 170));
         DrawStageSelect(d, f, live, in);
@@ -764,7 +798,9 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         for (const SelectSide& s : live.sides) {
             if (const SelectChara* c = s.present ? Chara(s.chara) : nullptr) Texture(CharaTex(c->code, "PartCharacter"));
         }
-        for (const char* icon : {"button_a", "button_b"}) Texture(PadTex(icon));
+        for (const char* icon : {"button_a", "button_b", "button_y"}) Texture(PadTex(icon));
+        const SelectStage* stage = Shown(live.stage, 0);
+        if (live.host && !watching && stage && !stage->settings.empty()) prompts.push_back({"button_y", "Setting", 3});
         if (live.host && !watching) prompts.push_back({"button_a", "Confirm stage", 0});
         if (Back()) in->back = true;
     }
@@ -814,7 +850,7 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         }
 
         // The chosen stage behind everything.
-        DrawBackdrop(d, live.stage, Rgba(118, 116, 112));
+        DrawBackdrop(d, live.stage, live.setting, Rgba(118, 116, 112));
         d->AddRectFilledMultiColor(g_v.P(0, 0), g_v.P(1600, 300), Rgba(6, 8, 11, 120), Rgba(6, 8, 11, 120), Rgba(6, 8, 11, 0), Rgba(6, 8, 11, 0));
         DrawRender(d, shown[0], false);
         DrawRender(d, shown[1], true);
@@ -937,7 +973,7 @@ int g_previewPhase = 0;
 SelectData g_preview;
 
 struct Mock {
-    int stage = 0;
+    int stage = 0, setting = 0;
     bool locked = false;
     int chara[2] = {0, 0};
     int values[2][kSelectRows] = {{0, 0, 0, 0, 0, 0, 2}, {1, 0, 0, 1, 0, 0, 3}};
@@ -1045,6 +1081,7 @@ void MockTick(float dt)
     const int stages = static_cast<int>(g_preview.stages.size());
     if (phase == 0) {
         g_mock.stage = (g_mock.stage + 1) % (stages + 1);
+        g_mock.setting = 0;
         g_mock.nextAct += 0.55f;
         return;
     }
@@ -1130,7 +1167,7 @@ void WarmSelectTextures()
     for (const char* name : {"StagePreviewWindowShadow", "StagePreviewWindow", "StageSelectCursor", "StageSelect_Random"}) {
         Texture(MenuTex(name));
     }
-    for (const char* icon : {"button_a", "button_b", "button_start"}) Texture(PadTex(icon));
+    for (const char* icon : {"button_a", "button_b", "button_y", "button_start"}) Texture(PadTex(icon));
     for (const SelectStage& s : g_data.stages) Texture(StageTex(s.code, "StageSelectIcon"));
     // The character grid's tiles, then each stage's backdrop, then each
     // character's picture (what browsing the grid shows).
@@ -1142,6 +1179,12 @@ void WarmSelectTextures()
         }
     }
     for (const SelectStage& s : g_data.stages) Texture(StageTex(s.code, "StageSelectBG"));
+    for (const SelectStage& s : g_data.stages) {
+        for (const SelectStage& k : s.settings) {
+            Texture(StageTex(k.code, "StageSelectIcon"));
+            Texture(StageTex(k.code, "StageSelectBG"));
+        }
+    }
     for (const SelectChara& c : g_data.charas) Texture(CharaTex(c.code, "PartCharacter"));
 }
 
@@ -1201,6 +1244,7 @@ void DrawSelectPreview(const SelectFonts& f)
     live.sides[0] = MockSide(0);
     live.sides[1] = MockSide(1);
     live.stage = g_mock.stage;
+    live.setting = g_mock.setting;
     live.stageLocked = g_mock.locked;
     live.pingMs = g_preview.spectator ? 120 : 38;
     live.spectators = 3;
@@ -1214,7 +1258,8 @@ void DrawSelectPreview(const SelectFonts& f)
     g_inputOn = false;
     d->PopClipRect();
     // The mock players take what the player did.
-    if (in.stage >= 0) g_mock.stage = in.stage;
+    if (in.stage >= 0) g_mock.stage = in.stage, g_mock.setting = 0;
+    if (in.setting >= 0) g_mock.setting = in.setting;
     if (in.lockStage) g_mock.locked = true;
     if (in.unlockStage) g_mock.locked = false;
     if (in.chara >= 0) g_mock.chara[0] = in.chara;

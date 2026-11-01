@@ -7,6 +7,15 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+
+- Stage settings on the stage select: Y (or up and down) switches a stage to
+  its other setting, as the game's own stage select offers them (The Grid
+  Alternative, Shadaloo Base at Night, Suzaku Castle at Night...). The
+  picture, name and strip icon follow it, "Setting 1 / 2" shows which, and
+  the other player sees it live. Works with 0.2.1 players: the session
+  already carried a setting's stage.
+
 ## [0.2.1] - 2026-10-31
 
 A new character select for sessions: the host picks the stage, both players
