@@ -1,5 +1,6 @@
 #include "mod/report_upload.h"
 
+#include "mod/crash_report.h"
 #include "mod/files.h"
 #include "mod/lifecycle.h"
 #include "mod/log.h"
@@ -164,28 +165,33 @@ bool CrashName(const std::string& name)
     return true;
 }
 
-std::set<std::string> SentList(const std::wstring& dir)
+// File names, one a line: uploaded.txt (sent) and kept.txt (made while
+// uploads were off: never sent, KeepReportLocal).
+std::set<std::string> NameList(const std::wstring& dir, const wchar_t* list)
 {
-    std::set<std::string> sent;
-    FILE* f = _wfopen((dir + L"\\uploaded.txt").c_str(), L"r");
-    if (!f) return sent;
+    std::set<std::string> names;
+    FILE* f = _wfopen((dir + L"\\" + list).c_str(), L"r");
+    if (!f) return names;
     char line[512];
     while (std::fgets(line, sizeof(line), f)) {
         std::string s = line;
         while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
-        if (!s.empty()) sent.insert(s);
+        if (!s.empty()) names.insert(s);
     }
     std::fclose(f);
-    return sent;
+    return names;
 }
 
-void MarkSent(const std::wstring& dir, const std::string& name)
+void AddName(const std::wstring& dir, const wchar_t* list, const std::string& name)
 {
-    FILE* f = _wfopen((dir + L"\\uploaded.txt").c_str(), L"a");
+    FILE* f = _wfopen((dir + L"\\" + list).c_str(), L"a");
     if (!f) return;
     std::fprintf(f, "%s\n", name.c_str());
     std::fclose(f);
 }
+
+std::set<std::string> SentList(const std::wstring& dir) { return NameList(dir, L"uploaded.txt"); }
+void MarkSent(const std::wstring& dir, const std::string& name) { AddName(dir, L"uploaded.txt", name); }
 
 enum class Sent { Now, Refused, Later };
 
@@ -231,8 +237,9 @@ bool SendCrashes(const std::string& url)
     } while (FindNextFileW(find, &fd));
     FindClose(find);
     const std::set<std::string> sent = SentList(dir);
+    const std::set<std::string> kept = NameList(dir, L"kept.txt");
     for (const std::string& name : names) {
-        if (sent.count(name)) continue;
+        if (sent.count(name) || kept.count(name)) continue;
         if (!g_on || Stopping()) return true;
         const Sent s = SendFile(url, "crashes", dir, name);
         if (s == Sent::Later) return false;
@@ -275,9 +282,13 @@ bool SendRound()
     GetSystemTimeAsFileTime(&nowFt);
     const int64_t now = Seconds(nowFt);
     const std::set<std::string> sent = SentList(g_dir);
+    const std::set<std::string> kept = NameList(g_dir, L"kept.txt");
     bool waiting = false; // a side whose match log may still come
     for (const auto& [key, s] : sides) {
         if (!s.desync || now - s.newest > kMaxAgeSeconds) continue;
+        bool keep = false;
+        for (const std::string& name : s.files) keep = keep || kept.count(name);
+        if (keep) continue;
         // No match log: the match may still be on, unless the files are from
         // before this run (the game closed or crashed in the match).
         if (!s.log && s.newest >= g_started && now - s.newest < kNoLogAfterSeconds) {
@@ -320,6 +331,7 @@ void InstallReportUploads(const std::wstring& reportDir, const std::string& url,
     g_dir = reportDir;
     g_version = modVersion;
     g_on = on;
+    NoteRunUploads(on);
     g_configured = url.empty() ? kDefaultReportUrl : url;
     while (!g_configured.empty() && g_configured.back() == '/') g_configured.pop_back();
     {
@@ -347,8 +359,11 @@ void InstallReportUploads(const std::wstring& reportDir, const std::string& url,
     }).detach();
 }
 
+void KeepReportLocal(const std::wstring& dir, const std::string& name) { AddName(dir, L"kept.txt", name); }
+
 void SetReportUploads(bool on)
 {
+    NoteRunUploads(on);
     if (g_on.exchange(on) == on) return;
     Log("reports: desync reports %s", on ? "are sent" : "are not sent");
     if (on) Round();

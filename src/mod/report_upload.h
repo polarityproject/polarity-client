@@ -39,5 +39,10 @@ bool ReportUploadsOn();
 int ReportsSent();
 // For tests: another server (empty: the configured one).
 void SetReportUrl(const std::string& url);
+// A report made while uploads were off (a test run's killed games and
+// desyncs, or the player's choice then): listed in that folder's kept.txt and
+// never sent, also once uploads are on again. A match side with any kept file
+// stays home whole.
+void KeepReportLocal(const std::wstring& dir, const std::string& name);
 
 } // namespace sfv::mod

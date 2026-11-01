@@ -2309,6 +2309,7 @@ private:
         // UTF-8, every character kept: a game folder outside ASCII (Chinese,
         // Cyrillic) used to become a path that does not exist.
         const std::string path = Utf8Path(reportDir_) + "\\" + name + ".sfvr";
+        if (!ReportUploadsOn()) KeepReportLocal(reportDir_, name + ".sfvr");
         const ReplayDetail detail = options_.fullRecordings ? ReplayDetail::Full : ReplayDetail::Compact;
         auto save = [path, detail, dir = reportDir_](const ReplayFile& file) {
             std::string error;
@@ -2350,6 +2351,7 @@ private:
             path = linkPath_;
         }
         const std::string logPath = recording.substr(0, recording.rfind('.')) + ".log";
+        if (!ReportUploadsOn()) KeepReportLocal(reportDir_, logPath.substr(logPath.find_last_of('\\') + 1));
         FILE* f = OpenFile(logPath, "w");
         const std::vector<std::string> lines = LogCaptureTake();
         if (!f) {

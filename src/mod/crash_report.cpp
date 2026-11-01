@@ -2,6 +2,7 @@
 
 #include "mod/files.h"
 #include "mod/log.h"
+#include "mod/report_upload.h"
 
 #include <MinHook.h>
 #include <windows.h>
@@ -283,6 +284,20 @@ std::string Value(const std::string& text, const char* key)
     return "";
 }
 
+// The last "key value" line's value (lines added during the run).
+std::string LastValue(const std::string& text, const char* key)
+{
+    const std::string k = std::string(key) + " ";
+    std::string value;
+    for (size_t at = 0; at < text.size();) {
+        size_t end = text.find('\n', at);
+        if (end == std::string::npos) end = text.size();
+        if (text.compare(at, k.size(), k) == 0) value = text.substr(at + k.size(), end - at - k.size());
+        at = end + 1;
+    }
+    return value;
+}
+
 } // namespace
 
 void CrashGuardEnter() { t_guarded++; }
@@ -361,11 +376,16 @@ std::string CheckPreviousRun(const std::wstring& suffix, const std::string& vers
     DeleteFileW(PendingPath(L".dmp").c_str());
     DeleteFileW(PendingPath(L".txt").c_str());
     DeleteFileW(RunningPath().c_str());
+    const bool keep = LastValue(running, "uploads") == "0";
+    if (keep) {
+        KeepReportLocal(g_dir, name + ".log");
+        if (fault) KeepReportLocal(g_dir, name + ".dmp");
+    }
     PruneOldest(g_dir, L"*_crash_*.log", kKeptCrashReports);
     PruneOldest(g_dir, L"*_crash_*.dmp", kKeptCrashReports);
     std::string found = "crash report: the last run (SFVR " + Value(running, "version") + ") ended " +
                         (fault ? "with a fault: " + Value(pending, "fault") : "without a clean exit (no fault seen)") +
-                        "; " + name + ".log";
+                        "; " + name + ".log" + (keep ? " (kept on this PC: that run did not send reports)" : "");
     return found;
 }
 
@@ -418,6 +438,14 @@ void OnQuitting(const char* how)
     if (g_quitting.exchange(true) || g_dir.empty()) return;
     Log("crash report: the game is quitting (%s): faults from here are not reported", how);
     AppendRunning(std::string("quitting ") + how);
+}
+
+void NoteRunUploads(bool on)
+{
+    static int noted = -1;
+    if (noted == (on ? 1 : 0)) return;
+    noted = on ? 1 : 0;
+    AppendRunning(on ? "uploads 1" : "uploads 0");
 }
 
 void NoteGameTick()

@@ -51,6 +51,11 @@ void OnQuitting(const char* how);
 // From the scene's tick (flow.cpp): the game thread is alive (the freeze
 // watch).
 void NoteGameTick();
+// Report uploads on or off in this run (report_upload.cpp, at start and on
+// every change): a run that ends badly with them off keeps its report on this
+// PC (KeepReportLocal), also when the next run sends reports. Test runs turn
+// them off, and the games they kill used to reach the server that way.
+void NoteRunUploads(bool on);
 
 // Around code that faults on purpose and catches it (guarded reads; calls,
 // not an object: a function with __try cannot hold one): the fault handler
