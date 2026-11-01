@@ -15,9 +15,16 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   report whose other half never reaches the server now shows whether that
   player turned reports off or their game could not send them. Protocol 11:
   both players need this version.
+- `setrounds <n>`: the round count match setups write, to test a game that
+  kept another one.
 
 ### Fixed
 
+- Desyncs from the first hit on players whose game had been left on another
+  round count (the "Ken V-Trigger 2" desync, and a Ryu vs Urien match on
+  0.2.2): each hit's damage gauge gain is divided by the battle's round
+  count, which sessions took from each game's own settings (1 on those
+  machines, 3 elsewhere). Match setups now write 3, and handicap 0.
 - Reports that could not be sent (the server not reached or busy) are tried
   again every five minutes outside matches, not only after the next match or
   at the next launch.

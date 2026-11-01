@@ -21,6 +21,11 @@ namespace sfv::mod {
 namespace battledata {
 constexpr uint32_t kMode = 0x00;    // int, 1 = local Versus (3 when a jump builds the data from defaults)
 constexpr uint32_t kRounds = 0x04;  // int
+// int, the match's round count (KWBattleSetting's DefaultBattleSpec.Rounds,
+// copied in at rva 0x7C43F5; 3 in local Versus). Each hit's damage gauge
+// gain is divided by it (rva 0x36D423). The setting is save data, so a game
+// left on another count (1 on two testers' machines) keeps it.
+constexpr uint32_t kSpecRounds = 0x08;
 constexpr uint32_t kTimer = 0x0C;   // int, frames (99 s = 5940)
 constexpr uint32_t kVersusFlag = 0x40; // int, 1 in local Versus, 0 in the defaults
 constexpr uint32_t kStage = 0x60;   // int, stage and setting id (0 = The Grid Alternative); read only, see ApplyMatchSetup
@@ -34,6 +39,9 @@ constexpr uint32_t kVariation = 0xD8;
 constexpr uint32_t kVTrigger = 0xDC;
 constexpr uint32_t kCriticalArt = 0xE0;
 constexpr uint32_t kVSkill = 0xE4;
+// int, 0-4 (SetHandicap, rva 0x7C7CF0): 0 in local Versus. Save data like the
+// round count; it changes the damage a player takes.
+constexpr uint32_t kHandicap = 0xEC;
 // int, EKWVoiceLanguageId: 0 Japanese, 1 English (KWBattlePlayerSetting
 // SetVoiceLanguage, rva 0x7CB170). The menus' character select sets it from
 // the player's Sound options; a jump's defaults leave 0. The character's
@@ -73,6 +81,9 @@ bool HasPendingSetup();
 // Research: a SetUniqueParam value (player 0/1, index 0-7; -1 clears) for
 // the next battles.
 void SetUniqueParamOverride(int player, int index, int value);
+// The round count ApplyMatchSetup writes (3); other values only to test a
+// game that kept another count.
+void SetMatchRoundsForTest(int rounds);
 // Counts battle setups seen (CheckPlayers calls) and battles created
 // (ReadSettings calls), to notice a jump into battle happened.
 int BattleSetupCount();

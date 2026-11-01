@@ -41,6 +41,7 @@ MatchSetup g_setup;
 // Research (`uniqueparam`): KWBattlePlayerSetting::SetUniqueParam values
 // (+0x128, 8 ints) written with the next setups; -1 leaves one alone.
 int g_uniqueParams[2][8] = {{-1, -1, -1, -1, -1, -1, -1, -1}, {-1, -1, -1, -1, -1, -1, -1, -1}};
+int g_matchRounds = 3; // battledata::kSpecRounds in every match setup (setrounds changes it for tests)
 std::atomic<int> g_setups{0};
 std::atomic<int> g_creations{0};
 
@@ -177,6 +178,7 @@ bool ApplyMatchSetup(const MatchSetup& setup)
         Put<int32_t>(r, bd::kComment, ps.comment == 0 ? -1 : ps.comment - 1);
         Put<int32_t>(r, bd::kVSkill, ps.vskill);
         Put<int32_t>(r, bd::kVTrigger, ps.vtrigger);
+        Put<int32_t>(r, bd::kHandicap, 0);
         // The costume's variant (the menus' held buttons at load): dress
         // state 1 in every round, and the character's special look, a
         // unique param (flow.h kVariantSpecial).
@@ -201,6 +203,8 @@ bool ApplyMatchSetup(const MatchSetup& setup)
     // data from defaults that are not local Versus (infinite time, P2 a CPU).
     Put<int32_t>(data, bd::kMode, 1);
     Put<int32_t>(data, bd::kTimer, 5940);
+    // Not left to this game's own setting: the hits' gauge gain depends on it.
+    Put<int32_t>(data, bd::kSpecRounds, g_matchRounds);
     Put<int32_t>(data, bd::kVersusFlag, 1);
     // The level itself comes from the stage request (flow.h SetPendingStage);
     // the id here does not change it. But a battle entered from another
@@ -209,6 +213,8 @@ bool ApplyMatchSetup(const MatchSetup& setup)
     if (setup.stage != kKeepStage) Put<int32_t>(data, bd::kStage, setup.stage);
     return true;
 }
+
+void SetMatchRoundsForTest(int rounds) { g_matchRounds = rounds; }
 
 void SetUniqueParamOverride(int player, int index, int value)
 {

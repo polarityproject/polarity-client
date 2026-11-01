@@ -292,11 +292,12 @@ uint64_t RecordFrameDetour(uint8_t* inputUnit, void* a2, void* a3, void* a4)
 // A fighter's damage gauge (gauge object +0x170 now, +0x174 its maximum,
 // +0x178 its level, up to 5; 16.16) grows by an amount per hit taken: at the
 // hit (rva 0x36D478) about 1000 / max vitality (+0xC4) * damage (the caller's
-// r14) / a value of the move. It came out different on one tester's machine
-// only, with Ken on V-Trigger 2 (2026-10-31: 20 on one, 59 on the other, same
-// inputs, no rollback involved), so every add is logged: the next such
-// report then shows which input differed. A stub saves the caller's r13 and
-// r14 (still the caller's on entry) before the detour runs.
+// r14) / the battle's round count. That count is the battle data's
+// battledata::kSpecRounds (r13 + 0xE8 -> getter 0x2F85B0 -> word +8), outside
+// the snapshot; two testers' games had kept 1 from their own settings (20 on
+// one machine, 59 on the other, 2026-10-31), so match setups write it now.
+// Every add is still logged. A stub saves the caller's r13 and r14 (still the
+// caller's on entry) before the detour runs.
 constexpr game::CodeSite kGaugeAdd{
     "damage gauge add", 0x346A20,
     {0x44, 0x89, 0x4C, 0x24, 0x20, 0x44, 0x89, 0x44, 0x24, 0x18, 0x55, 0x56, 0x57, 0x48, 0x83, 0xEC}};
