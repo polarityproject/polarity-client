@@ -7,6 +7,13 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Fixed
+
+- A button pressed while the match loaded could reach the main menu behind
+  the select screen: its cursor starts on Arcade, so a confirm press showed
+  "You are not logged in to the server" over the fight. The select screen now
+  keeps the pads and keyboard until the battle replaces the menu.
+
 ## [0.2.3] - 2026-11-01
 
 Fixes desyncs when a game was left on another round count (the "Ken

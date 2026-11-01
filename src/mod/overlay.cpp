@@ -268,7 +268,7 @@ ImFont* g_fontTiny = nullptr;    // ... their frame rate and rollback numbers
 ImFont* g_fontHuge = nullptr;    // the select screen's character names
 ImFont* g_fontBody = nullptr;    // the default font
 std::atomic<int> g_selectRequest{-1}; // RequestSelectPreview: the phase to open at (+4: watching)
-std::atomic<bool> g_selectLive{false}; // a session's select screen is up and takes input
+std::atomic<bool> g_selectLive{false}; // a session's select screen is up (or held over the jump) and takes input
 // Characters beyond Latin-1 that names have shown (NoteText): the fonts get
 // them from Windows' fonts on the next build, so names in any script draw.
 std::vector<ImWchar> g_extraChars;
@@ -3328,7 +3328,11 @@ void Draw(IDXGISwapChain* swapChain)
         blackFrom = -1;
     }
     if (preview) liveAlpha = 0;
-    g_selectLive = lobby && !g_visible;
+    // Still drawn while the jump loads the battle, it keeps the input from the
+    // game: the main menu behind took presses then (its cursor starts on
+    // Arcade, and offline Arcade shows "You are not logged in to the server",
+    // which stayed over the fight, 2026-11-01).
+    g_selectLive = (lobby || holding) && !g_visible;
     if (liveAlpha > 0) {
         SelectInput in;
         DrawSelectLive(SelectFonts{g_fontBig, g_fontHuge, g_fontBody}, SelectLiveFor(view), liveAlpha, lobby && !g_visible, &in);

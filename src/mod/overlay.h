@@ -57,7 +57,8 @@ bool VsyncOn();
 std::string VsyncInfo();
 bool OverlayVisible();
 // The overlay takes the keyboard, mouse and pads (the game sees neutral pads):
-// the panel is open, or the post-match vote waits for this player.
+// the panel is open, a session's select screen is up (until the battle scene
+// replaces the main menu), or the post-match vote waits for this player.
 bool OverlayTakesInput();
 // Research: a texture view drawn in a small window (null: none), with a
 // label; the overlay holds the view's reference until it is replaced.
