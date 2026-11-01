@@ -30,7 +30,7 @@ namespace sfv::mod {
 
 namespace {
 
-constexpr const char* kModVersion = "0.2.2";
+constexpr const char* kModVersion = "0.2.3";
 
 std::wstring DirectoryOf(HMODULE module)
 {

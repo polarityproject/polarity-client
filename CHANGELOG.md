@@ -7,6 +7,13 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-11-01
+
+Fixes desyncs when a game was left on another round count (the "Ken
+V-Trigger 2" desync) and false desync warnings with Oro's V-Trigger II.
+Clipping with Medal (F8) no longer leaves the match, and a freeze at the start
+of some matches is gone. Both players need 0.2.3.
+
 ### Added
 
 - Each side tells the other at the handshake whether it sends desync
