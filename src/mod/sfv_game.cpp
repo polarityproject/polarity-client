@@ -479,6 +479,8 @@ struct EffectRegionKind {
 constexpr EffectRegionKind kEffectRegions[] = {
     {44, 0x10, 0x2C6FC18},    // trail object (vtable 0x2C6FB88) +0xC0: timer, state
     {136, 0x40, 0x2C6FC18},   // trail object +0xF0: transforms
+    {40, 0x10, 0x2C6EAD0},    // effect object: flags (a slot's live flag, Menat vs Lucia 8882ac21)
+    {68, 0x90, 0x2C6EAD0},    // effect object
     {208, 0xE8, 0x2C6EAD0},   // effect object: transforms
     {164, 0x1C8, 0x2C6EAD0},  // effect object: handles
     {15808, 0x18, 0x2C6E6D8}, // effect pool
@@ -537,6 +539,21 @@ void SfvGame::SetStateMap(const StateMap* map)
             // Restored on a rollback like the rest, but out of the checksum.
             r.ignore.assign((r.size / 8 + 8) / 8, 0xFF);
             continue;
+        }
+        if (r.size == 208 && IsReadable(r.ptr - 0x40, 8) &&
+            *reinterpret_cast<const uintptr_t*>(r.ptr - 0x40) == image_.base + 0x2C54490) {
+            // One object (vtable 0x2C54490; its +0x58 points at the two
+            // fighter objects, vtable 0x2C52320) with two 0x60-byte entries
+            // of camera-like floats: its +0xF0..+0xFF (here +0xB0, +0xB8)
+            // held an address on one player's machine only from the intro
+            // on, and each entry's six floats (+0x20, +0x80) then drifted
+            // apart at times (Vega matches, 2026-10-31); the fighters'
+            // regions and the outcome stayed the same. Restored, but out of
+            // the checksum.
+            if (r.ignore.size() < 3) r.ignore.resize(3, 0);
+            for (size_t offset : {0x20, 0x28, 0x30, 0x80, 0x88, 0x90, 0xB0, 0xB8}) {
+                r.ignore[offset / 64] |= uint8_t(1u << (offset / 8 % 8));
+            }
         }
         auto it = noise_.find(r.size);
         if (it == noise_.end()) continue;
@@ -779,7 +796,7 @@ std::string SfvGame::BuildId() const
 {
     char buf[96];
     const uint64_t noise = NoiseHash();
-    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-7/map-%016llx/noise-%016llx", image_.timestamp,
+    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-8/map-%016llx/noise-%016llx", image_.timestamp,
                   static_cast<unsigned long long>(stateMap_ ? stateMap_->Fingerprint() : 0),
                   static_cast<unsigned long long>(noise));
     return buf;

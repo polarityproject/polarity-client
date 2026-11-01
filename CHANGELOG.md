@@ -13,15 +13,26 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   its other setting, as the game's own stage select offers them (The Grid
   Alternative, Shadaloo Base at Night, Suzaku Castle at Night...). The
   picture, name and strip icon follow it, "Setting 1 / 2" shows which, and
-  the other player sees it live. Works with 0.2.1 players: the session
-  already carried a setting's stage.
+  the other player sees it live.
+- Match logs and the event log name the game's data files: how many of the
+  game's own paks there are and any other .pak under Content\Paks (mods).
+  Two tester desyncs happened on one player's machine only.
+- `replay <file> mispredict <delay> [remote 1|2]`: replays a recording with
+  one player's inputs arriving late, so frames run on guessed inputs and are
+  rolled back as in a session (stress replays only resimulate with the right
+  inputs). `regions 0` lists every snapshot region's owner.
 
 ### Fixed
 
 - Every character spoke Japanese in sessions whatever the player's Sound
   options said. Each game now gives both characters the voice its own player
   chose (Japanese, English, or per character with Custom); the other player
-  hears their own choice. Works with 0.2.1 players.
+  hears their own choice.
+- False desync warnings (adapter-8, so both players need this version):
+  pooled effect objects' flag blocks (Menat vs Lucia), and an address and
+  two groups of camera-like floats in one battle object that one machine set
+  differently in Vega matches, are out of the checksum like the other effect
+  state. The fight and its outcome never differed in those matches.
 
 ## [0.2.1] - 2026-10-31
 
