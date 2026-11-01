@@ -36,7 +36,7 @@ void SetResimPresentationSkip(bool on);
 void DetachFrameDriver();
 IFrameDriver* CurrentFrameDriver();
 // Research (`regions <size>`): logs the snapshot regions of that size with
-// their addresses and owners.
+// their addresses and owners; size 0: every owner with the sizes it holds.
 void LogRegionsOfSize(size_t size);
 // Research: the object a region lies in, as "vtable rva 0x... at -0x..." (the
 // nearest vtable pointer at or before it), or "unknown".

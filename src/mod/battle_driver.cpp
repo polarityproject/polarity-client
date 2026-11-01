@@ -12,6 +12,7 @@
 #include <array>
 #include <atomic>
 #include <iterator>
+#include <map>
 #include <utility>
 #include <set>
 #include <string>
@@ -527,6 +528,17 @@ std::string RegionOwner(const void* region)
 void LogRegionsOfSize(size_t size)
 {
     if (!g_game) return;
+    if (size == 0) {
+        // Every region by its owner (vtable and offset): which sizes, how many.
+        std::map<std::string, std::map<size_t, int>> byOwner;
+        for (const StateRegion& r : g_game->Regions()) byOwner[RegionOwner(r.ptr)][r.size]++;
+        for (const auto& [owner, sizes] : byOwner) {
+            std::string text;
+            for (const auto& [s, n] : sizes) text += " " + std::to_string(s) + (n > 1 ? "x" + std::to_string(n) : "");
+            Log("regions: owner %s:%s", owner.c_str(), text.c_str());
+        }
+        return;
+    }
     for (const StateRegion& r : g_game->Regions()) {
         if (r.size != size) continue;
         std::string words;

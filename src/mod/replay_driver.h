@@ -16,7 +16,12 @@
 //   inputs: every frame is also loaded from <distance> frames back and
 //   resimulated, and the resimulation must equal the first run. This finds
 //   rollback bugs at exactly the recorded situation (characters, moves,
-//   round ends), whether or not the recorded session rolled back there.
+//   round ends), whether or not the recorded session rolled back there;
+// - mispredict <delay> [remote 1|2]: one player's inputs arrive <delay>
+//   frames late, as over a network: frames run on GekkoNet's guess (that
+//   player's last input that arrived), and a guess that turns out wrong is
+//   rolled back and resimulated. Stress replays only ever resimulate with the
+//   right inputs; this finds state that a mispredicted frame leaves behind.
 // The result goes to the log ("replay: PASS / FAIL ..."), with the first
 // differing frames and regions.
 
@@ -35,8 +40,11 @@ namespace sfv::mod {
 // traps: "<frame> <region> <hex offset> <bytes>" groups, write watches armed
 // before that frame's tick, their writers logged at the end (research).
 // holdAt (>= 0): the replay stands still after that frame for holdSeconds.
+// mispredictDelay (> 0, no stress): player `remote`'s (0/1; -1: the one the
+// recording machine played against) inputs arrive that many frames late.
 void RequestReplay(const std::string& path, int stressDistance, int watchFrom = -1, int watchTo = -1,
                    const std::string& watchRegion = "", int keepFrom = -1, int keepTo = -1, bool preload = true,
-                   const std::string& traps = "", int holdAt = -1, int holdSeconds = 0);
+                   const std::string& traps = "", int holdAt = -1, int holdSeconds = 0, int mispredictDelay = 0,
+                   int remote = -1);
 
 } // namespace sfv::mod

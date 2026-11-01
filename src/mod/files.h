@@ -56,4 +56,10 @@ std::wstring PackLogsToShare(std::string* error);
 // Opens the SFVR folder in Explorer, with `select` selected when given.
 void OpenDataFolder(const std::wstring& select = L"");
 
+// The game's data files, for logs and match logs: how many of the game's own
+// pakchunk<n>-WindowsNoEditor.pak there are, and every other .pak under
+// Content\Paks (mods, often in ~mods: the game loads them all). Desyncs seen
+// on one player's machine only point at such files. Read once.
+std::string GameFilesText();
+
 } // namespace sfv::mod

@@ -128,6 +128,7 @@ DWORD WINAPI ModMain(LPVOID self)
         game.LoadNoiseText(reinterpret_cast<const char*>(kBuiltinNoise), sizeof(kBuiltinNoise));
         Log("noise mask: built in (%zu words)", game.NoiseWords());
     }
+    Log("game files: %s", GameFilesText().c_str());
 
     if (!InstallProbes(image, config, &game, &stateMap, stateMapPath)) return 0;
     HookProcessEnd();

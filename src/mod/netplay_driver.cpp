@@ -2355,6 +2355,7 @@ private:
                      path == NetView::Path::Relayed ? "relayed (TURN)" : path == NetView::Path::Direct ? "direct" : "unknown",
                      options_.inputDelay);
         std::fprintf(f, "%s\n", summary.c_str());
+        std::fprintf(f, "game files: %s\n", GameFilesText().c_str());
         std::fprintf(f, "recording %s\n\n", recording.substr(recording.find_last_of('\\') + 1).c_str());
         for (const std::string& line : lines) std::fprintf(f, "%s\n", line.c_str());
         std::fclose(f);

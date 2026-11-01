@@ -1054,8 +1054,10 @@ void RunNetCommand(const std::string& line)
         // load as the battle is created, which then has its objects sooner)
         // [trap <frame> <region> <hex offset> <bytes>]... (write watches)
         // [hold <frame> <seconds>] (stands still after that frame)
+        // [mispredict <delay> [remote 1|2]] (one player's inputs late: real rollbacks)
         std::string file, word, region, traps;
-        int stress = 0, from = -1, to = -1, keepFrom = -1, keepTo = -1, holdAt = -1, holdSeconds = 0;
+        int stress = 0, from = -1, to = -1, keepFrom = -1, keepTo = -1, holdAt = -1, holdSeconds = 0, mispredict = 0,
+            remote = 0;
         bool cold = false;
         ss >> file;
         while (ss >> word) {
@@ -1064,13 +1066,15 @@ void RunNetCommand(const std::string& line)
             if (word == "keep") ss >> keepFrom >> keepTo;
             if (word == "cold") cold = true;
             if (word == "hold") ss >> holdAt >> holdSeconds;
+            if (word == "mispredict") ss >> mispredict;
+            if (word == "remote") ss >> remote;
             if (word == "trap") {
                 std::string f, r, off, b;
                 ss >> f >> r >> off >> b;
                 traps += f + " " + r + " " + off + " " + b + " ";
             }
         }
-        RequestReplay(file, stress, from, to, region, keepFrom, keepTo, !cold, traps, holdAt, holdSeconds);
+        RequestReplay(file, stress, from, to, region, keepFrom, keepTo, !cold, traps, holdAt, holdSeconds, mispredict, remote - 1);
     }
     else if (cmd == "regions") {
         size_t size = 0;

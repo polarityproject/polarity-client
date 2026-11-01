@@ -91,6 +91,14 @@ public:
     };
     void AddTrap(Trap t) { traps_.push_back(std::move(t)); }
 
+    // `mispredict <delay> [remote 1|2]`: player `remote`'s inputs arrive
+    // `delay` frames late (MispredictFrame).
+    void Mispredict(int delay, int remote)
+    {
+        delay_ = delay;
+        remote_ = remote >= 0 ? remote & 1 : rf_.localPlayer == 1 ? 0 : 1;
+    }
+
     bool OnFrame(SfvGame& game) override
     {
         if (g_stop.exchange(false)) {
@@ -112,6 +120,7 @@ public:
             holdUntil_ = 0;
         }
         if (stress_ > 0) return StressFrame(game);
+        if (delay_ > 0) return MispredictFrame(game);
         return StraightFrame(game);
     }
 
@@ -317,6 +326,84 @@ private:
             checked_ = f;
         }
         return true;
+    }
+
+    // Frame f runs on the remote player's input as GekkoNet predicts it: the
+    // last one that arrived (frame f - delay's), neutral before any. That
+    // frame's input arrives now; if its guess was wrong, the state before it
+    // is loaded (and the game's post-load fix-ups run, as in a session) and
+    // the frames since are resimulated with what is known now. A frame is
+    // compared with the recording once its input has arrived: live after a
+    // rollback, else by the checksum it got when it ran on the right input.
+    bool MispredictFrame(SfvGame& game)
+    {
+        if (!Valid(game)) return false;
+        const int f = frame_;
+        if (f > last_ + delay_) {
+            Finish(game);
+            return false;
+        }
+        if (f == 0) {
+            Log("replay: frame 0 is driven tick %u; P%d's inputs arrive %d frames late", DrivenTicks() + 1, remote_ + 1,
+                delay_);
+            ring_.assign(delay_ + 2, std::vector<uint8_t>(StateSize(game.Regions())));
+            used_.assign(last_ + 1, FrameInputs{});
+            sums_.assign(last_ + 1, 0);
+        }
+        const int arrived = f - delay_;
+        if (arrived >= 0 && arrived <= last_) {
+            if (used_[arrived].p[remote_] != rf_.inputs[arrived].p[remote_]) {
+                Resimulate(game, arrived, std::min(f, last_ + 1));
+            }
+            else {
+                ConfirmBySum(arrived);
+            }
+        }
+        if (f <= last_) RunPredicted(game, f, arrived, false);
+        WatchFrame(game, f);
+        MaybeHold(f);
+        frame_++;
+        return true;
+    }
+
+    PackedInput Guess(int k, int known) const
+    {
+        if (k <= known) return rf_.inputs[k].p[remote_];
+        return known >= 0 ? rf_.inputs[known].p[remote_] : PackedInput{};
+    }
+
+    void RunPredicted(SfvGame& game, int k, int known, bool rollingBack)
+    {
+        SaveRegions(game.Regions(), ring_[k % ring_.size()].data());
+        FrameInputs in = rf_.inputs[k];
+        in.p[remote_] = Guess(k, known);
+        game.Advance(in, rollingBack);
+        used_[k] = in;
+        std::vector<uint64_t> hashes(game.Regions().size());
+        HashRegions(game.Regions(), hashes.data());
+        sums_[k] = FoldChecksum(hashes.data(), hashes.size());
+    }
+
+    void Resimulate(SfvGame& game, int from, int to)
+    {
+        LoadRegions(game.Regions(), ring_[from % ring_.size()].data());
+        game.OnStateLoaded(from - 1);
+        rollbacks_++;
+        resimulated_ += to - from;
+        for (int k = from; k < to; k++) {
+            RunPredicted(game, k, from, true);
+            if (k == from) CheckFrame(game, k);
+        }
+    }
+
+    void ConfirmBySum(int k)
+    {
+        if (k >= rf_.FrameCount() || rf_.hashes.empty()) return;
+        framesChecked_++;
+        if (sums_[k] == rf_.FrameChecksum(k)) return;
+        if (firstMismatch_ < 0) firstMismatch_ = k;
+        mismatchFrames_++;
+        if (logged_++ < 12) Log("replay: frame %d's checksum differs from the recording (ran on the right input)", k);
     }
 
     void MaybeHold(int f)
@@ -525,7 +612,16 @@ private:
             at += size;
         }
         int differing = 0, shown = 0;
-        for (const StateRegion& r : game.Regions()) {
+        // Regions wholly out of the checksum (pooled effects) equal any dump
+        // region of their size: paired last, they cannot take another's.
+        std::vector<const StateRegion*> order;
+        for (const StateRegion& r : game.Regions()) order.push_back(&r);
+        const auto wholly = [](const StateRegion* r) {
+            return !r->ignore.empty() && std::all_of(r->ignore.begin(), r->ignore.end(), [](uint8_t b) { return b == 0xFF; });
+        };
+        std::stable_partition(order.begin(), order.end(), [&](const StateRegion* r) { return !wholly(r); });
+        for (const StateRegion* rp : order) {
+            const StateRegion& r = *rp;
             auto masked = [&r](size_t word) { return word / 8 < r.ignore.size() && (r.ignore[word / 8] >> (word % 8) & 1); };
             auto diff = [&](const Recorded& d) {
                 size_t n = 0;
@@ -621,9 +717,14 @@ private:
         // Stress: frames whose resimulation differed outside the presentation clocks.
         const int stressDesyncs = static_cast<int>(stressFrames_.size());
         const bool pass = ready_ && firstMismatch_ < 0 && stressDesyncs == 0 && framesChecked_ > last_;
+        const std::string mode = stress_ > 0 ? ", stress distance " + std::to_string(stress_)
+                                 : delay_ > 0 ? ", P" + std::to_string(remote_ + 1) + " " + std::to_string(delay_) +
+                                                    " frames late (" + std::to_string(rollbacks_) + " rollbacks, " +
+                                                    std::to_string(resimulated_) + " frames resimulated)"
+                                              : "";
         Log("replay: %s %s, %d of %d frames checked%s, %d frames differ from the recording (first %d), "
             "%d presentation clock differences%s", name_.c_str(),
-            pass ? "PASS" : "FAIL", framesChecked_, last_ + 1, stress_ > 0 ? (", stress distance " + std::to_string(stress_)).c_str() : "",
+            pass ? "PASS" : "FAIL", framesChecked_, last_ + 1, mode.c_str(),
             mismatchFrames_, firstMismatch_, presentationFrames_,
             stress_ > 0 ? (", " + std::to_string(stressDesyncs) + " frames resimulated differently").c_str() : "");
         // Which regions, on how many frames: one or two small regions on many
@@ -661,6 +762,13 @@ private:
     int trapSlots_ = 0;
     ReplayFile kept_;
     int stress_;
+    // `mispredict`: the late player, how late, and per frame the inputs it
+    // ran on and its checksum; states before the last delay + 2 frames.
+    int delay_ = 0, remote_ = 1;
+    std::vector<FrameInputs> used_;
+    std::vector<uint32_t> sums_;
+    std::vector<std::vector<uint8_t>> ring_;
+    int rollbacks_ = 0, resimulated_ = 0;
     int creationsAtJump_;
     int watchFrom_, watchTo_;
     std::string watchRegion_;
@@ -689,7 +797,8 @@ private:
 } // namespace
 
 void RequestReplay(const std::string& path, int stressDistance, int watchFrom, int watchTo, const std::string& watchRegion,
-                   int keepFrom, int keepTo, bool preload, const std::string& traps, int holdAt, int holdSeconds)
+                   int keepFrom, int keepTo, bool preload, const std::string& traps, int holdAt, int holdSeconds,
+                   int mispredictDelay, int remote)
 {
     if (path == "stop") {
         g_stop = CurrentFrameDriver() != nullptr;
@@ -727,6 +836,7 @@ void RequestReplay(const std::string& path, int stressDistance, int watchFrom, i
     auto* driver = new ReplayDriver(std::move(rf), name, stressDistance, watchFrom, watchTo, watchRegion);
     driver->Keep(keepFrom, keepTo);
     driver->Hold(holdAt, holdSeconds);
+    if (mispredictDelay > 0 && stressDistance == 0) driver->Mispredict(std::clamp(mispredictDelay, 1, 8), remote);
     std::istringstream ts(traps);
     ReplayDriver::Trap t;
     while (ts >> t.frame >> t.region >> std::hex >> t.offset >> std::dec >> t.bytes) driver->AddTrap(t);

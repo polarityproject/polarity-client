@@ -282,4 +282,75 @@ void OpenDataFolder(const std::wstring& select)
     ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
 }
 
+namespace {
+
+bool IsGamePak(const std::wstring& name)
+{
+    // pakchunk<digits>-WindowsNoEditor.pak
+    const std::wstring head = L"pakchunk", tail = L"-WindowsNoEditor.pak";
+    if (name.size() <= head.size() + tail.size() || _wcsnicmp(name.c_str(), head.c_str(), head.size()) != 0) return false;
+    if (_wcsicmp(name.c_str() + name.size() - tail.size(), tail.c_str()) != 0) return false;
+    for (size_t i = head.size(); i < name.size() - tail.size(); i++) {
+        if (!iswdigit(name[i])) return false;
+    }
+    return true;
+}
+
+// Every .pak under `dir` (subfolders too), as paths relative to `root`.
+void ListPaks(const std::wstring& root, const std::wstring& rel, int depth, std::vector<std::pair<std::wstring, uint64_t>>* out)
+{
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((root + rel + L"\\*").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        const std::wstring name = fd.cFileName;
+        if (name == L"." || name == L"..") continue;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            if (depth < 4) ListPaks(root, rel + L"\\" + name, depth + 1, out);
+            continue;
+        }
+        if (name.size() < 4 || _wcsicmp(name.c_str() + name.size() - 4, L".pak") != 0) continue;
+        const uint64_t size = (static_cast<uint64_t>(fd.nFileSizeHigh) << 32) | fd.nFileSizeLow;
+        out->push_back({rel.empty() ? name : rel.substr(1) + L"\\" + name, size});
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
+
+} // namespace
+
+std::string GameFilesText()
+{
+    static const std::string text = [] {
+        wchar_t exe[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, exe, MAX_PATH);
+        std::wstring dir(exe);
+        dir = dir.substr(0, dir.find_last_of(L"\\/")); // Binaries\Win64
+        const std::wstring paks = dir + L"\\..\\..\\Content\\Paks";
+        std::vector<std::pair<std::wstring, uint64_t>> found;
+        ListPaks(paks, L"", 0, &found);
+        std::sort(found.begin(), found.end());
+        size_t game = 0;
+        uint64_t gameBytes = 0;
+        std::string others;
+        size_t otherCount = 0;
+        for (const auto& [path, size] : found) {
+            if (path.find(L'\\') == std::wstring::npos && IsGamePak(path)) {
+                game++;
+                gameBytes += size;
+                continue;
+            }
+            otherCount++;
+            if (others.size() < 600) {
+                char buf[48];
+                std::snprintf(buf, sizeof(buf), " (%llu KB)", static_cast<unsigned long long>(size / 1024));
+                others += (others.empty() ? "" : ", ") + Utf8Path(path) + buf;
+            }
+        }
+        char head[96];
+        std::snprintf(head, sizeof(head), "%zu game paks (%llu MB), ", game, static_cast<unsigned long long>(gameBytes >> 20));
+        return std::string(head) + (otherCount ? std::to_string(otherCount) + " other paks: " + others : "no other paks");
+    }();
+    return text;
+}
+
 } // namespace sfv::mod
