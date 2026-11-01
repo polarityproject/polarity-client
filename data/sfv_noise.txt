@@ -4,6 +4,7 @@
 # 600 and 1408: pool bookkeeping (one pair per player, plus extra pools some characters keep between battles); never written during a match, contents are allocation history. Masked whole.
 # 392 +0x10..+0x110 and 304 +0x118..+0x128: Oro, effect handles and halves of heap addresses the game copies in on the first tick (per process).
 # 392 +0x28..+0x47 in the first five 0x40-byte slots (+0x8 + i*0x40): a fighter's effect slots (state, effect, scale, location, rotation; set by rva 0x3A4060). Oro's V-Trigger II stones fill five of them every tick (rva 0x3E5C00) from a component outside the snapshot (vtable 0x2C5F528: per-stone angle, speed, rotation from +0xF0, 0x70 apart), so after a rollback the stones' bob and spin went on from where they were; only the effects are drawn there (2026-11-01, nine Balrog vs Oro matches).
+# 392 +0x8 + i*0x40 (each effect slot's state 1/2 and effect id): one more per-tick writer (rva 0x3BD900, a character component, vtable rva 0x2C5D010) sets slot 0's state from a flag at component +0xE8 that no region covers, so a resimulated frame could flip slot 0 between states 1 and 2 for a few frames (Urien vs E. Honda, match d704c27a, 2026-11-01: stress 8 resimulated s392.0 +0x8 differently at 6071 and 7143); drawn effects only.
 # 884 +0x350 / +0x358 (Rose's soul level, entity +0x444/+0x448) are no longer masked: the level was picked from a per-process random stream; the mod now reseeds that pick from the battle tick (battle_driver.cpp).
 # 13092 +0x32b8: P2's input history; a heap pointer for a dozen frames at the start of the fight with V-Skill / V-Trigger II (scan-loadouts.ps1, 2026-10-28).
 # Words that point into DLLs (sfvr images): equal in two processes on one PC, different between PCs (one load address per boot); learned from every recording.
@@ -132,31 +133,37 @@
 372 0x148
 372 0x150
 392 0x0
+392 0x8
 392 0x10
 392 0x28
 392 0x30
 392 0x38
 392 0x40
+392 0x48
 392 0x50
 392 0x68
 392 0x70
 392 0x78
 392 0x80
+392 0x88
 392 0x90
 392 0xa8
 392 0xb0
 392 0xb8
 392 0xc0
+392 0xc8
 392 0xd0
 392 0xe8
 392 0xf0
 392 0xf8
 392 0x100
+392 0x108
 392 0x110
 392 0x128
 392 0x130
 392 0x138
 392 0x140
+392 0x148
 496 0x0
 496 0x8
 496 0x10

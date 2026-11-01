@@ -16,6 +16,8 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 - Captures started after the game, such as Discord's screen share of the game
   or an OBS Game Capture added later, showed the game without SFVR's
   overlay. The overlay is now drawn before any capture tool takes the frame.
+- A false desync warning when a rollback left a character's effect drawn a
+  frame differently on one side (seen with Urien against E. Honda).
 
 ## [0.2.3] - 2026-11-01
 
