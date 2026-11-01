@@ -24,8 +24,9 @@ namespace {
 constexpr DWORD kTimeoutMs = 15000;
 constexpr uint64_t kMaxFileBytes = 16ull << 20;          // the server's limit
 constexpr int64_t kMaxAgeSeconds = 14 * 24 * 3600;       // older reports stay home
-constexpr int64_t kNoLogAfterSeconds = 30 * 60;          // a report without its match log (a crash mid-match)
+constexpr int64_t kNoLogAfterSeconds = 30 * 60;          // a report of this run without its match log
 constexpr auto kFirstLook = std::chrono::seconds(30);    // after the mod's start
+constexpr auto kRetryEvery = std::chrono::minutes(5);    // while something is left to send
 
 std::mutex g_mutex;
 std::wstring g_dir;
@@ -35,7 +36,10 @@ std::string g_version;
 std::atomic<bool> g_on{true};
 std::atomic<bool> g_busy{false};
 std::atomic<bool> g_again{false}; // asked while a round ran: one more after it
+std::atomic<bool> g_left{false};  // the last round left something to send
+std::atomic<bool> g_match{false}; // a match runs: no retries meanwhile
 std::atomic<int> g_sent{0};
+int64_t g_started = 0;            // the mod's start, seconds since 1601
 
 std::wstring Wide(const std::string& s) { return std::wstring(s.begin(), s.end()); }
 
@@ -271,9 +275,15 @@ bool SendRound()
     GetSystemTimeAsFileTime(&nowFt);
     const int64_t now = Seconds(nowFt);
     const std::set<std::string> sent = SentList(g_dir);
+    bool waiting = false; // a side whose match log may still come
     for (const auto& [key, s] : sides) {
         if (!s.desync || now - s.newest > kMaxAgeSeconds) continue;
-        if (!s.log && now - s.newest < kNoLogAfterSeconds) continue; // the match is still on
+        // No match log: the match may still be on, unless the files are from
+        // before this run (the game closed or crashed in the match).
+        if (!s.log && s.newest >= g_started && now - s.newest < kNoLogAfterSeconds) {
+            for (const std::string& name : s.files) waiting = waiting || !sent.count(name);
+            continue;
+        }
         int fresh = 0;
         for (const std::string& name : s.files) {
             if (sent.count(name)) continue;
@@ -284,7 +294,7 @@ bool SendRound()
         }
         if (fresh) g_sent++;
     }
-    return SendCrashes(url);
+    return SendCrashes(url) && !waiting;
 }
 
 void Round()
@@ -297,7 +307,7 @@ void Round()
         ThreadGuard running;
         do {
             g_again = false;
-            if (g_on && !Stopping()) SendRound();
+            if (g_on && !Stopping()) g_left = !SendRound();
         } while (g_again && !Stopping());
         g_busy = false;
     }).detach();
@@ -316,15 +326,24 @@ void InstallReportUploads(const std::wstring& reportDir, const std::string& url,
         std::lock_guard lock(g_mutex);
         g_url = g_configured;
     }
+    FILETIME nowFt;
+    GetSystemTimeAsFileTime(&nowFt);
+    g_started = Seconds(nowFt);
     Log("reports: desync reports %s (%s)", on ? "are sent to" : "are not sent; the server would be", g_configured.c_str());
+    // A first look a little after the start, then again every few minutes
+    // while something is left (the server not reached, a match log to come),
+    // but not during a match: the upload would share the line with it.
     std::thread([] {
         ThreadGuard running;
-        const auto until = std::chrono::steady_clock::now() + kFirstLook;
-        while (std::chrono::steady_clock::now() < until) {
-            if (Stopping()) return;
+        auto next = std::chrono::steady_clock::now() + kFirstLook;
+        bool first = true;
+        while (!Stopping()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            if (std::chrono::steady_clock::now() < next || g_match) continue;
+            if (first || g_left) Round();
+            first = false;
+            next = std::chrono::steady_clock::now() + kRetryEvery;
         }
-        Round();
     }).detach();
 }
 
@@ -336,6 +355,10 @@ void SetReportUploads(bool on)
 }
 
 void SendReadyReports() { Round(); }
+
+void SetMatchRunning(bool running) { g_match = running; }
+
+bool ReportUploadsOn() { return g_on; }
 
 int ReportsSent() { return g_sent; }
 

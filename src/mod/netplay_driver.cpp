@@ -280,6 +280,7 @@ public:
         seats_[0].present = host;
         if (host) seats_[0].name = name_;
         ready_ = o.autoReady;
+        peerReports_ = -1;
         return true;
     }
 
@@ -514,6 +515,7 @@ public:
             session_.reset();
         }
         spectate_.reset();
+        SetMatchRunning(false);
         SetBlockPause(false);
         SetScriptedPad(0, false);
         SetScriptedPad(1, false);
@@ -698,6 +700,7 @@ private:
             hello.build = build_;
             hello.role = role_;
             hello.name = name_;
+            hello.reports = ReportUploadsOn();
             Send(hello);
             return;
         }
@@ -1079,7 +1082,9 @@ private:
             lobby::Message accept;
             accept.type = lobby::Type::Accept;
             accept.name = name_;
+            accept.reports = ReportUploadsOn();
             if (from == peer_) {
+                NotePeerReports(m.reports);
                 accept.role = Role::Player;
                 SendTo(from, accept);
                 break;
@@ -1099,6 +1104,8 @@ private:
                     seats_[1].name = m.name;
                 }
                 Log("netplay: %s joined from %s", m.name.c_str(), Hex64(from).c_str());
+                peerReports_ = -1; // a new player
+                NotePeerReports(m.reports);
                 if (s == State::Hosting) SetState(State::Lobby);
                 accept.role = Role::Player;
                 SendTo(from, accept);
@@ -1229,6 +1236,7 @@ private:
                 seats_[0].name = m.name;
             }
             Log("netplay: in %s's session as %s", m.name.c_str(), role_ == Role::Player ? "P2" : "a spectator");
+            NotePeerReports(m.reports);
             if (role_ == Role::Spectator && options_.mashSeed) options_.mashSeed = 0;
             SetState(State::Lobby);
             break;
@@ -1624,6 +1632,7 @@ private:
         liveMatch_ = matchId_.load();
         if (jump_.joinable()) jump_.join();
         matchLive_ = true;
+        SetMatchRunning(true);
         SetState(State::Jumping);
         SetFrameDriver(this);
         jump_ = std::thread([this] {
@@ -2266,6 +2275,7 @@ private:
         watchingMatch_ = 0;
         SetFrameDriver(nullptr);
         matchLive_ = false;
+        SetMatchRunning(false);
     }
 
     // Recordings go to SFVR\matches (files.h) as
@@ -2318,6 +2328,14 @@ private:
         return path;
     }
 
+    // Whether the other side sends desync reports (its Hello or Accept): in
+    // the log once, and in every match log (a report with one half missing).
+    void NotePeerReports(bool reports)
+    {
+        if (peerReports_.exchange(reports ? 1 : 0) == (reports ? 1 : 0)) return;
+        Log("netplay: the other side %s desync reports", reports ? "sends" : "does not send");
+    }
+
     // The match's own log next to its recording: a summary, then every line
     // logged since the session began or the last match ended (LogCaptureStart).
     void WriteMatchLog(const std::string& recording, const ReplayFile& rf, const std::string& summary)
@@ -2356,6 +2374,9 @@ private:
                      options_.inputDelay);
         std::fprintf(f, "%s\n", summary.c_str());
         std::fprintf(f, "game files: %s\n", GameFilesText().c_str());
+        const int peerReports = peerReports_;
+        std::fprintf(f, "desync reports: %s from this side, %s from the other side\n", ReportUploadsOn() ? "sent" : "not sent",
+                     peerReports > 0 ? "sent" : peerReports == 0 ? "not sent" : "not known if sent");
         std::fprintf(f, "recording %s\n\n", recording.substr(recording.find_last_of('\\') + 1).c_str());
         for (const std::string& line : lines) std::fprintf(f, "%s\n", line.c_str());
         std::fclose(f);
@@ -2444,6 +2465,7 @@ private:
     std::atomic<Choice> myChoice_{Choice::None};
     std::atomic<Next> next_{Next::None};
     std::atomic<bool> matchLive_{false};   // the game thread drives a match (frame driver set)
+    std::atomic<int> peerReports_{-1};     // the other side sends desync reports: 1 yes, 0 no, -1 not heard
     std::atomic<uint64_t> liveMatch_{0};   // ... this one (matchId_ moves on to the next before it is let go)
     bool joinedRoom_ = false;
     std::atomic<bool> serverLost_{false};

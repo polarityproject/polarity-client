@@ -9,10 +9,11 @@
 // What a match leaves in SFVR\matches (netplay_driver.cpp SaveReport):
 //   <...>_<match id>_<p1|p2|spec>_desync.sfvr  each desync's report
 //   <...>_<match id>_<p1|p2|spec>.sfvr / .log  the match's recording and log
-// A side's files go once its match log is there (or, after a crash mid-match,
-// once the report is half an hour old), at most two weeks old. What was sent
-// is listed in SFVR\matches\uploaded.txt; anything not sent (no network, the
-// server busy) is tried again after the next match or at the next launch.
+// A side's files go once its match log is there (or, when the game closed or
+// crashed in the match, at the next launch; within one run, once the report
+// is half an hour old), at most two weeks old. What was sent is listed in
+// SFVR\matches\uploaded.txt; anything not sent (no network, the server busy)
+// is tried again every few minutes outside matches, and after each match.
 //
 // The server: [report] url in sfv_rollback.ini, else kDefaultReportUrl.
 
@@ -29,6 +30,10 @@ void InstallReportUploads(const std::wstring& reportDir, const std::string& url,
 void SetReportUploads(bool on);
 // After a match's files are written: sends what is ready, in the background.
 void SendReadyReports();
+// While a match runs, nothing is retried (SendReadyReports still sends).
+void SetMatchRunning(bool running);
+// Whether this side sends reports (the other side hears it at the handshake).
+bool ReportUploadsOn();
 // Reports sent in this run, a desync's match or a crash (the overlay toasts
 // each new one).
 int ReportsSent();

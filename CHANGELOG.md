@@ -7,6 +7,23 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+
+- Each side tells the other at the handshake whether it sends desync
+  reports: the event log says so once, and every match log has a
+  "desync reports: ... from this side, ... from the other side" line. A
+  report whose other half never reaches the server now shows whether that
+  player turned reports off or their game could not send them. Protocol 11:
+  both players need this version.
+
+### Fixed
+
+- Reports that could not be sent (the server not reached or busy) are tried
+  again every five minutes outside matches, not only after the next match or
+  at the next launch.
+- A desync report from a match the game closed or crashed in goes at the
+  next launch, not half an hour into a later run.
+
 ## [0.2.2] - 2026-11-01
 
 Stage settings on the stage select (Y): The Grid Alternative, Shadaloo Base

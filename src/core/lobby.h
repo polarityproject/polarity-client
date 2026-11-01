@@ -46,7 +46,8 @@
 namespace sfv::lobby {
 
 constexpr uint32_t kMagic = 0x4E564653; // "SFVN"
-constexpr uint16_t kProtocol = 10; // 7: names up to 96 bytes of UTF-8; 8: the match list for spectators; 9: the stage lock
+constexpr uint16_t kProtocol = 11; // 7: names up to 96 bytes of UTF-8; 8: the match list for spectators; 9: the stage lock;
+                                   // 11: whether each side sends desync reports
 // Message size limits: under Weyvelength's 1024-byte datagrams.
 constexpr size_t kHashesPerMessage = 100;
 constexpr size_t kRegionsPerRequest = 200;
@@ -136,6 +137,7 @@ struct Message {
     uint64_t build = 0;
     Role role = Role::Player; // Hello: wanted; Accept: given
     std::string name;         // Hello: the joiner's; Accept: the host's
+    bool reports = false;     // Hello, Accept: the sender sends desync reports (report_upload.h)
     // PlayerState (the sender's seat; its name and wins are not used)
     Seat seat;
     // PlayerState, SessionState: heartbeat timestamps (ms, the sender's clock)

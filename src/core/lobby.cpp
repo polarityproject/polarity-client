@@ -170,10 +170,12 @@ std::vector<uint8_t> Encode(const Message& m)
         o.Put(m.build);
         o.Put(static_cast<uint8_t>(m.role));
         PutName(o, m.name);
+        o.Put(static_cast<uint8_t>(m.reports));
         break;
     case Type::Accept:
         o.Put(static_cast<uint8_t>(m.role));
         PutName(o, m.name);
+        o.Put(static_cast<uint8_t>(m.reports));
         break;
     case Type::PlayerState:
         PutClock(o, m);
@@ -272,10 +274,12 @@ std::optional<Message> Decode(const uint8_t* data, size_t len)
         m.build = in.Get<uint64_t>();
         m.role = static_cast<Role>(in.Get<uint8_t>());
         m.name = GetName(in);
+        m.reports = in.Get<uint8_t>() != 0;
         break;
     case Type::Accept:
         m.role = static_cast<Role>(in.Get<uint8_t>());
         m.name = GetName(in);
+        m.reports = in.Get<uint8_t>() != 0;
         break;
     case Type::PlayerState:
         GetClock(in, m);

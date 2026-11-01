@@ -535,10 +535,24 @@ void TestLobbyMessages()
     hello.build = 0x1122334455667788ull;
     hello.role = lobby::Role::Spectator;
     hello.name = "Watcher";
+    hello.reports = true;
     auto bytes = lobby::Encode(hello);
     auto back = lobby::Decode(bytes.data(), bytes.size());
     CHECK(back && back->type == lobby::Type::Hello && back->nonce == 77 && back->build == hello.build &&
-          back->role == lobby::Role::Spectator && back->name == "Watcher");
+          back->role == lobby::Role::Spectator && back->name == "Watcher" && back->reports);
+
+    // Accept: the host's name and whether it sends desync reports.
+    lobby::Message accept;
+    accept.type = lobby::Type::Accept;
+    accept.role = lobby::Role::Player;
+    accept.name = "Host";
+    for (bool reports : {false, true}) {
+        accept.reports = reports;
+        bytes = lobby::Encode(accept);
+        back = lobby::Decode(bytes.data(), bytes.size());
+        CHECK(back && back->type == lobby::Type::Accept && back->role == lobby::Role::Player && back->name == "Host" &&
+              back->reports == reports);
+    }
 
     // UTF-8 names: kept whole up to kMaxName bytes, longer ones cut between
     // characters (40 x "あ", 3 bytes each: 32 of them fit in 96 bytes).
