@@ -73,6 +73,7 @@ struct NetplayOptions {
     bool skipLoadCallbacks = true;         // loads leave out the costliest game callbacks (DefaultSkippedLoadCallbacks)
     bool verifyLoads = true;               // each load checked against its save's checksum (netplay.h)
     bool menuAfterMatch = true;            // back to the main menu when a session ends or on leave
+    bool hotkeys = false;                  // F7 hosts, F8 joins (testing; capture tools bind F8)
     bool reconcileStart = true;            // joiner takes the host's values where the frozen states differ (lobby.h)
     bool allowSpectators = true;           // host: others may watch
     bool uploadReports = true;             // desync reports go to the SFVR server (report_upload.h)
@@ -84,7 +85,8 @@ void InstallNetplay(SfvGame* game, const std::wstring& reportDir, const std::str
                     const NetplayOptions& defaults);
 // The options the next host/join uses; commands change them.
 NetplayOptions& NetOptions();
-// F7 hosts, F8 joins with the code on the clipboard (game window focused).
+// With [netplay] hotkeys=1: F7 hosts, F8 joins with the code on the clipboard
+// (game window focused, no session running).
 void NetPollHotkeys();
 void NetHost(const NetplayOptions& options);
 void NetJoin(const std::string& code, const NetplayOptions& options, bool spectate = false);

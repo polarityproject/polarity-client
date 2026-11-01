@@ -24,7 +24,7 @@ if (-not $p -and $Instance -eq 0) { $p = $all | Where-Object { $_.MainWindowTitl
 if (-not $p) { "no game window"; exit 1 }
 $h = $p.MainWindowHandle
 function Focus { if ([W]::IsIconic($h)) { [W]::ShowWindow($h, 9) | Out-Null; Start-Sleep -Milliseconds 500 }; if ([W]::GetForegroundWindow() -ne $h) { [W]::keybd_event(0x12,0,0,[UIntPtr]::Zero); [W]::keybd_event(0x12,0,2,[UIntPtr]::Zero); [W]::SetForegroundWindow($h) | Out-Null; Start-Sleep -Milliseconds 300 } }
-$vk = @{ f1=0x70; up=0x26; down=0x28; left=0x25; right=0x27; enter=0x0D; esc=0x1B; space=0x20; f5=0x74; f6=0x75; f9=0x78; f10=0x79; f11=0x7A; f12=0x7B; tab=0x09; back=0x08 }
+$vk = @{ f1=0x70; up=0x26; down=0x28; left=0x25; right=0x27; enter=0x0D; esc=0x1B; space=0x20; f5=0x74; f6=0x75; f7=0x76; f8=0x77; f9=0x78; f10=0x79; f11=0x7A; f12=0x7B; tab=0x09; back=0x08 }
 if ($Action -eq 'keys') {
   Focus
   foreach ($k in $Keys.Split(' ', [StringSplitOptions]::RemoveEmptyEntries)) {

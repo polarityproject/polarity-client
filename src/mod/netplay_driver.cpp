@@ -2888,6 +2888,20 @@ void Replace(std::unique_ptr<NetplayDriver> next)
     g_driver = std::move(next);
 }
 
+// Ends the session before a new host or join. A battle it ran goes back to
+// the main menu, as on leave: left running, the game played it on as a local
+// match with this player's pad on both fighters (a join mid-match, 0.2.2).
+void EndForNewSession()
+{
+    bool had = false;
+    {
+        std::lock_guard lock(g_driverMutex);
+        had = g_driver != nullptr;
+    }
+    Replace(nullptr);
+    if (had && g_options.menuAfterMatch && g_game && g_game->BattleRunning()) ReturnToMainMenu(1);
+}
+
 } // namespace
 
 void InstallNetplay(SfvGame* game, const std::wstring& reportDir, const std::string& modVersion,
@@ -2918,7 +2932,7 @@ void NetHost(const NetplayOptions& options)
 {
     if (!g_game) return;
     // The previous session (also one that ended) still holds its socket.
-    Replace(nullptr);
+    EndForNewSession();
     auto d = std::make_unique<NetplayDriver>(*g_game, g_reportDir, g_modVersion);
     std::string error;
     if (!d->Open(options, true, lobby::Role::Player, &error)) {
@@ -2934,7 +2948,7 @@ void NetHost(const NetplayOptions& options)
 void NetJoin(const std::string& code, const NetplayOptions& options, bool spectate)
 {
     if (!g_game) return;
-    Replace(nullptr);
+    EndForNewSession();
     auto d = std::make_unique<NetplayDriver>(*g_game, g_reportDir, g_modVersion);
     std::string error;
     if (!d->Open(options, false, spectate ? lobby::Role::Spectator : lobby::Role::Player, &error)) {
@@ -3072,6 +3086,9 @@ std::string BattleInfo()
 
 void NetPollHotkeys()
 {
+    // Off unless asked for: Medal clips on F8 by default, and with a match
+    // code still on the clipboard each clip left the match to join it again.
+    if (!g_options.hotkeys) return;
     DWORD pid = 0;
     GetWindowThreadProcessId(RealForegroundWindow(), &pid);
     const bool focused = pid == GetCurrentProcessId();
@@ -3081,6 +3098,11 @@ void NetPollHotkeys()
         const bool pressed = down && !g_keyDown[i];
         g_keyDown[i] = down;
         if (!pressed) continue;
+        const NetView::Phase phase = NetViewNow().phase;
+        if (phase != NetView::Phase::Idle && phase != NetView::Phase::Ended) {
+            Log("netplay: %s ignored: a session is running (leave it first)", i == 0 ? "F7" : "F8");
+            continue;
+        }
         if (i == 0) {
             NetHost(g_options);
             continue;

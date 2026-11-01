@@ -18,8 +18,21 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 - `setrounds <n>`: the round count match setups write, to test a game that
   kept another one.
 
+### Changed
+
+- F7 (host) and F8 (join the match code on the clipboard) are off unless
+  `[netplay] hotkeys=1`, and never act while a session runs. Medal clips on
+  F8: with a match code still on the clipboard, each clip left the match.
+
 ### Fixed
 
+- Clipping with Medal (F8) mid-match left the session: the other player saw
+  them leave, and their game played the match on locally with their pad on
+  both fighters. Hosting or joining while a match runs now also goes back to
+  the main menu, as leaving does.
+- A game could freeze for good a moment into a session (seen on a host as
+  the match started): the menu's character preloading and the session's
+  thread each waited for a lock the other held.
 - Desyncs from the first hit on players whose game had been left on another
   round count (the "Ken V-Trigger 2" desync, and a Ryu vs Urien match on
   0.2.2): each hit's damage gauge gain is divided by the battle's round

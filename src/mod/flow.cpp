@@ -1248,11 +1248,17 @@ bool StartPreload(const std::string& code, int costume, const char* why)
 // on its way.
 void PreloadTick()
 {
-    std::vector<PreloadPick> picks;
+    // The source runs outside g_preloadMutex: it takes the netplay driver's
+    // lock, and the driver's thread asks PreloadsDoneFor while holding that
+    // one. Called under it, the two waited on each other (a host's game froze
+    // a second into a match, 2026-11-01).
+    std::function<std::vector<PreloadPick>()> source;
     {
         std::lock_guard lock(g_preloadMutex);
-        if (g_preloadSource) picks = g_preloadSource();
+        source = g_preloadSource;
     }
+    std::vector<PreloadPick> picks;
+    if (source) picks = source();
     std::string seen;
     for (const auto& p : picks) seen += p.code + "/" + std::to_string(p.costume) + " ";
     const uint64_t now = g_pumps;
