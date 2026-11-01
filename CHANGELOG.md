@@ -17,6 +17,9 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 - Match logs and the event log name the game's data files: how many of the
   game's own paks there are and any other .pak under Content\Paks (mods).
   Two tester desyncs happened on one player's machine only.
+- A game frozen for 20 s logs where its game thread stands, so a freeze
+  ended by force has its place in the crash report (a tester's game froze
+  on the main menu after a session).
 - `replay <file> mispredict <delay> [remote 1|2]`: replays a recording with
   one player's inputs arriving late, so frames run on guessed inputs and are
   rolled back as in a session (stress replays only resimulate with the right
@@ -24,6 +27,14 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ### Fixed
 
+- The game crashed at its first pad poll with Special K running: Special K
+  hooks every XInput and took SFVR's loader for the original of System32's,
+  so the two called each other until the stack overflowed (0.2.1). A call
+  that comes back into the loader that way now goes to xinput1_4.
+- Crash reports for runs that did not crash: a game closed from its window
+  that then ended in a way SFVR does not see, and a game started outside
+  Steam (Steam starts it again and ends the first one seconds in). A fault
+  in either is still reported.
 - Every character spoke Japanese in sessions whatever the player's Sound
   options said. Each game now gives both characters the voice its own player
   chose (Japanese, English, or per character with Custom); the other player

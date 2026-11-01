@@ -21,6 +21,7 @@ constexpr int kMaxDumps = 5;                     // a run's pending dumps (the l
 constexpr ULONGLONG kFaultBeforeExitMs = 15000;  // an exit this soon after a fault is that fault's
 constexpr size_t kLogTailBytes = 256 * 1024;     // of the run's log, into its report
 constexpr size_t kLogTailLines = 400;
+constexpr ULONGLONG kHangMs = 20000;             // the game thread this long without a tick: logged as stuck
 
 std::wstring g_dir; // SFVR\crashes
 std::wstring g_suffix;
@@ -39,6 +40,9 @@ std::atomic<int> g_dumps{0};
 std::atomic<ULONGLONG> g_lastFault{0};
 std::atomic<bool> g_exited{false};
 std::atomic<bool> g_quitting{false}; // OnQuitting
+std::atomic<DWORD> g_gameThread{0};    // NoteGameTick: the thread that ticks the scene
+std::atomic<ULONGLONG> g_lastTick{0};  // and when it last did
+bool g_hangLogged = false;             // the writer thread's: this stall is in the log
 
 using TerminateProcessFn = BOOL(WINAPI*)(HANDLE, UINT);
 TerminateProcessFn g_origTerminate = nullptr;
@@ -188,10 +192,61 @@ void WritePending()
     t_guarded--;
 }
 
+// Lines added to the running file (InstallCrashHandler wrote its start).
+void AppendRunning(const std::string& line)
+{
+    if (g_dir.empty() || g_exited) return;
+    WriteText(RunningPath(), ReadText(RunningPath()) + line + "\n");
+}
+
+// Once a second on the writer thread: a game thread that has not ticked the
+// scene for kHangMs is stuck (a freeze, ended by force later, is otherwise
+// only "no clean exit"): where it stands goes to the log, which the report
+// of a run ended by force quotes. The thread is suspended only to read its
+// registers; its stack, which a stuck thread leaves as it is, is walked
+// after it goes on (nothing here may wait on a lock it could hold).
+void CheckHang()
+{
+    const DWORD id = g_gameThread;
+    const ULONGLONG last = g_lastTick;
+    if (!id || !last || g_quitting) return;
+    const ULONGLONG idle = GetTickCount64() - last;
+    if (idle < kHangMs) {
+        if (g_hangLogged) Log("crash report: the game thread ticks again");
+        g_hangLogged = false;
+        return;
+    }
+    if (g_hangLogged) return;
+    g_hangLogged = true;
+    const HANDLE thread = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, id);
+    if (!thread) return;
+    CONTEXT c{};
+    c.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
+    bool read = false;
+    if (SuspendThread(thread) != static_cast<DWORD>(-1)) {
+        read = GetThreadContext(thread, &c) != 0;
+        ResumeThread(thread);
+    }
+    CloseHandle(thread);
+    if (!read) return;
+    std::string stack;
+    t_guarded++;
+    for (int i = 0; i < 32; i++) {
+        stack += " " + Where(c.Rip);
+        if (!Unwind(&c)) break;
+    }
+    t_guarded--;
+    Log("crash report: the game thread (%lu) has not ticked for %llu s; it is at:%s", id,
+        static_cast<unsigned long long>(idle / 1000), stack.c_str());
+}
+
 DWORD WINAPI Writer(LPVOID)
 {
     for (;;) {
-        WaitForSingleObject(g_request, INFINITE);
+        if (WaitForSingleObject(g_request, 1000) == WAIT_TIMEOUT) {
+            CheckHang();
+            continue;
+        }
         if (g_stop) return 0;
         WritePending();
         SetEvent(g_done);
@@ -247,6 +302,19 @@ std::string CheckPreviousRun(const std::wstring& suffix, const std::string& vers
     }
     // The pending fault is that run's when it names its process.
     const bool fault = !pending.empty() && Value(pending, "pid") == Value(running, "pid");
+    // No fault, and the run was quitting already (its window closed: the
+    // process then ended in a way the hooks do not see), or it ended before
+    // the exit hooks were in, seconds after starting (the game started
+    // outside Steam, which starts it again and ends this one): not crashes.
+    const std::string quitting = Value(running, "quitting");
+    if (!fault && (!quitting.empty() || Value(running, "hooked") != "1")) {
+        DeleteFileW(PendingPath(L".dmp").c_str());
+        DeleteFileW(PendingPath(L".txt").c_str());
+        DeleteFileW(RunningPath().c_str());
+        return "crash report: the last run (SFVR " + Value(running, "version") + ") ended " +
+               (!quitting.empty() ? "while quitting (" + quitting + ")" : "during its start, before the exit hooks") +
+               ": not reported";
+    }
     const std::wstring logPath = LogsDir() + L"\\sfvr" + suffix + L".log";
     SYSTEMTIME when{};
     WIN32_FILE_ATTRIBUTE_DATA info;
@@ -347,7 +415,15 @@ void __cdecl ExitDetour(int code)
 
 void OnQuitting(const char* how)
 {
-    if (!g_quitting.exchange(true) && !g_dir.empty()) Log("crash report: the game is quitting (%s): faults from here are not reported", how);
+    if (g_quitting.exchange(true) || g_dir.empty()) return;
+    Log("crash report: the game is quitting (%s): faults from here are not reported", how);
+    AppendRunning(std::string("quitting ") + how);
+}
+
+void NoteGameTick()
+{
+    if (!g_gameThread) g_gameThread = GetCurrentThreadId();
+    g_lastTick = GetTickCount64();
 }
 
 void HookProcessEnd()
@@ -366,6 +442,9 @@ void HookProcessEnd()
         MH_EnableHook(exitTarget) != MH_OK) {
         Log("crash report: cannot hook the runtime's exit (a fault while quitting may be reported)");
     }
+    // From here an exit is seen: a run that ends sooner is not reported
+    // unless it faulted (CheckPreviousRun).
+    AppendRunning("hooked 1");
 }
 
 void RemoveCrashHandler()

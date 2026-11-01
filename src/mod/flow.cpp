@@ -3,6 +3,7 @@
 #include "mod/battle_setup.h"
 #include "mod/boot.h"
 #include "mod/control.h"
+#include "mod/crash_report.h"
 #include "mod/lifecycle.h"
 #include "mod/log.h"
 #include "mod/stack.h"
@@ -315,6 +316,7 @@ void SceneTickDetour(void* self, float deltaSeconds)
     HookGuard guard;
     g_origSceneTick(self, deltaSeconds);
     g_sceneTicks++;
+    NoteGameTick();
     PumpGameThread();
     if (g_sceneTicks % 30 == 0) PreloadTick();
 }

@@ -6,7 +6,12 @@
 // A clean end deletes it: the process exiting, or ending itself with no
 // fault just before, or a hot reload. A file still there at the next start
 // means the run ended badly (a crash, a freeze ended by force, a kill), and
-// that run's report is made from the end of its log.
+// that run's report is made from the end of its log; not when, with no
+// fault, the run was already quitting or ended before the exit hooks were in
+// (the game started outside Steam, which starts it again).
+//
+// A game thread that stops ticking the scene for 20 s is logged with where
+// it stands, so a freeze ended by force has its place in the report.
 //
 // A fault the game would die of (an access violation, a stack overflow...)
 // is caught as it happens, by a vectored handler: the engine's own handler
@@ -43,6 +48,9 @@ void HookProcessEnd();
 // from here on is not reported, and the run ends well. The game itself
 // faulted in its exit now and then (quit while a character loads).
 void OnQuitting(const char* how);
+// From the scene's tick (flow.cpp): the game thread is alive (the freeze
+// watch).
+void NoteGameTick();
 
 // Around code that faults on purpose and catches it (guarded reads; calls,
 // not an object: a function with __try cannot hold one): the fault handler

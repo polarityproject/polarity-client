@@ -32,4 +32,22 @@ inline HMODULE RealXInput()
     return module;
 }
 
+// Where a call goes that came back into the proxy through the real XInput:
+// System32's xinput1_4 on Windows (Wine's real one is that already: none).
+// Special K hooks every XInput and takes the first xinput1_3 loaded, the
+// proxy, for the original of System32's: proxy and hook called each other
+// until the stack overflowed (a 0.2.1 crash report).
+inline HMODULE FallbackXInput()
+{
+    static HMODULE module = [] {
+        if (RunningOnWine()) return HMODULE{};
+        wchar_t path[MAX_PATH];
+        const UINT n = GetSystemDirectoryW(path, MAX_PATH);
+        if (n == 0 || n > MAX_PATH - 20) return HMODULE{};
+        lstrcatW(path, L"\\xinput1_4.dll");
+        return LoadLibraryW(path);
+    }();
+    return module;
+}
+
 } // namespace sfv::proxy
