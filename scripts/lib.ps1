@@ -97,25 +97,35 @@ function Reset-Instances([int[]]$Instances, [string]$Server = '') {
 # Runs $Body with the ini set for tests (virtual pads, always active, and
 # with more than one instance multi_instance); the player's values come back
 # afterwards, also when $Body throws.
+# Report uploads go off too (the panel files' upload_reports, which override
+# the ini): games killed on purpose and test desyncs stay off the server.
 function Use-TestSettings([int]$Instances = 1, [scriptblock]$Body) {
   $want = @{ virtual_pads = '1'; always_active = '1' }
   if ($Instances -gt 1) { $want.multi_instance = '1' }
-  $before = Get-Content $script:IniPath
-  $after = foreach ($line in $before) {
-    $k = ($line -split '=', 2)[0].Trim()
-    if ($want.ContainsKey($k)) { "$k=$($want[$k])" } else { $line }
+  $files = @(@{ Path = $script:IniPath; Want = $want })
+  foreach ($panel in Get-ChildItem (Split-Path $script:IniPath) -Filter 'sfv_rollback.panel*.ini' -ErrorAction SilentlyContinue) {
+    $files += @{ Path = $panel.FullName; Want = @{ upload_reports = '0' } }
   }
-  [IO.File]::WriteAllLines($script:IniPath, [string[]]$after)
+  foreach ($f in $files) {
+    $f.Before = Get-Content $f.Path
+    $after = foreach ($line in $f.Before) {
+      $k = ($line -split '=', 2)[0].Trim()
+      if ($f.Want.ContainsKey($k)) { "$k=$($f.Want[$k])" } else { $line }
+    }
+    [IO.File]::WriteAllLines($f.Path, [string[]]$after)
+  }
   try { & $Body }
   finally {
     # Only the keys set here go back (the game may have written others meanwhile).
-    $now = Get-Content $script:IniPath
-    $old = @{}
-    foreach ($line in $before) { $k = ($line -split '=', 2)[0].Trim(); if ($want.ContainsKey($k)) { $old[$k] = $line } }
-    $restored = foreach ($line in $now) {
-      $k = ($line -split '=', 2)[0].Trim()
-      if ($old.ContainsKey($k)) { $old[$k] } else { $line }
+    foreach ($f in $files) {
+      $now = Get-Content $f.Path
+      $old = @{}
+      foreach ($line in $f.Before) { $k = ($line -split '=', 2)[0].Trim(); if ($f.Want.ContainsKey($k)) { $old[$k] = $line } }
+      $restored = foreach ($line in $now) {
+        $k = ($line -split '=', 2)[0].Trim()
+        if ($old.ContainsKey($k)) { $old[$k] } else { $line }
+      }
+      [IO.File]::WriteAllLines($f.Path, [string[]]$restored)
     }
-    [IO.File]::WriteAllLines($script:IniPath, [string[]]$restored)
   }
 }

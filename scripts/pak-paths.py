@@ -1,7 +1,7 @@
 # Lists every file path in the game's pak indexes (UE4 pak version 3, not
 # encrypted), one per line as "<pak>\t/Game/...". For finding assets to load
 # by path (showtex, LoadAsset) without unpacking anything.
-#   python -I scripts/pak-paths.py > paths.txt
+#   python -I scripts/pak-paths.py [folder of .pak files] > paths.txt
 import glob
 import os
 import struct
@@ -41,7 +41,7 @@ def game_path(mount, name):
 
 def main():
     out = sys.stdout
-    for pak in sorted(glob.glob(os.path.join(PAKS, '*.pak'))):
+    for pak in sorted(glob.glob(os.path.join(sys.argv[1] if len(sys.argv) > 1 else PAKS, '*.pak'))):
         with open(pak, 'rb') as f:
             f.seek(-44, 2)
             magic, version, offset, size = struct.unpack_from('<IiQQ', f.read(44))
