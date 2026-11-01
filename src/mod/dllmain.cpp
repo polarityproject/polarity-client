@@ -60,6 +60,7 @@ extern "C" __declspec(dllexport) void SfvShutdown()
     RemoveCrashHandler();
     RemoveWatchHandler();
     RestoreWindowProc();
+    UnhookPresentTable();
     MH_DisableHook(MH_ALL_HOOKS);
     // Threads may be in the middle of a walk over every UE4 object (about a
     // second each).

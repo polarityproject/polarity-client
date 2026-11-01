@@ -31,6 +31,9 @@ namespace sfv::mod {
 // panelPath: where the panel saves the player's choices (config.h). The
 // Present hooks go in from a thread once the game's window is up.
 bool InstallOverlay(const std::wstring& panelPath);
+// Hot reload, with the code hooks: puts the swap chain's table entry for
+// Present back (the game calls through it).
+void UnhookPresentTable();
 // After the hooks are disabled and no detour runs (hot reload): releases ImGui
 // and its D3D objects.
 void ShutdownOverlay();

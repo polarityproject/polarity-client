@@ -60,6 +60,15 @@ PresentFn g_origPresent = nullptr;
 ResizeBuffersFn g_origResizeBuffers = nullptr;
 void* g_presentTarget = nullptr;
 void* g_resizeTarget = nullptr;
+// The game's swap chain's table entry for Present, once it points at
+// TablePresentDetour, and what it held before. Capture tools (OBS's game
+// capture, Discord's Go Live) hook dxgi's Present in its code, as the hook
+// above does, and the one hooked last runs first: hooked after the mod, they
+// took the frame before the overlay was drawn into it. The game calls
+// Present through the table, so drawing there comes before every such hook.
+void** g_tablePresentSlot = nullptr;
+PresentFn g_tablePresentNext = nullptr;
+thread_local bool t_inTablePresent = false; // the code hook below passes the frame on
 
 // Render thread state (Present and ResizeBuffers run there).
 IDXGISwapChain* g_swapChain = nullptr; // the one ImGui was set up for
@@ -3388,10 +3397,10 @@ void Draw(IDXGISwapChain* swapChain)
     if (savedDepth) savedDepth->Release();
 }
 
-HRESULT STDMETHODCALLTYPE PresentDetour(IDXGISwapChain* self, UINT syncInterval, UINT flags)
+// Draws the overlay into the back buffer, then presents with `next`.
+HRESULT DrawAndPresent(PresentFn next, IDXGISwapChain* self, UINT syncInterval, UINT flags)
 {
-    HookGuard guard;
-    if (Stopping() || (flags & DXGI_PRESENT_TEST)) return g_origPresent(self, syncInterval, flags);
+    if (Stopping() || (flags & DXGI_PRESENT_TEST)) return next(self, syncInterval, flags);
     SaveQueuedTextures();
     // Frames per second: frames counted over each half second. (Averaging
     // 1/frame time read high whenever frame times were uneven, 61-62 at a
@@ -3425,7 +3434,7 @@ HRESULT STDMETHODCALLTYPE PresentDetour(IDXGISwapChain* self, UINT syncInterval,
     {
         hitch::Scope timed(hitch::Part::Present);
         const auto from = std::chrono::steady_clock::now();
-        result = g_origPresent(self, g_noVsync ? 0 : syncInterval, flags);
+        result = next(self, g_noVsync ? 0 : syncInterval, flags);
         g_presentMicros += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - from).count();
         g_presentFrames++;
     }
@@ -3434,6 +3443,47 @@ HRESULT STDMETHODCALLTYPE PresentDetour(IDXGISwapChain* self, UINT syncInterval,
     // The frame-drop log (hitch.h), for the frame that ends here.
     if (frameMicros) hitch::FramePresented(frameMicros, g_inMatch);
     return result;
+}
+
+bool WriteTableSlot(void** slot, void* value)
+{
+    DWORD old = 0;
+    if (!VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &old)) return false;
+    InterlockedExchangePointer(slot, value);
+    VirtualProtect(slot, sizeof(void*), old, &old);
+    return true;
+}
+
+HRESULT STDMETHODCALLTYPE TablePresentDetour(IDXGISwapChain* self, UINT syncInterval, UINT flags)
+{
+    HookGuard guard;
+    t_inTablePresent = true;
+    const HRESULT result = DrawAndPresent(g_tablePresentNext, self, syncInterval, flags);
+    t_inTablePresent = false;
+    return result;
+}
+
+// The first Present of the game's swap chain: from then on its table entry
+// draws the overlay (the code hook only passes frames on).
+void HookPresentTable(IDXGISwapChain* self)
+{
+    void** slot = *reinterpret_cast<void***>(self) + kPresentSlot;
+    if (g_tablePresentSlot || *slot == reinterpret_cast<void*>(&TablePresentDetour)) return;
+    g_tablePresentNext = static_cast<PresentFn>(*slot);
+    if (!WriteTableSlot(slot, reinterpret_cast<void*>(&TablePresentDetour))) {
+        Log("overlay: cannot hook the swap chain's table (error %lu); capture tools hooked later miss the overlay", GetLastError());
+        return;
+    }
+    g_tablePresentSlot = slot;
+    Log("overlay: drawn from the swap chain's table, ahead of capture tools");
+}
+
+HRESULT STDMETHODCALLTYPE PresentDetour(IDXGISwapChain* self, UINT syncInterval, UINT flags)
+{
+    HookGuard guard;
+    if (t_inTablePresent) return g_origPresent(self, syncInterval, flags);
+    if (!Stopping()) HookPresentTable(self);
+    return DrawAndPresent(g_origPresent, self, syncInterval, flags);
 }
 
 HRESULT STDMETHODCALLTYPE ResizeBuffersDetour(IDXGISwapChain* self, UINT count, UINT width, UINT height, DXGI_FORMAT format,
@@ -3539,6 +3589,18 @@ bool InstallOverlay(const std::wstring& panelPath)
         InstallPresentHooks();
     }).detach();
     return true;
+}
+
+void UnhookPresentTable()
+{
+    if (!g_tablePresentSlot) return;
+    if (*g_tablePresentSlot == reinterpret_cast<void*>(&TablePresentDetour)) {
+        WriteTableSlot(g_tablePresentSlot, reinterpret_cast<void*>(g_tablePresentNext));
+    }
+    else {
+        Log("overlay: the swap chain's table entry was replaced after ours; left as it is");
+    }
+    g_tablePresentSlot = nullptr;
 }
 
 void ShutdownOverlay()
