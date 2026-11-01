@@ -34,6 +34,11 @@ constexpr uint32_t kVariation = 0xD8;
 constexpr uint32_t kVTrigger = 0xDC;
 constexpr uint32_t kCriticalArt = 0xE0;
 constexpr uint32_t kVSkill = 0xE4;
+// int, EKWVoiceLanguageId: 0 Japanese, 1 English (KWBattlePlayerSetting
+// SetVoiceLanguage, rva 0x7CB170). The menus' character select sets it from
+// the player's Sound options; a jump's defaults leave 0. The character's
+// setup (rva 0x353E00) passes it to 0x352FB0, which picks its voice set.
+constexpr uint32_t kVoiceLanguage = 0xF0;
 // From KWBattlePlayerSetting's setters (rva 0x7C8880 and on): the wins and
 // the win streak the battle starts the player with (the battle's "Wins"
 // counter and the results screen's "Wins" / "Win Streak" count on from

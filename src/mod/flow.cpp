@@ -1378,6 +1378,53 @@ void LogCharaVersions()
 
 int LatestCharaVersion(const std::string& code) { return LatestVersion(code); }
 
+namespace {
+
+// The player's voice settings (Options, Sound): KWOptionSettingsSave, the
+// one in GameSystemSave (its class default has one too). +0x40
+// VoiceLanguageMode (Japanese, English, Custom), +0xC0
+// CharacterVoiceLanguage (TArray<uint8>, count +0xC8): the language each
+// character speaks, by its unique id, what the menus' character select
+// passes to the battle (GetCharaVoiceLanguageFromCharaCode, rva 0x78A450).
+constexpr uint32_t kOptionVoiceMode = 0x40;
+constexpr uint32_t kOptionCharaVoices = 0xC0;
+std::atomic<int> g_voiceOverride{-1};
+
+const uint8_t* OptionSettings()
+{
+    static const void* found = nullptr;
+    if (found && ue4::ObjectName(found) == "OptionSettingsSave") return static_cast<const uint8_t*>(found);
+    found = nullptr;
+    if (!g_base || !ue4::EnsureObjects(g_base)) return nullptr;
+    ue4::ForEachObject([](const void* o) {
+        if (found || ue4::ObjectName(o) != "OptionSettingsSave") return;
+        const void* outer = ue4::OuterOf(o);
+        if (outer && ue4::ObjectName(outer) == "GameSystemSave" && ue4::ObjectName(ue4::ClassOf(o)) == "KWOptionSettingsSave") found = o;
+    });
+    return static_cast<const uint8_t*>(found);
+}
+
+} // namespace
+
+int VoiceLanguageFor(const std::string& code)
+{
+    if (const int forced = g_voiceOverride; forced >= 0) return forced;
+    const uint8_t* options = OptionSettings();
+    if (!options || !IsReadable(options + kOptionVoiceMode, kOptionCharaVoices + 0x10 - kOptionVoiceMode)) return -1;
+    const int mode = options[kOptionVoiceMode];
+    uint8_t* singleton = reinterpret_cast<uint8_t* (*)()>(g_base + kKiwiSingleton)();
+    void* versions = singleton ? *reinterpret_cast<void**>(singleton + kSingletonVersions) : nullptr;
+    const FStringArg codeArg(WideOf(code));
+    const uint8_t* info = versions ? reinterpret_cast<uint8_t* (*)(void*, const void*)>(g_base + kCharaVersionInfo)(versions, codeArg.Get()) : nullptr;
+    const int id = info ? *reinterpret_cast<const int32_t*>(info + 0x14) : -1;
+    const auto* langs = *reinterpret_cast<const uint8_t* const*>(options + kOptionCharaVoices);
+    const int count = *reinterpret_cast<const int32_t*>(options + kOptionCharaVoices + 8);
+    if (langs && id >= 0 && id < count && IsReadable(langs + id, 1)) return langs[id];
+    return mode <= 1 ? mode : -1; // Custom without an entry: leave it
+}
+
+void SetVoiceLanguageOverride(int language) { g_voiceOverride = language; }
+
 void LogCharaCache()
 {
     RunOnGameThread([] {

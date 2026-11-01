@@ -187,6 +187,8 @@ bool ApplyMatchSetup(const MatchSetup& setup)
         const std::string chara(reinterpret_cast<const char*>(r + bd::kCharaCode), 3);
         if (chara == "URN") Put<int32_t>(r, bd::kUniqueParams + 4 * 2, special ? 2 : 0);
         if (chara == "Z41") Put<int32_t>(r, bd::kUniqueParams, special ? 1 : 0);
+        // Not part of the match: each game's own player's choice.
+        if (const int voice = VoiceLanguageFor(chara); voice >= 0) Put<int32_t>(r, bd::kVoiceLanguage, voice);
         for (int k = 0; k < 8; k++) {
             if (g_uniqueParams[p][k] >= 0) Put<int32_t>(r, bd::kUniqueParams + 4 * k, g_uniqueParams[p][k]);
         }

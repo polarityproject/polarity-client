@@ -73,6 +73,12 @@ bool PreloadsDone();
 bool PreloadsDoneFor(const std::string& picks);
 // The version a battle resolves this character's to when asked for its latest.
 int LatestCharaVersion(const std::string& code);
+// The language this game's player set this character to speak (Options,
+// Sound: 0 Japanese, 1 English), -1 if not known; game thread. A voice is
+// this player's own choice: each side sets its own. The override (testing,
+// -1 off) answers for every character.
+int VoiceLanguageFor(const std::string& code);
+void SetVoiceLanguageOverride(int language);
 // Diagnostics: logs every character's versions.
 void LogCharaVersions();
 // Diagnostics: logs the character cache's slots.

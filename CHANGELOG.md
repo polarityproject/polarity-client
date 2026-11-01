@@ -16,6 +16,13 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   the other player sees it live. Works with 0.2.1 players: the session
   already carried a setting's stage.
 
+### Fixed
+
+- Every character spoke Japanese in sessions whatever the player's Sound
+  options said. Each game now gives both characters the voice its own player
+  chose (Japanese, English, or per character with Custom); the other player
+  hears their own choice. Works with 0.2.1 players.
+
 ## [0.2.1] - 2026-10-31
 
 A new character select for sessions: the host picks the stage, both players
