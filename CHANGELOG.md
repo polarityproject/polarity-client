@@ -80,6 +80,11 @@ need 0.2.2.
   two groups of camera-like floats in one battle object that one machine set
   differently in Vega matches, are out of the checksum like the other effect
   state. The fight and its outcome never differed in those matches.
+- False desync warnings with Oro's V-Trigger II: the game keeps its floating
+  stones' motion outside its snapshot, so after a rollback the stones went on
+  from where they were, a little apart on the two machines. Only where their
+  effects are drawn depends on it; those words are out of the checksum (nine
+  Balrog vs Oro matches on 0.2.2).
 
 ## [0.2.1] - 2026-10-31
 
