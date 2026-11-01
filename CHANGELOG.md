@@ -7,6 +7,14 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-01
+
+Stage settings on the stage select (Y): The Grid Alternative, Shadaloo Base
+at Night and the rest. Characters speak the voice language from your Sound
+options. Fixes a crash at startup with Special K, false desync warnings in
+some matches, and crash reports for games that did not crash. Both players
+need 0.2.2.
+
 ### Added
 
 - Stage settings on the stage select: Y (or up and down) switches a stage to
