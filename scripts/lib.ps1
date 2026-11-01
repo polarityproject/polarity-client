@@ -102,30 +102,30 @@ function Reset-Instances([int[]]$Instances, [string]$Server = '') {
 function Use-TestSettings([int]$Instances = 1, [scriptblock]$Body) {
   $want = @{ virtual_pads = '1'; always_active = '1' }
   if ($Instances -gt 1) { $want.multi_instance = '1' }
-  $files = @(@{ Path = $script:IniPath; Want = $want })
+  $testIniFiles = @(@{ Path = $script:IniPath; Want = $want })
   foreach ($panel in Get-ChildItem (Split-Path $script:IniPath) -Filter 'sfv_rollback.panel*.ini' -ErrorAction SilentlyContinue) {
-    $files += @{ Path = $panel.FullName; Want = @{ upload_reports = '0' } }
+    $testIniFiles += @{ Path = $panel.FullName; Want = @{ upload_reports = '0' } }
   }
-  foreach ($f in $files) {
-    $f.Before = Get-Content $f.Path
-    $after = foreach ($line in $f.Before) {
+  foreach ($testIni in $testIniFiles) {
+    $testIni.Before = Get-Content $testIni.Path
+    $after = foreach ($line in $testIni.Before) {
       $k = ($line -split '=', 2)[0].Trim()
-      if ($f.Want.ContainsKey($k)) { "$k=$($f.Want[$k])" } else { $line }
+      if ($testIni.Want.ContainsKey($k)) { "$k=$($testIni.Want[$k])" } else { $line }
     }
-    [IO.File]::WriteAllLines($f.Path, [string[]]$after)
+    [IO.File]::WriteAllLines($testIni.Path, [string[]]$after)
   }
   try { & $Body }
   finally {
     # Only the keys set here go back (the game may have written others meanwhile).
-    foreach ($f in $files) {
-      $now = Get-Content $f.Path
+    foreach ($testIni in $testIniFiles) {
+      $now = Get-Content $testIni.Path
       $old = @{}
-      foreach ($line in $f.Before) { $k = ($line -split '=', 2)[0].Trim(); if ($f.Want.ContainsKey($k)) { $old[$k] = $line } }
+      foreach ($line in $testIni.Before) { $k = ($line -split '=', 2)[0].Trim(); if ($testIni.Want.ContainsKey($k)) { $old[$k] = $line } }
       $restored = foreach ($line in $now) {
         $k = ($line -split '=', 2)[0].Trim()
         if ($old.ContainsKey($k)) { $old[$k] } else { $line }
       }
-      [IO.File]::WriteAllLines($f.Path, [string[]]$restored)
+      [IO.File]::WriteAllLines($testIni.Path, [string[]]$restored)
     }
   }
 }

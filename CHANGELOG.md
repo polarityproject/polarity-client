@@ -17,6 +17,10 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 - Match logs and the event log name the game's data files: how many of the
   game's own paks there are and any other .pak under Content\Paks (mods).
   Two tester desyncs happened on one player's machine only.
+- Match logs record every add to the fighters' damage gauge (the tick,
+  vitality, damage, the amount and the move's divisor): one tester's game
+  added 59 where the other added 20 for the same hit on Ken (V-Trigger 2),
+  a divisor of 1 instead of 3, and the next such report shows where.
 - A game frozen for 20 s logs where its game thread stands, so a freeze
   ended by force has its place in the crash report (a tester's game froze
   on the main menu after a session).

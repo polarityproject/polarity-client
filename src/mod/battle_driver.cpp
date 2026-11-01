@@ -1,5 +1,6 @@
 #include "mod/battle_driver.h"
 
+#include "mod/battle_setup.h"
 #include "mod/crash_report.h"
 #include "mod/flow.h"
 #include "mod/hitch.h"
@@ -28,6 +29,7 @@ using RecordFrameFn = uint64_t (*)(uint8_t* inputUnit, void* a2, void* a3, void*
 
 SfvGame* g_game = nullptr;
 uintptr_t g_imageBase = 0;
+bool g_replayingTick = false; // SetReplayingTick: the tick being run is a resimulation
 SfvGame::BattleFrameFn g_origBattleFrame = nullptr;
 RecordFrameFn g_origRecordFrame = nullptr;
 std::atomic<IFrameDriver*> g_driver{nullptr};
@@ -287,6 +289,83 @@ uint64_t RecordFrameDetour(uint8_t* inputUnit, void* a2, void* a3, void* a4)
     return g_origRecordFrame(inputUnit, a2, a3, a4);
 }
 
+// A fighter's damage gauge (gauge object +0x170 now, +0x174 its maximum,
+// +0x178 its level, up to 5; 16.16) grows by an amount per hit taken: at the
+// hit (rva 0x36D478) about 1000 / max vitality (+0xC4) * damage (the caller's
+// r14) / a value of the move. It came out different on one tester's machine
+// only, with Ken on V-Trigger 2 (2026-10-31: 20 on one, 59 on the other, same
+// inputs, no rollback involved), so every add is logged: the next such
+// report then shows which input differed. A stub saves the caller's r13 and
+// r14 (still the caller's on entry) before the detour runs.
+constexpr game::CodeSite kGaugeAdd{
+    "damage gauge add", 0x346A20,
+    {0x44, 0x89, 0x4C, 0x24, 0x20, 0x44, 0x89, 0x44, 0x24, 0x18, 0x55, 0x56, 0x57, 0x48, 0x83, 0xEC}};
+constexpr uintptr_t kGaugeAddFromHit = 0x36D47D; // the return address of the hit's call
+constexpr int kGaugeLogsPerBattle = 400;
+using GaugeAddFn = int* (*)(uint8_t* gauge, int* out, int amount, int flags);
+GaugeAddFn g_origGaugeAdd = nullptr;
+uint64_t g_gaugeR13 = 0, g_gaugeR14 = 0; // the caller's, from the stub (game thread only)
+int g_gaugeLogs = 0, g_gaugeBattle = -1;
+
+int* GaugeAddDetour(uint8_t* gauge, int* out, int amount, int flags)
+{
+    const uintptr_t from = reinterpret_cast<uintptr_t>(_ReturnAddress()) - g_imageBase;
+    const int32_t damage = static_cast<int32_t>(g_gaugeR14);
+    int32_t before[3] = {}, vitality[2] = {};
+    const bool readable = IsReadable(gauge + 0xC0, 0xBC);
+    if (readable) {
+        std::memcpy(before, gauge + 0x170, sizeof(before));
+        std::memcpy(vitality, gauge + 0xC0, sizeof(vitality));
+    }
+    int* result = g_origGaugeAdd(gauge, out, amount, flags);
+    if (BattleCreationCount() != g_gaugeBattle) {
+        g_gaugeBattle = BattleCreationCount();
+        g_gaugeLogs = 0;
+    }
+    if (readable && g_gaugeLogs++ < kGaugeLogsPerBattle) {
+        int32_t after[3];
+        std::memcpy(after, gauge + 0x170, sizeof(after));
+        const double unit = 65536.0;
+        char cause[96];
+        if (from == kGaugeAddFromHit) {
+            // The move's divisor, from the rest: 1000 / max vitality * damage / amount.
+            const double divisor = amount && vitality[1] ? 1000.0 / (vitality[1] / unit) * (damage / unit) / (amount / unit) : 0;
+            std::snprintf(cause, sizeof(cause), "for damage %.2f (divisor %.2f)", damage / unit, divisor);
+        }
+        else {
+            std::snprintf(cause, sizeof(cause), "from rva 0x%llX", static_cast<unsigned long long>(from));
+        }
+        Log("gauge: tick %u%s, vitality %.0f/%.0f, add %.3f (flags %d) %s, now %.2f/%.0f level %d (was %.2f level %d)",
+            DrivenTicks(), g_replayingTick ? " replayed" : "", vitality[0] / unit, vitality[1] / unit, amount / unit, flags,
+            cause, after[0] / unit, after[1] / unit, after[2], before[0] / unit, before[2]);
+    }
+    return result;
+}
+
+// mov rax, &g_gaugeR14; mov [rax], r14; mov rax, &g_gaugeR13; mov [rax], r13;
+// mov rax, GaugeAddDetour; jmp rax (rax is free on a function's entry).
+void* MakeGaugeStub()
+{
+    auto* code = static_cast<uint8_t*>(VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    if (!code) return nullptr;
+    uint8_t* p = code;
+    const auto movRax = [&p](const void* value) {
+        *p++ = 0x48;
+        *p++ = 0xB8;
+        const uint64_t v = reinterpret_cast<uint64_t>(value);
+        std::memcpy(p, &v, 8);
+        p += 8;
+    };
+    movRax(&g_gaugeR14);
+    *p++ = 0x4C, *p++ = 0x89, *p++ = 0x30; // mov [rax], r14
+    movRax(&g_gaugeR13);
+    *p++ = 0x4C, *p++ = 0x89, *p++ = 0x28; // mov [rax], r13
+    movRax(reinterpret_cast<const void*>(&GaugeAddDetour));
+    *p++ = 0xFF, *p++ = 0xE0; // jmp rax
+    FlushInstructionCache(GetCurrentProcess(), code, p - code);
+    return code;
+}
+
 bool Hook(const GameImage& image, const game::CodeSite& site, void* detour, void** original)
 {
     void* target = image.At<void*>(site.rva);
@@ -334,7 +413,6 @@ UpdateStartFn g_origUpdateStart = nullptr;
 PhaseFn g_origPhase = nullptr;
 TickProperFn g_origTickProper = nullptr;
 std::atomic<bool> g_phaseTiming{false};
-bool g_replayingTick = false;
 // Experiment (`resimskip 1`): replayed ticks leave out scheduler phases 4 and
 // 8 (presentation: animation, effects, camera), as the game's own update
 // does for all but its last tick when it runs several; the newest tick of
@@ -458,6 +536,10 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game)
         !Hook(image, kSchedulerPhase, reinterpret_cast<void*>(&PhaseDetour), reinterpret_cast<void**>(&g_origPhase)) ||
         !Hook(image, kTickProper, reinterpret_cast<void*>(&TickProperDetour), reinterpret_cast<void**>(&g_origTickProper))) {
         Log("battle driver: phasecost unavailable");
+    }
+    void* gaugeStub = MakeGaugeStub();
+    if (!gaugeStub || !Hook(image, kGaugeAdd, gaugeStub, reinterpret_cast<void**>(&g_origGaugeAdd))) {
+        Log("battle driver: damage gauge adds not logged");
     }
     // SfvGame::Advance runs a tick through the original, not through the hook.
     game->SetBattleFrameFunction(g_origBattleFrame);
