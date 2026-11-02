@@ -432,10 +432,13 @@ private:
             if (f != t.frame - 1) continue;
             const auto r = std::find_if(game.Regions().begin(), game.Regions().end(),
                                         [&](const StateRegion& x) { return x.name == t.region; });
-            if (r == game.Regions().end() || t.offset >= r->size) {
+            // An offset past the region's end watches the owner's memory there
+            // (a field no region covers, e.g. one read by a per-tick writer).
+            if (r == game.Regions().end() || t.offset >= r->size + 0x1000) {
                 Log("replay: trap: no region %s +0x%zx", t.region.c_str(), t.offset);
                 continue;
             }
+            if (t.offset >= r->size) Log("replay: trap on %s +0x%zx is past the region's end", t.region.c_str(), t.offset);
             const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
             for (int done = 0; done < t.bytes && trapSlots_ < 4; done += 8) {
                 ArmFromHelper(trapSlots_++, r->ptr + t.offset + done, std::min(8, t.bytes - done), base);
