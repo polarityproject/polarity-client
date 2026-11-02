@@ -163,6 +163,8 @@ struct Ui {
     int lastChara = -2;    // the pick the cursor last followed (it starts there, and moves when the pick changes)
     std::string lastStage; // the stage behind the screen (the last real one while random is chosen)
     bool wasLocked = false;
+    bool leaving = false;     // the leave dialog is up
+    bool leaveChosen = false; // ... on Leave (it opens on Stay)
 } g_ui;
 
 // The game's grid, from the middle outwards (the final roster's screen):
@@ -275,7 +277,7 @@ bool CursorTo(int chara)
 bool g_inputOn = false;                         // this frame reads input
 bool g_clickConfirm = false, g_clickBack = false, g_clickSetting = false; // a prompt clicked last frame: A, B or Y this frame
 
-// Directions repeat while held; A, B and Start count once per press (a long
+// Directions repeat while held; A and B count once per press (a long
 // frame, a character loading, would make a held A a repeat: the loadout's
 // Ready right after the grid's Select).
 bool Pressed(std::initializer_list<ImGuiKey> keys, bool repeat = true)
@@ -292,19 +294,18 @@ bool Up() { return Pressed({ImGuiKey_UpArrow, ImGuiKey_GamepadDpadUp, ImGuiKey_G
 bool Down() { return Pressed({ImGuiKey_DownArrow, ImGuiKey_GamepadDpadDown, ImGuiKey_GamepadLStickDown}); }
 bool Confirm()
 {
-    const bool clicked = std::exchange(g_clickConfirm, false) && g_inputOn;
+    const bool clicked = g_inputOn && std::exchange(g_clickConfirm, false);
     return clicked || Pressed({ImGuiKey_Enter, ImGuiKey_KeypadEnter, ImGuiKey_Space, ImGuiKey_GamepadFaceDown}, false);
 }
 bool Back()
 {
-    const bool clicked = std::exchange(g_clickBack, false) && g_inputOn;
+    const bool clicked = g_inputOn && std::exchange(g_clickBack, false);
     return clicked || Pressed({ImGuiKey_Escape, ImGuiKey_Backspace, ImGuiKey_GamepadFaceRight}, false);
 }
-bool Menu() { return Pressed({ImGuiKey_GamepadStart}, false); }
 // Y: the stage's next setting.
 bool NextSetting()
 {
-    const bool clicked = std::exchange(g_clickSetting, false) && g_inputOn;
+    const bool clicked = g_inputOn && std::exchange(g_clickSetting, false);
     return clicked || Pressed({ImGuiKey_GamepadFaceUp}, false);
 }
 
@@ -735,7 +736,7 @@ void MoveCursor(int dr, int dx)
 struct Prompt {
     const char* icon;
     std::string label;
-    int action; // 0 confirm (A), 1 back (B), 2 menu (Start), 3 the stage's next setting (Y)
+    int action; // 0 confirm (A), 1 back (B), 3 the stage's next setting (Y)
 };
 
 constexpr const char* kLoadingText = "Both ready: loading the characters";
@@ -748,7 +749,7 @@ void StatusPill(ImDrawList* d, const SelectFonts& f, const char* text)
     Text(d, f.text, g_v.L(16), g_v.P(800, 866), Rgba(233, 196, 106), text, 0.5f);
 }
 
-void DrawPrompts(ImDrawList* d, const SelectFonts& f, const std::vector<Prompt>& prompts, SelectInput* in)
+void DrawPrompts(ImDrawList* d, const SelectFonts& f, const std::vector<Prompt>& prompts)
 {
     float right = 1572;
     for (int i = static_cast<int>(prompts.size()) - 1; i >= 0; i--) {
@@ -762,10 +763,59 @@ void DrawPrompts(ImDrawList* d, const SelectFonts& f, const std::vector<Prompt>&
             if (p.action == 0) g_clickConfirm = true;
             else if (p.action == 1) g_clickBack = true;
             else if (p.action == 3) g_clickSetting = true;
-            else in->menu = true;
         }
         right -= w + 18;
     }
+}
+
+// B with nothing to go back to: the leave dialog, on Stay.
+void OpenLeave()
+{
+    g_ui.leaving = true;
+    g_ui.leaveChosen = false;
+}
+
+// The leave dialog over the screen: Leave or Stay, left and right to choose,
+// A (or a click) to take it, B stays.
+void DrawLeaveDialog(ImDrawList* d, const SelectFonts& f, const SelectLive& live, bool takeInput, SelectInput* in)
+{
+    const float bw = 170, bh = 48, gap = 24;
+    const float y0 = 330, h = 236, by = y0 + 150;
+    const float lx = 800 - gap / 2 - bw, sx = 800 + gap / 2;
+    if (takeInput) {
+        if (Left() || Right()) g_ui.leaveChosen = !g_ui.leaveChosen;
+        const bool back = Back(), confirm = Confirm();
+        int clicked = -1; // 1 Leave, 0 Stay
+        if (Clicked()) {
+            if (MouseIn(g_v.P(lx, by), g_v.P(lx + bw, by + bh))) clicked = 1;
+            if (MouseIn(g_v.P(sx, by), g_v.P(sx + bw, by + bh))) clicked = 0;
+        }
+        if (clicked >= 0) g_ui.leaveChosen = clicked == 1;
+        if (back) g_ui.leaving = false;
+        else if (confirm || clicked >= 0) {
+            in->leave = g_ui.leaveChosen;
+            g_ui.leaving = false;
+        }
+        if (!g_ui.leaving) return;
+    }
+    const bool watching = live.you < 0;
+    const char* title = watching ? "STOP WATCHING?" : "LEAVE THE SESSION?";
+    const char* detail = watching ? "You go back to the main menu." : "The session ends for both players.";
+    const float w = std::max({460.0f, TextW(f.name, 34, title) + 90, TextW(f.text, 17, detail) + 90});
+    const float x0 = 800 - w / 2;
+    d->AddRectFilled(g_v.P(0, 0), g_v.P(1600, 900), Rgba(0, 0, 0, 150));
+    d->AddRectFilled(g_v.P(x0, y0), g_v.P(x0 + w, y0 + h), Rgba(14, 16, 20, 240), g_v.L(18));
+    d->AddRect(g_v.P(x0, y0), g_v.P(x0 + w, y0 + h), Rgba(233, 196, 106, 170), g_v.L(18), 0, g_v.L(1.5f));
+    Text(d, f.name, g_v.L(34), g_v.P(800, y0 + 34), Rgba(255, 255, 255), title, 0.5f, true);
+    Text(d, f.text, g_v.L(17), g_v.P(800, y0 + 96), Rgba(217, 212, 198), detail, 0.5f);
+    auto button = [&](float x, const char* label, bool on) {
+        const ImVec2 a = g_v.P(x, by), b = g_v.P(x + bw, by + bh);
+        d->AddRectFilled(a, b, on ? Rgba(233, 196, 106) : Rgba(0, 0, 0, 150), g_v.L(24));
+        d->AddRect(a, b, on ? Rgba(233, 196, 106) : Rgba(93, 90, 82), g_v.L(24));
+        Text(d, f.text, g_v.L(19), g_v.P(x + bw / 2, by + 13), on ? Rgba(20, 20, 22) : Rgba(244, 241, 232), label, 0.5f);
+    };
+    button(lx, "Leave", g_ui.leaveChosen);
+    button(sx, "Stay", !g_ui.leaveChosen);
 }
 
 // The whole screen for a lobby's state; what the player does goes to `in`.
@@ -781,6 +831,10 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         g_ui.lastChara = -2;
     }
     g_ui.wasLocked = live.stageLocked;
+    // While the leave dialog is up it takes the input: the screen behind is
+    // drawn as it is.
+    const bool dialog = g_ui.leaving, inputOn = g_inputOn;
+    if (dialog) g_inputOn = false;
 
     std::vector<Prompt> prompts;
     if (!live.stageLocked) {
@@ -802,7 +856,8 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         const SelectStage* stage = Shown(live.stage, 0);
         if (live.host && !watching && stage && !stage->settings.empty()) prompts.push_back({"button_y", "Setting", 3});
         if (live.host && !watching) prompts.push_back({"button_a", "Confirm stage", 0});
-        if (Back()) in->back = true;
+        prompts.push_back({"button_b", "Leave", 1});
+        if (Back()) OpenLeave();
     }
     else {
         const bool ready = me && me->ready;
@@ -888,7 +943,10 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         }
         if (grid) {
             prompts.push_back({"button_a", "Select", 0});
-            if (live.host) prompts.push_back({"button_b", "Stage", 1});
+            prompts.push_back({"button_b", live.host ? "Stage" : "Leave", 1});
+        }
+        else if (watching) {
+            prompts.push_back({"button_b", "Leave", 1});
         }
         else if (loadout) {
             prompts.push_back({"button_a", "Ready", 0});
@@ -896,8 +954,11 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         }
         if (ready) {
             // B says not ready, until both are: then the match is locked in
-            // (Leave is in the menu).
-            if (live.bothReady) StatusPill(d, f, live.loading ? kLoadingText : "Both ready: the match is starting");
+            // (B leaves).
+            if (live.bothReady) {
+                StatusPill(d, f, live.loading ? kLoadingText : "Both ready: the match is starting");
+                prompts.push_back({"button_b", "Leave", 1});
+            }
             else {
                 StatusPill(d, f, "Ready: the match starts once both players are");
                 prompts.push_back({"button_b", "Not ready", 1});
@@ -917,10 +978,10 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             in->ready = true;
         }
         if (Back()) {
-            if (ready) in->unready = !live.bothReady;
+            if (ready && !live.bothReady) in->unready = true;
             else if (loadout) g_ui.loadout = false;
             else if (grid && live.host) in->unlockStage = true;
-            else in->back = true;
+            else OpenLeave();
         }
     }
     if (watching) {
@@ -940,9 +1001,10 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         Text(d, f.text, g_v.L(15), g_v.P(ix + 28, 26), Rgba(217, 212, 198), detail);
     }
     if (watching && live.loading) StatusPill(d, f, kLoadingText);
-    prompts.push_back({"button_start", "Menu", 2});
-    DrawPrompts(d, f, prompts, in);
-    if (Menu()) in->menu = true;
+    g_inputOn = inputOn;
+    if (g_ui.leaving) DrawLeaveDialog(d, f, live, dialog, in);
+    if (g_ui.leaving) prompts = {{"button_a", "Select", 0}, {"button_b", "Stay", 1}};
+    DrawPrompts(d, f, prompts);
 }
 
 // Every vertex drawn since `from` at `alpha` (the screen's fade).
@@ -1278,9 +1340,8 @@ void DrawSelectPreview(const SelectFonts& f)
     }
     if (in.ready) g_mock.ready[0] = true;
     if (in.unready) g_mock.ready[0] = false;
-    // Back with nothing to go back to (the stage select, watching) or Start
-    // closes the preview.
-    if (in.back || in.menu) g_previewOpen = false;
+    // Leave closes the preview.
+    if (in.leave) g_previewOpen = false;
 }
 
 } // namespace sfv::mod

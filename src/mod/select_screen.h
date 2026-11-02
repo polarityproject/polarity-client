@@ -101,8 +101,9 @@ struct SelectInput {
     bool lockStage = false, unlockStage = false;
     bool ready = false;
     bool unready = false; // B while ready, until both are
-    bool menu = false;    // Start: the panel (Leave, settings)
-    bool back = false;    // B with nothing to go back to
+    // Leave, confirmed: B with nothing to go back to asks first (the screen's
+    // own dialog; the panel does not open over this screen).
+    bool leave = false;
     // Where this player is on the screen, every frame (for the others'
     // screens): as SelectSide::screen, hover, hoverRandom and row.
     int screen = 0;

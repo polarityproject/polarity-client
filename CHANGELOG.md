@@ -7,6 +7,14 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Changed
+
+- Leaving from the select screen: B on the stage select (on the character
+  grid for the joining player and spectators, and once both players are
+  ready) asks "Leave the session?" with Leave and Stay, Stay chosen first.
+  Start no longer opens the menu over the select screen, and the prompts at
+  the top right show "Leave" where B leaves.
+
 ### Fixed
 
 - A button pressed while the match loaded could reach the main menu behind

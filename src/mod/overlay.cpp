@@ -79,7 +79,7 @@ HWND g_window = nullptr;
 bool g_imgui = false;
 
 std::atomic<bool> g_visible{false};
-std::atomic<bool> g_startCloses{false};  // the panel was opened with Start (the select screen, held in a match): Start closes it
+std::atomic<bool> g_startCloses{false};  // the panel was opened with Start (held in a match): Start closes it
 std::atomic<float> g_startHold{0};       // in a match: how far Start is held towards opening the panel (0..1)
 std::atomic<bool> g_selectMatchTab{true}; // the panel opens on its Match tab next time
 std::atomic<ULONGLONG> g_xinputAt{0};    // when the XInput hook last saw a pad (OverlayPad)
@@ -166,9 +166,8 @@ void FeedPads(ImGuiIO& io)
     const bool chord = (game & kChord) == kChord && GetTickCount64() - g_xinputAt > 2000;
     if (chord && !chordWas && (g_visible || !g_inMatch)) ToggleOverlay(); // in a match it opens by Start held
     chordWas = chord;
-    // A menu opened with Start on the select screen closes with Start, on its
-    // release (on its press, the select screen took that Start again and
-    // opened it once more).
+    // A menu opened with Start closes with Start, on its release (on its
+    // press, the same Start would open it once more).
     static bool startWas = false, closeOnRelease = false;
     const bool start = buttons & XINPUT_GAMEPAD_START;
     if (!g_visible) g_startCloses = closeOnRelease = false;
@@ -2341,20 +2340,15 @@ struct SentSelect {
     uint32_t hover = 0;
 } g_sentSelect;
 
-// Start on the select screen: the panel, which Start closes again.
-void OpenMenuFromSelect()
-{
-    SetOverlayVisible(true);
-    g_startCloses = true;
-}
-
 void ApplySelectInput(const SelectInput& in, const NetView& v)
 {
     Choices& c = g_choices;
-    if (v.spectator) {
-        if (in.menu) OpenMenuFromSelect();
+    if (in.leave) {
+        Log("overlay: left from the select screen");
+        Act([] { NetLeave(); });
         return;
     }
+    if (v.spectator) return;
     // Where this player is, for the other screens (sent when it changes).
     const uint32_t hover = in.screen != 1 || in.hoverRandom || in.hover < 0 || in.hover >= static_cast<int>(g_tables.charas.size())
                                ? 0
@@ -2389,7 +2383,6 @@ void ApplySelectInput(const SelectInput& in, const NetView& v)
     if (v.host && in.unlockStage && !ready) Act([] { NetSetStageLocked(false); });
     if (in.ready && !ready) Act([] { NetSetReady(true); });
     if (in.unready && ready) Act([] { NetSetReady(false); });
-    if (in.menu) OpenMenuFromSelect();
 }
 
 void DrawDebug()
@@ -3295,7 +3288,8 @@ void Draw(IDXGISwapChain* swapChain)
     previewWas = preview;
     // A session's lobby is the select screen: it fades in (over the last
     // match's results screen after Character select), the panel closes as it
-    // comes (Start brings it back), and it fades out as the match loads.
+    // comes (and stays shut: B on the screen leaves), and it fades out as the
+    // match loads.
     static float liveAlpha = 0;
     static bool lobbyWas = false;
     const bool lobby = phase == NetView::Phase::Lobby && g_tables.loaded && g_choices.initialised && !preview;
@@ -3619,6 +3613,8 @@ void SetOverlayVisible(bool visible)
 
 void ToggleOverlay()
 {
+    // Not over a session's select screen: B there leaves (its own dialog).
+    if (!g_visible && g_selectLive) return;
     SetOverlayVisible(!g_visible);
 }
 
