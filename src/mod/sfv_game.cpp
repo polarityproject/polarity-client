@@ -351,6 +351,15 @@ constexpr size_t kCameraShakeAt = 0x310, kCameraShakeSize = 0x10;
 constexpr uint32_t kVitalityOwnerVtable = 0x2C51718;
 constexpr size_t kVitalityRegionSize = 372, kVitalityRegionAt = 0xC0, kVitalityOwnerAt = 0xB0;
 constexpr size_t kFighterEventAt = 0x338, kFighterEventSize = 4;
+// The owner of a fighter's effect slots: the game snapshots the slots (392
+// bytes) from +0x6D8 (the owner's vtable rva 0x2C53598 sits at +0xB0). +0x108
+// is set each tick from the fighter (rva 0x3A00C5; kept while 0x377710 holds)
+// and no region covers it. E. Honda's unique part draws slot 0 or 1 from it
+// (rva 0x3BDA38), so after a rollback it held the newest tick's value and the
+// slot states came out differently (Urien vs E. Honda d704c27a). Added.
+constexpr uint32_t kEffectOwnerVtable = 0x2C53598;
+constexpr size_t kEffectSlotsSize = 392, kEffectSlotsAt = 0x6D8, kEffectOwnerVtableAt = 0xB0;
+constexpr size_t kEffectOwnerValueAt = 0x108, kEffectOwnerValueSize = 4;
 
 bool SfvGame::RefreshRegions()
 {
@@ -462,18 +471,29 @@ bool SfvGame::RefreshRegions()
     if (singletonTicks) fresh.push_back({"singleton.ticks", singletonTicks, game::singleton::kTicksSize, {}});
     for (const auto* e : presentation) fresh.push_back({e->name, e->ptr, e->size, {}});
     for (const auto& e : flow) fresh.push_back({e.name, e.ptr, e.size, {}});
-    // Each fighter's event flag, named after its vitality block's canonical
-    // order (the game registers the fighters in a different order per peer).
+    // Each fighter's event flag and its effect slot owner's value, named after
+    // the canonical order of the regions they sit next to (the game registers
+    // the fighters in a different order per peer).
     if (extras) {
+        auto owned = [&](uint8_t* object, size_t vtableAt, uint32_t vtable, size_t at, size_t size) {
+            return IsReadable(object + vtableAt, 8) &&
+                   *reinterpret_cast<const uintptr_t*>(object + vtableAt) == image_.base + vtable &&
+                   IsReadable(object + at, size);
+        };
         const size_t named = fresh.size();
         for (size_t i = 0; i < named; i++) {
             const StateRegion& r = fresh[i];
-            if (r.size != kVitalityRegionSize || r.name.rfind("s372.", 0) != 0) continue;
-            uint8_t* fighter = r.ptr - kVitalityRegionAt;
-            if (IsReadable(fighter + kVitalityOwnerAt, 8) &&
-                *reinterpret_cast<const uintptr_t*>(fighter + kVitalityOwnerAt) == image_.base + kVitalityOwnerVtable &&
-                IsReadable(fighter + kFighterEventAt, kFighterEventSize)) {
-                fresh.push_back({"fighter.event." + r.name.substr(5), fighter + kFighterEventAt, kFighterEventSize, {}});
+            if (r.size == kVitalityRegionSize && r.name.rfind("s372.", 0) == 0) {
+                uint8_t* fighter = r.ptr - kVitalityRegionAt;
+                if (owned(fighter, kVitalityOwnerAt, kVitalityOwnerVtable, kFighterEventAt, kFighterEventSize)) {
+                    fresh.push_back({"fighter.event." + r.name.substr(5), fighter + kFighterEventAt, kFighterEventSize, {}});
+                }
+            }
+            if (r.size == kEffectSlotsSize && r.name.rfind("s392.", 0) == 0) {
+                uint8_t* owner = r.ptr - kEffectSlotsAt;
+                if (owned(owner, kEffectOwnerVtableAt, kEffectOwnerVtable, kEffectOwnerValueAt, kEffectOwnerValueSize)) {
+                    fresh.push_back({"effects.owner." + r.name.substr(5), owner + kEffectOwnerValueAt, kEffectOwnerValueSize, {}});
+                }
             }
         }
     }

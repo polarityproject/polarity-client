@@ -86,7 +86,7 @@ public:
     struct Trap {
         int frame;
         std::string region;
-        size_t offset;
+        long long offset; // may be negative: the owner's memory before the region
         int bytes;
     };
     void AddTrap(Trap t) { traps_.push_back(std::move(t)); }
@@ -432,18 +432,22 @@ private:
             if (f != t.frame - 1) continue;
             const auto r = std::find_if(game.Regions().begin(), game.Regions().end(),
                                         [&](const StateRegion& x) { return x.name == t.region; });
-            // An offset past the region's end watches the owner's memory there
-            // (a field no region covers, e.g. one read by a per-tick writer).
-            if (r == game.Regions().end() || t.offset >= r->size + 0x1000) {
-                Log("replay: trap: no region %s +0x%zx", t.region.c_str(), t.offset);
+            // An offset outside the region (up to 0x1000 before its start or past
+            // its end) watches the owner's memory there: a field no region
+            // covers, e.g. one read by a per-tick writer.
+            const long long size = r == game.Regions().end() ? 0 : static_cast<long long>(r->size);
+            const char* sign = t.offset < 0 ? "-" : "+";
+            const unsigned long long at = static_cast<unsigned long long>(t.offset < 0 ? -t.offset : t.offset);
+            if (r == game.Regions().end() || t.offset < -0x1000 || t.offset >= size + 0x1000) {
+                Log("replay: trap: no region %s %s0x%llx", t.region.c_str(), sign, at);
                 continue;
             }
-            if (t.offset >= r->size) Log("replay: trap on %s +0x%zx is past the region's end", t.region.c_str(), t.offset);
+            if (t.offset < 0 || t.offset >= size) Log("replay: trap on %s %s0x%llx is outside the region", t.region.c_str(), sign, at);
             const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
             for (int done = 0; done < t.bytes && trapSlots_ < 4; done += 8) {
                 ArmFromHelper(trapSlots_++, r->ptr + t.offset + done, std::min(8, t.bytes - done), base);
             }
-            Log("replay: trap armed on %s +0x%zx (%d bytes) at %p before frame %d", t.region.c_str(), t.offset, t.bytes,
+            Log("replay: trap armed on %s %s0x%llx (%d bytes) at %p before frame %d", t.region.c_str(), sign, at, t.bytes,
                 static_cast<void*>(r->ptr + t.offset), t.frame);
         }
         if (f < watchFrom_ || f > watchTo_) return;
