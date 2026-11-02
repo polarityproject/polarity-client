@@ -14,6 +14,9 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   ready) asks "Leave the session?" with Leave and Stay, Stay chosen first.
   Start no longer opens the menu over the select screen, and the prompts at
   the top right show "Leave" where B leaves.
+- Skipping an intro, round call or win pose with Start takes effect one
+  frame sooner, on the same frame on both sides however each game's frames
+  ran (the game read the press once per drawn frame, not per battle frame).
 
 ### Fixed
 

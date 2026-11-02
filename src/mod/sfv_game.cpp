@@ -889,6 +889,7 @@ void SfvGame::Advance(const FrameInputs& inputs, bool rollingBack)
     injecting_ = false;
     // The round director's check for this tick, and its state into the snapshot.
     RunRoundDirector();
+    LatchInputs();
     CheckChangeWatch(regions_, image_.base);
     // Between ticks the presentation (intro and round call skipping, once
     // per rendered frame) reads the current input values. Rendered frames and
@@ -930,6 +931,17 @@ bool SfvGame::WarmupStep()
     return false;
 }
 
+// What the next tick reads as the pads' values for its frame (the intro's
+// Start check), latched from the input ring as the game does once per
+// rendered frame after the battle's update: after every driven tick, and
+// after a load, so a replayed tick sees what it saw the first time.
+void SfvGame::LatchInputs()
+{
+    if (!inputUnit_ || !latchEachTick) return;
+    using LatchFn = void (*)(uint8_t*);
+    image_.At<LatchFn>(game::kInputUnitLatch.rva)(inputUnit_);
+}
+
 void SfvGame::OnStateLoaded(int frame)
 {
     // The callbacks receive the id of the restored frame. Ours are not ids the
@@ -941,6 +953,7 @@ void SfvGame::OnStateLoaded(int frame)
     QueryPerformanceCounter(&b);
     RoundDirectorFromSnapshot();
     MatchStopToDirector(battleFrame_);
+    LatchInputs();
     QueryPerformanceCounter(&c);
     ownLoadTicks_ += c.QuadPart - b.QuadPart;
     // Every 200 loads, the callbacks by cost (the game's own, and ours).

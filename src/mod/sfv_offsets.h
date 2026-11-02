@@ -64,6 +64,17 @@ constexpr CodeSite kStoreThunk1{
 constexpr CodeSite kInputUnitRecord{
     "InputUnit::RecordFrame", 0x43B310,
     {0x89, 0x54, 0x24, 0x10, 0x56, 0x57, 0x41, 0x54, 0x48, 0x83, 0xEC, 0x30, 0x8B, 0xB1, 0x7C, 0x21}};
+// InputUnit::LatchFrame(this): each pad's value for the current frame
+// (+0x2180, tagged +0x217C) from its ring into this+0x128 (uint32 per pad).
+// The game calls it once per rendered frame (rva 0x43A771), outside the
+// battle tick, and the battle reads the latched values: the intro's Start
+// check (rva 0x40F07A, through 0x2F2C40). Ticks replayed within one rendered
+// frame saw the newest frame's latch, so after a rollback the intro skipped
+// on the wrong tick; the mod latches after every driven tick and every load
+// (SfvGame::LatchInputs).
+constexpr CodeSite kInputUnitLatch{
+    "InputUnit::LatchFrame", 0x4440D0,
+    {0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0x05, 0xA5, 0xE1, 0x57, 0x03, 0x48, 0x33, 0xC4, 0x48, 0x89}};
 
 // BattleFrame::Update(this): one rendered frame of battle. Runs scheduler
 // phase 1, then 1 + [this+0x1A8] battle ticks (scheduler phase 2 each), then
@@ -75,7 +86,7 @@ constexpr CodeSite kBattleFrame{
 
 constexpr const CodeSite* kAllSites[] = {&kRollbackUnitPre, &kManagerBeginFrame, &kManagerStore,
                                          &kManagerRestore,  &kUnitGetManager,    &kStoreThunk1,
-                                         &kInputUnitRecord, &kBattleFrame};
+                                         &kInputUnitRecord, &kInputUnitLatch,   &kBattleFrame};
 
 namespace inputunit {
 constexpr uint32_t kPadCount = 0xF8;

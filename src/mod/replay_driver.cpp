@@ -33,6 +33,13 @@ namespace sfv::mod {
 
 namespace {
 
+// The adapter version in a build id ("sfv-.../adapter-8/map-..."); 0 if none.
+int AdapterOf(const std::string& build)
+{
+    const size_t at = build.find("adapter-");
+    return at == std::string::npos ? 0 : std::atoi(build.c_str() + at + 8);
+}
+
 std::atomic<bool> g_stop{false}; // `replay stop`: end the running replay at the next frame
 
 class NoTransport : public ITransport {
@@ -136,6 +143,12 @@ private:
         ready_ = true;
         SetPadIsolation(true);
         game.exclusiveTicks = true;
+        // Recordings from before adapter-9 were made with the game's own
+        // pad latch (once per rendered frame): an intro skip lands a tick
+        // later with it. A straight run keeps it to follow them; runs that
+        // roll back need the mod's (a replayed tick saw a newer frame's).
+        game.latchEachTick = stress_ > 0 || delay_ > 0 || AdapterOf(rf_.gameBuild) >= 9;
+        if (!game.latchEachTick) Log("replay: %s predates adapter-9: the game's own pad latch", rf_.gameBuild.c_str());
         SetRoundDirectorPerTick(true, true);
         SetMatchDrawSeed(rf_.setup.seed);
         game.Recanonicalize();
@@ -719,6 +732,7 @@ private:
         }
         game.inputOverride = nullptr;
         game.exclusiveTicks = false;
+        game.latchEachTick = true;
         SetRoundDirectorPerTick(false, false);
         SetPadIsolation(false);
         // Stress: frames whose resimulation differed outside the presentation clocks.

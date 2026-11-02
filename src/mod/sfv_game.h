@@ -162,6 +162,10 @@ public:
     // Set while a session owns the battle: only the ticks it runs may record
     // inputs (battle_driver.cpp).
     bool exclusiveTicks = false;
+    // Driven ticks latch the pads' values themselves (LatchInputs); off only
+    // to replay recordings from before adapter-9, made with the game's own
+    // once-per-rendered-frame latch.
+    bool latchEachTick = true;
 
     // Words that differ between the first simulation of a frame and its
     // resimulation without affecting gameplay (engine-side transforms read by
@@ -218,6 +222,7 @@ private:
     // out of the checksum.
     bool IsEffectRegion(const StateRegion& r) const;
     void RunPostRestoreCallbacks(const game::FrameId& id);
+    void LatchInputs(); // InputUnit::LatchFrame, after a tick or a load
     // Time after loads (performance counter ticks), per game callback (by rva)
     // and for the round state the mod puts back (OnStateLoaded logs them).
     struct CallbackCost {
