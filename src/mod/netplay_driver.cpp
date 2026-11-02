@@ -1367,9 +1367,9 @@ private:
         StartMatch();
     }
 
-    void StartMatch()
+    void StartMatch(bool rematch = false)
     {
-        MatchSetup setup = ChooseSetup();
+        MatchSetup setup = ChooseSetup(rematch);
         {
             std::lock_guard lock(mutex_);
             // The session's score so far, for the game's own counters.
@@ -1397,7 +1397,7 @@ private:
         if (mine == Choice::None || theirs == Choice::None) return;
         if (mine == Choice::Rematch && theirs == Choice::Rematch) {
             Log("netplay: both chose a rematch");
-            StartMatch();
+            StartMatch(true);
             return;
         }
         Log("netplay: back to the lobby");
@@ -1486,7 +1486,25 @@ private:
     }
     static constexpr uint8_t kElevenMirrorColor = 1; // the 0C costume's color 2 of 2
 
-    MatchSetup ChooseSetup()
+    // Eleven again: another fighter than `before` in silver, V-Skill and
+    // V-Trigger at random (as each pick of Eleven rolls).
+    PlayerSetup RollEleven(const PlayerSetup& before)
+    {
+        std::string code;
+        int costume = 0;
+        for (int tries = 0; tries < 8; tries++) {
+            if (!ElevenStandIn(static_cast<uint32_t>(rng_()), &code, &costume)) return before;
+            if (PackCode(code.c_str()) != before.character) break;
+        }
+        PlayerSetup p;
+        p.character = PackCode(code.c_str());
+        p.costume = static_cast<uint16_t>(costume);
+        p.vskill = static_cast<uint8_t>(rng_() % 2);
+        p.vtrigger = static_cast<uint8_t>(rng_() % 2);
+        return p;
+    }
+
+    MatchSetup ChooseSetup(bool rematch)
     {
         MatchSetup s;
         if (options_.randomSetup) {
@@ -1508,12 +1526,21 @@ private:
             MatchSetup current;
             ReadMatchSetup(&current);
             lobby::Seat joiner;
+            MatchSetup last;
             {
                 std::lock_guard lock(mutex_);
                 joiner = seats_[1];
                 s.players[0] = options_.hasPick ? options_.pick : current.players[0];
+                last = setup_;
             }
             s.players[1] = joiner.hasPick ? joiner.pick : current.players[1];
+            // A rematch rolls Eleven again: the pick holds the fighter rolled
+            // when it was picked, for the first match only.
+            for (int i = 0; rematch && i < kNumPlayers; i++) {
+                if (!IsElevenPick(s.players[i])) continue;
+                s.players[i] = RollEleven(last.players[i]);
+                Log("netplay: rematch: P%d's Eleven plays %s", i + 1, UnpackCode(s.players[i].character).c_str());
+            }
             // Both Eleven: P2 wears the silver costume's second palette (a
             // bronze one), so the two can be told apart. Not a choice in the
             // loadout: Eleven's color is fixed.

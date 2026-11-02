@@ -1201,14 +1201,14 @@ int VariantsOf(int chara, int costume)
 // the pick to what the game offers and says whether the lists are there.
 bool IsEleven(int chara) { return chara >= 0 && chara < static_cast<int>(g_tables.charas.size()) && g_tables.charas[chara] == "ELV"; }
 
-// Eleven copies a fighter picked at random each time it is picked, with that
-// fighter's V-Skill and V-Trigger at random too.
+// Eleven copies a fighter picked at random each time it is picked (another
+// than last time), with that fighter's V-Skill and V-Trigger at random too.
 void RollEleven(Choices& c)
 {
     static std::mt19937 rng{std::random_device{}()};
     std::vector<int> fighters;
     for (int i = 0; i < static_cast<int>(g_tables.charas.size()); i++) {
-        if (g_tables.elevenCostume[i] >= 0) fighters.push_back(i);
+        if (g_tables.elevenCostume[i] >= 0 && i != c.elevenAs) fighters.push_back(i);
     }
     c.elevenAs = fighters.empty() ? -1 : fighters[rng() % fighters.size()];
     c.vskill = 1 + static_cast<int>(rng() % 2);
@@ -2377,6 +2377,9 @@ void ApplySelectInput(const SelectInput& in, const NetView& v)
         }
         if (v.host && in.setting >= 0) c.setting = in.setting;
         PickValid(c);
+        // Ready on Eleven: a new fighter each time (also when kept after a
+        // match), sent before the ready.
+        if (in.ready && IsEleven(c.chara)) RollEleven(c);
     }
     SyncChoices(v);
     if (v.host && in.lockStage) Act([] { NetSetStageLocked(true); });

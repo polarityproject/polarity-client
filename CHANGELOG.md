@@ -20,6 +20,9 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ### Fixed
 
+- Eleven played the same fighter for the whole session. It now rolls a new
+  fighter (and V-Skill and V-Trigger) for every rematch, and again each time
+  you ready up on Eleven at the select screen.
 - A button pressed while the match loaded could reach the main menu behind
   the select screen: its cursor starts on Arcade, so a confirm press showed
   "You are not logged in to the server" over the fight. The select screen now
