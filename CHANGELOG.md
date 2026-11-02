@@ -27,7 +27,11 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 - Reports made while report uploads were off (a crash, or a match's desync
   files) were still sent once uploads were on again. They now stay on the PC.
 - A false desync warning when a rollback left a character's effect drawn a
-  frame differently on one side (seen with Urien against E. Honda).
+  frame differently on one side (E. Honda's, against Urien and Chun-Li).
+- A desync warning in matches against Rose after a rollback: a flag one
+  fighter keeps from one frame to the next was not rolled back with the rest
+  of the fight, so Rose's soul could mark the other fighter a frame
+  differently on each side (seen with Urien against Rose).
 
 ## [0.2.3] - 2026-11-01
 

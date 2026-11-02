@@ -341,6 +341,16 @@ constexpr size_t kSoulEntityTailAt = 0x5C8, kSoulEntityTailSize = 0xA8;
 constexpr uint32_t kCameraPartVtable = 0x2C4F4A0;
 constexpr size_t kCameraRegionSize = 528, kCameraRegionAt = 0x100, kCameraPartAt = 0xE8;
 constexpr size_t kCameraShakeAt = 0x310, kCameraShakeSize = 0x10;
+// A fighter: the game snapshots its 372-byte vitality block from +0xC0 (the
+// block's owner, vtable rva 0x2C51718, sits at +0xB0). +0x338 is a per-tick
+// event flag (cleared with +0x334 at rva 0x362A64, set at 0x328E13) that no
+// region covers, and Rose's soul entity reads it (rva 0x3C10D0, 0x372940)
+// before the fighter's tick clears it, so it carries from one tick to the
+// next: after a rollback it held the newest tick's value and Rose's entity
+// set the fighter's +0x110 bit differently (Urien vs Rose 136d1a40). Added.
+constexpr uint32_t kVitalityOwnerVtable = 0x2C51718;
+constexpr size_t kVitalityRegionSize = 372, kVitalityRegionAt = 0xC0, kVitalityOwnerAt = 0xB0;
+constexpr size_t kFighterEventAt = 0x338, kFighterEventSize = 4;
 
 bool SfvGame::RefreshRegions()
 {
@@ -452,6 +462,21 @@ bool SfvGame::RefreshRegions()
     if (singletonTicks) fresh.push_back({"singleton.ticks", singletonTicks, game::singleton::kTicksSize, {}});
     for (const auto* e : presentation) fresh.push_back({e->name, e->ptr, e->size, {}});
     for (const auto& e : flow) fresh.push_back({e.name, e.ptr, e.size, {}});
+    // Each fighter's event flag, named after its vitality block's canonical
+    // order (the game registers the fighters in a different order per peer).
+    if (extras) {
+        const size_t named = fresh.size();
+        for (size_t i = 0; i < named; i++) {
+            const StateRegion& r = fresh[i];
+            if (r.size != kVitalityRegionSize || r.name.rfind("s372.", 0) != 0) continue;
+            uint8_t* fighter = r.ptr - kVitalityRegionAt;
+            if (IsReadable(fighter + kVitalityOwnerAt, 8) &&
+                *reinterpret_cast<const uintptr_t*>(fighter + kVitalityOwnerAt) == image_.base + kVitalityOwnerVtable &&
+                IsReadable(fighter + kFighterEventAt, kFighterEventSize)) {
+                fresh.push_back({"fighter.event." + r.name.substr(5), fighter + kFighterEventAt, kFighterEventSize, {}});
+            }
+        }
+    }
 
     regions_ = std::move(fresh);
     ArmPendingRegionWatch(regions_, image_.base);
@@ -796,7 +821,7 @@ std::string SfvGame::BuildId() const
 {
     char buf[96];
     const uint64_t noise = NoiseHash();
-    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-8/map-%016llx/noise-%016llx", image_.timestamp,
+    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-9/map-%016llx/noise-%016llx", image_.timestamp,
                   static_cast<unsigned long long>(stateMap_ ? stateMap_->Fingerprint() : 0),
                   static_cast<unsigned long long>(noise));
     return buf;
