@@ -736,7 +736,17 @@ private:
                 break;
             case WeyveEvent::Type::PeerLeft:
                 if (e.peer == peer_) {
-                    if (GetState() != State::Ended) {
+                    // The server drops a member whose connection to it broke
+                    // (a network that cuts idle connections); while the P2P
+                    // link holds, a match goes on over it, and ends when the
+                    // link does (the other side's ServerLost, below).
+                    const State s = GetState();
+                    if ((s == State::Running || s == State::PostMatch || s == State::Loading || s == State::Jumping) &&
+                        weyve_->PeerLinked(e.peer)) {
+                        Log("netplay: the server says the other side left the room; the link is up, so the match goes on");
+                        break;
+                    }
+                    if (s != State::Ended) {
                         Log("netplay: the other %s left the room", host_ || role_ == Role::Player ? "player" : "side");
                         peerLeft_ = true;
                         EndSession(host_ || role_ == Role::Player ? "the other player left" : "the host left");
@@ -752,8 +762,8 @@ private:
                 const State s = GetState();
                 if (s == State::Ended) break;
                 // A match in progress runs on the P2P link; let it play out
-                // if the link survives (it does not yet: Weyvelength drops
-                // every link with the server connection).
+                // while the link holds (third_party/weyvelength.patch keeps
+                // the links when the server connection goes).
                 if (s == State::Running || s == State::PostMatch || s == State::Loading || s == State::Jumping) {
                     Log("netplay: %s; the match goes on as long as the link holds", e.text.c_str());
                     serverLost_ = true;

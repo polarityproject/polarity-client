@@ -99,6 +99,9 @@ struct WeyveService::Impl {
 
     std::atomic<bool> stop{false};
     std::thread thread;
+    static constexpr auto kHeartbeatEvery = std::chrono::seconds(20);
+    std::chrono::steady_clock::time_point lastHeartbeat = std::chrono::steady_clock::now();
+    bool heartbeatAnswered = false; // logged once
 
     void Queue(std::function<void(WeyveClient*)> command)
     {
@@ -144,6 +147,10 @@ struct WeyveService::Impl {
                 kicked.erase(raw.data.peer_left.id);
                 linked.erase(raw.data.peer_left.id);
                 events.push_back({WeyveEvent::Type::PeerLeft, raw.data.peer_left.id, {}});
+                break;
+            case WEYVE_EVENT_HEARTBEAT:
+                if (!heartbeatAnswered) Log("weyve: the server answers heartbeats (every %lld s)", static_cast<long long>(kHeartbeatEvery.count()));
+                heartbeatAnswered = true;
                 break;
             case WEYVE_EVENT_KICKED:
             case WEYVE_EVENT_BANNED:
@@ -283,6 +290,15 @@ struct WeyveService::Impl {
                 if (connected && server == WeyveRoomView::Server::Connected) {
                     for (auto& command : commands) command(client);
                     commands.clear();
+                    // Nothing else goes to the server while a match runs,
+                    // and some networks cut a TCP connection idle for about
+                    // 90 s (players relayed through TURN: the server dropped
+                    // them a minute or two into every match).
+                    const auto now = std::chrono::steady_clock::now();
+                    if (now - lastHeartbeat >= kHeartbeatEvery) {
+                        lastHeartbeat = now;
+                        weyve_send_heartbeat(client, GetTickCount64());
+                    }
                 }
                 Pump();
                 for (const auto& [peer, wasLinked] : std::map<uint32_t, bool>(linked)) {

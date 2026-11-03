@@ -71,6 +71,15 @@ if(SFV_BUILD_MOD AND WIN32)
                   -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/apply-patch.cmake
     SOURCE_SUBDIR none)
   FetchContent_MakeAvailable(weyvelength)
+  # A link that is up outlives its member leaving the room (the other player
+  # lost the server; the match goes on). Applied here, on every configure,
+  # rather than in PATCH_COMMAND, which ran once in builds fetched before it.
+  execute_process(COMMAND ${CMAKE_COMMAND} -DPATCH=${CMAKE_CURRENT_SOURCE_DIR}/third_party/weyvelength-departed-links.patch
+                          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/apply-patch.cmake
+                  WORKING_DIRECTORY ${weyvelength_SOURCE_DIR} RESULT_VARIABLE departed_links)
+  if(NOT departed_links EQUAL 0)
+    message(FATAL_ERROR "cannot apply third_party/weyvelength-departed-links.patch")
+  endif()
   set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
   set(NO_SERVER ON CACHE BOOL "" FORCE)
   set(NO_TESTS ON CACHE BOOL "" FORCE)

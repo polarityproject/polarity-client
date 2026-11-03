@@ -23,6 +23,13 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ### Fixed
 
+- Sessions ended a minute or two into the first match for players whose
+  network cuts quiet connections (seen with a player whose link went through
+  the relay): the game sent nothing to the server during a match, the
+  network closed the connection, and the server told the other player that
+  they had left. The game now checks in with the server every 20 seconds,
+  and a match goes on over its own link when the server reports the other
+  player gone while that link still works.
 - Eleven played the same fighter for the whole session. It now rolls a new
   fighter (and V-Skill and V-Trigger) for every rematch, and again each time
   you ready up on Eleven at the select screen.
