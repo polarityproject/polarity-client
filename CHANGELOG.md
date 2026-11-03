@@ -28,6 +28,10 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   game counted one side's hit twice at once on different threads and could
   lose one, so each PC ended up with its own count (adapter-11, so both
   players need this version).
+- Desync warnings for the rest of a round after hits on a dizzy fighter: the
+  game's stun totals for the fight stats can come out differently on each
+  PC, though the fight itself stays the same. They are left out of the
+  desync check now, as their other halves already were.
 
 ## [0.2.4] - 2026-11-03
 

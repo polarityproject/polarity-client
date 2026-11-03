@@ -10,6 +10,7 @@
 # 44 +0x20 and +0x28: timer and state of a trail effect object (16 slots) that starts once something loaded in the background is there, a tick apart on two games; presentation only.
 # 884 +0x0..+0x2d0 (every 0x30): Rose, heap pointers in a 16-entry array with V-Skill / V-Trigger II (scan-loadouts.ps1, 2026-10-28).
 # 372 +0x98, 392 +0x0 and 224 +0xd8: small counters / a flag that drifted apart by one on one PC with no rollback and spread to nothing else (re-converged or stayed alone for 800+ frames); taken for presentation.
+# 77804 +0x78/+0x80 and +0x8840/+0x8848: the battle stats' stun totals per side (stats +0x174 the stun a hit asked for, +0x17C the part beyond the meter's max; 0x87C4 per side; written only by rva 0x4B5340 from the stun add 0x3458C0, read only to copy them out; the words also hold +0x170/+0x178, other fight-stats totals). Against a dizzy fighter every add is overflow and changes nothing else, yet the requested amount came out differently on two PCs and in stress resimulations of the same frames (646b33dc, Karin vs Abigail, 2026-11-03); +0x78 and +0x8848 had been learned already. Stats only.
 20 0x0
 20 0x8
 24 0x0
@@ -2905,9 +2906,11 @@
 77804 0x40
 77804 0x70
 77804 0x78
+77804 0x80
 77804 0x90
 77804 0x87e8
 77804 0x87f0
 77804 0x8830
 77804 0x8838
+77804 0x8840
 77804 0x8848
