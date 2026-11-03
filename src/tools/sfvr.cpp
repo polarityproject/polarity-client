@@ -322,9 +322,32 @@ int CmdLearnPeers(int argc, char** argv)
         if (!std::strcmp(argv[k], "--pointers")) pointersOnly = true;
         if (!std::strcmp(argv[k], "--max-frame") && k + 1 < argc) maxFrame = std::atoi(argv[k + 1]);
     }
-    if (a.regions != b.regions) {
+    if (a.regions.size() != b.regions.size()) {
         std::fprintf(stderr, "the files have different region layouts\n");
         return 1;
+    }
+    for (size_t r = 0; r < a.regions.size(); r++) {
+        auto& ra = a.regions[r];
+        auto& rb = b.regions[r];
+        if (ra.name != rb.name || ra.size != rb.size) {
+            std::fprintf(stderr, "the files have different region layouts\n");
+            return 1;
+        }
+        if (ra.ignore == rb.ignore) continue;
+        // Same layout, different masks: name the words masked on one side
+        // only, then compare with both masks.
+        ra.ignore.resize(std::max(ra.ignore.size(), rb.ignore.size()));
+        rb.ignore.resize(ra.ignore.size());
+        for (size_t i = 0; i < ra.ignore.size(); i++) {
+            for (int bit = 0; bit < 8; bit++) {
+                const bool ma = ra.ignore[i] >> bit & 1, mb = rb.ignore[i] >> bit & 1;
+                if (ma != mb)
+                    std::printf("mask differs: %s+0x%zx masked in the %s file only\n", ra.name.c_str(),
+                                (i * 8 + bit) * 8, ma ? "first" : "second");
+            }
+            ra.ignore[i] |= rb.ignore[i];
+        }
+        rb.ignore = ra.ignore;
     }
 
     std::map<uint64_t, std::set<uint64_t>> words; // region size -> word offsets
