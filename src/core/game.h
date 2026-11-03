@@ -79,6 +79,10 @@ struct MatchSetup {
     // battle's "Wins" counter and the results screen start from).
     uint16_t wins[kNumPlayers] = {};
     uint16_t streaks[kNumPlayers] = {};
+    // Matches finished before this one (the results screen's Win Ratio counts
+    // from it). Each side fills it in before its jump: neither sent nor
+    // recorded.
+    uint16_t played = 0;
     bool operator==(const MatchSetup&) const = default;
 };
 

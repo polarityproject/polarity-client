@@ -67,6 +67,17 @@ constexpr uint32_t kUseDressState = 0x1DC;
 constexpr uint32_t kUniqueParams = 0x128;
 } // namespace battledata
 
+// The battle situation (KWBattleSituation: the battle setting's +0x48, its
+// data at +0x28), from its setters (rva 0x7C8840 and on): the matches played
+// before this one (SetInitialBattleCount). Only Blueprints read it, as the
+// battle starts: the results screen's Win Ratio is the wins after the match
+// over this count + 1 (tested: 1 win with a count of 3 read 25%).
+namespace situation {
+constexpr uint32_t kObject = 0x48;
+constexpr uint32_t kData = 0x28;
+constexpr uint32_t kBattleCount = 0x60;
+} // namespace situation
+
 bool InstallBattleSetup(const GameImage& image);
 
 // The battle data block, or nullptr outside the menus/battle that use it.

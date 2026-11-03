@@ -104,7 +104,9 @@ bool InstallBattleSetup(const GameImage& image)
     return ok;
 }
 
-uint8_t* BattleData()
+namespace {
+
+uint8_t* BattleSetting()
 {
     if (!g_image.base) return nullptr;
     auto* engine = Get<uint8_t*>(reinterpret_cast<uint8_t*>(g_image.base), kEngineGlobal);
@@ -116,8 +118,24 @@ uint8_t* BattleData()
     const auto fn = Get<uintptr_t>(vtable, kGetBattleSettingSlot);
     if (fn < g_image.base || fn >= g_image.base + 0x5000000) return nullptr;
     auto* setting = reinterpret_cast<uint8_t* (*)(void*)>(fn)(instance);
-    if (!IsReadable(setting, kBattleDataPtr + 8)) return nullptr;
-    auto* data = Get<uint8_t*>(setting, kBattleDataPtr);
+    return IsReadable(setting, situation::kObject + 8) ? setting : nullptr;
+}
+
+uint8_t* SituationData()
+{
+    uint8_t* setting = BattleSetting();
+    auto* object = setting ? Get<uint8_t*>(setting, situation::kObject) : nullptr;
+    if (!IsReadable(object, situation::kData + 8)) return nullptr;
+    auto* data = Get<uint8_t*>(object, situation::kData);
+    return IsReadable(data, situation::kBattleCount + 4) ? data : nullptr;
+}
+
+} // namespace
+
+uint8_t* BattleData()
+{
+    uint8_t* setting = BattleSetting();
+    auto* data = setting ? Get<uint8_t*>(setting, kBattleDataPtr) : nullptr;
     return IsReadable(data, 2 * bd::kRecordStride) ? data : nullptr;
 }
 
@@ -211,6 +229,16 @@ bool ApplyMatchSetup(const MatchSetup& setup)
     // battle's results kept a stale id (LDN after CHN), and the battle reads
     // its stage id from here (music, stage name): keep the two the same.
     if (setup.stage != kKeepStage) Put<int32_t>(data, bd::kStage, setup.stage);
+    // Left alone, the count stayed as the menus or the last battle left it
+    // (0 after a jump: both sides read 100%).
+    if (uint8_t* s = SituationData()) {
+        const int32_t before = Get<int32_t>(s, situation::kBattleCount);
+        Put<int32_t>(s, situation::kBattleCount, setup.played);
+        if (before != setup.played) Log("battle setup: matches played %d -> %u", before, setup.played);
+    }
+    else {
+        Log("battle setup: no battle situation to write the matches played to");
+    }
     return true;
 }
 

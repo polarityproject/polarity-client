@@ -1642,7 +1642,13 @@ private:
         ReleaseResults();
         // A delay chosen between matches takes effect with this one.
         if (nextDelay_ >= 0) options_.inputDelay = static_cast<uint8_t>(nextDelay_.exchange(-1));
-        SetPendingSetup(setup_);
+        MatchSetup pending = setup_;
+        {
+            // The joiner has the host's count from its session state.
+            std::lock_guard lock(mutex_);
+            pending.played = static_cast<uint16_t>(played_);
+        }
+        SetPendingSetup(pending);
         creationsAtJump_ = BattleCreationCount();
         warmedUp_ = false;
         frozenFrames_ = 0;
