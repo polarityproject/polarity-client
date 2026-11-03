@@ -868,7 +868,7 @@ void RequestReplay(const std::string& path, int stressDistance, int watchFrom, i
     // The jump follows.
     std::vector<PreloadPick> picks;
     for (const PlayerSetup& p : rf.setup.players) {
-        if (p.character) picks.push_back({UnpackCode(p.character), static_cast<int>(p.costume)});
+        if (p.character) picks.push_back({UnpackCode(p.character), static_cast<int>(p.costume), p.version});
     }
     // The recorded setup and stage for the battle the jump starts (without
     // the stage the battle loads the game's default request, Training).

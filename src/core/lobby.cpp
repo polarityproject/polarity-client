@@ -47,6 +47,7 @@ void PutPlayer(Out& o, const PlayerSetup& p)
     o.Put(p.vtrigger);
     o.Put(p.comment);
     o.Put(p.variation);
+    o.Put(p.version);
 }
 
 PlayerSetup GetPlayer(In& in)
@@ -59,6 +60,7 @@ PlayerSetup GetPlayer(In& in)
     p.vtrigger = in.Get<uint8_t>();
     p.comment = in.Get<uint8_t>();
     p.variation = in.Get<uint8_t>();
+    p.version = in.Get<int16_t>();
     return p;
 }
 
@@ -88,19 +90,19 @@ MatchSetup GetSetup(In& in)
     return s;
 }
 
-void PutName(Out& o, const std::string& name)
+void PutName(Out& o, const std::string& name, size_t max = kMaxName)
 {
     // Cut between characters, not inside a UTF-8 sequence.
-    size_t n = std::min(name.size(), kMaxName);
+    size_t n = std::min(name.size(), max);
     while (n > 0 && n < name.size() && (static_cast<unsigned char>(name[n]) & 0xC0) == 0x80) n--;
     o.Put(static_cast<uint8_t>(n));
     o.b.insert(o.b.end(), name.begin(), name.begin() + n);
 }
 
-std::string GetName(In& in)
+std::string GetName(In& in, size_t max = kMaxName)
 {
     const uint8_t n = in.Get<uint8_t>();
-    if (n > kMaxName) in.ok = false;
+    if (n > max) in.ok = false;
     std::string s;
     for (uint8_t i = 0; i < n && in.ok; i++) s += static_cast<char>(in.Get<uint8_t>());
     return s;
@@ -231,6 +233,7 @@ std::vector<uint8_t> Encode(const Message& m)
         o.Put(static_cast<uint8_t>(m.reconciled));
         break;
     case Type::Bye:
+        PutName(o, m.text, kMaxText);
         break;
     case Type::StateHashes:
         o.Put(m.matchId);
@@ -340,6 +343,7 @@ std::optional<Message> Decode(const uint8_t* data, size_t len)
         m.reconciled = in.Get<uint8_t>() != 0;
         break;
     case Type::Bye:
+        m.text = GetName(in, kMaxText);
         break;
     case Type::StateHashes: {
         m.matchId = in.Get<uint64_t>();

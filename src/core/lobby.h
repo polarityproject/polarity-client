@@ -46,8 +46,9 @@
 namespace sfv::lobby {
 
 constexpr uint32_t kMagic = 0x4E564653; // "SFVN"
-constexpr uint16_t kProtocol = 11; // 7: names up to 96 bytes of UTF-8; 8: the match list for spectators; 9: the stage lock;
-                                   // 11: whether each side sends desync reports
+constexpr uint16_t kProtocol = 13; // 7: names up to 96 bytes of UTF-8; 8: the match list for spectators; 9: the stage lock;
+                                   // 11: whether each side sends desync reports; 13: each player's character version
+                                   // (12 is the rooms branch's)
 // Message size limits: under Weyvelength's 1024-byte datagrams.
 constexpr size_t kHashesPerMessage = 100;
 constexpr size_t kRegionsPerRequest = 200;
@@ -58,6 +59,7 @@ constexpr size_t kInputsPerMessage = 60;
 constexpr size_t kKeptMatches = 12;
 // Bytes of UTF-8: a 32-character Steam name in Japanese takes up to 96.
 constexpr size_t kMaxName = 96;
+constexpr size_t kMaxText = 200; // a Bye's reason
 constexpr uint16_t kAnyStage = 0xFFFF;    // whatever the game has prepared
 constexpr uint16_t kRandomStage = 0xFFFE; // a random stage per match
 
@@ -175,6 +177,9 @@ struct Message {
     // Inputs: frames first .. first + frames.size() - 1; InputsAck: `first`
     // is the next frame wanted
     std::vector<FrameRecord> frames;
+    // Bye: why the sender ends the session, worded for the other side; empty
+    // when it just left
+    std::string text;
     // Matches: the host's kept matches, oldest first (at most kKeptMatches)
     std::vector<MatchEntry> matches;
     // Reject

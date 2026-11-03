@@ -206,6 +206,7 @@ std::string SetupMismatch(const MatchSetup& a, const MatchSetup& b)
         if (x.vskill != y.vskill) add(who + "V-Skill");
         if (x.vtrigger != y.vtrigger) add(who + "V-Trigger");
         if (x.comment != y.comment) add(who + "comment");
+        if (x.version != y.version) add(who + "version " + std::to_string(x.version) + " vs " + std::to_string(y.version));
     }
     return out;
 }
@@ -634,6 +635,10 @@ private:
     {
         lobby::Message bye;
         bye.type = lobby::Type::Bye;
+        {
+            std::lock_guard lock(mutex_);
+            bye.text = std::exchange(byeText_, {});
+        }
         for (uint64_t to : Members()) SendTo(to, bye);
     }
 
@@ -1218,9 +1223,9 @@ private:
             break;
         case lobby::Type::Bye:
             if (from == peer_ && s != State::Ended && s != State::Idle) {
-                Log("netplay: the other player left");
+                Log("netplay: the other player left%s%s", m.text.empty() ? "" : ": ", m.text.c_str());
                 peerLeft_ = true;
-                EndSession("the other player left");
+                EndSession(m.text.empty() ? "the other player left" : m.text);
             }
             else if (w) {
                 std::lock_guard l(mutex_);
@@ -1291,6 +1296,13 @@ private:
                 if (s == State::Jumping || s == State::Loading || s == State::Running || switchNow_) break;
                 if (WatchNext()) break;
             }
+            if (role_ == Role::Player) {
+                std::string here, there;
+                if (LacksVersion(m.setup, &here, &there)) {
+                    EndSessionFor(here, there);
+                    break;
+                }
+            }
             // A new match: from the lobby straight away, from a match once the
             // game thread has let go of it.
             {
@@ -1335,9 +1347,9 @@ private:
             break;
         case lobby::Type::Bye:
             if (s != State::Ended && s != State::Idle) {
-                Log("netplay: the host left");
+                Log("netplay: the host left%s%s", m.text.empty() ? "" : ": ", m.text.c_str());
                 peerLeft_ = true;
-                EndSession(role_ == Role::Player ? "the other player left" : "the host left");
+                EndSession(!m.text.empty() ? m.text : role_ == Role::Player ? "the other player left" : "the host left");
             }
             break;
         default:
@@ -1380,6 +1392,11 @@ private:
     void StartMatch(bool rematch = false)
     {
         MatchSetup setup = ChooseSetup(rematch);
+        std::string here, there;
+        if (LacksVersion(setup, &here, &there)) {
+            EndSessionFor(here, there);
+            return;
+        }
         {
             std::lock_guard lock(mutex_);
             // The session's score so far, for the game's own counters.
@@ -1469,6 +1486,41 @@ private:
         case Next::None:
             break;
         }
+    }
+
+    // EndSession, with the reason the other side is told in a Bye sent at
+    // once: the end leaves the room straight away, and the room's leave
+    // notice would reach the other side first ("the other player left").
+    void EndSessionFor(const std::string& why, const std::string& theirs)
+    {
+        {
+            std::lock_guard lock(mutex_);
+            byeText_ = theirs;
+        }
+        SendBye();
+        EndSession(why);
+    }
+
+    // Whether this game lacks a fighter's version the setup plays: its
+    // version lists end earlier than the final game's (two testers' games
+    // played Season 4 versions as their latest). `here` says so to this
+    // player, `there` to the other.
+    static bool LacksVersion(const MatchSetup& s, std::string* here, std::string* there)
+    {
+        for (const PlayerSetup& p : s.players) {
+            const std::string code = UnpackCode(p.character);
+            if (p.version < 0 || HasCharaVersion(code, p.version)) continue;
+            const int index = CharaIndex(code);
+            const std::string name = index >= 0 ? CharaName(index) : code;
+            const int newest = NewestLocalVersion(code);
+            Log("netplay: this game lacks %s version %d (its newest: %d)", code.c_str(), p.version, newest);
+            *here = "this game lacks " + name + "'s final version (" + std::to_string(p.version) + ", newest here " +
+                    std::to_string(newest) + "): verify the game files in Steam";
+            *there = "the other player's game lacks " + name + "'s final version (" + std::to_string(p.version) +
+                     "): they should verify their game files in Steam";
+            return true;
+        }
+        return false;
     }
 
     void EndSession(const std::string& why)
@@ -1583,6 +1635,9 @@ private:
                 s.stage = playable.empty() ? kKeepStage : static_cast<uint16_t>(playable[rng_() % playable.size()]);
             }
         }
+        // Both games load each fighter's final balance version, not whatever
+        // each takes as its latest (-1 for a character the table lacks).
+        for (auto& p : s.players) p.version = static_cast<int16_t>(FinalCharaVersion(UnpackCode(p.character)));
         s.seed = rng_();
         return s;
     }
@@ -2422,6 +2477,7 @@ private:
                      options_.inputDelay);
         std::fprintf(f, "%s\n", summary.c_str());
         std::fprintf(f, "game files: %s\n", GameFilesText().c_str());
+        std::fprintf(f, "character versions: %s\n", CharaVersionsText().c_str());
         const int peerReports = peerReports_;
         std::fprintf(f, "desync reports: %s from this side, %s from the other side\n", ReportUploadsOn() ? "sent" : "not sent",
                      peerReports > 0 ? "sent" : peerReports == 0 ? "not sent" : "not known if sent");
@@ -2547,6 +2603,7 @@ private:
     MatchSetup peerLoadedSetup_;       // guarded by mutex_
     uint32_t peerChecksum_ = 0;
     std::atomic<bool> byePending_{false};
+    std::string byeText_; // the Bye's reason, for the other side (mutex_)
     std::atomic<bool> selfLoaded_{false};
     std::atomic<bool> peerLoaded_{false};
     std::atomic<bool> peerLeft_{false};

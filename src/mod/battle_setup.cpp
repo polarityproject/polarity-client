@@ -161,6 +161,9 @@ bool ReadMatchSetup(MatchSetup* out)
             variation |= kVariantSpecial;
         }
         s.players[p].variation = variation;
+        // Once the battle is set up, the version it resolved to (a version the
+        // game lacks becomes its latest).
+        s.players[p].version = static_cast<int16_t>(Get<int32_t>(r, bd::kCharaVersion));
     }
     s.stage = static_cast<uint16_t>(Get<int32_t>(data, bd::kStage));
     *out = s;
@@ -187,10 +190,11 @@ bool ApplyMatchSetup(const MatchSetup& setup)
             }
             std::memcpy(r + bd::kCharaCode, field, sizeof(field));
         }
-        // The game keeps the version in the record when the new character
-        // has it too (rva 0x56B2E0), so it would depend on who played
-        // before: -1 makes it resolve to the character's latest.
-        Put<int32_t>(r, bd::kCharaVersion, -1);
+        // The setup's version (sessions: the final game's). Without one: the
+        // game keeps the version in the record when the new character has it
+        // too (rva 0x56B2E0), so it would depend on who played before; -1
+        // makes it resolve to the last entry of the character's version list.
+        Put<int32_t>(r, bd::kCharaVersion, ps.version >= 0 ? ps.version : -1);
         Put<int32_t>(r, bd::kCostume, ps.costume);
         Put<int32_t>(r, bd::kColor, ps.color);
         Put<int32_t>(r, bd::kComment, ps.comment == 0 ? -1 : ps.comment - 1);
@@ -278,9 +282,11 @@ std::string DescribeSetup(const MatchSetup& s)
     char buf[160];
     for (int p = 0; p < kNumPlayers; p++) {
         const PlayerSetup& ps = s.players[p];
-        std::snprintf(buf, sizeof(buf), "P%d %s costume %u color %u comment %u V-Skill %u V-Trigger %u%s | ", p + 1,
+        const std::string version = ps.version >= 0 ? " version " + std::to_string(ps.version) : "";
+        std::snprintf(buf, sizeof(buf), "P%d %s costume %u color %u comment %u V-Skill %u V-Trigger %u%s%s | ", p + 1,
                       UnpackCode(ps.character).c_str(), ps.costume, ps.color + 1, ps.comment, ps.vskill + 1,
-                      ps.vtrigger + 1, ps.variation ? (" " + VariantLabel(UnpackCode(ps.character), ps.variation)).c_str() : "");
+                      ps.vtrigger + 1, ps.variation ? (" " + VariantLabel(UnpackCode(ps.character), ps.variation)).c_str() : "",
+                      version.c_str());
         out += buf;
     }
     if (s.stage == kKeepStage) return out + "stage as prepared";

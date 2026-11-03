@@ -61,6 +61,7 @@ void PreloadCharacter(const std::string& code, int costume);
 struct PreloadPick {
     std::string code;
     int costume = 0;
+    int version = -1; // the match setup's; -1: the final game's if this game has it, else its latest
 };
 // Preloads each in turn, then runs `then` on the game thread (a replay's jump).
 void PreloadCharacters(std::vector<PreloadPick> picks, std::function<void()> then);
@@ -73,6 +74,16 @@ bool PreloadsDone();
 bool PreloadsDoneFor(const std::string& picks);
 // The version a battle resolves this character's to when asked for its latest.
 int LatestCharaVersion(const std::string& code);
+// The final game's balance version of a playable character (60, 61 or 62),
+// -1 for others: what a session's match setup plays.
+int FinalCharaVersion(const std::string& code);
+// Whether this game has that version of the character (any thread; true
+// until its version lists are read, at the main menu, and for -1).
+bool HasCharaVersion(const std::string& code, int version);
+// The last entry of this game's version list for the character, -1 if not known.
+int NewestLocalVersion(const std::string& code);
+// This game's version lists against the final game's, for logs and reports.
+std::string CharaVersionsText();
 // The language this game's player set this character to speak (Options,
 // Sound: 0 Japanese, 1 English), -1 if not known; game thread. A voice is
 // this player's own choice: each side sets its own. The override (testing,

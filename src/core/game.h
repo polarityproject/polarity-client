@@ -48,6 +48,10 @@ struct PlayerSetup {
     uint8_t vtrigger = 0; // 0 = I, 1 = II
     uint8_t comment = 0;  // V-Comment: 0 = Auto, n = the n-th comment
     uint8_t variation = 0; // the costume's variant (held button at load in the menus); 0 = none
+    // The character's balance version (season * 10 + patch, 60 on the final
+    // game); -1: whichever each game takes as its latest (recordings before
+    // 0.2.5).
+    int16_t version = -1;
     bool operator==(const PlayerSetup&) const = default;
 };
 

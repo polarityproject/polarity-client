@@ -184,6 +184,8 @@ void TestReplayRoundTrip()
     rf.inputDelay = 2;
     rf.predictionWindow = 8;
     rf.setup.players[0].character = 7;
+    rf.setup.players[0].version = 60;
+    rf.setup.players[1].version = 61;
     rf.setup.stage = 3;
     rf.setup.seed = 0x1234567890ull;
     rf.regions = {{"a", 16, {0x02}}, {"b", 4, {}}, {"c", 1000, {}}};
@@ -642,13 +644,21 @@ void TestLobbyMessages()
     welcome.type = lobby::Type::Welcome;
     welcome.matchId = 99;
     welcome.setup.players[0] = {PackCode("RYU"), 0, 2, 0, 1, 0};
-    welcome.setup.players[1] = {PackCode("CMY"), 0, 1, 1, 0, 3};
+    welcome.setup.players[1] = {PackCode("CMY"), 0, 1, 1, 0, 3, 0, 60};
     welcome.setup.stage = 7;
     welcome.setup.seed = 12345;
     bytes = lobby::Encode(welcome);
     back = lobby::Decode(bytes.data(), bytes.size());
     CHECK(back && back->matchId == 99 && back->setup == welcome.setup);
     CHECK(UnpackCode(back->setup.players[0].character) == "RYU");
+    CHECK(back->setup.players[0].version == -1 && back->setup.players[1].version == 60);
+
+    lobby::Message bye;
+    bye.type = lobby::Type::Bye;
+    bye.text = "the other player's game lacks Urien's final version (60)";
+    bytes = lobby::Encode(bye);
+    back = lobby::Decode(bytes.data(), bytes.size());
+    CHECK(back && back->type == lobby::Type::Bye && back->text == bye.text);
 
     lobby::Message loaded;
     loaded.type = lobby::Type::Loaded;

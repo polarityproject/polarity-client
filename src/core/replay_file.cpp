@@ -136,6 +136,7 @@ void WriteSetup(Writer& w, const MatchSetup& s)
     for (const auto& p : s.players) w.U8(p.variation);
     for (int i = 0; i < kNumPlayers; i++) w.U16(s.wins[i]);
     for (int i = 0; i < kNumPlayers; i++) w.U16(s.streaks[i]);
+    for (const auto& p : s.players) w.U16(static_cast<uint16_t>(p.version));
 }
 
 void ReadSetup(Reader& r, MatchSetup& s)
@@ -159,6 +160,9 @@ void ReadSetup(Reader& r, MatchSetup& s)
     if (r.left() >= 4 * kNumPlayers) {
         for (int i = 0; i < kNumPlayers; i++) s.wins[i] = r.Get<uint16_t>();
         for (int i = 0; i < kNumPlayers; i++) s.streaks[i] = r.Get<uint16_t>();
+    }
+    if (r.left() >= 2 * kNumPlayers) {
+        for (auto& p : s.players) p.version = r.Get<int16_t>();
     }
 }
 

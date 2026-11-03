@@ -2760,13 +2760,22 @@ void DrawToasts(bool top)
     ImGui::Begin("##toasts", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
                      ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
+    // Centered, each on a line; one wider than most of the screen wraps.
+    const float padding = ImGui::GetStyle().WindowPadding.x;
+    const float most = io.DisplaySize.x * 0.9f - 2 * padding;
     float widest = 0;
     for (const Toast& t : g_toasts) widest = std::max(widest, ImGui::CalcTextSize(t.text.c_str()).x);
+    widest = std::min(widest, most);
     for (const Toast& t : g_toasts) {
         ImVec4 c = t.color;
         if (t.until - now < 500) c.w = (t.until - now) / 500.0f; // fade out
-        ImGui::SetCursorPosX(ImGui::GetStyle().WindowPadding.x + (widest - ImGui::CalcTextSize(t.text.c_str()).x) * 0.5f);
-        ImGui::TextColored(c, "%s", t.text.c_str());
+        const float width = ImGui::CalcTextSize(t.text.c_str()).x;
+        ImGui::SetCursorPosX(padding + std::max(0.0f, widest - width) * 0.5f);
+        ImGui::PushStyleColor(ImGuiCol_Text, c);
+        ImGui::PushTextWrapPos(padding + widest);
+        ImGui::TextUnformatted(t.text.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::PopStyleColor();
     }
     ImGui::End();
 }

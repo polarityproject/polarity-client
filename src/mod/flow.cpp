@@ -1193,6 +1193,66 @@ int LatestVersion(const std::string& code)
     return version;
 }
 
+// The final game's balance version of each playable character: the last
+// entry of its version list on an up-to-date install (battle version 26).
+// Sessions play these (the host writes them into the match setup) instead of
+// whatever each game takes as its latest: two testers' games took Season 4
+// versions (42, 43) as their latest, though their game files were the same
+// as everyone's (RIP, 2026-11-03).
+const std::map<std::string, int> kFinalVersions = {
+    {"RYU", 60}, {"CNL", 61}, {"KEN", 61}, {"KRN", 60}, {"ZGF", 61}, {"DSM", 61}, {"NSH", 61}, {"BLR", 61},
+    {"JRI", 61}, {"BRD", 60}, {"RMK", 60}, {"RSD", 60}, {"FAN", 60}, {"LAR", 60}, {"NCL", 61}, {"CMY", 60},
+    {"GUL", 60}, {"IBK", 61}, {"BSN", 60}, {"URN", 60}, {"ALX", 61}, {"NDK", 60}, {"VEG", 60}, {"Z20", 61},
+    {"Z21", 61}, {"Z22", 61}, {"Z23", 61}, {"Z24", 60}, {"Z25", 61}, {"Z26", 60}, {"Z27", 61}, {"Z28", 60},
+    {"Z29", 61}, {"Z30", 61}, {"Z31", 60}, {"Z32", 60}, {"Z33", 60}, {"Z34", 60}, {"Z35", 61}, {"Z36", 62},
+    {"Z37", 61}, {"Z38", 60}, {"Z39", 60}, {"Z40", 60}, {"Z41", 61}, {"Z42", 61},
+};
+
+// This game's version lists, read once on the game thread when its
+// character table is there (they do not change while it runs), for checks
+// from other threads.
+std::mutex g_localVersionsMutex;
+std::map<std::string, std::vector<int>> g_localVersions;
+std::atomic<bool> g_localVersionsRead{false};
+std::string g_localVersionsText = "not read yet";
+
+void ReadLocalVersions()
+{
+    if (CharaCount() <= 0 || LatestVersion("RYU") < 0) return;
+    std::map<std::string, std::vector<int>> lists;
+    for (int i = 0; i < CharaCount(); i++) {
+        const std::string code = CharaCode(i);
+        if (!code.empty()) lists[code] = VersionsOf(code);
+    }
+    std::string older;
+    int olderCount = 0;
+    for (const auto& [code, final] : kFinalVersions) {
+        const auto it = lists.find(code);
+        const int newest = it == lists.end() || it->second.empty() ? -1 : it->second.back();
+        if (newest == final) continue;
+        olderCount++;
+        older += (older.empty() ? "" : ", ") + code + " " + std::to_string(newest) + "/" + std::to_string(final);
+    }
+    const std::string text = olderCount == 0 ? "the final game's"
+                                             : std::to_string(olderCount) + " not the final game's (newest/final): " + older;
+    Log("flow: character versions: %s", text.c_str());
+    {
+        std::lock_guard lock(g_localVersionsMutex);
+        g_localVersions = std::move(lists);
+        g_localVersionsText = text;
+    }
+    g_localVersionsRead = true;
+}
+
+// The version a match plays: the setup's, else the final game's when this
+// game has it, else this game's latest.
+int MatchVersion(const std::string& code, int version)
+{
+    if (version >= 0) return version;
+    const int final = FinalCharaVersion(code);
+    return final >= 0 && HasCharaVersion(code, final) ? final : LatestVersion(code);
+}
+
 // Whether the character cache has a slot for exactly this character.
 bool InCharaCache(const std::string& code, int costume, int version, int y)
 {
@@ -1235,14 +1295,14 @@ void CacheArgs(std::wstring* x, int* y)
 // setup step 2 does (rva 0x69BC20), then, once the queue is idle, asks the
 // character cache for it so it stays loaded (the cache only holds what is
 // loaded). False if the queue is busy.
-bool StartPreload(const std::string& code, int costume, const char* why)
+bool StartPreload(const std::string& code, int costume, int setupVersion, const char* why)
 {
     uint8_t* queue = AssetQueue();
     if (!queue || g_preloading || *reinterpret_cast<int32_t*>(queue + kQueueState) != 0) return false;
     std::wstring x;
     int y = 0;
     CacheArgs(&x, &y);
-    const int version = LatestVersion(code);
+    const int version = MatchVersion(code, setupVersion);
     if (InCharaCache(code, costume, version, y)) {
         Log("flow: preload %s costume %d (%s): already loaded", code.c_str(), costume, why);
         return true;
@@ -1293,6 +1353,7 @@ void PreloadTick()
         std::lock_guard lock(g_preloadMutex);
         source = g_preloadSource;
     }
+    if (!g_localVersionsRead) ReadLocalVersions();
     std::vector<PreloadPick> picks;
     if (source) picks = source();
     std::string seen;
@@ -1304,7 +1365,7 @@ void PreloadTick()
         CacheArgs(&x, &y);
         bool done = !g_preloading;
         for (const auto& p : picks) {
-            done = done && (p.code.empty() || InCharaCache(p.code, p.costume, LatestVersion(p.code), y) ||
+            done = done && (p.code.empty() || InCharaCache(p.code, p.costume, MatchVersion(p.code, p.version), y) ||
                             g_preloadTries[p.code + "/" + std::to_string(p.costume)] >= kPreloadMaxTries);
         }
         // Preloads run at the main menu only. In the lobby over a held results
@@ -1334,7 +1395,7 @@ void PreloadTick()
     int y = 0;
     CacheArgs(&x, &y);
     for (const auto& p : picks) {
-        if (p.code.empty() || InCharaCache(p.code, p.costume, LatestVersion(p.code), y)) {
+        if (p.code.empty() || InCharaCache(p.code, p.costume, MatchVersion(p.code, p.version), y)) {
             wait("loaded");
             continue;
         }
@@ -1343,7 +1404,7 @@ void PreloadTick()
             wait("tried enough");
             continue;
         }
-        if (StartPreload(p.code, p.costume, "pick")) {
+        if (StartPreload(p.code, p.costume, p.version, "pick")) {
             tries++;
             return;
         }
@@ -1375,7 +1436,7 @@ bool PreloadsDoneFor(const std::string& picks)
 void PreloadCharacter(const std::string& code, int costume)
 {
     RunOnGameThread([code, costume] {
-        if (!StartPreload(code, costume, "command")) Log("flow: preload %s: the asset queue is busy", code.c_str());
+        if (!StartPreload(code, costume, -1, "command")) Log("flow: preload %s: the asset queue is busy", code.c_str());
     });
 }
 
@@ -1398,7 +1459,7 @@ void PreloadCharacters(std::vector<PreloadPick> picks, std::function<void()> the
             // Right after the game starts its character table is not loaded
             // yet (no version known): a preload then never ends.
             if (next < picks.size() && LatestVersion(picks[next].code) >= 0 &&
-                StartPreload(picks[next].code, picks[next].costume, "replay")) {
+                StartPreload(picks[next].code, picks[next].costume, picks[next].version, "replay")) {
                 next++;
             }
             RunOnGameThreadAfter(1, [=] { Step(picks, next, then, frames + 1); });
@@ -1421,6 +1482,34 @@ void LogCharaVersions()
 }
 
 int LatestCharaVersion(const std::string& code) { return LatestVersion(code); }
+
+int FinalCharaVersion(const std::string& code)
+{
+    const auto it = kFinalVersions.find(code);
+    return it == kFinalVersions.end() ? -1 : it->second;
+}
+
+bool HasCharaVersion(const std::string& code, int version)
+{
+    if (version < 0 || !g_localVersionsRead) return true;
+    std::lock_guard lock(g_localVersionsMutex);
+    const auto it = g_localVersions.find(code);
+    if (it == g_localVersions.end()) return true;
+    return std::find(it->second.begin(), it->second.end(), version) != it->second.end();
+}
+
+int NewestLocalVersion(const std::string& code)
+{
+    std::lock_guard lock(g_localVersionsMutex);
+    const auto it = g_localVersions.find(code);
+    return it == g_localVersions.end() || it->second.empty() ? -1 : it->second.back();
+}
+
+std::string CharaVersionsText()
+{
+    std::lock_guard lock(g_localVersionsMutex);
+    return g_localVersionsText;
+}
 
 namespace {
 

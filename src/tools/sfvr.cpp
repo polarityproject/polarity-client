@@ -115,9 +115,9 @@ int CmdInfo(int argc, char** argv)
     std::printf("input delay     %u, prediction window %u\n", rf.inputDelay, rf.predictionWindow);
     for (int p = 0; p < kNumPlayers; p++) {
         const auto& ps = rf.setup.players[p];
-        std::printf("P%d              character %s costume %u color %u V-Skill %u V-Trigger %u comment %u\n", p + 1,
+        std::printf("P%d              character %s costume %u color %u V-Skill %u V-Trigger %u comment %u%s\n", p + 1,
                     UnpackCode(ps.character).c_str(), ps.costume, ps.color + 1, ps.vskill + 1, ps.vtrigger + 1,
-                    ps.comment);
+                    ps.comment, ps.version >= 0 ? (" version " + std::to_string(ps.version)).c_str() : "");
     }
     std::printf("match           stage %u.%u | rounds %u | timer %u | seed %016" PRIx64 "\n", rf.setup.stage,
                 rf.setup.stageVariant, rf.setup.roundsToWin, rf.setup.timerSeconds, rf.setup.seed);
