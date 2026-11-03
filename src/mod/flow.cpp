@@ -237,6 +237,23 @@ constexpr uint32_t kDirectorStopKind = 0x108; // 0: a plain stop, ended by the n
 constexpr int32_t kRoundOverAfterTicks = 10;
 using DirectorCheckFn = void (*)(uint8_t* director);
 DirectorCheckFn g_origDirectorCheck = nullptr;
+// The director's handler for one class of the fighters' events (this =
+// director +0x48). It tallies three kinds at +0x11130..+0x11138 (by bits 7, 6
+// and 5 of the event's +0x3C; the battle copies them out each tick and adds
+// them to the profile's fight stats at the round's end) and sets bits at
+// +0x110C0, with plain read-modify-writes. The battle runs both fighters' jobs
+// that post them on its
+// worker threads as well as the game thread (job loop rva 0x4D8F2E), so a
+// trade could lose one side's count: 8 on one PC and 9 on the other, and the
+// same recording counted differently from one replay to the next (af30d806,
+// mirror match with identical inputs). One handler at a time: the counts are
+// the same everywhere.
+constexpr game::CodeSite kRoundHitTally{
+    "RoundDirector::OnHitEvent", 0x482010,
+    {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x55}};
+using HitTallyFn = uint64_t (*)(uint8_t*, void*, void*, void*);
+HitTallyFn g_origHitTally = nullptr;
+std::recursive_mutex g_hitTallyMutex;
 std::atomic<bool> g_directorPerTick{false};
 thread_local bool t_directorFromTick = false;
 // SetHoldResults: the results screen is not to open / it was kept from opening.
@@ -803,6 +820,20 @@ uint64_t TaskThunkDetour(void* closure, void* a2, void* a3, void* a4)
 
 int g_otherDirectors = 0;
 
+uint64_t HitTallyDetour(uint8_t* self, void* event, void* a3, void* a4)
+{
+    HookGuard guard;
+    std::unique_lock lock(g_hitTallyMutex, std::try_to_lock);
+    if (!lock.owns_lock()) {
+        // Another thread is in it: without the lock, a count could be lost here.
+        static std::atomic<int> waits{0};
+        const int n = ++waits;
+        if (n == 1 || n == 10 || n == 100 || n == 1000) Log("flow: hit tallies: %d calls waited for another thread's", n);
+        lock.lock();
+    }
+    return g_origHitTally(self, event, a3, a4);
+}
+
 void DirectorCheckDetour(uint8_t* director)
 {
     HookGuard guard;
@@ -852,6 +883,9 @@ bool InstallFlowProbes(const GameImage& image, bool offlineBoot)
               reinterpret_cast<void**>(&g_origDirectorCheck))) {
         g_origDirectorCheck = nullptr;
         Log("flow: the round director's check stays per rendered frame (a KO in a rollback is found late)");
+    }
+    if (!Hook(image, kRoundHitTally, reinterpret_cast<void*>(&HitTallyDetour), reinterpret_cast<void**>(&g_origHitTally))) {
+        Log("flow: the round's hit tallies stay unguarded (a trade can count differently on each side)");
     }
     Log("flow probes %s", ok ? "installed" : "NOT installed");
     return ok;
@@ -1110,6 +1144,8 @@ uint8_t* RoundFlowState()
 {
     return reinterpret_cast<uint8_t*>(&g_roundFlow);
 }
+
+uint8_t* RoundDirector() { return LiveRoundDirector(); }
 
 void ResetRoundFlow()
 {

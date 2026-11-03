@@ -188,6 +188,8 @@ uint32_t DrivenTicks();
 void RunRoundDirector();
 void RoundDirectorFromSnapshot();
 uint8_t* RoundFlowState();
+// The battle's round director task object (research: replay traps), or nullptr.
+uint8_t* RoundDirector();
 // Start during a netplay match, for the tick about to run (from both
 // players' inputs): outside the fight (intro, round call, KO, win poses) once
 // both players have pressed it, Start for a few ticks (for both players'

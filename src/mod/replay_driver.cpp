@@ -446,6 +446,22 @@ private:
     {
         for (const Trap& t : traps_) {
             if (f != t.frame - 1) continue;
+            if (t.region == "director") {
+                // The round director itself (not a region: flow.round copies
+                // parts of it), e.g. its counts at +0x11128.
+                uint8_t* d = RoundDirector();
+                if (!d) {
+                    Log("replay: trap: no round director");
+                    continue;
+                }
+                const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+                for (int done = 0; done < t.bytes && trapSlots_ < 4; done += 8) {
+                    ArmFromHelper(trapSlots_++, d + t.offset + done, std::min(8, t.bytes - done), base);
+                }
+                Log("replay: trap armed on the round director +0x%llx (%d bytes) at %p before frame %d",
+                    static_cast<unsigned long long>(t.offset), t.bytes, static_cast<void*>(d + t.offset), t.frame);
+                continue;
+            }
             const auto r = std::find_if(game.Regions().begin(), game.Regions().end(),
                                         [&](const StateRegion& x) { return x.name == t.region; });
             // An offset outside the region (up to 0x1000 before its start or past

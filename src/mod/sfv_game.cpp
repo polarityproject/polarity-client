@@ -842,7 +842,7 @@ std::string SfvGame::BuildId() const
 {
     char buf[96];
     const uint64_t noise = NoiseHash();
-    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-10/map-%016llx/noise-%016llx", image_.timestamp,
+    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-11/map-%016llx/noise-%016llx", image_.timestamp,
                   static_cast<unsigned long long>(stateMap_ ? stateMap_->Fingerprint() : 0),
                   static_cast<unsigned long long>(noise));
     return buf;

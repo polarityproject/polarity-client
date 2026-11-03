@@ -24,6 +24,10 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   100% on both sides.
 - A long name wraps in the rematch panel and the session's player columns
   instead of running past them; in the player bars it is shortened.
+- Desync warnings after trades (both fighters hit in the same frame): the
+  game counted one side's hit twice at once on different threads and could
+  lose one, so each PC ended up with its own count (adapter-11, so both
+  players need this version).
 
 ## [0.2.4] - 2026-11-03
 
