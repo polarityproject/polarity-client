@@ -7,6 +7,14 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-11-03
+
+Fighters always play their final balance version in sessions, and a game
+that does not have it says so before the match. Fixes desync warnings after
+trades and after hits on a dizzy fighter. The player bars show each
+player's set, and the results screen's Win Ratio counts the session's
+matches. Both players need 0.2.5.
+
 ### Added
 
 - The player bars over the health bars show each player's set so far, as
