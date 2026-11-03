@@ -20,6 +20,8 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 - In online matches, Vega's claw and mask fly off from his body at a fixed
   height when knocked off, instead of from his hand or head. Where they land,
   and when, can differ a little from offline play.
+- A game that freezes logs where each of its threads stands, not only the
+  game thread, so a crash report of a freeze shows what the game waited for.
 
 ### Fixed
 

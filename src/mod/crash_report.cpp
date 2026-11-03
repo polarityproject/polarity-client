@@ -8,7 +8,9 @@
 #include <windows.h>
 
 #include <dbghelp.h>
+#include <tlhelp32.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <string>
@@ -23,6 +25,7 @@ constexpr ULONGLONG kFaultBeforeExitMs = 15000;  // an exit this soon after a fa
 constexpr size_t kLogTailBytes = 256 * 1024;     // of the run's log, into its report
 constexpr size_t kLogTailLines = 400;
 constexpr ULONGLONG kHangMs = 20000;             // the game thread this long without a tick: logged as stuck
+constexpr int kHangThreadsLogged = 40;           // other threads' stacks (distinct ones) logged with it
 
 std::wstring g_dir; // SFVR\crashes
 std::wstring g_suffix;
@@ -200,12 +203,60 @@ void AppendRunning(const std::string& line)
     WriteText(RunningPath(), ReadText(RunningPath()) + line + "\n");
 }
 
+// A thread's stack, up to `frames` deep: the thread is suspended only to
+// read its registers, and the stack, which a stuck thread leaves as it is,
+// is walked after it goes on (nothing here may wait on a lock it could hold).
+// Empty when the thread cannot be read. `ours`: a frame in the game or the mod.
+std::string ThreadStack(DWORD id, int frames, bool* ours = nullptr)
+{
+    const HANDLE thread = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, id);
+    if (!thread) return {};
+    CONTEXT c{};
+    c.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
+    bool read = false;
+    if (SuspendThread(thread) != static_cast<DWORD>(-1)) {
+        read = GetThreadContext(thread, &c) != 0;
+        ResumeThread(thread);
+    }
+    CloseHandle(thread);
+    if (!read) return {};
+    std::string stack;
+    t_guarded++;
+    for (int i = 0; i < frames; i++) {
+        const std::string where = Where(c.Rip);
+        if (ours && (where.rfind("StreetFighterV.exe", 0) == 0 || where.rfind("sfv_rollback", 0) == 0)) *ours = true;
+        stack += " " + where;
+        if (!Unwind(&c)) break;
+    }
+    t_guarded--;
+    return stack;
+}
+
+// A thread's description (SetThreadDescription), empty when it has none.
+std::string ThreadName(DWORD id)
+{
+    using GetDescriptionFn = HRESULT(WINAPI*)(HANDLE, PWSTR*);
+    static const auto get = reinterpret_cast<GetDescriptionFn>(
+        GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "GetThreadDescription"));
+    if (!get) return {};
+    const HANDLE thread = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, id);
+    if (!thread) return {};
+    std::string name;
+    PWSTR text = nullptr;
+    if (SUCCEEDED(get(thread, &text)) && text) {
+        for (const wchar_t* p = text; *p && name.size() < 48; p++) name += *p < 128 ? static_cast<char>(*p) : '_';
+        LocalFree(text);
+    }
+    CloseHandle(thread);
+    return name;
+}
+
 // Once a second on the writer thread: a game thread that has not ticked the
 // scene for kHangMs is stuck (a freeze, ended by force later, is otherwise
 // only "no clean exit"): where it stands goes to the log, which the report
-// of a run ended by force quotes. The thread is suspended only to read its
-// registers; its stack, which a stuck thread leaves as it is, is walked
-// after it goes on (nothing here may wait on a lock it could hold).
+// of a run ended by force quotes. So do the other threads with a frame in
+// the game or the mod: a game thread waiting on another (the render thread,
+// the loader) shows the wait, and only they show what it waits for.
 void CheckHang()
 {
     const DWORD id = g_gameThread;
@@ -219,26 +270,40 @@ void CheckHang()
     }
     if (g_hangLogged) return;
     g_hangLogged = true;
-    const HANDLE thread = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, id);
-    if (!thread) return;
-    CONTEXT c{};
-    c.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-    bool read = false;
-    if (SuspendThread(thread) != static_cast<DWORD>(-1)) {
-        read = GetThreadContext(thread, &c) != 0;
-        ResumeThread(thread);
-    }
-    CloseHandle(thread);
-    if (!read) return;
-    std::string stack;
-    t_guarded++;
-    for (int i = 0; i < 32; i++) {
-        stack += " " + Where(c.Rip);
-        if (!Unwind(&c)) break;
-    }
-    t_guarded--;
+    const std::string stack = ThreadStack(id, 32);
+    if (stack.empty()) return;
     Log("crash report: the game thread (%lu) has not ticked for %llu s; it is at:%s", id,
         static_cast<unsigned long long>(idle / 1000), stack.c_str());
+
+    const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return;
+    THREADENTRY32 entry{};
+    entry.dwSize = sizeof(entry);
+    const DWORD self = GetCurrentThreadId(), pid = GetCurrentProcessId();
+    // Threads with the same stack (an engine pool waiting for work) share a
+    // line, in the order first seen.
+    std::vector<std::pair<std::string, std::string>> groups; // stack, thread ids (and names)
+    int ours = 0, others = 0;
+    for (BOOL more = Thread32First(snapshot, &entry); more; more = Thread32Next(snapshot, &entry)) {
+        if (entry.th32OwnerProcessID != pid || entry.th32ThreadID == id || entry.th32ThreadID == self) continue;
+        bool mine = false;
+        const std::string other = ThreadStack(entry.th32ThreadID, 24, &mine);
+        if (!mine) {
+            others++;
+            continue;
+        }
+        ours++;
+        const std::string name = ThreadName(entry.th32ThreadID);
+        const std::string who = std::to_string(entry.th32ThreadID) + (name.empty() ? "" : " (" + name + ")");
+        auto it = std::find_if(groups.begin(), groups.end(), [&](const auto& g) { return g.first == other; });
+        if (it != groups.end()) it->second += ", " + who;
+        else if (static_cast<int>(groups.size()) < kHangThreadsLogged) groups.emplace_back(other, who);
+    }
+    CloseHandle(snapshot);
+    for (const auto& [stack, who] : groups) {
+        Log("crash report:   %s %s at:%s", who.find(',') == std::string::npos ? "thread" : "threads", who.c_str(), stack.c_str());
+    }
+    Log("crash report:   %d threads with game or mod frames, %d others", ours, others);
 }
 
 DWORD WINAPI Writer(LPVOID)
