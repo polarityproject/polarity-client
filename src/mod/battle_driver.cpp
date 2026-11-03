@@ -522,6 +522,11 @@ void LogRandomDrawsInTicks(uint32_t from, uint32_t to)
     Log("draw: logging every draw in driven ticks %u..%u", from, to);
 }
 
+void LogStartProbe()
+{
+    if (g_game) g_game->LogStartProbe("asked");
+}
+
 void LogBonePositions(int count, uintptr_t from)
 {
     g_boneLog = count;

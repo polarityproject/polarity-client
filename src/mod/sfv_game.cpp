@@ -360,6 +360,13 @@ constexpr size_t kFighterEventAt = 0x338, kFighterEventSize = 4;
 constexpr uint32_t kEffectOwnerVtable = 0x2C53598;
 constexpr size_t kEffectSlotsSize = 392, kEffectSlotsAt = 0x6D8, kEffectOwnerVtableAt = 0xB0;
 constexpr size_t kEffectOwnerValueAt = 0x108, kEffectOwnerValueSize = 4;
+// The start probe (SfvGame::ArmStartProbe): the battle camera that pans from
+// frame 0 (its sub-object, vtable rva 0x2C5F520, at +0xE8; the game snapshots
+// 112 bytes from +0x1C0; its tick is rva 0x3E4AF0) and each fighter's
+// simulation object (300 bytes snapshot from +0x764, its position at +0x790).
+constexpr uint32_t kBattleCameraVtable = 0x2C5F520;
+constexpr size_t kBattleCameraRegionSize = 112, kBattleCameraRegionAt = 0x1C0, kBattleCameraSize = 0x400;
+constexpr size_t kFighterSimRegionSize = 300, kFighterSimRegionAt = 0x764, kFighterSimSize = 0x1000;
 
 bool SfvGame::RefreshRegions()
 {
@@ -884,6 +891,10 @@ void SfvGame::Advance(const FrameInputs& inputs, bool rollingBack)
     // The round director's check for this tick, and its state into the snapshot.
     RunRoundDirector();
     LatchInputs();
+    if (probeTicks_ > 0 && !rollingBack) {
+        CaptureStartProbe(probeTicks_ == 2 ? "after the first tick" : "after the second tick");
+        probeTicks_--;
+    }
     CheckChangeWatch(regions_, image_.base);
     // Between ticks the presentation (intro and round call skipping, once
     // per rendered frame) reads the current input values. Rendered frames and
@@ -934,6 +945,68 @@ void SfvGame::LatchInputs()
     if (!inputUnit_ || !latchEachTick) return;
     using LatchFn = void (*)(uint8_t*);
     image_.At<LatchFn>(game::kInputUnitLatch.rva)(inputUnit_);
+}
+
+void SfvGame::ArmStartProbe()
+{
+    {
+        std::lock_guard lock(probeMutex_);
+        probe_.clear();
+        probeLogged_ = false;
+    }
+    CaptureStartProbe("at the freeze");
+    probeTicks_ = 2;
+}
+
+void SfvGame::CaptureStartProbe(const char* when)
+{
+    ProbeCapture capture{when, {}};
+    for (const StateRegion& r : regions_) {
+        if (r.size == kBattleCameraRegionSize && IsReadable(r.ptr - (kBattleCameraRegionAt - 0xE8), 8) &&
+            *reinterpret_cast<const uintptr_t*>(r.ptr - (kBattleCameraRegionAt - 0xE8)) == image_.base + kBattleCameraVtable) {
+            const uint8_t* camera = r.ptr - kBattleCameraRegionAt;
+            if (IsReadable(camera, kBattleCameraSize)) capture.objects.push_back({"camera (" + r.name + ")", {camera, camera + kBattleCameraSize}});
+        }
+        if (r.size == kFighterSimRegionSize && r.name.rfind("s300.", 0) == 0) {
+            const uint8_t* sim = r.ptr - kFighterSimRegionAt;
+            if (IsReadable(sim, kFighterSimSize)) capture.objects.push_back({"fighter sim (" + r.name + ")", {sim, sim + kFighterSimSize}});
+        }
+    }
+    std::lock_guard lock(probeMutex_);
+    if (probe_.size() < 6) probe_.push_back(std::move(capture));
+}
+
+void SfvGame::LogStartProbe(const char* why)
+{
+    std::lock_guard lock(probeMutex_);
+    if (probeLogged_ || probe_.empty()) return;
+    probeLogged_ = true;
+    Log("start probe (%s; objects after %d neutral ticks): %zu captures, words that are not zero or an address",
+        why, objectsAt_, probe_.size());
+    for (const ProbeCapture& c : probe_) {
+        for (const auto& [name, bytes] : c.objects) {
+            std::string line;
+            int words = 0;
+            for (size_t at = 0; at + 8 <= bytes.size(); at += 8) {
+                uint64_t q;
+                std::memcpy(&q, &bytes[at], 8);
+                if (q == 0 || LooksLikeAddress(q)) continue;
+                for (size_t half = 0; half < 8; half += 4) {
+                    uint32_t v;
+                    std::memcpy(&v, &bytes[at + half], 4);
+                    if (!v) continue;
+                    char b[24];
+                    std::snprintf(b, sizeof(b), " %zx=%x", at + half, v);
+                    line += b;
+                    if (++words % 48 == 0) {
+                        Log("start probe %s, %s:%s", c.when.c_str(), name.c_str(), line.c_str());
+                        line.clear();
+                    }
+                }
+            }
+            if (!line.empty() || words == 0) Log("start probe %s, %s:%s", c.when.c_str(), name.c_str(), line.c_str());
+        }
+    }
 }
 
 void SfvGame::OnStateLoaded(int frame)

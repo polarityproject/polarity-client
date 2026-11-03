@@ -166,6 +166,7 @@ private:
             HashRegions(game.Regions(), hashes.data());
         }
         layout_ = game.LayoutVersion(); // after the copy and its new canonical order
+        game.ArmStartProbe();
         if (stress_ == 0 && keepFrom_ >= 0) {
             // `keep`: this run as a full recording, its start state first.
             kept_ = ReplayFile{};

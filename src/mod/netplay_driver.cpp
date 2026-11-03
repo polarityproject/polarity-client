@@ -1732,6 +1732,7 @@ private:
             ReadMatchSetup(&loadedSetup_);
             Log("netplay: battle objects ready after %d neutral ticks (%zu regions, checksum %08X); frozen",
                 game.ObjectsAt(), hashes.size(), frozenChecksum_);
+            game.ArmStartProbe();
             Log("netplay: loaded %s", DescribeSetup(loadedSetup_).c_str());
         }
         if (++frozenFrames_ == kSettleFrames) {
@@ -1782,8 +1783,10 @@ private:
         game.bothPadsLocal = false;
         game.localInput = &MappedLocalInput;
         session_ = std::make_unique<NetplaySession>(game, *gekko_, nc);
-        session_->onDesync = [this](const DesyncInfo& d, const ReplayFile& rf) {
+        game.CaptureStartProbe("at the session's start");
+        session_->onDesync = [this, &game](const DesyncInfo& d, const ReplayFile& rf) {
             desyncFrame_ = d.frame;
+            if (d.frame <= kStartProbeFrames) game.LogStartProbe(("a desync at frame " + std::to_string(d.frame)).c_str());
             const std::string path = SaveReport(rf, "desync", true);
             std::lock_guard lock(mutex_);
             desyncReport_ = path;
@@ -2532,6 +2535,8 @@ private:
     int frozenFrames_ = 0;
     bool objectsReady_ = false;
     MatchSetup loadedSetup_;           // what this side's game loaded
+    // A desync this early logs the start probe (SfvGame::ArmStartProbe).
+    static constexpr int kStartProbeFrames = 3;
     uint32_t frozenChecksum_ = 0;
     MatchSetup peerLoadedSetup_;       // guarded by mutex_
     uint32_t peerChecksum_ = 0;

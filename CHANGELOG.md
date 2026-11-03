@@ -7,6 +7,12 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Changed
+
+- A desync in a match's first frames logs, on both sides, the battle camera
+  and both fighters' state as they were at the start, to find the cause of a
+  desync from the first frame (seen with Guile against Lucia).
+
 ## [0.2.4] - 2026-11-03
 
 Fixes desync warnings in Vega matches once his claw or mask is knocked off,

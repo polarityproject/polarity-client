@@ -61,5 +61,7 @@ void LogGameInputs(int ticks);
 // in driven ticks (rva 0x3919D0: tick, caller, result); `from` (non-zero):
 // only calls returning to that rva.
 void LogBonePositions(int count, uintptr_t from);
+// Logs the current battle's start probe (SfvGame::ArmStartProbe), once.
+void LogStartProbe();
 
 } // namespace sfv::mod

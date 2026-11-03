@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <set>
 #include <string>
 #include <vector>
@@ -167,6 +168,20 @@ public:
     // once-per-rendered-frame latch.
     bool latchEachTick = true;
 
+    // Diagnostics for a desync from frame 0 whose cause lies outside the
+    // snapshot (Guile vs Lucia 43c9c9cb, 2026-11-03: one side's battle objects
+    // came after only 3 neutral ticks, and its battle camera panned a tick
+    // later from frame 0). The battle camera (its 112-byte region at +0x1C0)
+    // and both fighters' simulation objects (their 300-byte regions at
+    // +0x764) are kept as they are at the freeze, at the session's start and
+    // after its first ticks, and go to the log when asked: a desync in the
+    // first frames (both sides then log theirs), or `startprobe`. Short
+    // warm-ups alone are common (both games of a local session: 3 ticks).
+    // ArmStartProbe: at the freeze. CaptureStartProbe: at the session's start.
+    void ArmStartProbe();
+    void CaptureStartProbe(const char* when);
+    void LogStartProbe(const char* why);
+
     // Words that differ between the first simulation of a frame and its
     // resimulation without affecting gameplay (engine-side transforms read by
     // gameplay code), keyed by region size and word offset so the mask holds
@@ -223,6 +238,14 @@ private:
     bool IsEffectRegion(const StateRegion& r) const;
     void RunPostRestoreCallbacks(const game::FrameId& id);
     void LatchInputs(); // InputUnit::LatchFrame, after a tick or a load
+    struct ProbeCapture {
+        std::string when;
+        std::vector<std::pair<std::string, std::vector<uint8_t>>> objects; // name, bytes
+    };
+    std::mutex probeMutex_;
+    std::vector<ProbeCapture> probe_;
+    int probeTicks_ = 0;     // driven ticks after the freeze still to capture
+    bool probeLogged_ = false;
     // Time after loads (performance counter ticks), per game callback (by rva)
     // and for the round state the mod puts back (OnStateLoaded logs them).
     struct CallbackCost {
