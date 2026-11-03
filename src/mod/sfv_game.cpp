@@ -354,9 +354,10 @@ constexpr size_t kFighterEventAt = 0x338, kFighterEventSize = 4;
 // The owner of a fighter's effect slots: the game snapshots the slots (392
 // bytes) from +0x6D8 (the owner's vtable rva 0x2C53598 sits at +0xB0). +0x108
 // is set each tick from the fighter (rva 0x3A00C5; kept while 0x377710 holds)
-// and no region covers it. E. Honda's unique part draws slot 0 or 1 from it
-// (rva 0x3BDA38), so after a rollback it held the newest tick's value and the
-// slot states came out differently (Urien vs E. Honda d704c27a). Added.
+// and no region covers it. Poison's unique part (Z33, CharaUniquePart_035)
+// draws slot 0 or 1 from it (rva 0x3BDA38), so after a rollback it held the
+// newest tick's value and the slot states came out differently (Urien vs
+// Poison d704c27a; Seth vs Poison x5 on 0.2.3, before this). Added.
 constexpr uint32_t kEffectOwnerVtable = 0x2C53598;
 constexpr size_t kEffectSlotsSize = 392, kEffectSlotsAt = 0x6D8, kEffectOwnerVtableAt = 0xB0;
 constexpr size_t kEffectOwnerValueAt = 0x108, kEffectOwnerValueSize = 4;

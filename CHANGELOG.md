@@ -34,8 +34,8 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   desync check now, as their other halves already were.
 - Fighters always play their final balance version. Each game took the
   newest version it knew, and some games know only older ones (two testers
-  played Season 4 versions of Guile, Vega, Urien and Birdie). The host now
-  sets each fighter's version for both players; a game that lacks it ends
+  played Season 4 versions of Guile, M. Bison, Urien and Balrog). The host
+  now sets each fighter's version for both players; a game that lacks it ends
   the session and says which fighter, and the other player is told why.
   The match log lists the game's versions that are not the final ones.
   Both players need this version.
