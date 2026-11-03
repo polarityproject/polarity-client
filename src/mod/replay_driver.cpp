@@ -42,7 +42,6 @@ int AdapterOf(const std::string& build)
 
 std::atomic<bool> g_stop{false}; // `replay stop`: end the running replay at the next frame
 std::atomic<int> g_latch{-1};    // `latch tick|game`: the pad latch the next replay uses (-1: by recording)
-std::atomic<int> g_launch{-1};   // `launch sim|pose`: where Vega's items launch from in the next replay (-1: by recording)
 
 class NoTransport : public ITransport {
 public:
@@ -152,11 +151,6 @@ private:
         game.latchEachTick = stress_ > 0 || delay_ > 0 || AdapterOf(rf_.gameBuild) >= 9;
         if (const int latch = g_latch.exchange(-1); latch >= 0) game.latchEachTick = latch != 0;
         if (!game.latchEachTick) Log("replay: %s predates adapter-9: the game's own pad latch", rf_.gameBuild.c_str());
-        // Before adapter-10 Vega's claw and mask launched from the mesh's
-        // pose; a straight run does that again to follow such a recording.
-        game.simItemLaunch = stress_ > 0 || delay_ > 0 || AdapterOf(rf_.gameBuild) >= 10;
-        if (const int launch = g_launch.exchange(-1); launch >= 0) game.simItemLaunch = launch != 0;
-        if (!game.simItemLaunch) Log("replay: %s predates adapter-10: Vega's items launch from the pose", rf_.gameBuild.c_str());
         SetRoundDirectorPerTick(true, true);
         SetMatchDrawSeed(rf_.setup.seed);
         game.Recanonicalize();
@@ -741,7 +735,6 @@ private:
         game.inputOverride = nullptr;
         game.exclusiveTicks = false;
         game.latchEachTick = true;
-        game.simItemLaunch = true;
         SetRoundDirectorPerTick(false, false);
         SetPadIsolation(false);
         // Stress: frames whose resimulation differed outside the presentation clocks.
@@ -827,7 +820,6 @@ private:
 } // namespace
 
 void SetReplayLatch(int latch) { g_latch = latch; }
-void SetReplayItemLaunch(int sim) { g_launch = sim; }
 
 void RequestReplay(const std::string& path, int stressDistance, int watchFrom, int watchTo, const std::string& watchRegion,
                    int keepFrom, int keepTo, bool preload, const std::string& traps, int holdAt, int holdSeconds,

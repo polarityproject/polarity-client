@@ -50,9 +50,6 @@ void RequestReplay(const std::string& path, int stressDistance, int watchFrom = 
 // (SfvGame::latchEachTick), 0 keeps the game's once-per-rendered-frame latch,
 // -1 (the default) picks by the recording's build and the replay's mode.
 void SetReplayLatch(int latch);
-// Where Vega's knocked-off claw and mask launch from in the next replay
-// (research): 1 the fighter's position (SfvGame::simItemLaunch), 0 the mesh's
-// pose, -1 (the default) by the recording's build and the replay's mode.
-void SetReplayItemLaunch(int sim);
+
 
 } // namespace sfv::mod

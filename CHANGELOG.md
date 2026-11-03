@@ -17,9 +17,6 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 - Skipping an intro, round call or win pose with Start takes effect one
   frame sooner, on the same frame on both sides however each game's frames
   ran (the game read the press once per drawn frame, not per battle frame).
-- In online matches, Vega's claw and mask fly off from his body at a fixed
-  height when knocked off, instead of from his hand or head. Where they land,
-  and when, can differ a little from offline play.
 - A game that freezes logs where each of its threads stands, not only the
   game thread, so a crash report of a freeze shows what the game waited for.
 
@@ -47,10 +44,11 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 - A desync warning in E. Honda matches when a rollback left his effect drawn
   a frame differently on one side (seen against Urien and Chun-Li): the value
   it is drawn from is now rolled back with the rest of the fight.
-- Desyncs in Vega matches once his claw or mask was knocked off: the game
-  launches it from where his hand or head is drawn, and after a rollback that
-  was a later frame's pose, so the claw landed a few frames apart on each
-  side and the two games disagreed about it until the match ended.
+- Desync warnings in Vega matches once his claw or mask was knocked off,
+  until the match ended: it flies from where his hand or head is drawn, and
+  after a rollback that could be a later frame's pose, so it could land a few
+  frames apart on each side. It is only drawn (the fight never reads it), so
+  it is now left out of the desync check, as effects are.
 - A desync warning in matches against Rose after a rollback: a flag one
   fighter keeps from one frame to the next was not rolled back with the rest
   of the fight, so Rose's soul could mark the other fighter a frame

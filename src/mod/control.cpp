@@ -1063,7 +1063,6 @@ void RunNetCommand(const std::string& line)
         // [hold <frame> <seconds>] (stands still after that frame)
         // [mispredict <delay> [remote 1|2]] (one player's inputs late: real rollbacks)
         // [latch tick|game] (the pad latch: after every tick, or the game's own)
-        // [launch sim|pose] (Vega's items: from the fighter's position, or the mesh's pose)
         std::string file, word, region, traps;
         int stress = 0, from = -1, to = -1, keepFrom = -1, keepTo = -1, holdAt = -1, holdSeconds = 0, mispredict = 0,
             remote = 0;
@@ -1081,11 +1080,6 @@ void RunNetCommand(const std::string& line)
                 std::string how;
                 ss >> how;
                 SetReplayLatch(how == "tick" ? 1 : how == "game" ? 0 : -1);
-            }
-            if (word == "launch") {
-                std::string how;
-                ss >> how;
-                SetReplayItemLaunch(how == "sim" ? 1 : how == "pose" ? 0 : -1);
             }
             if (word == "trap") {
                 std::string f, r, off, b;

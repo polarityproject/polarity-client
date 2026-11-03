@@ -166,10 +166,6 @@ public:
     // to replay recordings from before adapter-9, made with the game's own
     // once-per-rendered-frame latch.
     bool latchEachTick = true;
-    // Driven ticks launch Vega's knocked-off claw and mask from the fighter's
-    // position instead of the mesh's pose (battle_driver.cpp); off only to
-    // replay recordings from before adapter-10.
-    bool simItemLaunch = true;
 
     // Words that differ between the first simulation of a frame and its
     // resimulation without affecting gameplay (engine-side transforms read by

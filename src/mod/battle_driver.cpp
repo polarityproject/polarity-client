@@ -367,34 +367,16 @@ void* MakeGaugeStub()
     return code;
 }
 
-// A fighter's bone world position (rva 0x3919D0), from its skeletal mesh
-// (fighter +0xA90) through rva 0xE58F10. The mesh is posed once per rendered
-// frame, outside the snapshot: a resimulated tick reads the newest frame's
-// pose, and a tick that only ran after a misprediction was never posed at all.
-// Vega's claw and mask launch from his hand or head when knocked off (rva
-// 0x3A4B74, CharaUniquePart_021) and fly from there to the floor, so a
-// rollback across a knock-off launched the item elsewhere, it landed on
-// another frame, and the two games disagreed about it until the match ended.
-// In driven ticks that launch starts from the fighter's simulated position (in
-// the snapshot) at a fixed height instead.
-// Research (`bonelog <count> [<caller rva>]`): logs the next `count` calls in
-// driven ticks (from one caller, by the rva its call returns to, when given).
+// Research (`bonelog <count> [<caller rva>]`): a fighter's bone world
+// position (rva 0x3919D0), from its skeletal mesh (fighter +0xA90) through rva
+// 0xE58F10, which battle code asks for (Vega's knocked-off claw and mask
+// launch from his hand or head, rva 0x3A4B74). The mesh is posed once per
+// rendered frame, outside the snapshot: a resimulated tick reads the newest
+// frame's pose. Logs the next `count` calls in driven ticks (from one caller,
+// by the rva its call returns to, when given).
 constexpr game::CodeSite kBonePosition{
     "fighter bone position", 0x3919D0,
     {0x48, 0x89, 0x5C, 0x24, 0x20, 0x57, 0x48, 0x83, 0xEC, 0x70, 0x48, 0x8B, 0x05, 0x9F, 0x08, 0x63}};
-constexpr uintptr_t kItemLaunchReturn = 0x3A4B79; // the return address of the launch's call
-constexpr uint32_t kFighterVtable = 0x2C53598; // at fighter +0xB0
-constexpr size_t kFighterVtableAt = 0xB0;
-// The fighter's +0xE0 is its presented position, set once per rendered frame
-// (rva 0x3A3294) from its simulation object's (fighter +0x98) +0x790, which
-// lies in a snapshot region (300 bytes from +0x764).
-constexpr size_t kFighterSimAt = 0x98;
-constexpr size_t kSimPositionAt = 0x790; // x, y, z floats
-constexpr uint32_t kHeadBoneName = 0x2C4FB20; // L"b_C_Head" (the bone name table's entry 3, rva 0x2C51BA0)
-// Heights above the fighter's position: the middle of what the pose gave at
-// sixteen knock-offs in tester matches (hands 1.05-1.81, head 1.08-1.64).
-constexpr float kHandLaunchHeight = 1.30f;
-constexpr float kHeadLaunchHeight = 1.35f;
 using BonePositionFn = void (*)(uint8_t* fighter, const void* bone, float* out, int flag);
 BonePositionFn g_origBonePosition = nullptr;
 std::atomic<int> g_boneLog{0};
@@ -402,34 +384,16 @@ std::atomic<uintptr_t> g_boneLogFrom{0};
 
 void BonePositionDetour(uint8_t* fighter, const void* bone, float* out, int flag)
 {
-    const uintptr_t from = reinterpret_cast<uintptr_t>(_ReturnAddress()) - g_imageBase;
-    const uint8_t* sim = nullptr;
-    if (g_inDriver && g_game && g_game->simItemLaunch && from == kItemLaunchReturn && IsReadable(fighter + kFighterSimAt, 0x20) &&
-        *reinterpret_cast<const uintptr_t*>(fighter + kFighterVtableAt) == g_imageBase + kFighterVtable) {
-        sim = *reinterpret_cast<uint8_t* const*>(fighter + kFighterSimAt);
-        if (!IsReadable(sim + kSimPositionAt, 12)) sim = nullptr;
-    }
-    const bool simLaunch = sim != nullptr;
-    if (simLaunch) {
-        float position[3];
-        std::memcpy(position, sim + kSimPositionAt, sizeof(position));
-        const bool head = reinterpret_cast<uintptr_t>(bone) == g_imageBase + kHeadBoneName;
-        out[0] = position[0];
-        out[1] = position[1] + (head ? kHeadLaunchHeight : kHandLaunchHeight);
-        out[2] = position[2];
-        out[3] = 1.0f;
-    }
-    else {
-        g_origBonePosition(fighter, bone, out, flag);
-    }
+    g_origBonePosition(fighter, bone, out, flag);
     if (g_boneLog <= 0 || !g_inDriver) return;
+    const uintptr_t from = reinterpret_cast<uintptr_t>(_ReturnAddress()) - g_imageBase;
     if (g_boneLogFrom && from != g_boneLogFrom) return;
     g_boneLog--;
     uint32_t bits[3];
     std::memcpy(bits, out, sizeof(bits));
-    Log("bone: tick %u%s, from rva 0x%llX, fighter %p bone %p: %.6f %.6f %.6f (%08X %08X %08X)%s", DrivenTicks(),
+    Log("bone: tick %u%s, from rva 0x%llX, fighter %p bone %p: %.6f %.6f %.6f (%08X %08X %08X)", DrivenTicks(),
         g_replayingTick ? " replayed" : "", static_cast<unsigned long long>(from), static_cast<void*>(fighter), bone,
-        out[0], out[1], out[2], bits[0], bits[1], bits[2], simLaunch ? " from the fighter's position" : "");
+        out[0], out[1], out[2], bits[0], bits[1], bits[2]);
 }
 
 bool Hook(const GameImage& image, const game::CodeSite& site, void* detour, void** original)
@@ -612,7 +576,7 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game)
         Log("battle driver: phasecost unavailable");
     }
     if (!Hook(image, kBonePosition, reinterpret_cast<void*>(&BonePositionDetour), reinterpret_cast<void**>(&g_origBonePosition))) {
-        Log("battle driver: Vega's claw and mask launch from the pose (can desync after rollbacks)");
+        Log("battle driver: bonelog unavailable");
     }
     void* gaugeStub = MakeGaugeStub();
     if (!gaugeStub || !Hook(image, kGaugeAdd, gaugeStub, reinterpret_cast<void**>(&g_origGaugeAdd))) {

@@ -516,6 +516,12 @@ bool SfvGame::RefreshRegions()
 // the other. A divergence in the fight still shows in the fighters'
 // regions. Each region of such an object is known by its size and where its
 // owner's vtable sits before it.
+// Vega's claw and mask once knocked off are drawn the same way: they fly from
+// his hand or head, which his mesh's pose gives (rva 0x3A4B74, outside the
+// snapshot, posed once per drawn frame, so a resimulated knock-off launches
+// from a later frame's pose), land, and fade; nothing in the fight reads them
+// (tester matches 2026-11-02: the two games' items parted for thousands of
+// frames, the fighters never).
 struct EffectRegionKind {
     size_t size;
     size_t ownerBefore; // the owner's vtable pointer, this many bytes before the region
@@ -530,6 +536,9 @@ constexpr EffectRegionKind kEffectRegions[] = {
     {164, 0x1C8, 0x2C6EAD0},  // effect object: handles
     {15808, 0x18, 0x2C6E6D8}, // effect pool
     {224, 0x30, 0x3231618},   // script effect record
+    {208, 0x40, 0x2C54490},   // Vega's CharaUniquePart_021 (vtable 0x2C541A0; 0x2C54490 at its +0xB0) +0xF0:
+                              // two 0x60-byte entries, his knocked-off claw and mask (state, launch point,
+                              // target, time), then +0x1A0..+0x1AF, an address on some machines
 };
 
 bool SfvGame::IsEffectRegion(const StateRegion& r) const
@@ -584,25 +593,6 @@ void SfvGame::SetStateMap(const StateMap* map)
             // Restored on a rollback like the rest, but out of the checksum.
             r.ignore.assign((r.size / 8 + 8) / 8, 0xFF);
             continue;
-        }
-        if (r.size == 208 && IsReadable(r.ptr - 0x40, 8) &&
-            *reinterpret_cast<const uintptr_t*>(r.ptr - 0x40) == image_.base + 0x2C54490) {
-            // Vega's CharaUniquePart_021 (vtable 0x2C541A0; this part's
-            // vtable 0x2C54490 at its +0xB0, the region at its +0xF0): two
-            // 0x60-byte entries, his claw and mask once knocked off. Its
-            // +0x1A0..+0x1AF (here +0xB0, +0xB8) held an address on one
-            // player's machine only from the intro on. Each entry's launch
-            // point and target (+0x20, +0x30) came from his mesh's pose and
-            // so parted after rollbacks (battle_driver.cpp); masked too when
-            // a replay launches the items from the pose again. Restored, but
-            // out of the checksum.
-            if (r.ignore.size() < 3) r.ignore.resize(3, 0);
-            for (size_t offset : {0xB0, 0xB8}) r.ignore[offset / 64] |= uint8_t(1u << (offset / 8 % 8));
-            if (!simItemLaunch) {
-                for (size_t offset : {0x20, 0x28, 0x30, 0x80, 0x88, 0x90}) {
-                    r.ignore[offset / 64] |= uint8_t(1u << (offset / 8 % 8));
-                }
-            }
         }
         auto it = noise_.find(r.size);
         if (it == noise_.end()) continue;
