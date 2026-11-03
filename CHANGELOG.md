@@ -7,6 +7,9 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+The rooms branch's builds (0.3.0-rooms.N), for invited testers: custom rooms
+are on the way. Rooms builds only play other rooms builds.
+
 ### Changed
 
 - The suggested input delay now starts at 0 frames: nearby players play
@@ -14,6 +17,27 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   It aims at rollbacks of 2 frames or fewer and goes up to 3 frames for far
   players. It goes by the ping and its jitter over the lobby's last 10
   seconds, not one moment's ping.
+- Rooms builds take their updates from the rooms channel
+  (sfvr.pages.dev/rooms/update.json), and play only other rooms builds
+  (lobby protocol 14).
+- Versions like 0.3.0-rooms.10 order after 0.3.0-rooms.9 (the parts after
+  the dash compare as numbers where they are numbers).
+- Updates can install the bundled font into SFVR\fonts\ (.ttc files only),
+  and skip files the game folder already has.
+- The panel and the select screen use bundled fonts (Barlow, Archivo Black,
+  and Noto Sans CJK for Japanese, Chinese and Korean names), so they look the
+  same on Windows and the Steam Deck. Names in scripts those fonts lack
+  (Arabic, Hebrew, Thai) show boxes for now.
+- The select screen's pictures are read from the game's files on the mod's
+  own threads, and the common ones load at the main menu: nothing waits on
+  the game, and each picture fades in.
+- Two players on the same character, costume and color: each sees
+  themselves as picked and the other in the costume's next color
+  (spectators and replays see what P1 sees). Before, P2 was recolored for
+  both.
+- Match rules travel with each match (rounds per game and the round timer;
+  Direct Match keeps best of 3 and 99 seconds), ready for custom rooms'
+  tables.
 
 ### Fixed
 

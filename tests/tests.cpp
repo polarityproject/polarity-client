@@ -3,6 +3,9 @@
 
 #include "core/input_delay.h"
 #include "core/lobby.h"
+#include "core/look.h"
+#include "core/match_ticket.h"
+#include "core/rules.h"
 #include "core/match_code.h"
 #include "core/mux.h"
 #include "core/replay_diff.h"
@@ -11,6 +14,7 @@
 #include "core/update_info.h"
 #include "core/spectate.h"
 #include "core/state.h"
+#include "core/texture_package.h"
 #include "core/verifier.h"
 #include "testbed/match_runner.h"
 
@@ -577,10 +581,11 @@ void TestLobbyMessages()
     hello.role = lobby::Role::Spectator;
     hello.name = "Watcher";
     hello.reports = true;
+    hello.seatToken = 0xA1B2C3D4E5F60718ull;
     auto bytes = lobby::Encode(hello);
     auto back = lobby::Decode(bytes.data(), bytes.size());
     CHECK(back && back->type == lobby::Type::Hello && back->nonce == 77 && back->build == hello.build &&
-          back->role == lobby::Role::Spectator && back->name == "Watcher" && back->reports);
+          back->role == lobby::Role::Spectator && back->name == "Watcher" && back->reports && back->seatToken == hello.seatToken);
 
     // Accept: the host's name and whether it sends desync reports.
     lobby::Message accept;
@@ -859,16 +864,215 @@ void TestUpdateInfo()
     CHECK(SafeUpdatePath("sfv_rollback.dll") && SafeUpdatePath("sfv_noise.txt") && SafeUpdatePath("xinput1_3.dll"));
     CHECK(!SafeUpdatePath("sfv_rollback.ini") && !SafeUpdatePath("../x.dll") && !SafeUpdatePath("a\\b.dll") &&
           !SafeUpdatePath("C:x.dll") && !SafeUpdatePath("x.exe") && !SafeUpdatePath(""));
+    // The fonts folder: .ttc only, and no other folder or way out of it.
+    CHECK(SafeUpdatePath("SFVR/fonts/NotoSansCJK-Medium.ttc") && SafeUpdatePath("SFVR/fonts/x.TTC"));
+    CHECK(!SafeUpdatePath("NotoSansCJK-Medium.ttc") && !SafeUpdatePath("SFVR/fonts/x.dll") &&
+          !SafeUpdatePath("SFVR/fonts/../x.ttc") && !SafeUpdatePath("SFVR/fonts/a/x.ttc") &&
+          !SafeUpdatePath("SFVR/fonts/a\\x.ttc") && !SafeUpdatePath("SFVR/fonts/") && !SafeUpdatePath("SFVR/fonts/.ttc") &&
+          !SafeUpdatePath("SFVR/logs/x.ttc") && !SafeUpdatePath("sfvr/fonts/x.ttc") && !SafeUpdatePath("SFVR\\fonts\\x.ttc"));
 
     CHECK(CompareVersions("0.1.0-prototype", "0.1.0") < 0 && CompareVersions("0.1.0", "0.1.1") < 0);
     CHECK(CompareVersions("0.10.0", "0.9.9") > 0 && CompareVersions("0.2", "0.2.0") == 0);
     CHECK(CompareVersions("0.2.6.1", "0.2.6") > 0 && CompareVersions("0.2.6.1", "0.2.7") < 0);
     CHECK(CompareVersions("0.1.1-test", "0.1.0-prototype") > 0 && CompareVersions("1.0.0-a", "1.0.0-b") < 0);
+    // Branch builds: the suffix's parts as semver orders them.
+    CHECK(CompareVersions("0.3.0-rooms.9", "0.3.0-rooms.10") < 0 && CompareVersions("0.3.0-rooms.10", "0.3.0-rooms.2") > 0);
+    CHECK(CompareVersions("0.3.0-rooms.2", "0.3.0-rooms.2") == 0 && CompareVersions("0.3.0-rooms.6", "0.3.0") < 0);
+    CHECK(CompareVersions("0.3.0-rooms", "0.3.0-rooms.1") < 0 && CompareVersions("0.3.0-1", "0.3.0-rooms") < 0);
+    CHECK(CompareVersions("0.3.0-rooms.1", "0.2.4") > 0 && CompareVersions("0.2.5", "0.3.0-rooms.1") < 0);
 
     CHECK(ResolveUrl("https://sfvr.example/update.json", "releases/a.dll") == "https://sfvr.example/releases/a.dll");
     CHECK(ResolveUrl("https://sfvr.example/x/update.json", "/a.dll") == "https://sfvr.example/a.dll");
     CHECK(ResolveUrl("https://sfvr.example/update.json", "http://other/a.dll") == "http://other/a.dll");
     CHECK(Base64Decode("aGVsbG8=") == std::vector<uint8_t>({'h', 'e', 'l', 'l', 'o'}));
+}
+
+void TestShownSetup()
+{
+    // Ryu's costume 0 has colors 0..9 and EX colors 100 and 101; Eleven
+    // plays a fighter in costume 12 (two colors); Gill's costume 3 has one.
+    LookRules rules;
+    rules.isEleven = [](const PlayerSetup& p) { return p.costume == 12; };
+    rules.elevenOtherColor = 1;
+    rules.colorsOf = [](const PlayerSetup& p) {
+        if (p.character == PackCode("GLL") && p.costume == 3) return std::vector<int>{0};
+        if (p.costume == 12) return std::vector<int>{0, 1};
+        std::vector<int> ids;
+        for (int i = 0; i < 10; i++) ids.push_back(i);
+        ids.push_back(100);
+        ids.push_back(101);
+        return ids;
+    };
+    MatchSetup s;
+    s.players[0].character = s.players[1].character = PackCode("RYU");
+    // The same look: each viewer sees the other in the next color.
+    MatchSetup p1 = ShownSetup(s, 0, rules), p2 = ShownSetup(s, 1, rules);
+    CHECK(p1.players[0].color == 0 && p1.players[1].color == 1);
+    CHECK(p2.players[0].color == 1 && p2.players[1].color == 0);
+    // Only colors change.
+    p1.players[1].color = 0;
+    CHECK(p1 == s);
+    // EX colors in list order, wrapping at the end.
+    s.players[0].color = s.players[1].color = 9;
+    CHECK(ShownSetup(s, 0, rules).players[1].color == 100);
+    s.players[0].color = s.players[1].color = 101;
+    CHECK(ShownSetup(s, 0, rules).players[1].color == 0 && ShownSetup(s, 1, rules).players[0].color == 0);
+    // Different looks: nothing changes, for either viewer.
+    s.players[1].color = 3;
+    CHECK(ShownSetup(s, 0, rules) == s && ShownSetup(s, 1, rules) == s);
+    s.players[1].costume = 1;
+    s.players[1].color = 101;
+    CHECK(ShownSetup(s, 0, rules) == s);
+    // A one-color costume stays as it is.
+    MatchSetup g;
+    g.players[0].character = g.players[1].character = PackCode("GLL");
+    g.players[0].costume = g.players[1].costume = 3;
+    CHECK(ShownSetup(g, 0, rules) == g && ShownSetup(g, 1, rules) == g);
+    // Two Elevens, even as different fighters: the other one in bronze.
+    MatchSetup e;
+    e.players[0].character = PackCode("KEN");
+    e.players[1].character = PackCode("Z21");
+    e.players[0].costume = e.players[1].costume = 12;
+    CHECK(ShownSetup(e, 0, rules).players[1].color == 1 && ShownSetup(e, 0, rules).players[0].color == 0);
+    CHECK(ShownSetup(e, 1, rules).players[0].color == 1 && ShownSetup(e, 1, rules).players[1].color == 0);
+    // One Eleven against the same fighter in another costume: no change.
+    e.players[1].character = PackCode("KEN");
+    e.players[1].costume = 0;
+    CHECK(ShownSetup(e, 0, rules) == e);
+
+    // What the two sides loaded, with the recolor taken back, compares equal;
+    // a real difference still shows.
+    MatchSetup same;
+    same.players[0].character = same.players[1].character = PackCode("CNL");
+    const MatchSetup host = ShownSetup(same, 0, rules), joiner = ShownSetup(same, 1, rules);
+    CHECK(!(host == joiner));
+    CHECK(RealPicks(host, same, 0, rules) == RealPicks(joiner, same, 1, rules));
+    MatchSetup wrong = joiner;
+    wrong.players[1].vskill = 1;
+    CHECK(!(RealPicks(host, same, 0, rules) == RealPicks(wrong, same, 1, rules)));
+    // A side that loaded another color than its view (not a recolor) still differs.
+    MatchSetup odd = joiner;
+    odd.players[0].color = 7;
+    CHECK(!(RealPicks(host, same, 0, rules) == RealPicks(odd, same, 1, rules)));
+}
+
+void TestRulesFormat()
+{
+    // The defaults (the Table rules screen's), and a round trip of every kind.
+    Rules r;
+    CHECK(FormatRules(r) == "r1 ft2 bo3 t99 ws3");
+    Rules back;
+    std::string error;
+    CHECK(ParseRules(FormatRules(r), &back, &error) && back == r);
+    r = {20, 5, 30, Rotation::LoserStays, 0};
+    CHECK(FormatRules(r) == "r1 ft20 bo5 t30 ls0" && ParseRules(FormatRules(r), &back, &error) && back == r);
+    r = {1, 1, 60, Rotation::RoundRobin, 0};
+    CHECK(FormatRules(r) == "r1 ft1 bo1 t60 rr" && ParseRules(FormatRules(r), &back, &error) && back == r);
+    // Fields in any order; values the game does not allow, a missing or
+    // repeated field, and another version are refused.
+    CHECK(ParseRules("r1 t60 ws5 ft4 bo1", &back, &error) && back.firstTo == 4 && back.timer == 60 && back.staysLimit == 5);
+    for (const char* bad : {"", "x", "r1", "r2 ft2 bo3 t99 ws3", "r1 ft0 bo3 t99 ws3", "r1 ft21 bo3 t99 ws3", "r1 ft2 bo2 t99 ws3",
+                            "r1 ft2 bo3 t0 ws3", "r1 ft2 bo3 t-1 ws3", "r1 ft2 bo3 t99 ws4", "r1 ft2 bo3 t99", "r1 ft2 ft3 bo3 t99 ws3",
+                            "r1 ft2 bo3 t99 ws3 rr", "r1 ft2 bo3 t99 ws3 stage1", "r1 ftx bo3 t99 ws3"}) {
+        CHECK(!ParseRules(bad, &back, &error));
+    }
+    CHECK(!ParseRules("r2 ft2 bo3 t99 ws3", &back, &error) && error.find("version 2") != std::string::npos);
+    CHECK(FormatRules(Rules{}).size() < 512);
+    CHECK(DescribeRules(Rules{}) == "First to 2 \xC2\xB7 winner stays, up to 3 \xC2\xB7 99 seconds");
+    CHECK(DescribeRules(Rules{3, 1, 30, Rotation::RoundRobin, 0}) == "First to 3 \xC2\xB7 round robin \xC2\xB7 30 seconds \xC2\xB7 one round");
+}
+
+void TestMatchTicket()
+{
+    // Direct Match: the rules it always had, the first joiner plays, a vote.
+    const MatchTicket host = DirectMatchHost(), join = DirectMatchJoin("ABC123", false);
+    CHECK(host.host && !join.host && join.roomCode == "ABC123" && !host.seatToken && host.after == AfterMatch::Vote);
+    MatchSetup s;
+    ApplyRulesToSetup(host.rules, &s);
+    CHECK(s.roundsToWin == 2 && s.timerSeconds == 99);
+    ApplyRulesToSetup(Rules{3, 5, 30, Rotation::RoundRobin, 0}, &s);
+    CHECK(s.roundsToWin == 3 && s.timerSeconds == 30);
+    ApplyRulesToSetup(Rules{3, 1, 60, Rotation::WinnerStays, 3}, &s);
+    CHECK(s.roundsToWin == 1 && s.timerSeconds == 60);
+    // A set: over once a player has firstTo games.
+    const Rules ft3{3, 3, 99, Rotation::WinnerStays, 3};
+    const uint16_t going[2] = {2, 2}, p2[2] = {1, 3}, p1[2] = {3, 0};
+    CHECK(SetWinner(ft3, going) == -1 && SetWinner(ft3, p2) == 1 && SetWinner(ft3, p1) == 0);
+    CHECK(DescribeTicket(host) == "host, first joiner plays, r1 ft2 bo3 t99 ws3, vote after each match");
+}
+
+void TestTexturePackage()
+{
+    // A package as the paks hold one: a name table entry first (the same
+    // string, no header), then the platform data with two mips, the first's
+    // bytes at the end of the file, the second's inline.
+    std::vector<uint8_t> pkg;
+    auto i32 = [&](int32_t v) { pkg.insert(pkg.end(), reinterpret_cast<uint8_t*>(&v), reinterpret_cast<uint8_t*>(&v) + 4); };
+    auto i64 = [&](int64_t v) { pkg.insert(pkg.end(), reinterpret_cast<uint8_t*>(&v), reinterpret_cast<uint8_t*>(&v) + 8); };
+    auto str = [&](const char* s) {
+        i32(static_cast<int32_t>(std::strlen(s) + 1));
+        pkg.insert(pkg.end(), s, s + std::strlen(s) + 1);
+    };
+    i32(0x9E2A83C1);
+    for (int i = 0; i < 4; i++) i32(-7);
+    str("PF_B8G8R8A8");
+    i32(0x1234);
+    i32(4); i32(2); i32(1);
+    str("PF_B8G8R8A8");
+    i32(0); i32(2);
+    // Each mip: bCooked, the bulk data header (offsets from where the bulk
+    // data starts, at the end), the inline bytes if any, the mip's size.
+    i32(1); i32(0x1); i32(32); i32(32);
+    const size_t offsetAt = pkg.size();
+    i64(0);
+    i32(4); i32(2);
+    i32(1); i32(0x40); i32(8); i32(8); i64(0);
+    for (int i = 0; i < 2; i++) { pkg.push_back(10); pkg.push_back(20); pkg.push_back(30); pkg.push_back(255); }
+    i32(2); i32(1);
+    const int64_t end = static_cast<int64_t>(pkg.size());
+    // Mip 0: red opaque, blue clear, alternating.
+    for (int i = 0; i < 8; i++) {
+        const bool red = i % 2 == 0;
+        pkg.push_back(red ? 0 : 255); pkg.push_back(0); pkg.push_back(red ? 255 : 0); pkg.push_back(red ? 255 : 0);
+    }
+    i32(0x9E2A83C1); // the package tag that closes the file
+    TexPackage p;
+    std::string error;
+    CHECK(ParseTexturePackage(pkg.data(), pkg.size(), &p, &error));
+    CHECK(p.format == TexFormat::Bgra8 && p.width == 4 && p.height == 2 && p.mips.size() == 2);
+    CHECK(p.mips.size() == 2 && p.mips[0].offset == static_cast<size_t>(end) && p.mips[1].width == 2 && p.mips[1].size == 8);
+    CHECK(PickMip(p, 0) == &p.mips[0] && PickMip(p, 2) == &p.mips[1] && PickMip(p, 3) == &p.mips[0] && PickMip(p, 1) == &p.mips[1]);
+    TexImage image;
+    CHECK(MipImage(pkg.data(), pkg.size(), p, p.mips[0], 2, &image, &error));
+    // 4x2 into 2x1: each pixel is a red and a clear blue one: red, half alpha.
+    CHECK(image.width == 2 && image.height == 1 && image.bytes.size() == 8);
+    CHECK(image.bytes.size() == 8 && image.bytes[0] == 0 && image.bytes[2] == 255 && image.bytes[3] == 128);
+    CHECK(MipImage(pkg.data(), pkg.size(), p, p.mips[1], 0, &image, &error) && image.width == 2 && image.bytes[2] == 30);
+    // Broken ones are refused: a cut file, a mip size that does not halve.
+    CHECK(!ParseTexturePackage(pkg.data(), static_cast<size_t>(end) + 4, &p, &error));
+    // Without the tag the data ends the file.
+    CHECK(ParseTexturePackage(pkg.data(), pkg.size() - 4, &p, &error) && p.mips.size() == 2 && p.mips[0].offset == static_cast<size_t>(end));
+    std::vector<uint8_t> bad = pkg;
+    const int32_t three = 3;
+    std::memcpy(bad.data() + offsetAt + 8 + 8 + 4 + 20 + 8, &three, 4); // the second mip's width
+    CHECK(!ParseTexturePackage(bad.data(), bad.size(), &p, &error));
+    CHECK(TexBytes(TexFormat::Bc1, 6, 6) == 4 * 8 && TexBytes(TexFormat::Bc3, 1, 1) == 16);
+    // BC3, as the pad glyphs are: mips below 4x4 stored as 4x4, all inline.
+    pkg.clear();
+    i32(0x9E2A83C1);
+    i32(8); i32(8); i32(1);
+    str("PF_DXT5");
+    i32(0); i32(3);
+    for (const int side : {8, 4, 4}) {
+        const int bytes = side == 8 ? 64 : 16;
+        i32(1); i32(0x40); i32(bytes); i32(bytes); i64(0);
+        pkg.insert(pkg.end(), static_cast<size_t>(bytes), static_cast<uint8_t>(side));
+        i32(side); i32(side);
+    }
+    i32(0x9E2A83C1);
+    CHECK(ParseTexturePackage(pkg.data(), pkg.size(), &p, &error) && p.format == TexFormat::Bc3 && p.mips.size() == 3);
+    CHECK(MipImage(pkg.data(), pkg.size(), p, *PickMip(p, 0), 4, &image, &error) && image.format == TexFormat::Bc3 &&
+          image.width == 8 && image.bytes.size() == 64 && image.bytes[0] == 8);
 }
 
 void TestUpdateSignature()
@@ -925,6 +1129,10 @@ int main()
         {"spectator", TestSpectator},
         {"update info", TestUpdateInfo},
         {"update signature", TestUpdateSignature},
+        {"texture package", TestTexturePackage},
+        {"shown setup", TestShownSetup},
+        {"rules format", TestRulesFormat},
+        {"match ticket", TestMatchTicket},
     };
     for (const auto& t : tests) {
         const int before = g_failures;

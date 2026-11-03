@@ -39,7 +39,7 @@ if(SFV_BUILD_MOD AND WIN32)
   # Direct3D 11 backends. ImGui has no CMake build of its own.
   FetchContent_Declare(imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG v1.91.9b)
+    GIT_TAG v1.92.9b)
   FetchContent_MakeAvailable(imgui)
   add_library(imgui STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp
@@ -119,6 +119,10 @@ add_library(sfvcore STATIC
   src/core/compress.cpp
   src/core/json.cpp
   src/core/update_info.cpp
+  src/core/texture_package.cpp
+  src/core/look.cpp
+  src/core/rules.cpp
+  src/core/match_ticket.cpp
   src/core/replay_file.cpp
   src/core/file_open.cpp
   src/core/recorder.cpp
@@ -159,6 +163,8 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/boot.cpp
     src/mod/files.cpp
     src/mod/updater.cpp
+    src/mod/pak_textures.cpp
+    src/mod/profile.cpp
     src/mod/report_upload.cpp
     src/mod/crash_report.cpp
     src/mod/flow.cpp
@@ -167,7 +173,7 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/outside_probe.cpp
     src/mod/overlay.cpp
     src/mod/select_screen.cpp
-  src/mod/textures.cpp
+    src/mod/textures.cpp
     src/mod/ue4.cpp
     src/mod/config.cpp
     src/mod/control.cpp
@@ -183,8 +189,20 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/mod_main.cpp
     src/mod/netplay_driver.cpp
     src/mod/udp_transport.cpp
-    src/mod/weyve_service.cpp)
+    src/mod/weyve_service.cpp
+    src/mod/fonts.rc)
   target_link_libraries(sfv_rollback PRIVATE sfvcore minhook imgui weyvelength_client ws2_32 iphlpapi shell32 winhttp dbghelp)
+
+  # The bundled CJK font for names (third_party/fonts/README.md): too large
+  # for the repository or the DLL, so downloaded once by its tag and checked;
+  # releases ship it as SFVR/fonts/NotoSansCJK-Medium.ttc (package.ps1).
+  set(SFV_CJK_FONT ${CMAKE_BINARY_DIR}/fonts/NotoSansCJK-Medium.ttc)
+  file(DOWNLOAD https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/OTC/NotoSansCJK-Medium.ttc ${SFV_CJK_FONT}
+       EXPECTED_HASH SHA256=197d5e1e019faca33a4d55931c7d68b8056f3b97cb862049f5cb8de9efdfb8ce)
+  set_property(SOURCE src/mod/fonts.rc APPEND PROPERTY OBJECT_DEPENDS
+    ${CMAKE_SOURCE_DIR}/third_party/fonts/Barlow-Regular.ttf ${CMAKE_SOURCE_DIR}/third_party/fonts/Barlow-SemiBold.ttf
+    ${CMAKE_SOURCE_DIR}/third_party/fonts/Barlow-Bold.ttf ${CMAKE_SOURCE_DIR}/third_party/fonts/Barlow-BoldItalic.ttf
+    ${CMAKE_SOURCE_DIR}/third_party/fonts/ArchivoBlack-Regular.ttf)
 
   # The noise mask goes into the DLL (every copy of a build masks the same
   # words), as bytes: MSVC caps string literals at 16 KB.

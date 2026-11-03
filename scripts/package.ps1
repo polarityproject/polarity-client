@@ -19,6 +19,10 @@ $win = New-Item -ItemType Directory -Force (Join-Path $out 'Win64')
 $repo = New-Item -ItemType Directory -Force (Join-Path $out 'sfv-rollback')
 
 Copy-Item (Join-Path $build 'xinput1_3.dll'), (Join-Path $build 'sfv_rollback.dll') $win
+# The bundled CJK font, and the fonts' license (third_party/fonts/README.md).
+$fonts = New-Item -ItemType Directory -Force (Join-Path $win 'SFVR\fonts')
+Copy-Item (Join-Path $build 'fonts\NotoSansCJK-Medium.ttc') $fonts
+& (Join-Path $PSScriptRoot 'fonts-license.ps1') (Join-Path $win 'sfvr_fonts_license.txt')
 $ini = Get-Content (Join-Path $root 'sfv_rollback.ini.example')
 $serverAddress = if ($Server -match ':') { $Server } else { "${Server}:5555" }
 $ini = $ini -replace '^server=.*$', "server=$serverAddress"
@@ -51,8 +55,9 @@ crash, the end of the log and a small crash dump, at the next start. To turn
 that off: in the panel, Settings, Logs, untick "Send desync and crash
 reports".
 
-Uninstall: delete xinput1_3.dll, sfv_rollback.dll, sfv_noise.txt (0.1.0) and
-sfv_rollback.ini from Binaries\Win64\ (and the SFVR folder, with the logs).
+Uninstall: delete xinput1_3.dll, sfv_rollback.dll, sfv_noise.txt (0.1.0),
+sfvr_fonts_license.txt and sfv_rollback.ini from Binaries\Win64\ (and the SFVR
+folder, with the logs and the fonts).
 "@ | Set-Content (Join-Path $out 'INSTALL.txt')
   $zip = Join-Path $root "dist\$name.zip"
   if (Test-Path $zip) { Remove-Item $zip -Force }

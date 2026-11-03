@@ -121,6 +121,11 @@ void ResetSelectScreen();
 // nothing pops in when the screen opens. They load in the background, a few
 // ms' worth a frame.
 void WarmSelectTextures();
+// The title's warm up (M1): the pad glyphs, the player's favorite character
+// and stage (Fighter Profile, `chara`, `stage`; either may be empty), then
+// every grid tile, stage icon and stage background, read from the paks
+// behind anything drawn meanwhile. Any thread.
+void WarmBootTextures(const SelectData& data, const std::string& chara, const std::string& stage);
 // Render thread, in an ImGui frame: the screen at `alpha` (0..1, fades),
 // on the background draw list; with `takeInput` it reads the pads, keys and
 // mouse and fills `input`.

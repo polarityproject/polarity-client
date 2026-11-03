@@ -10,6 +10,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <initializer_list>
 
 namespace sfv {
 
@@ -28,6 +29,23 @@ void SplitVersion(const std::string& v, std::vector<long>* numbers, std::string*
         if (dot == std::string::npos) break;
         at = dot + 1;
     }
+}
+
+// A file name without folders or "..", short, of one of these types.
+bool PlainFileName(const std::string& name, std::initializer_list<const char*> types)
+{
+    if (name.empty() || name.size() > 64) return false;
+    for (char c : name) {
+        const bool ok = std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-' || c == '.';
+        if (!ok) return false;
+    }
+    if (name.find("..") != std::string::npos || name[0] == '.') return false;
+    std::string lower = name;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return std::any_of(types.begin(), types.end(), [&](const char* ext) {
+        const size_t n = std::strlen(ext);
+        return lower.size() > n && lower.compare(lower.size() - n, n, ext) == 0;
+    });
 }
 
 } // namespace
@@ -81,24 +99,45 @@ int CompareVersions(const std::string& a, const std::string& b)
         if (x != y) return x < y ? -1 : 1;
     }
     if (sa.empty() != sb.empty()) return sa.empty() ? 1 : -1;
-    return sa.compare(sb) < 0 ? -1 : sa == sb ? 0 : 1;
+    // The suffixes part by part (the semver rule): numbers as numbers, below
+    // any text; text as text; a suffix that runs out first is the lower.
+    std::vector<std::string> pa, pb;
+    auto parts = [](const std::string& s, std::vector<std::string>* out) {
+        size_t from = 0;
+        while (true) {
+            const size_t dot = s.find('.', from);
+            out->push_back(s.substr(from, dot - from));
+            if (dot == std::string::npos) break;
+            from = dot + 1;
+        }
+    };
+    parts(sa, &pa);
+    parts(sb, &pb);
+    auto number = [](const std::string& s) {
+        return !s.empty() && std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c) != 0; });
+    };
+    for (size_t i = 0; i < std::min(pa.size(), pb.size()); i++) {
+        const bool xn = number(pa[i]), yn = number(pb[i]);
+        if (xn && yn) {
+            const unsigned long long x = std::strtoull(pa[i].c_str(), nullptr, 10), y = std::strtoull(pb[i].c_str(), nullptr, 10);
+            if (x != y) return x < y ? -1 : 1;
+        }
+        else if (xn != yn) {
+            return xn ? -1 : 1;
+        }
+        else if (const int c = pa[i].compare(pb[i]); c != 0) {
+            return c < 0 ? -1 : 1;
+        }
+    }
+    return pa.size() == pb.size() ? 0 : pa.size() < pb.size() ? -1 : 1;
 }
 
 bool SafeUpdatePath(const std::string& path)
 {
-    if (path.empty() || path.size() > 64) return false;
-    for (char c : path) {
-        const bool ok = std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-' || c == '.';
-        if (!ok) return false;
-    }
-    if (path.find("..") != std::string::npos || path[0] == '.') return false;
-    std::string lower = path;
-    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    auto ends = [&](const char* ext) {
-        const size_t n = std::strlen(ext);
-        return lower.size() > n && lower.compare(lower.size() - n, n, ext) == 0;
-    };
-    return ends(".dll") || ends(".pdb") || ends(".txt");
+    // The one folder: the bundled fonts, .ttc only.
+    constexpr std::string_view kFonts = "SFVR/fonts/";
+    if (path.compare(0, kFonts.size(), kFonts) == 0) return PlainFileName(path.substr(kFonts.size()), {".ttc"});
+    return PlainFileName(path, {".dll", ".pdb", ".txt"});
 }
 
 std::string ResolveUrl(const std::string& base, const std::string& url)

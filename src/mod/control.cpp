@@ -22,12 +22,14 @@
 #include "mod/netplay_driver.h"
 #include "mod/outside_probe.h"
 #include "mod/overlay.h"
+#include "mod/pak_textures.h"
 #include "mod/textures.h"
 #include "mod/replay_driver.h"
 #include "mod/tracer.h"
 
 #include <MinHook.h>
 #include <windows.h>
+#include <d3d11.h>
 #include <xinput.h>
 
 #include <algorithm>
@@ -366,6 +368,63 @@ void RunNetCommand(const std::string& line)
         command.name = TestName();
         NetJoin(code, command, cmd == "spectate");
     }
+    else if (cmd == "ticket") {
+        // ticket host | join <code> | watch <code>, then any of: token <n>
+        // (the P2 seat's), set (a table's set instead of a vote), rules
+        // <r1 ...> (the rest of the line, core/rules.h): a session from a
+        // match ticket (core/match_ticket.h), as tables will start them (testing).
+        std::string what, word;
+        ss >> what;
+        MatchTicket t = what == "host" ? DirectMatchHost() : DirectMatchJoin("", what == "watch");
+        if (what != "host") ss >> t.roomCode;
+        while (ss >> word) {
+            if (word == "token") ss >> t.seatToken;
+            else if (word == "set") t.after = AfterMatch::Set;
+            else if (word == "rules") {
+                std::string rest;
+                std::getline(ss >> std::ws, rest);
+                std::string error;
+                if (!ParseRules(rest, &t.rules, &error)) {
+                    Log("ticket: rules '%s' not read: %s", rest.c_str(), error.c_str());
+                    return;
+                }
+            }
+        }
+        NetplayOptions command = o;
+        command.autoReady = true;
+        command.name = TestName();
+        NetPlayTicket(t, command);
+    }
+    else if (cmd == "presence") {
+        // presence open | status | close: a second Weyvelength connection
+        // beside any session's, as the hub's presence room will be (M3): it
+        // connects (5555, then 443 for the public server), creates a room and
+        // logs what it sees (testing that the two coexist).
+        static std::unique_ptr<WeyveService> presence;
+        std::string what;
+        ss >> what;
+        if (what == "open") {
+            const std::string server = o.server;
+            presence = WeyveService::Start(server, TestName() + " (presence)", server == kDefaultServer ? kDefaultServerAlsoPort : 0);
+            presence->CreateRoom();
+            Log("presence: connecting to %s", server.c_str());
+        }
+        else if (what == "close") {
+            presence.reset();
+            Log("presence: closed");
+        }
+        else if (presence) {
+            const WeyveRoomView v = presence->View();
+            static const char* const kServer[] = {"connecting", "connected", "failed", "lost"};
+            Log("presence: %s (%s), room %s, %zu members, self %u", kServer[static_cast<int>(v.server)], v.serverText.c_str(),
+                v.room.empty() ? "-" : WeyveService::DisplayCode(v.room).c_str(), v.members.size(), v.self);
+            WeyveEvent e;
+            while (presence->NextEvent(e)) Log("presence: event %d %s", static_cast<int>(e.type), e.text.c_str());
+        }
+        else {
+            Log("presence: not open");
+        }
+    }
     else if (cmd == "delay") {
         // delay <frames>: this player's input delay for the next host/join.
         int frames = 2;
@@ -619,6 +678,53 @@ void RunNetCommand(const std::string& line)
             const TextureView view = ViewOfTexture(texture);
             if (view.srv) SetOverlayTexture(view.srv, view.width, view.height, which);
         });
+    }
+    else if (cmd == "paktex") {
+        // paktex on|off | status | show <path> [max side] | save <path> [max side]
+        // | format <path> | dump <path>: textures read from the paks (pak_textures.h): on
+        // or off for the screens, figures, one drawn by the overlay or
+        // written as SFVR\textures\pak_<name>.dds (to compare with savetex's
+        // copy of the game's own), or the view format of the game's own.
+        std::string what, path;
+        uint32_t maxSide = 0;
+        ss >> what >> path >> maxSide;
+        if (what == "on" || what == "off") SetPakTexturesEnabled(what == "on");
+        else if (what == "status") Log("%s", PakTextureStatus().c_str());
+        else if (what == "dump") {
+            std::thread([path] { DumpPakPackage(path, Utf8Path(DataDir()) + "\\textures\\" + path.substr(path.rfind('/') + 1) + ".uasset"); }).detach();
+        }
+        else if (what == "format") {
+            RunOnGameThread([path] {
+                const TextureView view = ViewOfTexture(FindOrLoadTexture(path + "." + path.substr(path.rfind('/') + 1)), true);
+                if (!view.srv) return;
+                auto* srv = static_cast<ID3D11ShaderResourceView*>(view.srv);
+                D3D11_SHADER_RESOURCE_VIEW_DESC desc{};
+                srv->GetDesc(&desc);
+                Log("paktex: the game's view of %s: %ux%u, view format %d, %u mips", path.c_str(), view.width, view.height,
+                    int(desc.Format), desc.Texture2D.MipLevels);
+                srv->Release();
+            });
+        }
+        else if (what == "show" || what == "save") {
+            std::thread([what, path, maxSide] {
+                for (int i = 0; i < 200; i++) {
+                    bool failed = false;
+                    if (const TextureView* t = PakTexture(path, maxSide, true, &failed)) {
+                        static_cast<IUnknown*>(t->srv)->AddRef();
+                        Log("paktex: %s from the paks: %ux%u", path.c_str(), t->width, t->height);
+                        if (what == "show") SetOverlayTexture(t->srv, t->width, t->height, path + " (paks)");
+                        else SaveTextureLater(t->srv, "pak_" + path.substr(path.rfind('/') + 1));
+                        return;
+                    }
+                    if (failed) {
+                        Log("paktex: %s: the paks could not give it", path.c_str());
+                        return;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+                }
+                Log("paktex: %s: not ready after 5 s", path.c_str());
+            }).detach();
+        }
     }
     else if (cmd == "savetex") {
         // savetex <object name | /Game/... path> ...: each texture's top mip
@@ -1264,8 +1370,9 @@ void RunNetCommand(const std::string& line)
         Log("setstage %d: %s", stage, data ? "written" : "no battle data now");
     }
     else if (cmd == "setrounds") {
-        // setrounds <n>: the round count match setups write (3), as a game that kept another one (testing).
-        int rounds = 3;
+        // setrounds <n>: the +0x08 round count match setups write, as a game
+        // that kept another one would (testing; 0: the match's own).
+        int rounds = 0;
         ss >> rounds;
         SetMatchRoundsForTest(rounds);
         Log("setrounds %d: match setups write it from now on", rounds);
@@ -1378,8 +1485,8 @@ bool Parse(const std::string& line, Step& step)
         step.setup.stage = static_cast<uint16_t>(stage);
         return !ss.fail();
     }
-    if (cmd == "host" || cmd == "join" || cmd == "spectate" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "crash" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
-        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "startprobe" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "skipcallbacks") {
+    if (cmd == "host" || cmd == "join" || cmd == "spectate" || cmd == "ticket" || cmd == "presence" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "crash" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
+        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "startprobe" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
         step.kind = Step::Net;
         step.line = line;
         return true;

@@ -1,10 +1,13 @@
 #include "mod/overlay.h"
+#include "mod/pak_textures.h"
+#include "mod/profile.h"
 #include "mod/textures.h"
 
 #include "core/match_code.h"
 #include "mod/config.h"
 #include "mod/control.h"
 #include "mod/files.h"
+#include "mod/font_resources.h"
 #include "mod/flow.h"
 #include "mod/hitch.h"
 #include "mod/lifecycle.h"
@@ -277,10 +280,6 @@ ImFont* g_fontHuge = nullptr;    // the select screen's character names
 ImFont* g_fontBody = nullptr;    // the default font
 std::atomic<int> g_selectRequest{-1}; // RequestSelectPreview: the phase to open at (+4: watching)
 std::atomic<bool> g_selectLive{false}; // a session's select screen is up (or held over the jump) and takes input
-// Characters beyond Latin-1 that names have shown (NoteText): the fonts get
-// them from Windows' fonts on the next build, so names in any script draw.
-std::vector<ImWchar> g_extraChars;
-bool g_fontsDirty = false;
 
 float UiScaleFor(float height) { return std::max(1.0f, height / 720.0f); }
 
@@ -351,144 +350,98 @@ void ApplyTheme(float scale)
     c[ImGuiCol_NavWindowingDimBg] = c[ImGuiCol_ModalWindowDimBg] = Rgb(0, 0, 0, 0.5f);
 }
 
-// Notes the characters of a text the panel shows (names: seats, status
-// lines): any beyond Latin-1 the fonts lack makes them build again with it.
-void NoteText(const std::string& text)
+// The DLL's own copy of an embedded font (fonts.rc), as long as the DLL is
+// loaded; empty if missing.
+std::pair<void*, int> EmbeddedFont(int id)
 {
-    for (size_t i = 0; i < text.size();) {
-        const unsigned char c = static_cast<unsigned char>(text[i]);
-        const int len = c < 0x80 ? 1 : (c >> 5) == 6 ? 2 : (c >> 4) == 14 ? 3 : (c >> 3) == 30 ? 4 : 1;
-        uint32_t cp = len == 1 ? c : len == 2 ? (c & 0x1F) : len == 3 ? (c & 0x0F) : (c & 0x07);
-        for (int k = 1; k < len && i + k < text.size(); k++) cp = (cp << 6) | (static_cast<unsigned char>(text[i + k]) & 0x3F);
-        i += len;
-        // Latin-1 is in the fonts already; ImWchar holds the Basic Multilingual Plane.
-        if (cp <= 0xFF || cp > 0xFFFF || g_extraChars.size() >= 4096) continue;
-        const auto at = std::lower_bound(g_extraChars.begin(), g_extraChars.end(), static_cast<ImWchar>(cp));
-        if (at != g_extraChars.end() && *at == cp) continue;
-        g_extraChars.insert(at, static_cast<ImWchar>(cp));
-        g_fontsDirty = true;
-    }
+    HMODULE self = nullptr;
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       reinterpret_cast<LPCWSTR>(&EmbeddedFont), &self);
+    HRSRC found = self ? FindResourceW(self, MAKEINTRESOURCEW(id), MAKEINTRESOURCEW(10)) : nullptr; // RT_RCDATA
+    HGLOBAL loaded = found ? LoadResource(self, found) : nullptr;
+    void* data = loaded ? LockResource(loaded) : nullptr;
+    return {data, data ? static_cast<int>(SizeofResource(self, found)) : 0};
 }
 
-// Fonts for the screen's size (built again when it changes): Bahnschrift
-// for text, Segoe UI Bold Italic for titles and tiles, as the menus' bold
-// italic entries; ImGui's own font when Windows lacks them. Each takes the
-// characters of g_extraChars from Windows' fonts for other scripts (the
-// first that has a character wins).
+// The bundled CJK font (SFVR\fonts\NotoSansCJK-Medium.ttc, read once and
+// kept: the atlas only points at it), and its face for Windows' display
+// language: the Han characters Chinese, Japanese and Korean share take the
+// player's own shapes (a Chinese system drew them in Japanese ones once).
+// Faces: 0 JP, 1 KR, 2 SC, 3 TC, 4 HK.
+const std::vector<uint8_t>& CjkFont()
+{
+    static const std::vector<uint8_t> data = [] {
+        std::vector<uint8_t> out;
+        const std::wstring path = DataDir() + L"\\fonts\\NotoSansCJK-Medium.ttc";
+        if (FILE* f = _wfopen(path.c_str(), L"rb")) {
+            std::fseek(f, 0, SEEK_END);
+            out.resize(static_cast<size_t>(std::max(0L, std::ftell(f))));
+            std::fseek(f, 0, SEEK_SET);
+            if (std::fread(out.data(), 1, out.size(), f) != out.size()) out.clear();
+            std::fclose(f);
+        }
+        Log("overlay: CJK font %s", out.empty() ? "missing (names in Chinese, Japanese or Korean show boxes)" : "loaded");
+        return out;
+    }();
+    return data;
+}
+
+int CjkFace()
+{
+    const LANGID lang = GetUserDefaultUILanguage();
+    if (PRIMARYLANGID(lang) == LANG_KOREAN) return 1;
+    if (PRIMARYLANGID(lang) != LANG_CHINESE) return 0;
+    const WORD sub = SUBLANGID(lang);
+    if (sub == SUBLANG_CHINESE_HONGKONG || sub == SUBLANG_CHINESE_MACAU) return 4;
+    return sub == SUBLANG_CHINESE_TRADITIONAL ? 3 : 2;
+}
+
+// Fonts for the screen's size (built again when it changes): Barlow for
+// text, its bold italic for titles and tiles (as the menus' bold italic
+// entries), Archivo Black for the select screen's names, all embedded, so
+// they look the same on Windows and Proton. Each takes the characters it
+// lacks from the bundled Noto Sans CJK; ImGui 1.92 makes glyphs as text
+// needs them, so names in any of its scripts draw without a rebuild.
 void BuildFonts(float scale)
 {
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->Clear();
-    char dir[MAX_PATH] = {};
-    GetWindowsDirectoryA(dir, MAX_PATH);
-    const std::string fonts = std::string(dir) + "\\Fonts\\";
-    // The fallback fonts, read once and kept (the atlas only points at them).
-    struct Fallback {
-        const char* file;
-        std::vector<uint8_t> data;
-        bool tried = false;
-    };
-    static Fallback fallbacks[] = {
-        {"segoeui.ttf"},  // Latin extended, Greek, Cyrillic, Hebrew, Arabic
-        {"YuGothM.ttc"},  // Japanese
-        {"msgothic.ttc"}, // ... older Windows
-        {"malgun.ttf"},   // Korean
-        {"msyh.ttc"},     // Chinese (Simplified)
-        {"msjh.ttc"},     // Chinese (Traditional)
-        {"seguisym.ttf"}, // symbols
-    };
-    // Tried in an order that follows Windows' display language: the Han
-    // characters Chinese, Japanese and Korean share take the shapes of the
-    // player's own (a Chinese system drew them in Japanese ones, and
-    // characters only Simplified Chinese has came from the last font).
-    static const std::vector<Fallback*> order = [] {
-        std::vector<Fallback*> out;
-        for (Fallback& fb : fallbacks) out.push_back(&fb);
-        const LANGID lang = GetUserDefaultUILanguage();
-        std::vector<std::string> first;
-        if (PRIMARYLANGID(lang) == LANG_CHINESE) {
-            const WORD sub = SUBLANGID(lang);
-            const bool traditional = sub == SUBLANG_CHINESE_TRADITIONAL || sub == SUBLANG_CHINESE_HONGKONG || sub == SUBLANG_CHINESE_MACAU;
-            first = traditional ? std::vector<std::string>{"msjh.ttc", "msyh.ttc"} : std::vector<std::string>{"msyh.ttc", "msjh.ttc"};
-        }
-        else if (PRIMARYLANGID(lang) == LANG_KOREAN) {
-            first = {"malgun.ttf"};
-        }
-        // segoeui.ttf stays ahead: it has no Han characters, only the scripts above.
-        auto rank = [&](const Fallback* fb) {
-            const auto it = std::find(first.begin(), first.end(), fb->file);
-            return std::string(fb->file) == "segoeui.ttf" ? -1 : it == first.end() ? 100 : static_cast<int>(it - first.begin());
-        };
-        std::stable_sort(out.begin(), out.end(), [&](const Fallback* a, const Fallback* b) { return rank(a) < rank(b); });
-        return out;
-    }();
-    static ImVector<ImWchar> extraRanges;
-    extraRanges.clear();
-    if (!g_extraChars.empty()) {
-        ImFontGlyphRangesBuilder builder;
-        for (ImWchar c : g_extraChars) builder.AddChar(c);
-        builder.BuildRanges(&extraRanges);
-    }
-    auto inBlock = [](ImWchar c, const char* file) {
-        const std::string f = file;
-        if (f == "segoeui.ttf" || f == "seguisym.ttf") return true;
-        const bool cjk = (c >= 0x2E80 && c <= 0x9FFF) || (c >= 0xF900 && c <= 0xFAFF) || (c >= 0xFF00 && c <= 0xFFEF);
-        if (f == "malgun.ttf") return (c >= 0xAC00 && c <= 0xD7A3) || (c >= 0x1100 && c <= 0x11FF) || (c >= 0x3130 && c <= 0x318F);
-        return cjk;
-    };
-    auto mergeExtras = [&](float px) {
-        if (extraRanges.empty()) return;
-        for (Fallback* each : order) {
-            Fallback& fb = *each;
-            // Only fonts for a script some name uses are read.
-            if (!std::any_of(g_extraChars.begin(), g_extraChars.end(), [&](ImWchar c) { return inBlock(c, fb.file); })) continue;
-            if (!fb.tried) {
-                fb.tried = true;
-                if (FILE* f = std::fopen((fonts + fb.file).c_str(), "rb")) {
-                    std::fseek(f, 0, SEEK_END);
-                    fb.data.resize(static_cast<size_t>(std::max(0L, std::ftell(f))));
-                    std::fseek(f, 0, SEEK_SET);
-                    if (std::fread(fb.data.data(), 1, fb.data.size(), f) != fb.data.size()) fb.data.clear();
-                    std::fclose(f);
-                }
-            }
-            if (fb.data.empty()) continue;
-            ImFontConfig cfg;
-            cfg.MergeMode = true;
-            cfg.FontDataOwnedByAtlas = false;
-            cfg.OversampleH = 2;
-            io.Fonts->AddFontFromMemoryTTF(fb.data.data(), static_cast<int>(fb.data.size()), px * scale, &cfg, extraRanges.Data);
-        }
-    };
-    auto add = [&](const char* file, float px) -> ImFont* {
-        const std::string path = fonts + file;
-        if (GetFileAttributesA(path.c_str()) == INVALID_FILE_ATTRIBUTES) return nullptr;
+    const std::vector<uint8_t>& cjk = CjkFont();
+    const int face = CjkFace();
+    auto add = [&](int id, float px) -> ImFont* {
+        const auto [data, size] = EmbeddedFont(id);
+        if (!data) return nullptr;
         ImFontConfig cfg;
+        cfg.FontDataOwnedByAtlas = false;
         cfg.OversampleH = 2;
-        ImFont* font = io.Fonts->AddFontFromFileTTF(path.c_str(), px * scale, &cfg);
-        if (font) mergeExtras(px);
+        ImFont* font = io.Fonts->AddFontFromMemoryTTF(data, size, px * scale, &cfg);
+        if (font && !cjk.empty()) {
+            ImFontConfig merge;
+            merge.MergeMode = true;
+            merge.FontDataOwnedByAtlas = false;
+            merge.FontNo = face;
+            io.Fonts->AddFontFromMemoryTTF(const_cast<uint8_t*>(cjk.data()), static_cast<int>(cjk.size()), px * scale, &merge);
+        }
         return font;
     };
-    ImFont* body = add("bahnschrift.ttf", 17);
+    ImFont* body = add(SFV_FONT_BARLOW_REGULAR, 17);
     if (!body) {
         ImFontConfig cfg;
         cfg.SizePixels = 13 * scale;
         body = io.Fonts->AddFontDefault(&cfg);
-        mergeExtras(13);
     }
-    g_fontHeading = add("segoeuiz.ttf", 20);
+    g_fontHeading = add(SFV_FONT_BARLOW_BOLD_ITALIC, 20);
     if (!g_fontHeading) g_fontHeading = body;
-    g_fontBig = add("bahnschrift.ttf", 40);
+    g_fontBig = add(SFV_FONT_BARLOW_SEMIBOLD, 40);
     if (!g_fontBig) g_fontBig = body;
-    g_fontSmall = add("bahnschrift.ttf", 14);
+    g_fontSmall = add(SFV_FONT_BARLOW_REGULAR, 14);
     if (!g_fontSmall) g_fontSmall = body;
-    g_fontTiny = add("bahnschrift.ttf", 12);
+    g_fontTiny = add(SFV_FONT_BARLOW_SEMIBOLD, 12);
     if (!g_fontTiny) g_fontTiny = g_fontSmall;
-    g_fontHuge = add("seguibl.ttf", 64); // Segoe UI Black, as heavy as the game's names
+    g_fontHuge = add(SFV_FONT_ARCHIVO_BLACK, 64);
     if (!g_fontHuge) g_fontHuge = g_fontBig;
     g_fontBody = body;
     io.FontDefault = body;
-    io.FontGlobalScale = 1.0f;
     ApplyTheme(scale);
     g_builtScale = g_uiScale = scale;
 }
@@ -682,6 +635,7 @@ bool SetUp(IDXGISwapChain* swapChain)
     }
     g_device->GetImmediateContext(&g_context);
     NoteShaderResourceViewKind(g_device);
+    SetPakTextureDevice(g_device);
     g_window = desc.OutputWindow;
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -864,17 +818,6 @@ void LoadTables()
         if (g_readTables) {
             if (g_readTables->loaded) {
                 g_tables = std::move(*g_readTables);
-                // The game's own names, in its language: a Chinese, Japanese
-                // or Korean game's characters need glyphs Latin-1 lacks.
-                auto note = [](const std::vector<std::string>& texts) {
-                    for (const std::string& t : texts) NoteText(t);
-                };
-                note(g_tables.labels);
-                note(g_tables.stageLabels);
-                for (const auto& v : g_tables.costumeNames) note(v);
-                for (const auto& v : g_tables.settingLabels) note(v);
-                for (const auto& v : g_tables.vskills) note(v);
-                for (const auto& v : g_tables.vtriggers) note(v);
                 Log("overlay: character lists read: %zu characters, %zu stages (scene %s)", g_tables.charas.size(),
                     g_tables.stages.size(), CurrentScene().c_str());
             }
@@ -2048,6 +1991,7 @@ struct Preview {
     int choice[kNumPlayers] = {0, 1}; // each side's vote: none, rematch, character select
     bool ready[kNumPlayers] = {false, true};
     bool relayed = true; // the link through Cloudflare's relay (else peer to peer)
+    bool set = false;    // the side windows of a table's set (no vote)
     bool Any() const { return hud || strip || desync || side[0] || side[1]; }
 };
 Preview g_preview;
@@ -2617,9 +2561,9 @@ void DrawStartHold()
     const float x = (io.DisplaySize.x - w) / 2, y = io.DisplaySize.y - 36 * g_uiScale;
     const char* text = "Hold for menu...";
     ImFont* font = g_fontSmall ? g_fontSmall : ImGui::GetFont();
-    const ImVec2 size = font->CalcTextSizeA(font->FontSize, FLT_MAX, 0, text);
-    d->AddText(font, font->FontSize, ImVec2((io.DisplaySize.x - size.x) / 2 + 1, y - size.y - 4 * g_uiScale + 1), IM_COL32(0, 0, 0, 160), text);
-    d->AddText(font, font->FontSize, ImVec2((io.DisplaySize.x - size.x) / 2, y - size.y - 4 * g_uiScale), IM_COL32(230, 226, 214, 200), text);
+    const ImVec2 size = font->CalcTextSizeA(font->LegacySize, FLT_MAX, 0, text);
+    d->AddText(font, font->LegacySize, ImVec2((io.DisplaySize.x - size.x) / 2 + 1, y - size.y - 4 * g_uiScale + 1), IM_COL32(0, 0, 0, 160), text);
+    d->AddText(font, font->LegacySize, ImVec2((io.DisplaySize.x - size.x) / 2, y - size.y - 4 * g_uiScale), IM_COL32(230, 226, 214, 200), text);
     d->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), IM_COL32(0, 0, 0, 150), h / 2);
     d->AddRectFilled(ImVec2(x, y), ImVec2(x + w * std::min(part, 1.0f), y + h), ImGui::GetColorU32(kGold), h / 2);
 }
@@ -2809,7 +2753,7 @@ void DrawPlayerBars(const NetView& v)
     ImFont* big = g_fontHeading;
     ImFont* text = g_fontSmall; // the details: smaller than the names, light enough to read
     const ImVec4 detail = Rgb(214, 211, 200);
-    const float bigSize = big->FontSize, textSize = text->FontSize;
+    const float bigSize = big->LegacySize, textSize = text->LegacySize;
     const float rule = std::max(1.0f, 1.5f * g_uiScale);
     const float pad = 10 * g_uiScale, gap = 8 * g_uiScale;
     // Across, from the game's HUD measured in screen fractions (P1's health
@@ -2868,7 +2812,7 @@ void DrawPlayerBars(const NetView& v)
             parts.push_back({std::to_string(v.recentRollback) + " RBF", g_fontTiny, color(detail)});
         }
         auto width = [textSize](const Part& part) {
-            return part.kind != Kind::Text ? textSize : part.font->CalcTextSizeA(part.font->FontSize, FLT_MAX, 0, part.text.c_str()).x;
+            return part.kind != Kind::Text ? textSize : part.font->CalcTextSizeA(part.font->LegacySize, FLT_MAX, 0, part.text.c_str()).x;
         };
         auto total = [&] {
             float sum = -gap;
@@ -2886,7 +2830,7 @@ void DrawPlayerBars(const NetView& v)
         const float mid = top + (bottom - rule - top) * 0.5f;
         float x = left ? x0 + pad : x1 - pad;
         for (const Part& part : parts) {
-            const float size = part.font->FontSize;
+            const float size = part.font->LegacySize;
             const float w = width(part);
             const float at = left ? x : x - w;
             const ImVec2 iconAt(at, mid - textSize * 0.5f);
@@ -2999,7 +2943,22 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
         ImGui::PopTextWrapPos();
         ImGui::PopFont();
         Rule();
-        if (!lobbyPhase) {
+        if (!lobbyPhase && v.setPlay) {
+            // A table's set: the score and what follows, no vote (the next
+            // game starts on its own; core/match_ticket.h).
+            const int setWinner = v.seats[0].wins >= v.firstTo ? 0 : v.seats[1].wins >= v.firstTo ? 1 : -1;
+            ImGui::PushFont(g_fontBig);
+            ImGui::TextColored(kGold, "%u", s.wins);
+            ImGui::PopFont();
+            // The line beside it on the number's baseline.
+            ImGui::SameLine();
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (g_fontBig->LegacySize - ImGui::GetFontSize()) * 0.62f);
+            ImGui::TextColored(kDim, "of %u to win the set", v.firstTo);
+            if (setWinner == i) ImGui::TextColored(kGreen, "Wins the set");
+            else if (setWinner >= 0) ImGui::TextColored(kDim, "Set over");
+            else ImGui::TextColored(kDim, "Next game in a moment");
+        }
+        else if (!lobbyPhase) {
             ImGui::TextColored(s.choice == lobby::Choice::None ? kDim : kGreen, "%s", VoteText(s.choice));
             if (mine) {
                 auto button = [&](const char* label, lobby::Choice c) {
@@ -3072,6 +3031,8 @@ NetView PreviewView(NetView::Phase phase)
     v.link = {38, 4, core::kLinkSamples};
     v.stageRule = lobby::kRandomStage;
     v.overResults = true;
+    v.setPlay = p.set;
+    v.firstTo = 3;
     const NetplayOptions mine = ChosenOptions();
     for (int i = 0; i < kNumPlayers; i++) {
         lobby::Seat& s = v.seats[i];
@@ -3132,7 +3093,7 @@ void DrawMenuHint()
     const char* title = "ONLINE PLAY";
     const char* keys = "F1   or   Back + Start";
     const float gap = 14 * g_uiScale, pad = 40 * g_uiScale;
-    const ImVec2 titleSize = g_fontHeading->CalcTextSizeA(g_fontHeading->FontSize, FLT_MAX, 0, title);
+    const ImVec2 titleSize = g_fontHeading->CalcTextSizeA(g_fontHeading->LegacySize, FLT_MAX, 0, title);
     const ImVec2 keysSize = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, 0, keys);
     const float width = titleSize.x + gap + keysSize.x + pad * 2;
     const float rule = std::max(1.0f, 1.5f * g_uiScale);
@@ -3144,7 +3105,7 @@ void DrawMenuHint()
     d->AddRect(ImVec2(x0, -1), ImVec2(x1, height), ImGui::GetColorU32(Rgb(216, 212, 178, 0.6f)), 0, 0, std::max(1.0f, g_uiScale));
     d->AddRectFilled(ImVec2(x0 + 1, height - rule - 1), ImVec2(x1 - 1, height - 1), ImGui::GetColorU32(kGoldLine));
     const float y = (height - rule - titleSize.y) * 0.5f;
-    d->AddText(g_fontHeading, g_fontHeading->FontSize, ImVec2(x0 + pad, y), ImGui::GetColorU32(kGold), title);
+    d->AddText(g_fontHeading, g_fontHeading->LegacySize, ImVec2(x0 + pad, y), ImGui::GetColorU32(kGold), title);
     d->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(x0 + pad + titleSize.x + gap, y + (titleSize.y - keysSize.y) * 0.5f),
                ImGui::GetColorU32(Rgb(242, 240, 230)), keys);
 }
@@ -3165,12 +3126,13 @@ void DrawPreviews()
         else if (w == "desync") p.desync = true;
         else if (w == "p1") p.side[0] = true;
         else if (w == "p2") p.side[1] = true;
-        else if (w == "vote") p.sides = 0;
         else if (w == "select") p.sides = 1;
         else if (w == "you1") p.you = 0;
         else if (w == "you2") p.you = 1;
         else if (w == "toasts") g_sampleToasts = true;
         else if (w == "relay") p.relayed = true;
+        else if (w == "set") p.set = true;
+        else if (w == "vote") p.set = false, p.sides = 0;
         else if (w == "p2p") p.relayed = false;
         else if (w == "fade") {
             p.hud = true;
@@ -3241,6 +3203,17 @@ void Draw(IDXGISwapChain* swapChain)
     // joining): the select screen's textures start loading, so nothing pops
     // in when it opens. About 170, 40 ms each on the game thread: a joiner
     // types the code meanwhile. Once a run: they stay loaded.
+    // At the menus once the lists are read: the title's warm up (M1), the
+    // pictures any screen shows first, the player's favorites among them.
+    static bool bootWarmed = false;
+    if (!bootWarmed && g_tables.loaded && OnMenuScreen()) {
+        bootWarmed = true;
+        RunOnGameThread([data = PreviewSelectData()] {
+            ProfileFavorites favorites;
+            ReadProfileFavorites(&favorites);
+            WarmBootTextures(data, favorites.chara, favorites.stage);
+        });
+    }
     static bool warmed = false;
     const bool onTheWay = phase != NetView::Phase::Idle ? phase != NetView::Phase::Ended : g_visible && OnMenuScreen();
     if (!warmed && onTheWay && g_tables.loaded) {
@@ -3297,17 +3270,11 @@ void Draw(IDXGISwapChain* swapChain)
     const bool session = phase != NetView::Phase::Idle;
     io.MouseDrawCursor = visible || g_voting || g_selectLive || SelectPreviewOpen(); // the game hides the system cursor
     // Fonts for the game's resolution (1.0 at 720 lines): again when it
-    // changed (last frame's size; the backend makes the new atlas).
-    // ... and when a name brings characters the fonts lack.
-    for (const auto& seat : view.seats) NoteText(seat.name);
-    NoteText(view.status);
-    NoteText(view.result);
-    NoteText(NetOptions().name);
-    const bool rescale = io.DisplaySize.y > 0 && std::abs(UiScaleFor(io.DisplaySize.y) - g_builtScale) > 0.05f;
-    if (rescale || (g_fontsDirty && g_builtScale > 0)) {
-        g_fontsDirty = false;
+    // changed (last frame's size; the backend makes the new atlas). Glyphs a
+    // name needs are made as it is drawn (ImGui 1.92).
+    if (io.DisplaySize.y > 0 && std::abs(UiScaleFor(io.DisplaySize.y) - g_builtScale) > 0.05f) {
         ImGui_ImplDX11_InvalidateDeviceObjects();
-        BuildFonts(rescale ? UiScaleFor(io.DisplaySize.y) : g_builtScale);
+        BuildFonts(UiScaleFor(io.DisplaySize.y));
     }
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
@@ -3438,6 +3405,7 @@ HRESULT DrawAndPresent(PresentFn next, IDXGISwapChain* self, UINT syncInterval, 
 {
     if (Stopping() || (flags & DXGI_PRESENT_TEST)) return next(self, syncInterval, flags);
     SaveQueuedTextures();
+    CreatePakTextures();
     // Frames per second: frames counted over each half second. (Averaging
     // 1/frame time read high whenever frame times were uneven, 61-62 at a
     // true 60: the mean of 1/t is above 1/mean t.)

@@ -1,5 +1,5 @@
 param([string]$Action='shot', [string]$Keys='', [int]$HoldMs=80, [int]$GapMs=250, [string]$Out='', [int]$Instance=0,
-      [int]$X=0, [int]$Y=0)
+      [int]$X=0, [int]$Y=0, [switch]$Full)
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
 using System; using System.Runtime.InteropServices;
@@ -56,7 +56,8 @@ if ($Action -eq 'shot' -or $Action -eq 'keys' -or $Action -eq 'click') {
   $bmp = New-Object System.Drawing.Bitmap $wd, $ht
   $g = [System.Drawing.Graphics]::FromImage($bmp)
   $hdc = $g.GetHdc(); [W]::PrintWindow($h, $hdc, 2) | Out-Null; $g.ReleaseHdc($hdc)
-  $small = New-Object System.Drawing.Bitmap $bmp, ([int]($wd/2)), ([int]($ht/2))
+  # Half size unless -Full (checking type at its real size).
+  $small = if ($Full) { $bmp } else { New-Object System.Drawing.Bitmap $bmp, ([int]($wd/2)), ([int]($ht/2)) }
   $small.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
   "shot $wd x $ht -> $Out"
 }

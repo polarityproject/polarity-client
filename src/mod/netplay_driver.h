@@ -23,6 +23,7 @@
 #include "core/game.h"
 #include "core/input_delay.h"
 #include "core/lobby.h"
+#include "core/match_ticket.h"
 #include "core/mux.h"
 
 #include <cstdint>
@@ -89,6 +90,10 @@ NetplayOptions& NetOptions();
 // With [netplay] hotkeys=1: F7 hosts, F8 joins with the code on the clipboard
 // (game window focused, no session running).
 void NetPollHotkeys();
+// Into a match with a ticket (core/match_ticket.h): who hosts, the seat
+// token, the rules and what follows a match. NetHost and NetJoin make
+// Direct Match's tickets.
+void NetPlayTicket(const MatchTicket& ticket, const NetplayOptions& options);
 void NetHost(const NetplayOptions& options);
 void NetJoin(const std::string& code, const NetplayOptions& options, bool spectate = false);
 void NetLeave();
@@ -132,6 +137,8 @@ struct NetView {
     // for a spectator), matches finished, spectators watching.
     lobby::Seat seats[kNumPlayers];
     int you = -1;
+    bool setPlay = false; // a table's set (AfterMatch::Set): the next game on its own, no vote
+    uint8_t firstTo = 0;  // ... games to win it
     int played = 0;
     int spectators = 0;
     unsigned linkPingMs = 0; // round trip of the session's heartbeat

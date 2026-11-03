@@ -872,7 +872,10 @@ void RequestReplay(const std::string& path, int stressDistance, int watchFrom, i
     }
     // The recorded setup and stage for the battle the jump starts (without
     // the stage the battle loads the game's default request, Training).
-    SetPendingSetup(rf.setup);
+    // As the PC that recorded it showed it (two players on one look: the
+    // other player recolored, core/look.h), so its frozen state hashes the
+    // same; the host's view for a recording made outside a session.
+    SetPendingSetup(ShownSetup(rf.setup, rf.localPlayer == 1 ? 1 : 0, GameLookRules()));
     SetPendingStage(rf.setup.stage == kKeepStage ? "" : StageCode(rf.setup.stage));
     Log("replay: stage %s", rf.setup.stage == kKeepStage ? "as prepared" : StageCode(rf.setup.stage).c_str());
     auto* driver = new ReplayDriver(std::move(rf), name, stressDistance, watchFrom, watchTo, watchRegion);

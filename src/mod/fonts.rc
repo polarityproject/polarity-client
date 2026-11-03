@@ -1,0 +1,8 @@
+// The overlay's fonts, embedded so nothing can go missing (third_party/fonts).
+#include "font_resources.h"
+
+SFV_FONT_BARLOW_REGULAR RCDATA "../../third_party/fonts/Barlow-Regular.ttf"
+SFV_FONT_BARLOW_SEMIBOLD RCDATA "../../third_party/fonts/Barlow-SemiBold.ttf"
+SFV_FONT_BARLOW_BOLD RCDATA "../../third_party/fonts/Barlow-Bold.ttf"
+SFV_FONT_BARLOW_BOLD_ITALIC RCDATA "../../third_party/fonts/Barlow-BoldItalic.ttf"
+SFV_FONT_ARCHIVO_BLACK RCDATA "../../third_party/fonts/ArchivoBlack-Regular.ttf"

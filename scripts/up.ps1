@@ -47,6 +47,13 @@ $running = @(Get-Process StreetFighterV -ErrorAction SilentlyContinue).Count
 # itself (xinput1_3.dll) is the game's while it runs: copied with none running.
 Copy-Item (Join-Path $PSScriptRoot '..\build\Release\sfv_rollback.dll') $w -Force
 if (-not $running) { Copy-Item (Join-Path $PSScriptRoot '..\build\Release\xinput1_3.dll') $w -Force }
+# The bundled CJK font (third_party/fonts/README.md), where releases put it.
+$cjk = Join-Path $PSScriptRoot '..\build\Release\fonts\NotoSansCJK-Medium.ttc'
+$cjkTo = Join-Path $w 'SFVR\fonts\NotoSansCJK-Medium.ttc'
+if ((Test-Path $cjk) -and (-not (Test-Path $cjkTo) -or (Get-Item $cjk).Length -ne (Get-Item $cjkTo).Length)) {
+  New-Item -ItemType Directory -Force (Split-Path $cjkTo) | Out-Null
+  Copy-Item $cjk $cjkTo -Force
+}
 function Launch {
   $r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = "`"$exe`""; CurrentDirectory = $w }
   if ($r.ReturnValue -ne 0) { Write-Error "cannot start the game (Win32_Process.Create returned $($r.ReturnValue))"; exit 1 }

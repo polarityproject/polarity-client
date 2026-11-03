@@ -11,6 +11,7 @@
 // battle actor reads it (before assets load) replaces the menu choices.
 
 #include "core/game.h"
+#include "core/look.h"
 #include "mod/image.h"
 
 #include <cstdint>
@@ -92,8 +93,8 @@ bool HasPendingSetup();
 // Research: a SetUniqueParam value (player 0/1, index 0-7; -1 clears) for
 // the next battles.
 void SetUniqueParamOverride(int player, int index, int value);
-// The round count ApplyMatchSetup writes (3); other values only to test a
-// game that kept another count.
+// Testing: the +0x08 round count ApplyMatchSetup writes, as a game that kept
+// another count would (0: the match's own, from its rules).
 void SetMatchRoundsForTest(int rounds);
 // Counts battle setups seen (CheckPlayers calls) and battles created
 // (ReadSettings calls), to notice a jump into battle happened.
@@ -102,5 +103,12 @@ int BattleCreationCount();
 
 std::string DescribeSetup(const MatchSetup& setup);
 void LogBattleSetup(const char* when);
+
+// The same-look rule's view of the game's data (core/look.h): Eleven is a
+// fighter in its 0C costume, the other Eleven wears its color 2 (bronze),
+// and a costume's colors are listed as the select screen lists them.
+LookRules GameLookRules();
+// Eleven plays a fighter in its 0C costume (the silver model).
+bool IsElevenPick(const PlayerSetup& p);
 
 } // namespace sfv::mod

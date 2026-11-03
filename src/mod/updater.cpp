@@ -10,6 +10,7 @@
 
 #include <winhttp.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <functional>
@@ -171,6 +172,35 @@ void Check()
         newer ? "an update" : "up to date");
 }
 
+// An update file's place under the game folder (SFVR/fonts/x.ttc ->
+// SFVR\fonts\x.ttc), and its name in the staging folder (flat).
+std::wstring OnDisk(const UpdateFile& f)
+{
+    std::wstring path = Wide(f.path);
+    std::replace(path.begin(), path.end(), L'/', L'\\');
+    return path;
+}
+
+std::wstring Staged(const UpdateFile& f)
+{
+    std::wstring name = Wide(f.path);
+    std::replace(name.begin(), name.end(), L'/', L'_');
+    return name;
+}
+
+// Whether the game folder has this file as the update has it already (the
+// bundled font, 18 MB, rarely changes: not downloaded again).
+bool AlreadyThere(const UpdateFile& f)
+{
+    const std::wstring target = g_gameDir + L"\\" + OnDisk(f);
+    FILE* in = _wfopen(target.c_str(), L"rb");
+    if (!in) return false;
+    std::vector<uint8_t> data(static_cast<size_t>(f.size) + 1);
+    const size_t got = std::fread(data.data(), 1, data.size(), in);
+    std::fclose(in);
+    return got == f.size && Sha256Hex(data.data(), got) == f.sha256;
+}
+
 // Puts the staged files in place, the old ones aside; all or nothing.
 bool Apply(const std::wstring& staging, const UpdateInfo& info, std::string* error)
 {
@@ -181,12 +211,13 @@ bool Apply(const std::wstring& staging, const UpdateInfo& info, std::string* err
     std::vector<Swap> done;
     const std::wstring stamp = std::to_wstring(GetTickCount64());
     for (const UpdateFile& f : info.files) {
-        const std::wstring target = g_gameDir + L"\\" + Wide(f.path);
+        const std::wstring target = g_gameDir + L"\\" + OnDisk(f);
         const std::wstring old = target + L"." + stamp + L".old";
+        if (const size_t slash = target.find_last_of(L'\\'); slash > g_gameDir.size()) EnsureDirectory(target.substr(0, slash));
         const bool exists = GetFileAttributesW(target.c_str()) != INVALID_FILE_ATTRIBUTES;
         bool ok = !exists || MoveFileExW(target.c_str(), old.c_str(), 0);
         if (ok) {
-            ok = MoveFileExW((staging + L"\\" + Wide(f.path)).c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED);
+            ok = MoveFileExW((staging + L"\\" + Staged(f)).c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED);
             if (!ok && exists) MoveFileExW(old.c_str(), target.c_str(), 0);
         }
         if (!ok) {
@@ -216,6 +247,12 @@ void Install()
         g_view.state = UpdateView::State::Downloading;
         g_view.done = 0;
         g_view.total = 0;
+    }
+    // Only what differs from the game folder's copy.
+    const size_t listed = info.files.size();
+    info.files.erase(std::remove_if(info.files.begin(), info.files.end(), AlreadyThere), info.files.end());
+    {
+        std::lock_guard lock(g_mutex);
         for (const auto& f : info.files) g_view.total += f.size;
     }
     const std::wstring staging = DataDir() + L"\\update\\" + Wide(info.version);
@@ -236,7 +273,7 @@ void Install()
             Set(UpdateView::State::Failed, error);
             return;
         }
-        FILE* out = _wfopen((staging + L"\\" + Wide(f.path)).c_str(), L"wb");
+        FILE* out = _wfopen((staging + L"\\" + Staged(f)).c_str(), L"wb");
         const bool written = out && std::fwrite(data.data(), 1, data.size(), out) == data.size();
         if (out) std::fclose(out);
         if (!written) {
@@ -253,7 +290,8 @@ void Install()
         return;
     }
     RemoveDirectoryW(staging.c_str());
-    Log("update: SFVR %s installed (%zu files); the next launch runs it", info.version.c_str(), info.files.size());
+    Log("update: SFVR %s installed (%zu files; %zu already up to date); the next launch runs it", info.version.c_str(),
+        info.files.size(), listed - info.files.size());
     Set(UpdateView::State::Ready);
 }
 
@@ -262,10 +300,12 @@ void Install()
 void CleanUp()
 {
     WIN32_FIND_DATAW fd;
-    HANDLE h = FindFirstFileW((g_gameDir + L"\\*.old").c_str(), &fd);
-    if (h != INVALID_HANDLE_VALUE) {
+    HANDLE h;
+    for (const std::wstring& dir : {g_gameDir, g_gameDir + L"\\SFVR\\fonts"}) {
+        h = FindFirstFileW((dir + L"\\*.old").c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) continue;
         do {
-            if (DeleteFileW((g_gameDir + L"\\" + fd.cFileName).c_str())) Log("update: removed %s", Narrow(fd.cFileName).c_str());
+            if (DeleteFileW((dir + L"\\" + fd.cFileName).c_str())) Log("update: removed %s", Narrow(fd.cFileName).c_str());
         } while (FindNextFileW(h, &fd));
         FindClose(h);
     }

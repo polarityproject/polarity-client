@@ -2,6 +2,7 @@
 
 #include "mod/flow.h"
 #include "mod/log.h"
+#include "mod/pak_textures.h"
 #include "mod/textures.h"
 
 #include <unknwn.h>
@@ -27,8 +28,10 @@ namespace {
 
 // ----- the game's textures --------------------------------------------------
 
-// Loaded on the game thread on first use; the render thread draws the views
-// once they are there (a missing one leaves its place dark).
+// Read from the paks on the mod's own threads (pak_textures.h); one the
+// paks cannot give is loaded on the game thread instead. The render thread
+// draws the views once they are there (a missing one leaves its place
+// dark) and fades each in (kFadeInMs).
 std::mutex g_texMutex;
 std::map<std::string, TextureView> g_textures;
 std::set<std::string> g_requested;
@@ -45,6 +48,8 @@ struct TexRetry {
     std::chrono::steady_clock::time_point due;
 };
 std::vector<TexRetry> g_texRetries;
+bool g_drawing = true;          // false while WarmSelectTextures asks ahead (render thread only)
+constexpr int64_t kFadeInMs = 150;
 std::map<std::string, int> g_texTries;
 constexpr int kTextureTries = 6;
 constexpr uint32_t kStandInSize = 8; // a view this small (either side) is a stand-in
@@ -108,6 +113,7 @@ void LoadTextures()
         else if (g_texTries.count(path)) {
             Log("select screen: %s loaded on try %d", path.c_str(), g_texTries[path] + 1);
         }
+        view.readyMs = TextureClockMs();
         g_textures[path] = view;
         g_texBatch++;
         g_texBatchMs += ms;
@@ -118,6 +124,10 @@ void LoadTextures()
 
 const TextureView* Texture(const std::string& path)
 {
+    bool failed = false;
+    // Asked for by drawing (not ahead of time): it goes first.
+    if (const TextureView* t = PakTexture(path, 0, g_drawing, &failed)) return t;
+    if (!failed) return nullptr;
     std::lock_guard lock(g_texMutex);
     const auto it = g_textures.find(path);
     if (it != g_textures.end()) return it->second.srv ? &it->second : nullptr;
@@ -367,9 +377,18 @@ void GradientQuad(ImDrawList* d, const ImVec2 (&q)[4], ImU32 top, ImU32 bottom)
 
 ImTextureID Id(const TextureView* t) { return reinterpret_cast<ImTextureID>(t->srv); }
 
+// A texture's tint while it fades in after arriving.
+ImU32 FadeIn(const TextureView* t, ImU32 tint = IM_COL32_WHITE)
+{
+    const int64_t age = TextureClockMs() - t->readyMs;
+    if (age >= kFadeInMs || age < 0) return tint;
+    const uint32_t alpha = (tint >> IM_COL32_A_SHIFT & 0xFF) * static_cast<uint32_t>(age) / kFadeInMs;
+    return (tint & ~IM_COL32_A_MASK) | alpha << IM_COL32_A_SHIFT;
+}
+
 void Image(ImDrawList* d, const TextureView* t, ImVec2 a, ImVec2 b, ImVec2 uv0 = ImVec2(0, 0), ImVec2 uv1 = ImVec2(1, 1), ImU32 tint = IM_COL32_WHITE)
 {
-    if (t) d->AddImage(Id(t), a, b, uv0, uv1, tint);
+    if (t) d->AddImage(Id(t), a, b, uv0, uv1, FadeIn(t, tint));
 }
 
 // The timer's infinity (a lemniscate; the fonts may not have the glyph).
@@ -550,7 +569,7 @@ void DrawTile(ImDrawList* d, const Slot& t, bool p1, bool p2, const SelectFonts&
             // The portrait corner to corner: same angle as the frame, no gaps.
             const ImVec2* art = t.right ? kArtRight : kArtLeft;
             auto uv = [&](int i) { return ImVec2(art[i].x / 116.0f, art[i].y / 144.0f); };
-            d->AddImageQuad(Id(tex), iq[0], iq[1], iq[2], iq[3], uv(0), uv(1), uv(2), uv(3), on ? IM_COL32_WHITE : Rgba(205, 205, 205));
+            d->AddImageQuad(Id(tex), iq[0], iq[1], iq[2], iq[3], uv(0), uv(1), uv(2), uv(3), FadeIn(tex, on ? IM_COL32_WHITE : Rgba(205, 205, 205)));
         }
     }
     // The bottom fade.
@@ -668,7 +687,7 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
             const float a0 = edge(t0), a1 = edge(t1);
             const ImVec2 q0 = g_v.P(x0, my + a0), q1 = g_v.P(x1, my + a1), q2 = g_v.P(x1, my + mh - a1), q3 = g_v.P(x0, my + mh - a0);
             const float ua = u0 + (u1 - u0) * t0, ub = u0 + (u1 - u0) * t1;
-            d->AddImageQuad(Id(bg), q0, q1, q2, q3, ImVec2(ua, a0 / mh), ImVec2(ub, a1 / mh), ImVec2(ub, 1 - a1 / mh), ImVec2(ua, 1 - a0 / mh));
+            d->AddImageQuad(Id(bg), q0, q1, q2, q3, ImVec2(ua, a0 / mh), ImVec2(ub, a1 / mh), ImVec2(ub, 1 - a1 / mh), ImVec2(ua, 1 - a0 / mh), FadeIn(bg));
         }
     }
     if (const TextureView* frame = Texture(MenuTex("StagePreviewWindow"))) Image(d, frame, g_v.P(bx, by), g_v.P(bx + bw, by + bh));
@@ -1225,6 +1244,10 @@ void WarmSelectTextures()
     std::lock_guard lock(g_dataMutex);
     if (g_data.charas.empty()) return;
     if (g_gridFor != &g_data) BuildGrid(g_data);
+    g_drawing = false;
+    struct Restore {
+        ~Restore() { g_drawing = true; }
+    } restore;
     // The stage select: its frame, icons and prompts, then each stage's icon.
     for (const char* name : {"StagePreviewWindowShadow", "StagePreviewWindow", "StageSelectCursor", "StageSelect_Random"}) {
         Texture(MenuTex(name));
@@ -1248,6 +1271,29 @@ void WarmSelectTextures()
         }
     }
     for (const SelectChara& c : g_data.charas) Texture(CharaTex(c.code, "PartCharacter"));
+}
+
+void WarmBootTextures(const SelectData& data, const std::string& chara, const std::string& stage)
+{
+    std::vector<std::pair<std::string, uint32_t>> want;
+    auto add = [&](std::string path) { want.emplace_back(std::move(path), 0); };
+    for (const char* icon : {"button_a", "button_b", "button_x", "button_y", "button_start", "button_back", "button_lb", "button_rb"}) {
+        add(PadTex(icon));
+    }
+    if (!chara.empty()) add(CharaTex(chara, "PartCharacter"));
+    if (!stage.empty()) add(StageTex(stage, "StageSelectBG"));
+    for (const char* name : {"StagePreviewWindowShadow", "StagePreviewWindow", "StageSelectCursor", "StageSelect_Random"}) add(MenuTex(name));
+    // The grid's tiles lean to the side they are on.
+    auto onRight = [](const std::string& code) {
+        auto in = [&](const auto& side) { return std::any_of(std::begin(side), std::end(side), [&](const char* c) { return code == c; }); };
+        return in(kTopRight) || in(kBottomRight);
+    };
+    for (const SelectChara& c : data.charas) add(CharaTex(c.code, onRight(c.code) ? "CharaSelectIconRight" : "CharaSelectIconLeft"));
+    for (const SelectStage& s : data.stages) add(StageTex(s.code, "StageSelectIcon"));
+    for (const SelectStage& s : data.stages) add(StageTex(s.code, "StageSelectBG"));
+    WarmPakTextures(want);
+    Log("select screen: warming %zu textures (favorites %s, %s)", want.size(), chara.empty() ? "-" : chara.c_str(),
+        stage.empty() ? "-" : stage.c_str());
 }
 
 void DrawSelectLive(const SelectFonts& f, const SelectLive& live, float alpha, bool takeInput, SelectInput* input)

@@ -8,6 +8,12 @@
 #     src\mod\mod_main.cpp: raise it first, and give it a section in
 #     CHANGELOG.md, whose first paragraph becomes the notes players see
 #     (-Notes overrides them).
+#   release.ps1 -Channel rooms
+#     the same for the rooms branch's builds (docs/custom-rooms-plan.md):
+#     writes public\rooms\update.json and its .sig instead, with the files in
+#     the shared releases\<version>\. The build's own channel (kUpdateChannel
+#     in src\mod\updater.h) must match. Rooms versions carry -rooms.N; a plain
+#     version goes on rooms only as 0.3.0, the move back to main.
 #   release.ps1 -NewKey
 #     makes the update signing key, once: the private half goes to -KeyFile
 #     (outside the repositories: keep a backup, never share it), the public
@@ -18,6 +24,7 @@
 # Needs PowerShell 7 (for the key's PKCS#8 import and export).
 param([string]$Notes = '', [string]$Site = (Join-Path $PSScriptRoot '..\..\sfvr-site'),
       [string]$KeyFile = (Join-Path $env:USERPROFILE '.sfvr\update-signing-key.txt'),
+      [ValidateSet('main', 'rooms')][string]$Channel = 'main',
       [switch]$NewKey, [switch]$Force, [switch]$SkipBuild)
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
@@ -56,6 +63,35 @@ if ((@($built) -join ',') -ne ((PublicKeyOf $ecdsa) -join ',')) { throw "src\mod
 
 $version = (Select-String -Path (Join-Path $root 'src\mod\mod_main.cpp') -Pattern 'kModVersion = "([^"]+)"').Matches.Groups[1].Value
 $public = Join-Path (Resolve-Path $Site) 'public'
+
+# The channel: the build's own, and the versions that belong on it.
+$isRooms = $version -match '-rooms\.\d+$'
+if ($Channel -eq 'main' -and $isRooms) { throw "$version is a rooms build; publish it with -Channel rooms" }
+if ($Channel -eq 'rooms' -and -not $isRooms -and $version -ne '0.3.0') { throw "the rooms channel takes 0.3.0-rooms.N versions (or 0.3.0 itself), not $version" }
+$infoDir = if ($Channel -eq 'rooms') { Join-Path $public 'rooms' } else { $public }
+# Rooms' update info sits a folder down; its URLs start at the site's root.
+$prefix = if ($Channel -eq 'rooms') { '/' } else { '' }
+
+# The move back to main: 0.3.0, already published on main, offered on rooms
+# too. Main's update info is re-signed for rooms with the same files, which
+# stay byte for byte; nothing is built or copied.
+if ($Channel -eq 'rooms' -and $version -eq '0.3.0') {
+  $main = Get-Content (Join-Path $public 'update.json') -Raw | ConvertFrom-Json
+  if ($main.version -ne '0.3.0') { throw "publish 0.3.0 on main first (public\update.json has $($main.version))" }
+  $info = [ordered]@{
+    product = $main.product; version = $main.version; published = $main.published; notes = $main.notes
+    download = "/$($main.download)"
+    files = @($main.files | ForEach-Object { [ordered]@{ path = $_.path; size = $_.size; sha256 = $_.sha256; url = "/$($_.url)" } })
+  }
+  $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($info | ConvertTo-Json -Depth 4) + "`n")
+  New-Item -ItemType Directory -Force $infoDir | Out-Null
+  [IO.File]::WriteAllBytes((Join-Path $infoDir 'update.json'), $bytes)
+  [IO.File]::WriteAllText((Join-Path $infoDir 'update.json.sig'), [Convert]::ToBase64String($ecdsa.SignData($bytes, [Security.Cryptography.HashAlgorithmName]::SHA256)))
+  "SFVR 0.3.0 offered on the rooms channel ($infoDir): rooms installs move to main with it"
+  exit 0
+}
+$followed = (Select-String -Path (Join-Path $root 'src\mod\updater.h') -Pattern 'kUpdateChannel = "([^"]+)"').Matches.Groups[1].Value
+if ($followed -ne $Channel) { throw "this build follows the $followed channel (kUpdateChannel in src\mod\updater.h), not $Channel" }
 $release = Join-Path $public "releases\$version"
 if ((Test-Path $release) -and -not $Force) { throw "release $version is already on the site ($release); raise kModVersion" }
 
@@ -78,14 +114,21 @@ if (-not $SkipBuild) {
 
 # The files the updater installs, and the package for first installs.
 New-Item -ItemType Directory -Force $release | Out-Null
+$license = Join-Path $build 'sfvr_fonts_license.txt'
+& (Join-Path $PSScriptRoot 'fonts-license.ps1') $license
+# Where each file goes (SafeUpdatePath: a plain name, or SFVR/fonts/<name>.ttc),
+# from where; on the site each is under its own name.
 $sources = [ordered]@{
-  'xinput1_3.dll'    = Join-Path $build 'xinput1_3.dll'
-  'sfv_rollback.dll' = Join-Path $build 'sfv_rollback.dll'
+  'xinput1_3.dll'                      = Join-Path $build 'xinput1_3.dll'
+  'sfv_rollback.dll'                   = Join-Path $build 'sfv_rollback.dll'
+  'SFVR/fonts/NotoSansCJK-Medium.ttc'  = Join-Path $build 'fonts\NotoSansCJK-Medium.ttc'
+  'sfvr_fonts_license.txt'             = $license
 }
-$files = foreach ($name in $sources.Keys) {
-  Copy-Item $sources[$name] (Join-Path $release $name) -Force
+$files = foreach ($path in $sources.Keys) {
+  $name = Split-Path $path -Leaf
+  Copy-Item $sources[$path] (Join-Path $release $name) -Force
   $item = Get-Item (Join-Path $release $name)
-  [ordered]@{ path = $name; size = $item.Length; sha256 = (Get-FileHash $item -Algorithm SHA256).Hash.ToLower(); url = "releases/$version/$name" }
+  [ordered]@{ path = $path; size = $item.Length; sha256 = (Get-FileHash $item -Algorithm SHA256).Hash.ToLower(); url = "${prefix}releases/$version/$name" }
 }
 & (Join-Path $PSScriptRoot 'package.ps1') -Public | Out-Null
 Copy-Item (Join-Path $root "dist\sfvr-$version.zip") $release -Force
@@ -98,13 +141,14 @@ $info = [ordered]@{
   version   = $version
   published = (Get-Date -Format 'yyyy-MM-dd')
   notes     = $Notes
-  download  = "releases/$version/sfvr-$version.zip"
+  download  = "${prefix}releases/$version/sfvr-$version.zip"
   files     = @($files)
 }
 $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($info | ConvertTo-Json -Depth 4) + "`n")
 $signature = $ecdsa.SignData($bytes, [Security.Cryptography.HashAlgorithmName]::SHA256)
-[IO.File]::WriteAllBytes((Join-Path $public 'update.json'), $bytes)
-[IO.File]::WriteAllText((Join-Path $public 'update.json.sig'), [Convert]::ToBase64String($signature))
-"SFVR $version published to $public ($($files.Count) files, signed)"
+New-Item -ItemType Directory -Force $infoDir | Out-Null
+[IO.File]::WriteAllBytes((Join-Path $infoDir 'update.json'), $bytes)
+[IO.File]::WriteAllText((Join-Path $infoDir 'update.json.sig'), [Convert]::ToBase64String($signature))
+"SFVR $version published to $infoDir on the $Channel channel ($($files.Count) files, signed)"
 "notes: $Notes"
 "next: commit here and in sfvr-site, git tag v$version, then sfvr-site\build.ps1 for the upload"

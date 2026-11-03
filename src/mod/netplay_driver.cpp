@@ -1,6 +1,7 @@
 #include "mod/netplay_driver.h"
 
 #include "core/match_code.h"
+#include "core/match_ticket.h"
 #include "core/netplay.h"
 #include "core/file_open.h"
 #include "core/replay_file.h"
@@ -76,6 +77,9 @@ constexpr auto kConnectTimeout = std::chrono::seconds(15);
 constexpr auto kJoinTimeout = std::chrono::seconds(20);
 // Both ready but a game still loading characters: start anyway after this.
 constexpr auto kPreloadWait = std::chrono::seconds(90);
+// A table's set (AfterMatch::Set): the next game this long after a match is
+// decided, the side panels showing the score meanwhile.
+constexpr auto kSetNextGameAfter = std::chrono::seconds(4);
 constexpr size_t kMaxSpectators = 8;
 // Spectator stream: batches in flight per spectator before an ack, and how
 // long without progress before resending from the last ack.
@@ -249,13 +253,16 @@ public:
 
     ~NetplayDriver() override { Stop(); }
 
-    bool Open(const NetplayOptions& o, bool host, Role role, std::string* error)
+    bool Open(const NetplayOptions& o, const MatchTicket& ticket, std::string* error)
     {
         options_ = o;
         // Only the input delay is the players' to change; the window stays 8.
         options_.predictionWindow = kPredictionWindow;
+        ticket_ = ticket;
+        const bool host = ticket.host;
         host_ = host;
-        role_ = host ? Role::Player : role;
+        role_ = host || !ticket.spectate ? Role::Player : Role::Spectator;
+        Log("netplay: ticket: %s", DescribeTicket(ticket).c_str());
         name_ = o.name.empty() ? SteamPersonaName() : o.name;
         if (name_.empty()) name_ = "Player";
         if (name_.size() > lobby::kMaxName) name_.resize(lobby::kMaxName);
@@ -474,6 +481,8 @@ public:
         }
         v.desyncReport = desyncReport_;
         v.you = role_ == Role::Spectator ? -1 : host_ ? 0 : 1;
+        v.setPlay = ticket_.after == AfterMatch::Set;
+        v.firstTo = ticket_.rules.firstTo;
         v.played = played_;
         v.spectators = host_ ? static_cast<int>(watchers_.size()) : spectators_;
         v.linkPingMs = linkPingMs_;
@@ -707,6 +716,7 @@ private:
             hello.role = role_;
             hello.name = name_;
             hello.reports = ReportUploadsOn();
+            hello.seatToken = ticket_.seatToken;
             Send(hello);
             return;
         }
@@ -1023,6 +1033,16 @@ private:
 
     void GuestBeat(State s)
     {
+        // A table's set won: the host ends the session (MaybeResolve), and
+        // so does this side a moment later, from the host's score: the host's
+        // Bye can miss it (the host leaves the room first).
+        if (role_ == Role::Player && s == State::PostMatch && ticket_.after == AfterMatch::Set &&
+            Clock::now() - decidedAt_ > kSetNextGameAfter + std::chrono::seconds(1)) {
+            if (const std::string over = SetOverText(); !over.empty()) {
+                EndSession(over);
+                return;
+            }
+        }
         if (role_ == Role::Player) {
             lobby::Message ps;
             ps.type = lobby::Type::PlayerState;
@@ -1114,7 +1134,11 @@ private:
                 SendTo(from, accept);
                 break;
             }
-            if (m.role == Role::Player && !peer_ && s != State::Ended) {
+            // The P2 seat: the ticket's token decides (0: the first player
+            // to join, as Direct Match); anyone else watches.
+            const bool seatHolder = !ticket_.seatToken || m.seatToken == ticket_.seatToken;
+            if (m.role == Role::Player && !seatHolder) Log("netplay: %s has no seat token for P2: watches", m.name.c_str());
+            if (m.role == Role::Player && seatHolder && !peer_ && s != State::Ended) {
                 peer_ = from;
                 heard_ = Clock::now();
                 {
@@ -1230,7 +1254,8 @@ private:
             if (from == peer_ && s != State::Ended && s != State::Idle) {
                 Log("netplay: the other player left%s%s", m.text.empty() ? "" : ": ", m.text.c_str());
                 peerLeft_ = true;
-                EndSession(m.text.empty() ? "the other player left" : m.text);
+                const std::string over = SetOverText();
+                EndSession(!over.empty() ? over : m.text.empty() ? "the other player left" : m.text);
             }
             else if (w) {
                 std::lock_guard l(mutex_);
@@ -1354,7 +1379,8 @@ private:
             if (s != State::Ended && s != State::Idle) {
                 Log("netplay: the host left%s%s", m.text.empty() ? "" : ": ", m.text.c_str());
                 peerLeft_ = true;
-                EndSession(!m.text.empty() ? m.text : role_ == Role::Player ? "the other player left" : "the host left");
+                const std::string over = SetOverText();
+                EndSession(!over.empty() ? over : !m.text.empty() ? m.text : role_ == Role::Player ? "the other player left" : "the host left");
             }
             break;
         default:
@@ -1420,6 +1446,19 @@ private:
     void MaybeResolve()
     {
         if (next_ != Next::None) return;
+        if (ticket_.after == AfterMatch::Set) {
+            // A table's set: the next game on its own, a moment after the
+            // result (the side panels say what follows), until one player
+            // has won it; then back to the room.
+            if (Clock::now() - decidedAt_ < kSetNextGameAfter) return;
+            if (const std::string over = SetOverText(); !over.empty()) {
+                EndSession(over);
+                return;
+            }
+            Log("netplay: next game of the set (%s)", SetScoreText().c_str());
+            StartMatch(true);
+            return;
+        }
         Choice theirs;
         {
             std::lock_guard lock(mutex_);
@@ -1528,6 +1567,28 @@ private:
         return false;
     }
 
+    // A set's score ("P1 2 - 1 P2, first to 3"), and once a player has won
+    // it, what ends the session ("P1 won the set 3 - 1"); "" otherwise.
+    std::string SetScoreText()
+    {
+        std::lock_guard lock(mutex_);
+        return "P1 " + std::to_string(seats_[0].wins) + " - " + std::to_string(seats_[1].wins) + " P2, first to " +
+               std::to_string(ticket_.rules.firstTo);
+    }
+
+    std::string SetOverText()
+    {
+        if (ticket_.after != AfterMatch::Set) return "";
+        uint16_t wins[kNumPlayers];
+        {
+            std::lock_guard lock(mutex_);
+            for (int i = 0; i < kNumPlayers; i++) wins[i] = seats_[i].wins;
+        }
+        const int winner = SetWinner(ticket_.rules, wins);
+        if (winner < 0) return "";
+        return "P" + std::to_string(winner + 1) + " won the set " + std::to_string(wins[winner]) + " - " + std::to_string(wins[1 - winner]);
+    }
+
     void EndSession(const std::string& why)
     {
         // Once: the room's leave notice and the peer's Bye usually both arrive.
@@ -1544,14 +1605,6 @@ private:
         }
         next_ = Next::End;
     }
-
-    // Eleven plays a fighter in its 0C costume (the silver model).
-    static bool IsElevenPick(const PlayerSetup& p)
-    {
-        const int index = CharaIndex(UnpackCode(p.character));
-        return index >= 0 && p.costume == CostumeInFolder(index, "0C");
-    }
-    static constexpr uint8_t kElevenMirrorColor = 1; // the 0C costume's color 2 of 2
 
     // Eleven again: another fighter than `before` in silver, V-Skill and
     // V-Trigger at random (as each pick of Eleven rolls).
@@ -1608,28 +1661,9 @@ private:
                 s.players[i] = RollEleven(last.players[i]);
                 Log("netplay: rematch: P%d's Eleven plays %s", i + 1, UnpackCode(s.players[i].character).c_str());
             }
-            // Both Eleven: P2 wears the silver costume's second palette (a
-            // bronze one), so the two can be told apart. Not a choice in the
-            // loadout: Eleven's color is fixed.
-            if (IsElevenPick(s.players[0]) && IsElevenPick(s.players[1])) s.players[1].color = kElevenMirrorColor;
-            else if (s.players[0].character == s.players[1].character && s.players[0].costume == s.players[1].costume &&
-                     s.players[0].color == s.players[1].color) {
-                // Both on one look (the select screen keeps them apart, but
-                // they may have moved onto it at the same moment): P2 takes
-                // the costume's next color.
-                const int index = CharaIndex(UnpackCode(s.players[1].character));
-                const auto specs = index >= 0 ? CharaCostumeSpecs(index) : std::map<int, CostumeSpec>{};
-                const auto spec = specs.find(s.players[1].costume);
-                std::vector<int> ids = spec != specs.end() ? spec->second.colors : std::vector<int>{};
-                if (ids.empty()) {
-                    for (int k = 0; index >= 0 && k < CostumeColorCount(index, s.players[1].costume); k++) ids.push_back(k);
-                }
-                const auto at = std::find(ids.begin(), ids.end(), s.players[1].color);
-                if (ids.size() > 1 && at != ids.end()) {
-                    s.players[1].color = static_cast<uint8_t>(ids[(at - ids.begin() + 1) % ids.size()]);
-                    Log("netplay: both players on the same color: P2 plays color %u", s.players[1].color + 1u);
-                }
-            }
+            // Both on one look (two Elevens, or the same character, costume
+            // and color): the setup keeps the real picks, and each PC shows
+            // the other player in another color (core/look.h, BeginJump).
             const uint16_t rule = StageRule();
             s.stage = rule == lobby::kAnyStage ? kKeepStage : rule;
             if (rule == lobby::kRandomStage) {
@@ -1643,6 +1677,8 @@ private:
         // Both games load each fighter's final balance version, not whatever
         // each takes as its latest (-1 for a character the table lacks).
         for (auto& p : s.players) p.version = static_cast<int16_t>(FinalCharaVersion(UnpackCode(p.character)));
+        // The ticket's rules: rounds and timer (Direct Match: best of 3, 99 s).
+        ApplyRulesToSetup(ticket_.rules, &s);
         s.seed = rng_();
         return s;
     }
@@ -1696,15 +1732,27 @@ private:
         DetachFrameDriver();
     }
 
+    // The side whose view this PC shows: its own player's, or for a
+    // spectator the host's (P1), as replays and reports show it.
+    int ViewerSide() const { return role_ == Role::Spectator || host_ ? 0 : 1; }
+
     void BeginJump()
     {
         switchNow_ = false;
         ReleaseResults();
         // A delay chosen between matches takes effect with this one.
         if (nextDelay_ >= 0) options_.inputDelay = static_cast<uint8_t>(nextDelay_.exchange(-1));
-        MatchSetup pending = setup_;
+        // This PC's view: the other player recolored on one look (core/look.h).
+        const MatchSetup shown = ShownSetup(setup_, ViewerSide(), GameLookRules());
+        for (int p = 0; p < kNumPlayers; p++) {
+            if (shown.players[p].color != setup_.players[p].color) {
+                Log("netplay: both players on one look: P%d shows here in color %u (picked %u)", p + 1, shown.players[p].color + 1u,
+                    setup_.players[p].color + 1u);
+            }
+        }
+        // The joiner has the host's count of matches played from its session state.
+        MatchSetup pending = shown;
         {
-            // The joiner has the host's count from its session state.
             std::lock_guard lock(mutex_);
             pending.played = static_cast<uint16_t>(played_);
         }
@@ -1814,7 +1862,11 @@ private:
                 peer = peerLoadedSetup_;
                 peerChecksum = peerChecksum_;
             }
-            const std::string mismatch = SetupMismatch(loadedSetup_, peer);
+            // Compared as the real picks: on one look each side shows the
+            // other player recolored (core/look.h).
+            const LookRules rules = GameLookRules();
+            const std::string mismatch =
+                SetupMismatch(RealPicks(loadedSetup_, setup_, ViewerSide(), rules), RealPicks(peer, setup_, host_ ? 1 : 0, rules));
             if (!mismatch.empty()) {
                 Log("netplay: the battles differ (%s); here %s | there %s", mismatch.c_str(),
                     DescribeSetup(loadedSetup_).c_str(), DescribeSetup(peer).c_str());
@@ -2015,6 +2067,7 @@ private:
                     k->second.winner = static_cast<int8_t>(winner);
                 }
             }
+            decidedAt_ = Clock::now();
             SetState(State::PostMatch);
             SetHoldResults(true);
             if (options_.mashSeed) SetScriptedPad(0, true, 0);
@@ -2611,6 +2664,8 @@ private:
     MatchSetup loadedSetup_;           // what this side's game loaded
     // A desync this early logs the start probe (SfvGame::ArmStartProbe).
     static constexpr int kStartProbeFrames = 3;
+    MatchTicket ticket_;               // what brought this player here (core/match_ticket.h)
+    Clock::time_point decidedAt_{};    // when the last match was decided
     uint32_t frozenChecksum_ = 0;
     MatchSetup peerLoadedSetup_;       // guarded by mutex_
     uint32_t peerChecksum_ = 0;
@@ -3047,35 +3102,26 @@ void InstallNetplay(SfvGame* game, const std::wstring& reportDir, const std::str
     });
 }
 
-void NetHost(const NetplayOptions& options)
+void NetPlayTicket(const MatchTicket& ticket, const NetplayOptions& options)
 {
     if (!g_game) return;
     // The previous session (also one that ended) still holds its socket.
     EndForNewSession();
     auto d = std::make_unique<NetplayDriver>(*g_game, g_reportDir, g_modVersion);
     std::string error;
-    if (!d->Open(options, true, lobby::Role::Player, &error)) {
-        Log("netplay: cannot host: %s", error.c_str());
-        SetStatus("cannot host: " + error);
-        SetResult("cannot host: " + error);
+    if (!d->Open(options, ticket, &error)) {
+        const std::string what = ticket.host ? "cannot host: " : "cannot join: ";
+        Log("netplay: %s%s", what.c_str(), error.c_str());
+        SetStatus(what + error);
+        SetResult(what + error);
         return;
     }
-    d->StartHost();
-    Replace(std::move(d));
-}
-
-void NetJoin(const std::string& code, const NetplayOptions& options, bool spectate)
-{
-    if (!g_game) return;
-    EndForNewSession();
-    auto d = std::make_unique<NetplayDriver>(*g_game, g_reportDir, g_modVersion);
-    std::string error;
-    if (!d->Open(options, false, spectate ? lobby::Role::Spectator : lobby::Role::Player, &error)) {
-        Log("netplay: cannot join: %s", error.c_str());
-        SetStatus("cannot join: " + error);
-        SetResult("cannot join: " + error);
+    if (ticket.host) {
+        d->StartHost();
+        Replace(std::move(d));
         return;
     }
+    const std::string& code = ticket.roomCode;
     if (!d->StartJoin(code)) {
         Log("netplay: not a valid match code: %s", code.c_str());
         SetStatus("not a valid match code");
@@ -3083,6 +3129,13 @@ void NetJoin(const std::string& code, const NetplayOptions& options, bool specta
         return;
     }
     Replace(std::move(d));
+}
+
+void NetHost(const NetplayOptions& options) { NetPlayTicket(DirectMatchHost(), options); }
+
+void NetJoin(const std::string& code, const NetplayOptions& options, bool spectate)
+{
+    NetPlayTicket(DirectMatchJoin(code, spectate), options);
 }
 
 void NetLeave()

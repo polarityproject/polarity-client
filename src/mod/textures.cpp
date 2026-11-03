@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -83,6 +84,11 @@ void NoteShaderResourceViewKind(void* d3dDevice)
     }
     if (srv) srv->Release();
     if (texture) texture->Release();
+}
+
+int64_t TextureClockMs()
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
 void LogTextures(const std::string& filter, int limit)

@@ -8,6 +8,7 @@
 #include <MinHook.h>
 #include <windows.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <mutex>
@@ -41,7 +42,7 @@ MatchSetup g_setup;
 // Research (`uniqueparam`): KWBattlePlayerSetting::SetUniqueParam values
 // (+0x128, 8 ints) written with the next setups; -1 leaves one alone.
 int g_uniqueParams[2][8] = {{-1, -1, -1, -1, -1, -1, -1, -1}, {-1, -1, -1, -1, -1, -1, -1, -1}};
-int g_matchRounds = 3; // battledata::kSpecRounds in every match setup (setrounds changes it for tests)
+int g_specRoundsForTest = 0; // setrounds: battledata::kSpecRounds as a game that kept another count writes it (0: the match's)
 std::atomic<int> g_setups{0};
 std::atomic<int> g_creations{0};
 
@@ -228,9 +229,15 @@ bool ApplyMatchSetup(const MatchSetup& setup)
     // A battle entered straight from another (flow.h JumpToBattle) gets its
     // data from defaults that are not local Versus (infinite time, P2 a CPU).
     Put<int32_t>(data, bd::kMode, 1);
-    Put<int32_t>(data, bd::kTimer, 5940);
-    // Not left to this game's own setting: the hits' gauge gain depends on it.
-    Put<int32_t>(data, bd::kSpecRounds, g_matchRounds);
+    // The match's rules (core/rules.h, the M0 spike): best of 1, 3 or 5
+    // rounds, and the timer in frames (it has no "infinite": 0 and below end
+    // the round at once). The round count goes to +0x08 too, not left to
+    // this game's own setting: each hit's gauge gain is divided by it.
+    const int bestOf = std::clamp(setup.roundsToWin * 2 - 1, 1, 5);
+    const int seconds = setup.timerSeconds ? std::clamp<int>(setup.timerSeconds, 1, 99) : 99;
+    Put<int32_t>(data, bd::kRounds, bestOf);
+    Put<int32_t>(data, bd::kTimer, seconds * 60);
+    Put<int32_t>(data, bd::kSpecRounds, g_specRoundsForTest ? g_specRoundsForTest : bestOf);
     Put<int32_t>(data, bd::kVersusFlag, 1);
     // The level itself comes from the stage request (flow.h SetPendingStage);
     // the id here does not change it. But a battle entered from another
@@ -250,7 +257,31 @@ bool ApplyMatchSetup(const MatchSetup& setup)
     return true;
 }
 
-void SetMatchRoundsForTest(int rounds) { g_matchRounds = rounds; }
+void SetMatchRoundsForTest(int rounds) { g_specRoundsForTest = rounds; }
+
+bool IsElevenPick(const PlayerSetup& p)
+{
+    const int index = CharaIndex(UnpackCode(p.character));
+    return index >= 0 && p.costume == CostumeInFolder(index, "0C");
+}
+
+LookRules GameLookRules()
+{
+    LookRules rules;
+    rules.isEleven = IsElevenPick;
+    rules.elevenOtherColor = 1; // the 0C costume's color 2 of 2
+    rules.colorsOf = [](const PlayerSetup& p) {
+        const int index = CharaIndex(UnpackCode(p.character));
+        if (index < 0) return std::vector<int>{};
+        const auto specs = CharaCostumeSpecs(index);
+        const auto spec = specs.find(p.costume);
+        if (spec != specs.end() && !spec->second.colors.empty()) return spec->second.colors;
+        std::vector<int> ids;
+        for (int k = 0; k < CostumeColorCount(index, p.costume); k++) ids.push_back(k);
+        return ids;
+    };
+    return rules;
+}
 
 void SetUniqueParamOverride(int player, int index, int value)
 {

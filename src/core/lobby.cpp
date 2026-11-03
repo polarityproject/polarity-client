@@ -173,6 +173,7 @@ std::vector<uint8_t> Encode(const Message& m)
         o.Put(static_cast<uint8_t>(m.role));
         PutName(o, m.name);
         o.Put(static_cast<uint8_t>(m.reports));
+        o.Put(m.seatToken);
         break;
     case Type::Accept:
         o.Put(static_cast<uint8_t>(m.role));
@@ -278,6 +279,7 @@ std::optional<Message> Decode(const uint8_t* data, size_t len)
         m.role = static_cast<Role>(in.Get<uint8_t>());
         m.name = GetName(in);
         m.reports = in.Get<uint8_t>() != 0;
+        m.seatToken = in.Get<uint64_t>();
         break;
     case Type::Accept:
         m.role = static_cast<Role>(in.Get<uint8_t>());

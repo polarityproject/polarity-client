@@ -21,7 +21,11 @@ const void* FindOrLoadTexture(const std::string& nameOrPath);
 struct TextureView {
     void* srv = nullptr; // ID3D11ShaderResourceView*, one reference held
     uint32_t width = 0, height = 0;
+    int64_t readyMs = 0; // when it became drawable (steady clock, ms): screens fade it in
 };
+
+// Steady clock milliseconds, as TextureView::readyMs counts them.
+int64_t TextureClockMs();
 // The texture's shader resource view, found by walking its render resource
 // (FTextureResource -> RHI texture -> D3D11 objects); logs the chain unless
 // `quiet` (failures are always logged).

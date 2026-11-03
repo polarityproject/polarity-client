@@ -22,7 +22,7 @@
 namespace sfv {
 
 struct UpdateFile {
-    std::string path;   // a plain file name in the game's Binaries\Win64 (SafeUpdatePath)
+    std::string path;   // under the game's Binaries\Win64: a plain file name, or SFVR/fonts/<name> (SafeUpdatePath)
     uint64_t size = 0;
     std::string sha256; // lowercase hex
     std::string url;
@@ -41,11 +41,13 @@ bool ParseUpdateInfo(std::string_view json, UpdateInfo* out, std::string* error)
 
 // Orders versions like "0.1.0-prototype" < "0.1.0" < "0.1.1" < "0.10.0":
 // the dot-separated numbers first, then a version with a "-suffix" before
-// the same one without, then the suffixes as text. <0, 0 or >0.
+// the same one without, then the suffixes part by part as semver does
+// ("rooms.9" < "rooms.10": numbers as numbers, below text). <0, 0 or >0.
 int CompareVersions(const std::string& a, const std::string& b);
 
 // Whether an update may write this file: a plain name (no folders, no ".."),
-// a .dll, .pdb or .txt, and never the player's settings (*.ini).
+// a .dll, .pdb or .txt, and never the player's settings (*.ini); or a .ttc
+// in SFVR/fonts/ (the bundled CJK font), the one folder.
 bool SafeUpdatePath(const std::string& path);
 
 // `url` against `base` (the update info's own URL): absolute ones as they
