@@ -57,5 +57,9 @@ void LogRandomDrawsInTicks(uint32_t from, uint32_t to);
 // Research: logs the game's own per-pad input values for the next `ticks`
 // ticks, when they change.
 void LogGameInputs(int ticks);
+// Research: logs the next `count` fighter bone positions battle code asks for
+// in driven ticks (rva 0x3919D0: tick, caller, result); `from` (non-zero):
+// only calls returning to that rva.
+void LogBonePositions(int count, uintptr_t from);
 
 } // namespace sfv::mod

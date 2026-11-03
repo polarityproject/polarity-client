@@ -587,17 +587,21 @@ void SfvGame::SetStateMap(const StateMap* map)
         }
         if (r.size == 208 && IsReadable(r.ptr - 0x40, 8) &&
             *reinterpret_cast<const uintptr_t*>(r.ptr - 0x40) == image_.base + 0x2C54490) {
-            // One object (vtable 0x2C54490; its +0x58 points at the two
-            // fighter objects, vtable 0x2C52320) with two 0x60-byte entries
-            // of camera-like floats: its +0xF0..+0xFF (here +0xB0, +0xB8)
-            // held an address on one player's machine only from the intro
-            // on, and each entry's six floats (+0x20, +0x80) then drifted
-            // apart at times (Vega matches, 2026-10-31); the fighters'
-            // regions and the outcome stayed the same. Restored, but out of
-            // the checksum.
+            // Vega's CharaUniquePart_021 (vtable 0x2C541A0; this part's
+            // vtable 0x2C54490 at its +0xB0, the region at its +0xF0): two
+            // 0x60-byte entries, his claw and mask once knocked off. Its
+            // +0x1A0..+0x1AF (here +0xB0, +0xB8) held an address on one
+            // player's machine only from the intro on. Each entry's launch
+            // point and target (+0x20, +0x30) came from his mesh's pose and
+            // so parted after rollbacks (battle_driver.cpp); masked too when
+            // a replay launches the items from the pose again. Restored, but
+            // out of the checksum.
             if (r.ignore.size() < 3) r.ignore.resize(3, 0);
-            for (size_t offset : {0x20, 0x28, 0x30, 0x80, 0x88, 0x90, 0xB0, 0xB8}) {
-                r.ignore[offset / 64] |= uint8_t(1u << (offset / 8 % 8));
+            for (size_t offset : {0xB0, 0xB8}) r.ignore[offset / 64] |= uint8_t(1u << (offset / 8 % 8));
+            if (!simItemLaunch) {
+                for (size_t offset : {0x20, 0x28, 0x30, 0x80, 0x88, 0x90}) {
+                    r.ignore[offset / 64] |= uint8_t(1u << (offset / 8 % 8));
+                }
             }
         }
         auto it = noise_.find(r.size);
@@ -841,7 +845,7 @@ std::string SfvGame::BuildId() const
 {
     char buf[96];
     const uint64_t noise = NoiseHash();
-    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-9/map-%016llx/noise-%016llx", image_.timestamp,
+    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-10/map-%016llx/noise-%016llx", image_.timestamp,
                   static_cast<unsigned long long>(stateMap_ ? stateMap_->Fingerprint() : 0),
                   static_cast<unsigned long long>(noise));
     return buf;

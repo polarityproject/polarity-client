@@ -693,6 +693,13 @@ void RunNetCommand(const std::string& line)
         ss >> on;
         SetPhaseTiming(on != 0);
     }
+    else if (cmd == "bonelog") {
+        // bonelog <count> [<caller rva, hex>]
+        int count = 200;
+        std::string from;
+        ss >> count >> from;
+        LogBonePositions(count, from.empty() ? 0 : std::stoull(from, nullptr, 16));
+    }
     else if (cmd == "drawlog") {
         // drawlog <count> | drawlog ticks <from> <to> (every draw in those driven ticks)
         std::string first;
@@ -1055,6 +1062,8 @@ void RunNetCommand(const std::string& line)
         // [trap <frame> <region> <hex offset> <bytes>]... (write watches)
         // [hold <frame> <seconds>] (stands still after that frame)
         // [mispredict <delay> [remote 1|2]] (one player's inputs late: real rollbacks)
+        // [latch tick|game] (the pad latch: after every tick, or the game's own)
+        // [launch sim|pose] (Vega's items: from the fighter's position, or the mesh's pose)
         std::string file, word, region, traps;
         int stress = 0, from = -1, to = -1, keepFrom = -1, keepTo = -1, holdAt = -1, holdSeconds = 0, mispredict = 0,
             remote = 0;
@@ -1068,6 +1077,16 @@ void RunNetCommand(const std::string& line)
             if (word == "hold") ss >> holdAt >> holdSeconds;
             if (word == "mispredict") ss >> mispredict;
             if (word == "remote") ss >> remote;
+            if (word == "latch") {
+                std::string how;
+                ss >> how;
+                SetReplayLatch(how == "tick" ? 1 : how == "game" ? 0 : -1);
+            }
+            if (word == "launch") {
+                std::string how;
+                ss >> how;
+                SetReplayItemLaunch(how == "sim" ? 1 : how == "pose" ? 0 : -1);
+            }
             if (word == "trap") {
                 std::string f, r, off, b;
                 ss >> f >> r >> off >> b;
@@ -1345,7 +1364,7 @@ bool Parse(const std::string& line, Step& step)
         return !ss.fail();
     }
     if (cmd == "host" || cmd == "join" || cmd == "spectate" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "crash" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
-        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "skipcallbacks") {
+        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "skipcallbacks") {
         step.kind = Step::Net;
         step.line = line;
         return true;
