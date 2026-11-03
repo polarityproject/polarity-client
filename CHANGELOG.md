@@ -7,6 +7,14 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-11-03
+
+Fixes desync warnings in Vega matches once his claw or mask is knocked off,
+and with E. Honda and against Rose. Sessions no longer end a minute or two
+into a match on networks that close quiet connections. Eleven rolls a new
+fighter every rematch, and B leaves the select screen. Both players need
+0.2.4.
+
 ### Changed
 
 - Leaving from the select screen: B on the stage select (on the character
