@@ -7,11 +7,23 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+
+- The player bars over the health bars show each player's set so far, as
+  "(wins/played)": the matches they won of those played this session.
+
 ### Changed
 
 - A desync in a match's first frames logs, on both sides, the battle camera
   and both fighters' state as they were at the start, to find the cause of a
   desync from the first frame (seen with Guile against Lucia).
+
+### Fixed
+
+- The results screen's Win Ratio counts the session's matches: it read
+  100% on both sides.
+- A long name wraps in the rematch panel and the session's player columns
+  instead of running past them; in the player bars it is shortened.
 
 ## [0.2.4] - 2026-11-03
 

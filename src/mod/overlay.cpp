@@ -1653,8 +1653,10 @@ void DrawSeats(const NetView& v, bool readiness)
         ImGui::PushFont(g_fontHeading);
         ImGui::TextColored(i == 0 ? kP1 : kP2, "P%d", i + 1);
         ImGui::SameLine();
+        ImGui::PushTextWrapPos(0.0f); // a long name wraps in its column
         if (s.present) ImGui::TextUnformatted(s.name.empty() ? "Player" : s.name.c_str());
         else ImGui::TextColored(kDim, "waiting...");
+        ImGui::PopTextWrapPos();
         ImGui::PopFont();
         if (s.present && v.you == i) {
             ImGui::SameLine();
@@ -1719,8 +1721,10 @@ void DrawLobby(const NetView& v)
             ImGui::PushFont(g_fontHeading);
             ImGui::TextColored(i == 0 ? kP1 : kP2, "P%d", i + 1);
             ImGui::SameLine();
+            ImGui::PushTextWrapPos(0.0f); // a long name wraps in its column
             if (s.present) ImGui::TextUnformatted(s.name.empty() ? "Player" : s.name.c_str());
             else ImGui::TextColored(kDim, "waiting...");
+            ImGui::PopTextWrapPos();
             ImGui::PopFont();
             if (s.present && v.you == i) {
                 ImGui::SameLine();
@@ -2770,7 +2774,8 @@ void DrawToasts(bool top)
 // During a match: a bar at the very top of the screen over each health bar
 // (above the game's win count), P1's on the left and P2's on the right: a
 // dark plate fading out toward the timer over a gold rule, as the game's own
-// name plates, on one line: the player, their connection's icon and, on the
+// name plates, on one line: the player, their set so far (matches won of
+// those played this session), their connection's icon and, on the
 // other player's bar, the ping (colored by latency), their frame rate (over
 // the last 3 s) and the longest rollback in the last second. They fade out
 // once the match is over (its last round's outro).
@@ -2814,7 +2819,7 @@ void DrawPlayerBars(const NetView& v)
         d->AddRectFilledMultiColor(ImVec2(x0, bottom - rule), ImVec2(x1, bottom), left ? gold : goldClear, left ? goldClear : gold,
                                    left ? goldClear : gold, left ? gold : goldClear);
         // The parts in order from the screen's edge: the name (the game
-        // shows P1/P2 itself), the connection's icon, then the other
+        // shows P1/P2 itself), the set, the connection's icon, then the other
         // player's numbers: a cloud when the link is relayed (nothing when
         // it is peer to peer), the ping, and in smaller type their frame
         // rate and the longest rollback in the last second.
@@ -2826,7 +2831,11 @@ void DrawPlayerBars(const NetView& v)
             Kind kind = Kind::Text;
         };
         std::vector<Part> parts;
-        parts.push_back({(s.name.empty() ? std::string("Player") : s.name) + (v.you == i ? " (you)" : ""), big, color(Rgb(242, 240, 230))});
+        std::string name = s.name.empty() ? std::string("Player") : s.name;
+        const std::string you = v.you == i ? " (you)" : "";
+        parts.push_back({name + you, big, color(Rgb(242, 240, 230))});
+        // The set: matches this player won of those played this session.
+        parts.push_back({"(" + std::to_string(s.wins) + "/" + std::to_string(v.played) + ")", big, color(detail)});
         if (s.link != lobby::Link::Unknown) parts.push_back({"", text, color(detail), Kind::Link});
         const bool relayed = v.linkPath == NetView::Path::Relayed;
         if (v.spectator) {
@@ -2848,12 +2857,27 @@ void DrawPlayerBars(const NetView& v)
             if (s.fps) parts.push_back({std::to_string(SmoothedFps(i, s.fps)) + " fps", g_fontTiny, color(detail)});
             parts.push_back({std::to_string(v.recentRollback) + " RBF", g_fontTiny, color(detail)});
         }
+        auto width = [textSize](const Part& part) {
+            return part.kind != Kind::Text ? textSize : part.font->CalcTextSizeA(part.font->FontSize, FLT_MAX, 0, part.text.c_str()).x;
+        };
+        auto total = [&] {
+            float sum = -gap;
+            for (const Part& part : parts) sum += width(part) + gap;
+            return sum;
+        };
+        // A long name is shortened so the set and the numbers stay in the bar.
+        while (!name.empty() && total() > x1 - x0 - 2 * pad) {
+            // The last character: its UTF-8 continuation bytes, then its lead byte.
+            while (!name.empty() && (static_cast<unsigned char>(name.back()) & 0xC0) == 0x80) name.pop_back();
+            if (!name.empty()) name.pop_back();
+            parts[0].text = name + "..." + you;
+        }
         d->PushClipRect(ImVec2(x0, top), ImVec2(x1, bottom), true);
         const float mid = top + (bottom - rule - top) * 0.5f;
         float x = left ? x0 + pad : x1 - pad;
         for (const Part& part : parts) {
             const float size = part.font->FontSize;
-            const float w = part.kind != Kind::Text ? textSize : part.font->CalcTextSizeA(size, FLT_MAX, 0, part.text.c_str()).x;
+            const float w = width(part);
             const float at = left ? x : x - w;
             const ImVec2 iconAt(at, mid - textSize * 0.5f);
             if (part.kind == Kind::Link) DrawLinkIcon(d, iconAt, textSize, s.link, part.color);
@@ -2959,7 +2983,10 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
         ImGui::PushFont(g_fontHeading);
         ImGui::TextColored(i == 0 ? kP1 : kP2, "P%d", i + 1);
         ImGui::SameLine();
-        ImGui::Text("%s%s", s.name.c_str(), mine ? " (you)" : "");
+        // A long name wraps (under itself) rather than run past the window.
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextUnformatted((s.name + (mine ? " (you)" : "")).c_str());
+        ImGui::PopTextWrapPos();
         ImGui::PopFont();
         Rule();
         if (!lobbyPhase) {
