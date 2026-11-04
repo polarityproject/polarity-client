@@ -219,7 +219,11 @@ bool ApplyMatchSetup(const MatchSetup& setup)
         Put<int32_t>(r, bd::kWins, setup.wins[p]);
         Put<int32_t>(r, bd::kWinStreak, setup.streaks[p]);
         Put<int32_t>(r, bd::kCtrlType, 0);
-        Put<int32_t>(r, bd::kPadId, 0);
+        // Each player's own pad, as local Versus sets them: the marker over
+        // each fighter at the round's start names the pad ("Player 1" over
+        // both with 0, 2026-11-04). The battle's input does not come from
+        // here: the mod injects each side's (control.cpp clears the pads).
+        Put<int32_t>(r, bd::kPadId, p);
     }
     // A battle entered straight from another (flow.h JumpToBattle) gets its
     // data from defaults that are not local Versus (infinite time, P2 a CPU).

@@ -7,6 +7,12 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Fixed
+
+- The marker over each fighter at the start of a round said "Player 1" over
+  both fighters in sessions and replays. It says Player 1 and Player 2 again,
+  as in local Versus.
+
 ## [0.2.6.1] - 2026-11-03
 
 Fixes the game closing on the Steam Deck and other Linux installs at the
