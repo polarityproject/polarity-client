@@ -378,7 +378,7 @@ void RunNetCommand(const std::string& line)
         Log("netplay: test sessions play as %s", TestName().c_str());
     }
     else if (cmd == "crash") {
-        // crash game|thread|overflow|hang|fastfail: testing crash reports
+        // crash game|thread|overflow|hang|fastfail|raise|stub|exit: testing crash reports
         // (crash_report.h). The game ends (or freezes) for real.
         std::string how;
         ss >> how;
@@ -408,6 +408,24 @@ void RunNetCommand(const std::string& line)
         }
         else if (how == "fastfail") {
             RunOnGameThread([] { __fastfail(7); });
+        }
+        else if (how == "raise") {
+            // An exception that is not a fault, left to the engine (as its
+            // own errors are): it ends the game itself.
+            RunOnGameThread([] { RaiseException(1, 0, 0, nullptr); });
+        }
+        else if (how == "stub") {
+            // What Wine raises for a function it does not have (cabinet.dll's
+            // Compress, imported by ordinal, before 0.2.6.1).
+            RunOnGameThread([] {
+                static const char dll[] = "cabinet.dll";
+                const ULONG_PTR args[2] = {reinterpret_cast<ULONG_PTR>(dll), 33};
+                RaiseException(0x80000100, EXCEPTION_NONCONTINUABLE, 2, args);
+            });
+        }
+        else if (how == "exit") {
+            // The game ending itself with an error code (as the engine does after an error).
+            RunOnGameThread([] { TerminateProcess(GetCurrentProcess(), 3); });
         }
         else {
             RunOnGameThread([] { *reinterpret_cast<volatile int*>(16) = 1; });

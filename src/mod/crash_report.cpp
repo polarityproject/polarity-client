@@ -50,8 +50,30 @@ bool g_hangLogged = false;             // the writer thread's: this stall is in 
 
 using TerminateProcessFn = BOOL(WINAPI*)(HANDLE, UINT);
 TerminateProcessFn g_origTerminate = nullptr;
+using ExitProcessFn = void(WINAPI*)(UINT);
+ExitProcessFn g_origExitProcess = nullptr;
 using ExitFn = void(__cdecl*)(int);
 ExitFn g_origExit = nullptr;
+
+// The game ending itself while the player is not quitting (NoteSelfEnd): the
+// run's mark stays, and the next start reports how it ended. The engine ends
+// the game itself after an error it raised (a failed check, a lost graphics
+// device: exit code 3, or an exception the handler does not count as a
+// fault); 0.2.6 counted those as clean exits, so a Steam Deck that crashed on
+// a rematch sent nothing.
+std::atomic<bool> g_selfEnded{false};
+constexpr ULONGLONG kExceptionBeforeEndMs = 10000; // an exception this soon before such an end is quoted with it
+// The last exception the handler does not count as a fault (its own thread's
+// copy is enough: written there, read at the end).
+struct OtherException {
+    DWORD code = 0;
+    DWORD64 address = 0;
+    DWORD thread = 0;
+    ULONGLONG tick = 0;
+    char stack[640] = {};
+};
+OtherException g_other;
+std::atomic<bool> g_otherBusy{false};
 
 std::wstring RunningPath() { return g_dir + L"\\running" + g_suffix + L".txt"; }
 std::wstring PendingPath(const wchar_t* ext) { return g_dir + L"\\pending" + g_suffix + ext; }
@@ -69,8 +91,31 @@ const char* CodeName(DWORD code)
     case EXCEPTION_NONCONTINUABLE_EXCEPTION: return "noncontinuable exception";
     case 0xC0000374: return "heap corruption";
     case 0xC0000409: return "stack buffer overrun";
+    // A call to a function Wine does not have (an import it left as a stub):
+    // the process ends right after. Its record names the DLL and function.
+    case 0x80000100: return "unimplemented function (Wine)";
     }
     return nullptr;
+}
+
+// Copies the C string at `p` into `out` (as far as it can be read).
+void CopyStringAt(ULONG_PTR p, char* out, size_t size)
+{
+    size_t n = 0;
+    __try {
+        for (const char* c = reinterpret_cast<const char*>(p); c && *c && n + 1 < size; c++) out[n++] = *c;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+    out[n] = 0;
+}
+
+// A C string the exception record points at, if it can be read.
+std::string StringAt(ULONG_PTR p)
+{
+    char buf[81];
+    CopyStringAt(p, buf, sizeof(buf));
+    return buf;
 }
 
 // "module+offset" for an address.
@@ -185,6 +230,12 @@ void WritePending()
                       static_cast<unsigned long long>(g_record.ExceptionInformation[1]));
         note += line;
     }
+    if (g_record.ExceptionCode == 0x80000100 && g_record.NumberParameters >= 2) {
+        // An import by ordinal has the number in place of the name.
+        const ULONG_PTR fn = g_record.ExceptionInformation[1];
+        note += "function " + StringAt(g_record.ExceptionInformation[0]) + "." +
+                (fn < 0x10000 ? "#" + std::to_string(fn) : StringAt(fn)) + "\n";
+    }
     note += dumped ? "minidump written\n" : "no minidump (" + std::to_string(GetLastError()) + ")\n";
     note += "stack:\n";
     CONTEXT c = g_context;
@@ -194,6 +245,32 @@ void WritePending()
     }
     WriteText(PendingPath(L".txt"), note);
     t_guarded--;
+}
+
+// The newest crash dump the game itself wrote (its own crash handler, into
+// %LOCALAPPDATA%\StreetFighterV\Saved\Logs\Dump<n>.dmp) since the file at
+// `since` was made (the run's mark), or "".
+std::wstring GameDumpSince(const std::wstring& since)
+{
+    WIN32_FILE_ATTRIBUTE_DATA mark;
+    if (!GetFileAttributesExW(since.c_str(), GetFileExInfoStandard, &mark)) return {};
+    wchar_t local[MAX_PATH];
+    const DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH);
+    if (!n || n >= MAX_PATH) return {};
+    const std::wstring dir = std::wstring(local) + L"\\StreetFighterV\\Saved\\Logs";
+    WIN32_FIND_DATAW fd;
+    const HANDLE h = FindFirstFileW((dir + L"\\Dump*.dmp").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return {};
+    std::wstring newest;
+    FILETIME newestTime = mark.ftCreationTime;
+    do {
+        if (CompareFileTime(&fd.ftLastWriteTime, &newestTime) > 0) {
+            newestTime = fd.ftLastWriteTime;
+            newest = dir + L"\\" + fd.cFileName;
+        }
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    return newest;
 }
 
 // Lines added to the running file (InstallCrashHandler wrote its start).
@@ -321,9 +398,38 @@ DWORD WINAPI Writer(LPVOID)
 
 bool Fatal(DWORD code) { return CodeName(code) != nullptr; }
 
+// Exceptions that are messages, not errors: debug output and thread names.
+bool Chatter(DWORD code) { return code == 0x40010006 || code == 0x4001000A || code == 0x406D1388; }
+
+// Another exception (an engine error raises one before the engine ends the
+// game): kept in memory, quoted if the game then ends itself (NoteSelfEnd).
+void NoteOtherException(const EXCEPTION_POINTERS* e)
+{
+    if (g_otherBusy.exchange(true)) return;
+    t_guarded++;
+    g_other.code = e->ExceptionRecord->ExceptionCode;
+    g_other.address = reinterpret_cast<DWORD64>(e->ExceptionRecord->ExceptionAddress);
+    g_other.thread = GetCurrentThreadId();
+    g_other.tick = GetTickCount64();
+    std::string stack;
+    CONTEXT c = *e->ContextRecord;
+    for (int i = 0; i < 16 && stack.size() + 64 < sizeof(g_other.stack); i++) {
+        stack += " " + Where(c.Rip);
+        if (!Unwind(&c)) break;
+    }
+    std::snprintf(g_other.stack, sizeof(g_other.stack), "%s", stack.c_str());
+    t_guarded--;
+    g_otherBusy = false;
+}
+
 LONG CALLBACK Handler(EXCEPTION_POINTERS* e)
 {
-    if (t_guarded > 0 || g_quitting || !Fatal(e->ExceptionRecord->ExceptionCode)) return EXCEPTION_CONTINUE_SEARCH;
+    const DWORD code = e->ExceptionRecord->ExceptionCode;
+    if (t_guarded > 0 || g_quitting) return EXCEPTION_CONTINUE_SEARCH;
+    if (!Fatal(code)) {
+        if (!Chatter(code)) NoteOtherException(e);
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
     g_lastFault = GetTickCount64();
     if (g_dumps >= kMaxDumps || g_writing.exchange(true)) return EXCEPTION_CONTINUE_SEARCH;
     g_dumps++;
@@ -415,14 +521,31 @@ std::string CheckPreviousRun(const std::wstring& suffix, const std::string& vers
     std::string report = "SFVR " + Value(running, "version") + " crash report\n";
     report += "run started " + Value(running, "started") + ", last logged " + Stamp(when, "%04d-%02d-%02d %02d:%02d:%02d") + "\n";
     report += "reported by SFVR " + version + "\n";
+    const std::string ended = Value(running, "ended");
     if (fault) {
         report += "how it ended: a fault\n";
         const size_t at = pending.find('\n');
         report += pending.substr(at == std::string::npos ? 0 : at + 1);
     }
+    else if (!ended.empty()) {
+        const size_t from = ended.find(" from");
+        report += "how it ended: the game ended itself (" + ended.substr(0, from) + "), the player not quitting\n";
+        if (from != std::string::npos) report += "called from:" + ended.substr(from + 5) + "\n";
+        const std::string exception = Value(running, "exception");
+        if (!exception.empty()) report += "the last exception before it: " + exception + "\n";
+    }
     else {
         report += "how it ended: no clean exit and no fault seen (closed by force, a freeze ended by force, or a crash "
                   "past the handlers)\n";
+    }
+    // A crash the game handled itself leaves its own minidump: the newest
+    // one written since this run started goes with the report when the mod
+    // has none.
+    const std::wstring gameDump = GameDumpSince(RunningPath());
+    if (!gameDump.empty()) {
+        std::string file;
+        for (wchar_t c : gameDump.substr(gameDump.find_last_of(L'\\') + 1)) file += c < 128 ? static_cast<char>(c) : '_';
+        report += "the game wrote its own crash dump: " + file + (fault ? "" : " (sent as this report's dump)") + "\n";
     }
     // The end of the run's log.
     std::string tail = ReadText(logPath, kLogTailBytes);
@@ -437,19 +560,24 @@ std::string CheckPreviousRun(const std::wstring& suffix, const std::string& vers
     }
     report += "\nthe end of the run's log:\n" + tail.substr(from == 0 ? 0 : from + 1);
     WriteText(g_dir + L"\\" + std::wstring(name.begin(), name.end()) + L".log", report);
-    if (fault) MoveFileExW(PendingPath(L".dmp").c_str(), (g_dir + L"\\" + std::wstring(name.begin(), name.end()) + L".dmp").c_str(), MOVEFILE_REPLACE_EXISTING);
+    const std::wstring dumpPath = g_dir + L"\\" + std::wstring(name.begin(), name.end()) + L".dmp";
+    if (fault) MoveFileExW(PendingPath(L".dmp").c_str(), dumpPath.c_str(), MOVEFILE_REPLACE_EXISTING);
+    else if (!gameDump.empty()) CopyFileW(gameDump.c_str(), dumpPath.c_str(), FALSE);
+    const bool withDump = fault || (!gameDump.empty() && GetFileAttributesW(dumpPath.c_str()) != INVALID_FILE_ATTRIBUTES);
     DeleteFileW(PendingPath(L".dmp").c_str());
     DeleteFileW(PendingPath(L".txt").c_str());
     DeleteFileW(RunningPath().c_str());
     const bool keep = LastValue(running, "uploads") == "0";
     if (keep) {
         KeepReportLocal(g_dir, name + ".log");
-        if (fault) KeepReportLocal(g_dir, name + ".dmp");
+        if (withDump) KeepReportLocal(g_dir, name + ".dmp");
     }
     PruneOldest(g_dir, L"*_crash_*.log", kKeptCrashReports);
     PruneOldest(g_dir, L"*_crash_*.dmp", kKeptCrashReports);
     std::string found = "crash report: the last run (SFVR " + Value(running, "version") + ") ended " +
-                        (fault ? "with a fault: " + Value(pending, "fault") : "without a clean exit (no fault seen)") +
+                        (fault ? "with a fault: " + Value(pending, "fault")
+                               : !ended.empty() ? "by itself (" + ended.substr(0, ended.find(" from")) + ")"
+                                                : "without a clean exit (no fault seen)") +
                         "; " + name + ".log" + (keep ? " (kept on this PC: that run did not send reports)" : "");
     return found;
 }
@@ -479,16 +607,57 @@ void OnProcessExit(const char* how)
     if (g_dir.empty() || g_exited.exchange(true)) return;
     const ULONGLONG fault = g_lastFault;
     if (!g_quitting && fault && GetTickCount64() - fault < kFaultBeforeExitMs) return; // the engine ends it for that fault
+    if (g_selfEnded) return; // the game ended itself (NoteSelfEnd): reported at the next start
     DeleteFileW(RunningPath().c_str());
     DeleteFileW(PendingPath(L".dmp").c_str());
     DeleteFileW(PendingPath(L".txt").c_str());
 }
 
 namespace {
+// The game ends its own process (`how`: the call) while the player is not
+// quitting: with an error code, or right after an exception the handler does
+// not count as a fault, it is a crash the engine handled itself. Who called,
+// and that exception, go to the log and the running file, which stays.
+void NoteSelfEnd(const char* how, UINT code)
+{
+    if (g_dir.empty() || g_quitting || g_exited || g_selfEnded) return;
+    const ULONGLONG now = GetTickCount64();
+    const ULONGLONG fault = g_lastFault;
+    if (fault && now - fault < kFaultBeforeExitMs) return; // that fault's report says it
+    const bool otherJustBefore = g_other.tick && now - g_other.tick < kExceptionBeforeEndMs;
+    if (code == 0 && !otherJustBefore) return;
+    g_selfEnded = true;
+    void* frames[24];
+    const USHORT n = RtlCaptureStackBackTrace(2, 24, frames, nullptr);
+    std::string stack;
+    t_guarded++;
+    for (USHORT i = 0; i < n; i++) stack += " " + Where(reinterpret_cast<DWORD64>(frames[i]));
+    t_guarded--;
+    char line[160];
+    std::snprintf(line, sizeof(line), "ended %s code %u from", how, code);
+    Log("crash report: the game ends itself (%s, code %u) while not quitting; called from:%s", how, code, stack.c_str());
+    AppendRunning(line + stack);
+    if (otherJustBefore) {
+        std::snprintf(line, sizeof(line), "exception %08lX at %s, thread %lu, %llu ms before the end, at:", g_other.code,
+                      Where(g_other.address).c_str(), g_other.thread, static_cast<unsigned long long>(now - g_other.tick));
+        Log("crash report: the last exception before it: %s%s", line, g_other.stack);
+        AppendRunning(std::string(line) + g_other.stack);
+    }
+}
+
 BOOL WINAPI TerminateDetour(HANDLE process, UINT code)
 {
-    if (process == GetCurrentProcess() || GetProcessId(process) == GetCurrentProcessId()) OnProcessExit("terminate");
+    if (process == GetCurrentProcess() || GetProcessId(process) == GetCurrentProcessId()) {
+        NoteSelfEnd("TerminateProcess", code);
+        OnProcessExit("terminate");
+    }
     return g_origTerminate(process, code);
+}
+
+void WINAPI ExitProcessDetour(UINT code)
+{
+    NoteSelfEnd("ExitProcess", code);
+    g_origExitProcess(code);
 }
 
 void __cdecl ExitDetour(int code)
@@ -526,6 +695,12 @@ void HookProcessEnd()
                            reinterpret_cast<LPVOID*>(&g_origTerminate), &target) != MH_OK ||
         MH_EnableHook(target) != MH_OK) {
         Log("crash report: cannot hook TerminateProcess (an engine exit then counts as a bad end)");
+    }
+    LPVOID exitProcessTarget = nullptr;
+    if (MH_CreateHookApiEx(L"kernel32", "ExitProcess", reinterpret_cast<LPVOID>(&ExitProcessDetour),
+                           reinterpret_cast<LPVOID*>(&g_origExitProcess), &exitProcessTarget) != MH_OK ||
+        MH_EnableHook(exitProcessTarget) != MH_OK) {
+        Log("crash report: cannot hook ExitProcess (the game ending itself that way is not reported)");
     }
     // The game's runtime (Visual C++ 2013): its exit runs the static
     // destructors, where the game faulted now and then.
