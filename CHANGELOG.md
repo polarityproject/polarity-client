@@ -7,6 +7,14 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Fixed
+
+- Crashes on the Steam Deck and other Linux (Proton) installs a few seconds
+  after hosting or joining, while the select screen's pictures loaded: the
+  mod looked for each picture's view among objects that, under Proton, can
+  be something else, and called into one of those. It now takes only real
+  views of the game's graphics device there (Windows is unchanged).
+
 ## [0.2.5] - 2026-11-03
 
 Fighters always play their final balance version in sessions, and a game

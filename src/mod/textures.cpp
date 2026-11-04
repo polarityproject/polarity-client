@@ -6,11 +6,13 @@
 #include "mod/image.h"
 #include "mod/log.h"
 #include "mod/ue4.h"
+#include "proxy/real_xinput.h"
 
 #include <windows.h>
 #include <d3d11.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
@@ -52,7 +54,36 @@ std::string Lower(std::string s)
     return s;
 }
 
+// The vtable of the device's shader resource views (NoteShaderResourceViewKind).
+std::atomic<uintptr_t> g_srvVtable{0};
+
 } // namespace
+
+void NoteShaderResourceViewKind(void* d3dDevice)
+{
+    auto* device = static_cast<ID3D11Device*>(d3dDevice);
+    if (!device || g_srvVtable) return;
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width = desc.Height = 1;
+    desc.MipLevels = desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    ID3D11Texture2D* texture = nullptr;
+    ID3D11ShaderResourceView* srv = nullptr;
+    if (SUCCEEDED(device->CreateTexture2D(&desc, nullptr, &texture)) && texture &&
+        SUCCEEDED(device->CreateShaderResourceView(texture, nullptr, &srv)) && srv) {
+        g_srvVtable = VtableOf(srv);
+        Log("textures: shader resource views have vtable %p%s", reinterpret_cast<void*>(g_srvVtable.load()),
+            proxy::RunningOnWine() ? " (Wine: only those are taken)" : "");
+    }
+    else {
+        Log("textures: cannot make a shader resource view to recognize the game's");
+    }
+    if (srv) srv->Release();
+    if (texture) texture->Release();
+}
 
 void LogTextures(const std::string& filter, int limit)
 {
@@ -83,44 +114,56 @@ TextureView ViewOfTexture(const void* texture, bool quiet)
     if (!texture) return out;
     // The texture's render resource and its RHI texture are native objects
     // (vtables in the game image, the D3D11 RHI is linked in); the RHI
-    // texture holds the D3D11 objects (vtables in d3d11.dll): the one that is
-    // a shader resource view is what ImGui draws.
+    // texture holds the D3D11 objects: the one that is a shader resource view
+    // is what ImGui draws. First pass: only an object with the vtable of the
+    // device's shader resource views. Second pass (Windows only): any object
+    // whose vtable lies in d3d11.dll, asked whether it is one. Under Wine
+    // d3d11.dll is DXVK, whose own C++ objects have their vtables there too:
+    // asking one of those called a null slot (Steam Deck, 0.2.5, df1a180a).
     const Range game = ModuleRange(GetModuleHandleW(nullptr));
     const Range d3d = ModuleRange(GetModuleHandleW(L"d3d11.dll"));
+    const uintptr_t srvVtable = g_srvVtable;
     const size_t size = std::clamp<size_t>(ue4::ObjectSize(texture), 0x100, 0x400);
-    for (size_t a = 0; a + 8 <= size; a += 8) {
-        const void* resource = PointerAt(texture, a);
-        if (!game.Has(VtableOf(resource))) continue;
-        for (size_t b = 0; b + 8 <= 0x100; b += 8) {
-            const void* rhi = PointerAt(resource, b);
-            if (!game.Has(VtableOf(rhi))) continue;
-            for (size_t c = 0; c + 8 <= 0x100; c += 8) {
-                void* d = const_cast<void*>(PointerAt(rhi, c));
-                if (!d3d.Has(VtableOf(d))) continue;
-                ID3D11ShaderResourceView* srv = nullptr;
-                if (FAILED(static_cast<IUnknown*>(d)->QueryInterface(__uuidof(ID3D11ShaderResourceView), reinterpret_cast<void**>(&srv))) ||
-                    !srv) {
-                    continue;
+    // The first object along the chain `takes` lets through that answers as a
+    // shader resource view.
+    auto scan = [&](auto takes) {
+        for (size_t a = 0; a + 8 <= size; a += 8) {
+            const void* resource = PointerAt(texture, a);
+            if (!game.Has(VtableOf(resource))) continue;
+            for (size_t b = 0; b + 8 <= 0x100; b += 8) {
+                const void* rhi = PointerAt(resource, b);
+                if (!game.Has(VtableOf(rhi))) continue;
+                for (size_t c = 0; c + 8 <= 0x100; c += 8) {
+                    void* d = const_cast<void*>(PointerAt(rhi, c));
+                    if (!takes(VtableOf(d))) continue;
+                    ID3D11ShaderResourceView* srv = nullptr;
+                    if (FAILED(static_cast<IUnknown*>(d)->QueryInterface(__uuidof(ID3D11ShaderResourceView), reinterpret_cast<void**>(&srv))) ||
+                        !srv) {
+                        continue;
+                    }
+                    ID3D11Resource* r = nullptr;
+                    srv->GetResource(&r);
+                    ID3D11Texture2D* t2d = nullptr;
+                    if (r && SUCCEEDED(r->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&t2d))) && t2d) {
+                        D3D11_TEXTURE2D_DESC desc{};
+                        t2d->GetDesc(&desc);
+                        out.width = desc.Width;
+                        out.height = desc.Height;
+                        t2d->Release();
+                    }
+                    if (r) r->Release();
+                    out.srv = srv;
+                    if (!quiet)
+                        Log("texture %s: view %p, %ux%u (texture +0x%zx -> resource +0x%zx -> RHI +0x%zx)",
+                            ue4::ObjectName(texture).c_str(), static_cast<void*>(srv), out.width, out.height, a, b, c);
+                    return true;
                 }
-                ID3D11Resource* r = nullptr;
-                srv->GetResource(&r);
-                ID3D11Texture2D* t2d = nullptr;
-                if (r && SUCCEEDED(r->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&t2d))) && t2d) {
-                    D3D11_TEXTURE2D_DESC desc{};
-                    t2d->GetDesc(&desc);
-                    out.width = desc.Width;
-                    out.height = desc.Height;
-                    t2d->Release();
-                }
-                if (r) r->Release();
-                out.srv = srv;
-                if (!quiet)
-                    Log("texture %s: view %p, %ux%u (texture +0x%zx -> resource +0x%zx -> RHI +0x%zx)",
-                    ue4::ObjectName(texture).c_str(), static_cast<void*>(srv), out.width, out.height, a, b, c);
-                return out;
             }
         }
-    }
+        return false;
+    };
+    if (srvVtable && scan([&](uintptr_t vtable) { return vtable == srvVtable; })) return out;
+    if (!proxy::RunningOnWine() && scan([&](uintptr_t vtable) { return d3d.Has(vtable); })) return out;
     Log("texture %s: no shader resource view found", ue4::ObjectName(texture).c_str());
     return out;
 }

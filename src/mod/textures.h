@@ -26,6 +26,10 @@ struct TextureView {
 // (FTextureResource -> RHI texture -> D3D11 objects); logs the chain unless
 // `quiet` (failures are always logged).
 TextureView ViewOfTexture(const void* texture, bool quiet = false);
+// Learns what the device's shader resource views look like (one made and
+// released): ViewOfTexture takes those first, and under Wine only those.
+// Before it, under Wine, no texture has a view. `d3dDevice`: ID3D11Device*.
+void NoteShaderResourceViewKind(void* d3dDevice);
 
 // Research (`savetex`): writes the texture's top mip to SFVR\textures\<name>.dds
 // as it is in memory (BC formats stay compressed). Takes over the view's
