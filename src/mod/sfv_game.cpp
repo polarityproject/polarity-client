@@ -341,6 +341,16 @@ constexpr size_t kSoulEntityTailAt = 0x5C8, kSoulEntityTailSize = 0xA8;
 constexpr uint32_t kCameraPartVtable = 0x2C4F4A0;
 constexpr size_t kCameraRegionSize = 528, kCameraRegionAt = 0x100, kCameraPartAt = 0xE8;
 constexpr size_t kCameraShakeAt = 0x310, kCameraShakeSize = 0x10;
+// The rest of the shake, inside the game's region: +0x2E0..+0x30F (rva
+// 0x33A7C0 starts a shake, 0x33E090 runs and ends it).
+constexpr size_t kCameraShakeFieldsAt = 0x2E0;
+
+bool IsBattleCamera(const uint8_t* camera, uintptr_t imageBase)
+{
+    return IsReadable(camera + kCameraPartAt, 8) &&
+           *reinterpret_cast<const uintptr_t*>(camera + kCameraPartAt) == imageBase + kCameraPartVtable &&
+           IsReadable(camera + kCameraShakeAt, kCameraShakeSize);
+}
 // A fighter: the game snapshots its 372-byte vitality block from +0xC0 (the
 // block's owner, vtable rva 0x2C51718, sits at +0xB0). +0x338 is a per-tick
 // event flag (cleared with +0x334 at rva 0x362A64, set at 0x328E13) that no
@@ -415,9 +425,7 @@ bool SfvGame::RefreshRegions()
         for (size_t i = 0; i < gameRegions; i++) {
             if (raw[i].second != kCameraRegionSize) continue;
             uint8_t* camera = raw[i].first - kCameraRegionAt;
-            if (IsReadable(camera + kCameraPartAt, 8) &&
-                *reinterpret_cast<const uintptr_t*>(camera + kCameraPartAt) == image_.base + kCameraPartVtable &&
-                IsReadable(camera + kCameraShakeAt, kCameraShakeSize)) {
+            if (IsBattleCamera(camera, image_.base)) {
                 flow.push_back({"camera.shake", camera + kCameraShakeAt, kCameraShakeSize});
             }
         }
@@ -588,6 +596,25 @@ void SfvGame::SetStateMap(const StateMap* map)
             // Restored on a rollback like the rest, but out of the checksum.
             r.ignore.resize(1, 0);
             r.ignore[0] |= 1;
+        }
+        if (r.name == "camera.shake" || (r.size == kCameraRegionSize && IsBattleCamera(r.ptr - kCameraRegionAt, image_.base))) {
+            // The screen shake (camera +0x2E0..+0x31F: amplitude, offset,
+            // frame counter and length, flip period and count). Stages start
+            // shakes too: an animation notify on an SX1 prop runs its
+            // Blueprint's ShakeCamera (rva 0x531870), on the prop's world-time
+            // animation, so on another frame on each PC whenever a frame
+            // hitches (2026-11-04: 5 desync events in the round call). Only
+            // the drawn view reads the shake. Restored, but out of the checksum.
+            if (r.name == "camera.shake") {
+                r.ignore.assign((r.size / 8 + 8) / 8, 0xFF);
+            }
+            else {
+                r.ignore.resize((r.size / 8 + 8) / 8, 0);
+                for (size_t at = kCameraShakeFieldsAt; at < kCameraShakeAt; at += 8) {
+                    const size_t word = (at - kCameraRegionAt) / 8;
+                    r.ignore[word / 8] |= uint8_t(1u << (word % 8));
+                }
+            }
         }
         if (r.name == "rose.soul") {
             // The entity's +0x620..+0x62F (this region's +0x58, +0x60): left
@@ -843,7 +870,7 @@ std::string SfvGame::BuildId() const
 {
     char buf[96];
     const uint64_t noise = NoiseHash();
-    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-11/map-%016llx/noise-%016llx", image_.timestamp,
+    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-12/map-%016llx/noise-%016llx", image_.timestamp,
                   static_cast<unsigned long long>(stateMap_ ? stateMap_->Fingerprint() : 0),
                   static_cast<unsigned long long>(noise));
     return buf;

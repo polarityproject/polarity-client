@@ -17,6 +17,11 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   main menu once the session had ended: it opened Arcade ("You are not
   logged in to the server") or whatever the cursor was on. The game now gets
   no input until the button is released.
+- Desync warnings during the round call on a stage whose scenery shakes
+  the screen: the shake follows the scenery's animation, so when a frame
+  hitched it began a few frames apart on each PC. The fight was never
+  affected; the screen shake is left out of the desync check now
+  (adapter-12, so both players need this version).
 
 ## [0.2.6.1] - 2026-11-03
 
