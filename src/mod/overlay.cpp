@@ -3673,9 +3673,53 @@ bool OverlayVisible()
     return g_visible;
 }
 
-bool OverlayTakesInput()
+namespace {
+
+// The mod's screens take the input now.
+bool ScreensTakeInput()
 {
     return g_visible || g_voting || g_watchHold || g_selectLive || SelectPreviewOpen();
+}
+
+// Any pad button, key or mouse button down: the pads as the XInput hook last
+// saw them, the pads the game reads past XInput (DirectInput, Steam Input),
+// and the keyboard and mouse.
+bool AnyInputDown()
+{
+    for (const PadState& pad : g_pads) {
+        if (pad.buttons) return true;
+    }
+    if (GamePadKeys()) return true;
+    for (int vk = 0x01; vk <= 0xFE; vk++) {
+        if (GetAsyncKeyState(vk) & 0x8000) return true;
+    }
+    return false;
+}
+
+// After the mod's screens let go, the game still gets nothing until every
+// button and key is up: the press that closed them was still held, and the
+// game took it as a new press. Confirming Leave on the leave dialog ended the
+// session and the held A picked the main menu's Arcade ("You are not logged
+// in to the server", 2026-11-04); the vote's and the panel's Leave did the
+// same. A key held longer than kReleaseHoldMs (stuck, or a pad unplugged
+// while held) lets the game have the input anyway.
+constexpr ULONGLONG kReleaseHoldMs = 3000;
+std::atomic<bool> g_releaseHold{false};
+std::atomic<ULONGLONG> g_releaseHoldFrom{0};
+
+} // namespace
+
+bool OverlayTakesInput()
+{
+    if (ScreensTakeInput()) {
+        g_releaseHold = true;
+        g_releaseHoldFrom = GetTickCount64();
+        return true;
+    }
+    if (!g_releaseHold) return false;
+    if (AnyInputDown() && GetTickCount64() - g_releaseHoldFrom < kReleaseHoldMs) return true;
+    if (g_releaseHold.exchange(false)) Log("overlay: input released to the game");
+    return false;
 }
 
 void SetVsync(bool on)
@@ -3740,8 +3784,9 @@ bool OverlayWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         std::lock_guard lock(g_inputMutex);
         if (g_input.size() < 1024) g_input.push_back({msg, wp, lp});
     }
-    // Open: the game sees no keyboard or mouse (WM_INPUT is its raw mouse).
-    return (g_visible || g_voting || g_watchHold || g_selectLive || SelectPreviewOpen()) && (keyboard || mouse);
+    // Open (or until the keys that closed it are up): the game sees no
+    // keyboard or mouse (WM_INPUT is its raw mouse).
+    return OverlayTakesInput() && (keyboard || mouse);
 }
 
 void OverlayPad(unsigned user, const XINPUT_GAMEPAD& pad)

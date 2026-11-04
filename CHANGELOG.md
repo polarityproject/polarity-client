@@ -12,6 +12,11 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 - The marker over each fighter at the start of a round said "Player 1" over
   both fighters in sessions and replays. It says Player 1 and Player 2 again,
   as in local Versus.
+- Confirming Leave with A or Enter (on the select screen's leave dialog, the
+  vote after a match, or the panel) also pressed the button on the game's
+  main menu once the session had ended: it opened Arcade ("You are not
+  logged in to the server") or whatever the cursor was on. The game now gets
+  no input until the button is released.
 
 ## [0.2.6.1] - 2026-11-03
 
