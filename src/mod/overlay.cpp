@@ -1474,16 +1474,16 @@ void DrawDelay(Choices& c, const char* label = "Delay")
     Stepper(label, &c.delay, 0, kMaxDelayFrames, FramesText);
 }
 
-// About half the round trip in frames covers the other's inputs on time;
-// prediction (rollback) does the rest. 1 to 3 frames.
+// The delay that leaves at most two frames to rollback at this link's ping
+// and jitter, 0 to 3 (core/input_delay.h).
 void DrawDelaySuggestion(const NetView& v)
 {
     // A spectator has no input delay of its own.
-    if (!v.linkPingMs || v.spectator) return;
-    const int suggested = SuggestedDelay(v.linkPingMs);
+    const int suggested = v.SuggestedDelay();
+    if (suggested < 0 || v.spectator) return;
     // Wrapped at the window's edge: the post-match side windows are narrow.
     ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextColored(kDim, "Suggested delay %d (ping %u ms)", suggested, v.linkPingMs);
+    ImGui::TextColored(kDim, "Suggested delay %d (ping %u ms)", suggested, v.link.pingMs);
     ImGui::PopTextWrapPos();
 }
 
@@ -2213,8 +2213,8 @@ SelectSide SelectSideFor(const NetView& v, int i)
     s.chara = chara;
     const int delay = mine ? c.delay : seat.inputDelay;
     s.rows[6].value = FramesText(delay);
-    const int suggested = v.linkPingMs ? SuggestedDelay(v.linkPingMs) : -1;
-    s.rows[6].hint = suggested >= 0 ? "Suggested: " + FramesText(suggested) + " for a " + std::to_string(v.linkPingMs) + " ms ping. Lower reacts sooner, with more rollbacks."
+    const int suggested = v.SuggestedDelay();
+    s.rows[6].hint = suggested >= 0 ? "Suggested: " + FramesText(suggested) + " for a " + std::to_string(v.link.pingMs) + " ms ping. Lower reacts sooner, with more rollbacks."
                                     : "Input delay: how many frames your inputs wait (fewer: sooner, with more rollbacks).";
     if (chara < 0) return s;
     if (IsEleven(chara)) {
@@ -3069,6 +3069,7 @@ NetView PreviewView(NetView::Phase phase)
     v.played = 3;
     v.spectators = 1;
     v.linkPingMs = 38;
+    v.link = {38, 4, core::kLinkSamples};
     v.stageRule = lobby::kRandomStage;
     v.overResults = true;
     const NetplayOptions mine = ChosenOptions();
@@ -3255,13 +3256,14 @@ void Draw(IDXGISwapChain* swapChain)
     if (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) {
         delaySet = false;
     }
-    else if (!delaySet && phase == NetView::Phase::Lobby && view.linkPingMs && g_choices.initialised && !view.spectator &&
-             !view.scripted) {
+    else if (!delaySet && phase == NetView::Phase::Lobby && view.SuggestedDelay() >= 0 && g_choices.initialised &&
+             !view.spectator && !view.scripted) {
         delaySet = true;
-        const int delay = SuggestedDelay(view.linkPingMs);
+        const int delay = view.SuggestedDelay();
         g_choices.delay = delay;
         Act([delay] { NetSetDelay(static_cast<uint8_t>(delay)); });
-        Log("overlay: input delay %d, suggested for a %u ms ping", delay, view.linkPingMs);
+        Log("overlay: input delay %d, suggested for a %u ms ping, %u ms jitter (%zu heartbeats)", delay, view.link.pingMs,
+            view.link.jitterMs, view.link.samples);
     }
     // After a match, over its results screen (the vote, then character
     // select's lobby): both sides' windows; they take the pads while this

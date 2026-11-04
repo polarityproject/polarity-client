@@ -1,6 +1,7 @@
 // End-to-end tests of the netplay driver, the .sfvr recorder and the desync
 // tooling, using MockGame over the loopback network.
 
+#include "core/input_delay.h"
 #include "core/lobby.h"
 #include "core/match_code.h"
 #include "core/mux.h"
@@ -98,6 +99,44 @@ void TestHashes()
     const char* longer = "Nobody inspects the spammish repetition";
     CHECK(Hash64(longer, std::strlen(longer)) == 0xFBCEA83C8A378BF1ull);
     CHECK(Crc32("123456789", 9) == 0xCBF43926u);
+}
+
+void TestInputDelaySuggestion()
+{
+    using core::SuggestedDelay;
+    // Steady link (no jitter): 0 frames up to 66 ms, then a frame per 33 ms, 3 at most.
+    CHECK(SuggestedDelay(0, 0) == 0);
+    CHECK(SuggestedDelay(66, 0) == 0);
+    CHECK(SuggestedDelay(67, 0) == 1);
+    CHECK(SuggestedDelay(100, 0) == 1);
+    CHECK(SuggestedDelay(101, 0) == 2);
+    CHECK(SuggestedDelay(133, 0) == 2);
+    CHECK(SuggestedDelay(134, 0) == 3);
+    CHECK(SuggestedDelay(400, 0) == 3);
+    // Typical jitter (8 ms) moves each step 16 ms lower.
+    CHECK(SuggestedDelay(50, 8) == 0);
+    CHECK(SuggestedDelay(51, 8) == 1);
+    CHECK(SuggestedDelay(84, 8) == 1);
+    CHECK(SuggestedDelay(85, 8) == 2);
+    CHECK(SuggestedDelay(118, 8) == 3);
+    // Jitter counts one frame (17 ms) at most.
+    CHECK(SuggestedDelay(32, 17) == 0);
+    CHECK(SuggestedDelay(33, 17) == 1);
+    CHECK(SuggestedDelay(32, 90) == 0);
+
+    std::vector<uint16_t> rtts{40, 44, 38, 42, 40};
+    core::LinkStats s = core::MeasureLink(rtts);
+    CHECK(s.samples == 5);
+    CHECK(s.pingMs == 40);
+    CHECK(s.jitterMs == 4); // steps 4, 6, 4, 2
+    rtts = {40, 41};
+    CHECK(core::MeasureLink(rtts).pingMs == 41); // even count: the middle two, rounded up
+    // A lone spike: each of its two steps counts 50 ms at most.
+    rtts = {40, 40, 400, 40, 40, 40, 40, 40, 40};
+    s = core::MeasureLink(rtts);
+    CHECK(s.pingMs == 40);
+    CHECK(s.jitterMs == 13); // (50 + 50) / 8
+    CHECK(core::MeasureLink({}).samples == 0);
 }
 
 void TestIgnoreMask()
@@ -868,6 +907,7 @@ int main()
 {
     const Test tests[] = {
         {"hashes", TestHashes},
+        {"input delay suggestion", TestInputDelaySuggestion},
         {"ignore mask", TestIgnoreMask},
         {"skipped saves", TestSkippedSaves},
         {"replay file round trip", TestReplayRoundTrip},

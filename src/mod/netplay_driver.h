@@ -21,6 +21,7 @@
 // match recordings go to the report folder.
 
 #include "core/game.h"
+#include "core/input_delay.h"
 #include "core/lobby.h"
 #include "core/mux.h"
 
@@ -94,9 +95,6 @@ void NetLeave();
 // In the lobby: ready to start (a player), and this player's pick.
 void NetSetReady(bool ready);
 void NetSetPick(bool hasPick, const PlayerSetup& pick);
-// The input delay a link's round trip calls for: its one-way trip in frames,
-// 1 to 3. Below it the other player's inputs come late on most frames.
-int SuggestedDelay(unsigned pingMs);
 // Between matches: this player's input delay for the next match; the host's
 // stage for the next matches (a stage code, "random", or "" as prepared).
 void NetSetDelay(uint8_t frames);
@@ -137,6 +135,15 @@ struct NetView {
     int played = 0;
     int spectators = 0;
     unsigned linkPingMs = 0; // round trip of the session's heartbeat
+    // The heartbeat's last 10 seconds (core/input_delay.h): the median round
+    // trip and the jitter the delay suggestion goes by.
+    core::LinkStats link;
+    // The input delay suggested for this link, -1 until enough heartbeats
+    // were measured (core::kSuggestSamples, 2 seconds of the lobby).
+    int SuggestedDelay() const
+    {
+        return link.samples >= core::kSuggestSamples ? core::SuggestedDelay(link.pingMs, link.jitterMs) : -1;
+    }
     // How the link to the other side (a spectator's: to the host) travels,
     // from its selected ICE candidate pair; the TURN server's name when one
     // was handed out ("turn.cloudflare.com").

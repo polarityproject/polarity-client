@@ -477,6 +477,7 @@ public:
         v.played = played_;
         v.spectators = host_ ? static_cast<int>(watchers_.size()) : spectators_;
         v.linkPingMs = linkPingMs_;
+        v.link = core::MeasureLink(linkRtts_);
         v.linkPath = linkPath_;
         v.relayHost = relayHost_;
         v.stageRule = host_ ? StageRule() : stageRule_;
@@ -903,7 +904,11 @@ private:
     {
         if (!m.echo) return;
         const int64_t rtt = int64_t(Now()) - int64_t(m.echo) - m.echoAge;
-        if (rtt >= 0 && rtt < 10000) linkPingMs_ = static_cast<unsigned>(rtt);
+        if (rtt < 0 || rtt >= 10000) return;
+        linkPingMs_ = static_cast<unsigned>(rtt);
+        std::lock_guard lock(mutex_);
+        linkRtts_.push_back(static_cast<uint16_t>(rtt));
+        if (linkRtts_.size() > core::kLinkSamples) linkRtts_.erase(linkRtts_.begin());
     }
 
     lobby::Seat OwnSeat()
@@ -1881,11 +1886,17 @@ private:
         UpdatePredictionWindow();
         winsKnown_ = game_.MatchWins(winsAtStart_[0], winsAtStart_[1]);
         SetState(State::Running);
-        if (const unsigned ping = linkPingMs_; ping) {
-            const int suggested = SuggestedDelay(ping);
-            if (nc.inputDelay < suggested) {
-                Log("netplay: delay %u is below the %d suggested for a %u ms ping: expect frequent rollbacks", nc.inputDelay,
-                    suggested, ping);
+        {
+            core::LinkStats link;
+            {
+                std::lock_guard lock(mutex_);
+                link = core::MeasureLink(linkRtts_);
+            }
+            if (link.samples >= core::kSuggestSamples) {
+                const int suggested = core::SuggestedDelay(link.pingMs, link.jitterMs);
+                Log("netplay: link %u ms, jitter %u ms (%zu heartbeats): delay %d suggested, %u chosen%s", link.pingMs,
+                    link.jitterMs, link.samples, suggested, nc.inputDelay,
+                    nc.inputDelay < suggested ? ": rollbacks deeper than 2 frames are likely" : "");
             }
         }
         Log("netplay: session started as P%d, delay %u, prediction window %u", nc.localPlayer + 1, nc.inputDelay,
@@ -2582,6 +2593,7 @@ private:
     uint32_t heardTime_ = 0;
     Clock::time_point heardTimeAt_{};
     std::atomic<unsigned> linkPingMs_{0};
+    std::vector<uint16_t> linkRtts_; // under mutex_: the last core::kLinkSamples round trips, oldest first
     NetView::Path linkPath_ = NetView::Path::Unknown; // under mutex_
     int roundCallFrame_ = -1;   // game thread: the session frame the round call began, -1 outside it
     bool loweredEarly_ = false; // ... and the delay is already back to the player's
@@ -3094,8 +3106,6 @@ void NetSetPick(bool hasPick, const PlayerSetup& pick)
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->SetPick(hasPick, pick);
 }
-
-int SuggestedDelay(unsigned pingMs) { return std::clamp(static_cast<int>((pingMs / 2 + 8) / 17), 1, 3); }
 
 void NetSetDelay(uint8_t frames)
 {

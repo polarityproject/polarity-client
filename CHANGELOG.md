@@ -7,6 +7,14 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Changed
+
+- The suggested input delay now starts at 0 frames: nearby players play
+  with no delay, as the game's own online did, and rollback covers the rest.
+  It aims at rollbacks of 2 frames or fewer and goes up to 3 frames for far
+  players. It goes by the ping and its jitter over the lobby's last 10
+  seconds, not one moment's ping.
+
 ### Fixed
 
 - The marker over each fighter at the start of a round said "Player 1" over
