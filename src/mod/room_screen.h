@@ -7,9 +7,11 @@
 // seats are open), A again stands you up; on a busy table A joins its queue
 // (or leaves it). When both seats are taken the your-turn card comes up for
 // the two players: Ready (A), the input delay for this match (left and
-// right, preset from SFVR settings), Leave queue (B); 8 s to answer. Then a
-// connecting notice while P1 opens the match room. Start (owner) opens the
-// table rules; Y opens My character.
+// right, preset from SFVR settings), Leave queue (B); 8 s to answer. Then the
+// connecting modal (mock-up board 6) until the match loads: the match room,
+// the link with its ping, the characters loading, the match starting; B
+// cancels until the match loads. Start (owner) opens the table rules; Y opens
+// My character.
 //
 // Players (M6): RB moves the cursor to the player list; A mutes or unmutes a
 // player's chat (this session), X (owner) removes them from the room.
@@ -37,7 +39,22 @@ struct RoomScreenInput {
     int delay = -1;           // with "ready": the input delay chosen for this match
     bool myCharacter = false; // Y
     bool clearNotice = false; // the table notice read
+    bool cancelHandoff = false; // B on the connecting modal: out of this set before it began
 };
+
+// This player's table session as the overlay sees it (NetView), for the
+// connecting modal.
+struct TableHandoff {
+    bool session = false;   // the ticket's session exists
+    bool roomOpen = false;  // P1: its match room is open; P2: joining it
+    bool linked = false;    // both players are in the session
+    unsigned pingMs = 0;    // the session's heartbeat round trip
+    int path = 0;           // 0 not known, 1 peer to peer, 2 relayed
+    bool preloaded[2] = {}; // P1's game, P2's game: both characters loaded
+    bool jumping = false;   // the match is loading
+    int played = 0;         // games of the set played so far
+};
+void SetTableHandoff(const TableHandoff& handoff);
 
 void ResetRoomScreen(); // a new room: dialogs shut, nothing typed, nobody muted
 // `delaySuggestion`: the your-turn card's starting delay (SFVR settings, or

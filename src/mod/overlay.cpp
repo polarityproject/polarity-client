@@ -3501,7 +3501,28 @@ void DrawHubFrame(bool takeInput)
             SetCharaNames(std::move(names));
         }
         RoomScreenInput in;
+        {
+            // The table's session, for the connecting modal.
+            const NetView nv = NetViewNow();
+            using P = NetView::Phase;
+            TableHandoff h;
+            h.session = nv.setPlay && nv.phase != P::Idle && nv.phase != P::Ended;
+            h.roomOpen = h.session && nv.phase != P::Connecting;
+            h.linked = h.session && nv.seats[0].present && nv.seats[1].present && nv.phase != P::Hosting && nv.phase != P::Joining &&
+                       nv.phase != P::Connecting;
+            h.pingMs = nv.link.samples ? nv.link.pingMs : nv.linkPingMs;
+            h.path = nv.linkPath == NetView::Path::Direct ? 1 : nv.linkPath == NetView::Path::Relayed ? 2 : 0;
+            h.preloaded[0] = h.linked && nv.seats[0].preloaded;
+            h.preloaded[1] = h.linked && nv.seats[1].preloaded;
+            h.jumping = h.session && (nv.phase == P::Jumping || nv.phase == P::Loading || nv.phase == P::Running);
+            h.played = h.session ? nv.played : 0;
+            SetTableHandoff(h);
+        }
         DrawRoomScreen(fonts, rooms, takeInput && !g_myCharacterOpen, &in);
+        if (in.cancelHandoff) {
+            RoomsCancelHandoff();
+            Log("overlay: the connecting modal's Cancel");
+        }
         if (!in.request.empty()) RoomsTable(in.request, in.args);
         if (in.delay >= 0) g_tableDelay = in.delay;
         if (in.myCharacter) g_myCharacterOpen = true;

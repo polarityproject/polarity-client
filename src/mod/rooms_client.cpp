@@ -846,6 +846,18 @@ bool RoomsTakeAbort()
     return WithClient([](Client& c) { return std::exchange(c.abortSession, false); });
 }
 
+void RoomsCancelHandoff()
+{
+    WithClient([](Client& c) {
+        if (c.playing.table >= 0 && c.playing.begun) return false; // the match is on: leaving is the panel's
+        Log("rooms: leaves table %d before its match", c.playing.table + 1);
+        c.tableAsks.push_back({"stand", {}});
+        if (c.playing.table >= 0) c.abortSession = true;
+        c.playing = {};
+        return true;
+    });
+}
+
 std::string RoomsPlace(const RoomsView& v, uint32_t id)
 {
     static const char* const kOrdinal[] = {"1st", "2nd", "3rd"};

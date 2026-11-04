@@ -117,6 +117,9 @@ void RoomsTableSession(int table, bool host, const std::string& rules);
 // left during the handoff, the keeper called the table again): true once,
 // and the overlay ends that session.
 bool RoomsTakeAbort();
+// Cancel on the connecting modal: off the table before its match began (the
+// keeper calls the table again), and this player's session ends.
+void RoomsCancelHandoff();
 // The clock TableView::callSeenMs is on (milliseconds).
 int64_t RoomsClockMs();
 // A member's place, for the player list: "Table 2 · playing", "Idle".

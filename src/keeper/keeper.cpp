@@ -780,6 +780,15 @@ void Keeper::TableRequest(Room& room, Member& m, const Request& r, int64_t nowMs
                 LeaveTable(m.id, &table.s, &table.queue);
                 Fill(room, table, nowMs);
             }
+            else if (table.s.phase == TablePhase::Connecting || table.s.phase == TablePhase::Playing) {
+                // Cancel on the connecting modal (clients send it only before
+                // their match began): as if they had left the room, the other
+                // keeps the seat and the table is called again.
+                LeaveTable(m.id, &table.s, &table.queue);
+                Log("keeper: room %s: %s leaves table %d before its match", room.code.c_str(), m.name.c_str(),
+                    static_cast<int>(&table - room.tables.data()) + 1);
+                Fill(room, table, nowMs, true);
+            }
         }
     }
     else if (r.kind == "queue" && t) {
