@@ -131,7 +131,7 @@ add_library(sfvcore STATIC
   src/core/mux.cpp
   src/core/spectate.cpp)
 target_include_directories(sfvcore PUBLIC src)
-target_link_libraries(sfvcore PUBLIC GekkoNet PRIVATE Cabinet bcrypt) # Cabinet: compressapi.h; bcrypt: update signatures
+target_link_libraries(sfvcore PUBLIC GekkoNet PRIVATE bcrypt) # bcrypt: update signatures (the codec, compress.cpp, is looked up at run time)
 
 # Deterministic toy fighter and in-memory network used to exercise the core
 # without the game.

@@ -1,7 +1,8 @@
 #pragma once
 // Byte compression for .sfvr chunks: Windows' own XPRESS Huffman codec
 // (compressapi.h, in every Windows since 8), so the format needs no library.
-// Raw mode: the caller keeps the uncompressed size.
+// Raw mode: the caller keeps the uncompressed size. Where cabinet.dll lacks
+// the codec (Wine before 2026, so Proton) both fail and chunks stay raw.
 
 #include <cstddef>
 #include <cstdint>
