@@ -170,6 +170,10 @@ if(SFV_BUILD_MOD AND WIN32)
   add_executable(sfvr_keeper src/keeper/main.cpp src/keeper/keeper.cpp)
   set_target_properties(sfvr_keeper PROPERTIES OUTPUT_NAME sfvr-keeper)
   target_link_libraries(sfvr_keeper PRIVATE sfvcore weyvelength_client bcrypt ws2_32)
+  # sfvr-bot: a headless rooms player for tests (src/tools/sfvr_bot.cpp).
+  add_executable(sfvr_bot src/tools/sfvr_bot.cpp)
+  set_target_properties(sfvr_bot PROPERTIES OUTPUT_NAME sfvr-bot)
+  target_link_libraries(sfvr_bot PRIVATE sfvcore weyvelength_client bcrypt ws2_32)
 endif()
 
 if(SFV_BUILD_MOD AND WIN32)

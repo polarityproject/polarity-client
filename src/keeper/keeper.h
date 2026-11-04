@@ -20,6 +20,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -67,6 +68,8 @@ private:
         uint32_t lastSeq = 0;      // highest request handled
         int64_t lastRoomAskMs = -1;
         int64_t lastPeekMs = -1;
+        int callStrikes = 0; // your-turn calls let lapse in a row (twice: off the queue)
+        bool removed = false; // kicked: what they sent before going is not acted on
         std::string chara;         // member data `ch`, for the list's faces
     };
     struct Outgoing {
@@ -77,6 +80,17 @@ private:
         int64_t untilMs = 0;
     };
     enum class Kind { Lobby, Custom };
+    // A table of a custom room (keeper_protocol.h TableState): its state and
+    // queue are written to room data; the rest is the keeper's own.
+    struct Table {
+        TableState s;
+        std::vector<uint32_t> queue;
+        Rules rules;          // t<n>: the next set's
+        Rules setRules;       // the running set's (fixed when it was called)
+        uint64_t token = 0;   // the running set's P2 seat token
+        int64_t phaseAtMs = 0; // when the phase began (its time limit)
+        std::string written;  // s<n> and q<n> as last written
+    };
     struct Room {
         Kind kind = Kind::Custom;
         WeyveClient* client = nullptr;
@@ -101,6 +115,8 @@ private:
         int64_t emptySinceMs = -1;
         bool closing = false;
         std::vector<uint32_t> masked; // members whose names the filter rejected (public rooms)
+        std::vector<Table> tables;
+        bool unlisted = false; // the operator took it off the public list
     };
 
     void Log(const char* format, ...) const;
@@ -121,10 +137,27 @@ private:
     void UpdateCustom(Room& room, int64_t nowMs);
     void UpdateLobby(Room& room, int64_t nowMs);
     void Close(Room& room, const char* why);
+    // The operator's commands: a file beside the state file (<state>.cmd),
+    // read and emptied each second: "unlist <code>", "list <code>",
+    // "word <word>" (into the name filter), "rooms" (a summary in the log).
+    void Commands(int64_t nowMs);
+    int64_t commandsAtMs_ = 0;
     void CheckName(Room& room, uint32_t id);
     void WriteMask(Room& room);
     std::string ShownName(const Room& room, uint32_t id) const;
     void Peek(Room& lobby, Member& m, const Request& request, int64_t nowMs);
+    // Tables.
+    void SetUpTables(Room& room, int64_t nowMs);
+    void TableRequest(Room& room, Member& m, const Request& request, int64_t nowMs);
+    void UpdateTables(Room& room, int64_t nowMs);
+    void SetPhase(Table& t, TablePhase phase, int64_t nowMs);
+    // `brokeOff`: the table's set or its handoff ended early; its players
+    // get a longer call (their games are leaving the battle).
+    void Fill(Room& room, Table& t, int64_t nowMs, bool brokeOff = false);
+    void WriteTables(Room& room);
+    void OffTables(Room& room, uint32_t id, int64_t nowMs);
+    void Ticket(Room& room, uint32_t to, const TableTicket& ticket, int64_t nowMs);
+    std::mt19937_64 rng_{std::random_device{}()};
     void SaveState();
     std::vector<std::string> LoadState();
     int Count(const Room& room) const { return static_cast<int>(room.members.size()); }

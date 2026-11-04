@@ -42,6 +42,10 @@ constexpr int64_t kEmptyCloseMs = 3000;
 constexpr int64_t kListEveryMs = 2000;    // the public list and the lobby's count, at most this often
 constexpr int64_t kRoomAskEveryMs = 10000;
 constexpr int64_t kPeekEveryMs = 500;
+constexpr int kCallSeconds = 10;         // the your-turn card's 8 s, and a little for the trip
+constexpr int kBrokeOffCallSeconds = 15; // after a set that broke off: its players are still leaving the battle
+constexpr int64_t kConnectMs = 45000;    // P1 opens the match room and says its code
+constexpr int64_t kAfterMs = 5000;       // the after-set panels, then the rotation
 
 } // namespace
 
@@ -158,6 +162,7 @@ void Keeper::Step(int64_t nowMs)
     if (rooms_.size() != before) SaveState();
     if (lobby_->client) UpdateLobby(*lobby_, nowMs);
     SendOutbox(*lobby_, nowMs);
+    Commands(nowMs);
 }
 
 void Keeper::Pump(Room& room, int64_t nowMs)
@@ -344,9 +349,9 @@ void Keeper::SetUpAsHost(Room& room, int64_t nowMs)
         room.masked.clear();
         for (uint32_t id : room.order) CheckName(room, id);
         WriteMask(room);
+        SetUpTables(room, nowMs);
     }
     room.setUp = true;
-    (void)nowMs;
 }
 
 void Keeper::OnJoined(Room& room, uint32_t id, const std::string& name, int64_t nowMs)
@@ -385,6 +390,7 @@ void Keeper::OnLeft(Room& room, uint32_t id, int64_t nowMs)
     Log("keeper: room %s: %s (%u) left, %d members", room.code.c_str(), name.c_str(), id, Count(room));
     std::erase(room.masked, id);
     WriteMask(room); // the others' places moved
+    OffTables(room, id, nowMs);
     if (id == room.owner) {
         room.owner = NextOwner(room.order, id, weyve_id(room.client));
         if (room.owner) {
@@ -459,6 +465,10 @@ void Keeper::OnRequest(Room& room, Member& m, const Request& request, int64_t no
         rooms_.push_back(std::move(r));
         return;
     }
+    if (room.kind == Kind::Custom) {
+        TableRequest(room, m, request, nowMs);
+        return;
+    }
     Answer(room, m.id, {request.seq, request.kind, false, "unknown request"}, nowMs);
 }
 
@@ -486,11 +496,13 @@ void Keeper::OnChat(Room& room, uint32_t from, const std::string& text, int64_t 
     auto it = room.members.find(from);
     if (it == room.members.end()) return;
     Member& m = it->second;
+    if (m.removed) return;
     if (m.chat.Allow(nowMs, text)) return;
     const int strikes = m.chat.Strikes(nowMs);
     Log("keeper: room %s: %s (%u) is past the chat limits (%d in 10 s)", room.code.c_str(), m.name.c_str(), from, strikes);
     if (strikes >= ChatLimiter::kKickStrikes && room.host) {
         Log("keeper: room %s: removing %s (%u) for flooding the chat", room.code.c_str(), m.name.c_str(), from);
+        m.removed = true;
         weyve_kick_member(room.client, from);
     }
 }
@@ -527,6 +539,7 @@ void Keeper::UpdateCustom(Room& room, int64_t nowMs)
         return;
     }
     if (room.host && room.owner) WriteData(room, kOwner, std::to_string(room.owner));
+    if (room.host) UpdateTables(room, nowMs);
     SendOutbox(room, nowMs);
 }
 
@@ -546,7 +559,7 @@ void Keeper::UpdateLobby(Room& room, int64_t nowMs)
     listWrittenMs_ = nowMs;
     std::vector<ListedRoom> list;
     for (const auto& r : rooms_) {
-        if (r->closing || !r->inRoom || !r->host || !r->settings.isPublic || !r->ownerArrived || r->members.empty()) continue;
+        if (r->closing || !r->inRoom || !r->host || !r->settings.isPublic || !r->ownerArrived || r->members.empty() || r->unlisted) continue;
         ListedRoom l;
         l.code = r->code;
         l.preset = r->settings.preset;
@@ -554,7 +567,10 @@ void Keeper::UpdateLobby(Room& room, int64_t nowMs)
         l.owner = owner != r->members.end() ? ShownName(*r, r->owner) : std::string();
         l.members = Count(*r);
         l.tables = r->settings.tables;
-        l.openSeats = r->settings.tables * 2; // no seats until tables (M4)
+        l.openSeats = 0;
+        for (const Table& t : r->tables) {
+            if (t.s.phase == TablePhase::Open) l.openSeats += (t.s.seat[0] ? 0 : 1) + (t.s.seat[1] ? 0 : 1);
+        }
         uint32_t len = 0;
         const char* rules = weyve_room_data(r->client, TableKey(0).c_str(), &len);
         l.rules = rules ? Str(rules, len) : FormatRules(Rules{});
@@ -635,6 +651,307 @@ void Keeper::Peek(Room& lobby, Member& m, const Request& request, int64_t nowMs)
         lobby.outbox.push_back({m.id, request.seq, FormatAnswer({request.seq, "peek", true, part}), nowMs, nowMs + 5000});
     }
     SendOutbox(lobby, nowMs);
+}
+
+// ---- tables ---------------------------------------------------------------------
+
+void Keeper::SetUpTables(Room& room, int64_t nowMs)
+{
+    // Kept as they were (a keeper that restarts reads them back); new
+    // tables open and empty.
+    const int count = room.settings.tables;
+    room.tables.resize(count);
+    for (int t = 0; t < count; t++) {
+        Table& table = room.tables[t];
+        uint32_t len = 0;
+        const char* rules = weyve_room_data(room.client, TableKey(t).c_str(), &len);
+        if (!rules || !ParseRules(Str(rules, len), &table.rules)) table.rules = Rules{};
+        const char* state = weyve_room_data(room.client, StateKey(t).c_str(), &len);
+        if (!state || !ParseTable(Str(state, len), &table.s)) table.s = TableState{};
+        const char* queue = weyve_room_data(room.client, QueueKey(t).c_str(), &len);
+        table.queue = queue ? ParseIds(Str(queue, len)) : std::vector<uint32_t>{};
+        // Only members still here; a set that was running when the keeper
+        // went goes on without it (its players report the result).
+        std::erase_if(table.queue, [&](uint32_t id) { return !room.members.count(id); });
+        for (uint32_t& id : table.s.seat) {
+            if (id && !room.members.count(id)) id = 0;
+        }
+        table.setRules = table.rules;
+        table.phaseAtMs = nowMs;
+        table.written.clear();
+        if (table.s.phase == TablePhase::Call || table.s.phase == TablePhase::Connecting || table.s.phase == TablePhase::After) {
+            Fill(room, table, nowMs, table.s.phase == TablePhase::Connecting); // whatever was in progress starts over
+        }
+    }
+    WriteTables(room);
+}
+
+void Keeper::SetPhase(Table& t, TablePhase phase, int64_t nowMs)
+{
+    t.s.phase = phase;
+    t.phaseAtMs = nowMs;
+}
+
+void Keeper::Fill(Room& room, Table& t, int64_t nowMs, bool brokeOff)
+{
+    FillSeats(&t.s, &t.queue);
+    t.phaseAtMs = nowMs;
+    if (t.s.phase == TablePhase::Call) {
+        t.s.call++;
+        t.s.callSeconds = static_cast<uint8_t>(brokeOff ? kBrokeOffCallSeconds : kCallSeconds);
+        t.setRules = t.rules;
+        const int index = static_cast<int>(&t - room.tables.data());
+        Log("keeper: room %s: table %d calls %u and %u", room.code.c_str(), index + 1, t.s.seat[0], t.s.seat[1]);
+    }
+}
+
+void Keeper::WriteTables(Room& room)
+{
+    if (!room.host) return;
+    for (int i = 0; i < static_cast<int>(room.tables.size()); i++) {
+        Table& t = room.tables[i];
+        const std::string state = FormatTable(t.s), queue = FormatIds(t.queue);
+        if (state + "\n" + queue == t.written) continue;
+        t.written = state + "\n" + queue;
+        WriteData(room, StateKey(i), state);
+        if (queue.empty()) DeleteData(room, QueueKey(i));
+        else WriteData(room, QueueKey(i), queue);
+    }
+}
+
+void Keeper::Ticket(Room& room, uint32_t to, const TableTicket& ticket, int64_t nowMs)
+{
+    // Sent again until acknowledged, as an answer is; numbered after the
+    // player's last request, so their acknowledgement covers it.
+    const auto m = room.members.find(to);
+    const uint32_t seq = m != room.members.end() ? m->second.lastSeq + 1000000 : 1;
+    Log("keeper: room %s: ticket to %u: %s", room.code.c_str(), to, FormatTicket(ticket).c_str());
+    room.outbox.push_back({to, seq, FormatAnswer({seq, "ticket", true, FormatTicket(ticket)}), nowMs, nowMs + kConnectMs});
+    SendOutbox(room, nowMs);
+}
+
+void Keeper::OffTables(Room& room, uint32_t id, int64_t nowMs)
+{
+    for (Table& t : room.tables) {
+        const bool seated = t.s.seat[0] == id || t.s.seat[1] == id;
+        const bool inSet = t.s.phase == TablePhase::Connecting || t.s.phase == TablePhase::Playing;
+        if (!LeaveTable(id, &t.s, &t.queue)) continue;
+        if (seated && t.s.phase != TablePhase::Open) {
+            // A call or a set without one of its players: the other keeps
+            // the seat, the next in line takes the empty one.
+            Fill(room, t, nowMs, inSet);
+        }
+        else if (t.s.phase == TablePhase::Open) {
+            Fill(room, t, nowMs);
+        }
+    }
+    WriteTables(room);
+}
+
+void Keeper::TableRequest(Room& room, Member& m, const Request& r, int64_t nowMs)
+{
+    if (!room.host) return; // paused: nothing moves
+    const int count = static_cast<int>(room.tables.size());
+    int index = -1;
+    if (!r.args.empty()) index = std::atoi(r.args[0].c_str());
+    Table* t = index >= 0 && index < count ? &room.tables[index] : nullptr;
+    auto seatOf = [&](const Table& table) { return table.s.seat[0] == m.id ? 0 : table.s.seat[1] == m.id ? 1 : -1; };
+    if (r.kind == "seat" && t && r.args.size() == 2) {
+        // Off any other table first (one place at a time).
+        for (Table& other : room.tables) {
+            if (&other != t && LeaveTable(m.id, &other.s, &other.queue) && other.s.phase != TablePhase::Open) Fill(room, other, nowMs);
+        }
+        const int want = std::atoi(r.args[1].c_str());
+        if (t->s.phase == TablePhase::Open && seatOf(*t) < 0) {
+            int seat = want == 0 || want == 1 ? want : (!t->s.seat[0] ? 0 : 1);
+            if (t->s.seat[seat]) seat = 1 - seat;
+            if (!t->s.seat[seat]) {
+                std::erase(t->queue, m.id);
+                t->s.seat[seat] = m.id;
+                Log("keeper: room %s: %s sits at table %d as P%d", room.code.c_str(), m.name.c_str(), index + 1, seat + 1);
+                if (t->s.seat[0] && t->s.seat[1]) Fill(room, *t, nowMs);
+            }
+        }
+    }
+    else if (r.kind == "stand") {
+        for (Table& table : room.tables) {
+            if (seatOf(table) < 0) continue;
+            if (table.s.phase == TablePhase::Open || table.s.phase == TablePhase::Call) {
+                LeaveTable(m.id, &table.s, &table.queue);
+                Fill(room, table, nowMs);
+            }
+        }
+    }
+    else if (r.kind == "queue" && t) {
+        for (Table& other : room.tables) {
+            if (&other != t && LeaveTable(m.id, &other.s, &other.queue) && other.s.phase != TablePhase::Open) Fill(room, other, nowMs);
+        }
+        if (seatOf(*t) < 0 && std::find(t->queue.begin(), t->queue.end(), m.id) == t->queue.end()) {
+            t->queue.push_back(m.id);
+            m.callStrikes = 0;
+            Log("keeper: room %s: %s queues for table %d (%zu in queue)", room.code.c_str(), m.name.c_str(), index + 1, t->queue.size());
+            // A table nobody waits at takes them straight into a seat.
+            if (t->s.phase == TablePhase::Open) Fill(room, *t, nowMs);
+        }
+    }
+    else if (r.kind == "unqueue") {
+        for (Table& table : room.tables) std::erase(table.queue, m.id);
+    }
+    else if (r.kind == "ready" && t && t->s.phase == TablePhase::Call) {
+        const int seat = seatOf(*t);
+        if (seat >= 0) {
+            t->s.ready[seat] = true;
+            m.callStrikes = 0;
+            if (t->s.ready[0] && t->s.ready[1]) {
+                // P1 hosts the match room; P2's ticket goes once it is open.
+                t->token = rng_() | 1;
+                SetPhase(*t, TablePhase::Connecting, nowMs);
+                Ticket(room, t->s.seat[0], {true, index, "", t->token, FormatRules(t->setRules)}, nowMs);
+            }
+        }
+    }
+    else if (r.kind == "decline" && t && seatOf(*t) >= 0 &&
+             (t->s.phase == TablePhase::Call || t->s.phase == TablePhase::Open)) {
+        LeaveTable(m.id, &t->s, &t->queue);
+        Log("keeper: room %s: %s leaves table %d's queue", room.code.c_str(), m.name.c_str(), index + 1);
+        Fill(room, *t, nowMs);
+    }
+    else if (r.kind == "code" && t && r.args.size() == 2 && t->s.phase == TablePhase::Connecting && seatOf(*t) == 0) {
+        t->s.code = r.args[1];
+        SetPhase(*t, TablePhase::Playing, nowMs);
+        Ticket(room, t->s.seat[1], {false, index, t->s.code, t->token, FormatRules(t->setRules)}, nowMs);
+    }
+    else if ((r.kind == "score" || r.kind == "result") && t && r.args.size() == 3 &&
+             (t->s.phase == TablePhase::Playing || t->s.phase == TablePhase::Connecting)) {
+        // P1 reports; P2 only once P1 is gone.
+        const int seat = seatOf(*t);
+        if (seat == 0 || (seat == 1 && !room.members.count(t->s.seat[0]))) {
+            const uint8_t games[2] = {static_cast<uint8_t>(std::clamp(std::atoi(r.args[1].c_str()), 0, 99)),
+                                      static_cast<uint8_t>(std::clamp(std::atoi(r.args[2].c_str()), 0, 99))};
+            if (r.kind == "score") {
+                t->s.wins[0] = games[0];
+                t->s.wins[1] = games[1];
+            }
+            else if (games[0] == games[1]) {
+                Log("keeper: room %s: table %d's set did not finish; calling it again", room.code.c_str(), index + 1);
+                Fill(room, *t, nowMs, true);
+            }
+            else {
+                ApplySetResult(t->setRules, games[0] > games[1] ? 0 : 1, games, &t->s, &t->queue);
+                t->phaseAtMs = nowMs;
+                Log("keeper: room %s: table %d: %u beat %u %d-%d", room.code.c_str(), index + 1, t->s.lastWinner, t->s.lastLoser,
+                    t->s.lastScore[0], t->s.lastScore[1]);
+            }
+        }
+    }
+    else if (r.kind == "rules" && t && r.args.size() == 2 && m.id == room.owner) {
+        Rules rules;
+        if (ParseRules(r.args[1], &rules)) {
+            t->rules = rules;
+            WriteData(room, TableKey(index), FormatRules(rules));
+            Log("keeper: room %s: table %d's rules are %s from its next set", room.code.c_str(), index + 1, r.args[1].c_str());
+        }
+        else {
+            Log("keeper: room %s: table %d: rules '%s' do not parse; kept", room.code.c_str(), index + 1, r.args[1].c_str());
+        }
+    }
+    else if (r.kind == "kick" && !r.args.empty() && m.id == room.owner) {
+        const uint32_t id = static_cast<uint32_t>(std::strtoul(r.args[0].c_str(), nullptr, 10));
+        if (id && id != m.id && room.members.count(id)) {
+            Log("keeper: room %s: the owner removes %s (%u)", room.code.c_str(), room.members[id].name.c_str(), id);
+            // Barred until they reconnect (Weyvelength's ban holds the connection).
+            weyve_ban_member(room.client, id);
+        }
+    }
+    WriteTables(room);
+}
+
+void Keeper::UpdateTables(Room& room, int64_t nowMs)
+{
+    for (int i = 0; i < static_cast<int>(room.tables.size()); i++) {
+        Table& t = room.tables[i];
+        const int64_t in = nowMs - t.phaseAtMs;
+        if (t.s.phase == TablePhase::Call && in >= 1000 * (t.s.callSeconds ? t.s.callSeconds : kCallSeconds)) {
+            // Who did not ready goes to the back of the queue; a second
+            // lapse in a row takes them off it. Who did keeps the seat and
+            // their Ready for the next call.
+            const uint32_t wasReady[2] = {t.s.ready[0] ? t.s.seat[0] : 0, t.s.ready[1] ? t.s.seat[1] : 0};
+            for (int seat = 0; seat < 2; seat++) {
+                const uint32_t id = t.s.seat[seat];
+                if (!id || t.s.ready[seat]) continue;
+                t.s.seat[seat] = 0;
+                auto m = room.members.find(id);
+                const int strikes = m != room.members.end() ? ++m->second.callStrikes : 2;
+                if (strikes < 2) t.queue.push_back(id);
+                Log("keeper: room %s: table %d: %u did not answer the call (%s)", room.code.c_str(), i + 1, id,
+                    strikes < 2 ? "back of the queue" : "off the queue");
+            }
+            Fill(room, t, nowMs);
+            for (int seat = 0; seat < 2; seat++) {
+                if (t.s.phase == TablePhase::Call && wasReady[seat] && t.s.seat[seat] == wasReady[seat]) t.s.ready[seat] = true;
+            }
+        }
+        else if (t.s.phase == TablePhase::Connecting && in >= kConnectMs) {
+            Log("keeper: room %s: table %d's match room never opened; calling again", room.code.c_str(), i + 1);
+            Fill(room, t, nowMs, true);
+        }
+        else if (t.s.phase == TablePhase::After && in >= kAfterMs) {
+            Fill(room, t, nowMs);
+        }
+    }
+    WriteTables(room);
+}
+
+void Keeper::Commands(int64_t nowMs)
+{
+    if (o_.statePath.empty() || nowMs - commandsAtMs_ < 1000) return;
+    commandsAtMs_ = nowMs;
+    const std::string path = o_.statePath + ".cmd";
+    std::ifstream in(path);
+    if (!in) return;
+    std::vector<std::string> lines;
+    for (std::string line; std::getline(in, line);) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty()) lines.push_back(line);
+    }
+    in.close();
+    std::remove(path.c_str());
+    for (const std::string& line : lines) {
+        std::istringstream ss(line);
+        std::string cmd, arg;
+        ss >> cmd >> arg;
+        if (cmd == "unlist" || cmd == "list") {
+            bool found = false;
+            for (auto& r : rooms_) {
+                if (r->code != arg) continue;
+                r->unlisted = cmd == "unlist";
+                found = true;
+            }
+            listWrittenMs_ = -1; // the list again at once
+            Log("keeper: operator: %s %s%s", cmd.c_str(), arg.c_str(), found ? "" : " (no such room)");
+        }
+        else if (cmd == "word" && !arg.empty()) {
+            const std::string w = FoldName(arg);
+            if (w.size() >= 3) {
+                o_.words.push_back(w);
+                Log("keeper: operator: '%s' added to the name filter (%zu words)", w.c_str(), o_.words.size());
+                for (auto& r : rooms_) {
+                    for (uint32_t id : r->order) CheckName(*r, id);
+                }
+            }
+        }
+        else if (cmd == "rooms") {
+            Log("keeper: operator: lobby %s, %zu custom rooms", lobby_ ? lobby_->code.c_str() : "-", rooms_.size());
+            for (const auto& r : rooms_) {
+                Log("keeper:   %s %s %s, %d members, %d tables%s%s", r->code.c_str(), PresetName(r->settings.preset),
+                    r->settings.isPublic ? "public" : "private", Count(*r), r->settings.tables, r->unlisted ? ", unlisted" : "",
+                    r->host ? "" : ", paused");
+            }
+        }
+        else {
+            Log("keeper: operator: unknown command '%s'", line.c_str());
+        }
+    }
 }
 
 void Keeper::Close(Room& room, const char* why)

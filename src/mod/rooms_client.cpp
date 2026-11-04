@@ -1,9 +1,11 @@
 #include "mod/rooms_client.h"
 
 #include "core/lobby.h"
+#include "core/match_ticket.h"
 #include "core/update_info.h"
 #include "mod/lifecycle.h"
 #include "mod/log.h"
+#include "mod/netplay_driver.h"
 #include "mod/udp_transport.h"
 #include "mod/weyve_service.h"
 
@@ -20,6 +22,7 @@
 #include <optional>
 #include <set>
 #include <thread>
+#include <utility>
 
 namespace sfv::mod {
 
@@ -57,6 +60,17 @@ struct Client {
     std::vector<std::string> chatOut;
     keeper::ChatLimiter limiter;
     std::string peekWanted; // RoomsPeek
+    std::vector<std::pair<std::string, std::vector<std::string>>> tableAsks; // RoomsTable
+    std::vector<keeper::TableTicket> tickets; // from the keeper, for the overlay
+    struct Playing {
+        int table = -1;
+        bool host = false;
+        Rules rules;
+        int64_t at = 0;
+        bool started = false, codeSent = false;
+        bool begun = false; // the match itself (the jump), not only the session
+        int sent[2] = {-1, -1};
+    } playing;
 
     // The thread's own.
     std::unique_ptr<WeyveService> svc;
@@ -85,6 +99,12 @@ struct Client {
     std::string net = "u"; // this PC's connection, for member data `net`
     std::map<uint32_t, int> mask; // the room's masked names (keeper_protocol.h kMask)
     bool toldMasked = false;
+    uint64_t lastTicketToken = 0; // a ticket sent again is taken once
+    bool askedAll = false;        // the second listing (every build) is out
+    bool saidNoLobby = false;     // logged once until a lobby shows
+    int64_t allListAt = -1;       // when to ask for it (the server takes one listing a second)
+    bool abortSession = false;    // RoomsTakeAbort
+    std::vector<std::pair<uint32_t, int64_t>> callSeen; // per table: the call, when it showed
 
     void Set(State s)
     {
@@ -140,9 +160,30 @@ struct Client {
         Set(State::Joining);
     }
 
-    // `inRoom`: still in the room (a failed join or a kick left us in none).
-    void BackToLobby(const std::string& notice, bool inRoom)
+    // Out of the room: its table's set is no longer ours to report (a match
+    // that already began plays out; one still being set up ends), and its
+    // tickets and notices go with it.
+    // `removed`: the owner took this player out; a match already playing
+    // ends too (else it went on with the room calling the other player).
+    void ForgetTables(bool removed = false)
     {
+        if (playing.table >= 0 && (!playing.begun || removed)) {
+            Log(removed ? "rooms: removed from the room during table %d's set: leaving the session"
+                        : "rooms: left the room before table %d's match began: leaving the session",
+                playing.table + 1);
+            abortSession = true;
+        }
+        playing = {};
+        tickets.clear();
+        callSeen.clear();
+        view.tableViews.clear();
+        view.tableNotice.clear();
+    }
+
+    // `inRoom`: still in the room (a failed join or a kick left us in none).
+    void BackToLobby(const std::string& notice, bool inRoom, bool removed = false)
+    {
+        ForgetTables(removed);
         if (!notice.empty()) {
             view.notice = notice;
             Log("rooms: %s", notice.c_str());
@@ -165,9 +206,23 @@ struct Client {
         switch (e.type) {
         case WeyveEvent::Type::RoomList: {
             if (view.state != State::Finding && view.state != State::NoLobby) break;
+            if (askedAll) {
+                // Lobbies of other builds: this one is out of date (or ahead).
+                askedAll = false;
+                std::string other;
+                for (const WeyveListedRoom& r : svc->RoomList()) {
+                    const auto build = r.listing.find(keeper::kBuild);
+                    if (build != r.listing.end() && build->second != std::to_string(lobby::kProtocol)) other = build->second;
+                }
+                if (other != view.otherBuild && !other.empty()) Log("rooms: the server has build %s's lobby, not %u's", other.c_str(), lobby::kProtocol);
+                view.otherBuild = other;
+                break;
+            }
             std::string best;
             int bestCount = -1;
             for (const WeyveListedRoom& r : svc->RoomList()) {
+                const auto build = r.listing.find(keeper::kBuild);
+                if (build == r.listing.end() || build->second != std::to_string(lobby::kProtocol)) continue;
                 const auto count = r.listing.find(keeper::kCount);
                 const int n = count != r.listing.end() ? std::atoi(count->second.c_str()) : 0;
                 if (!r.joinable || n >= keeper::kLobbyCap) continue;
@@ -177,11 +232,17 @@ struct Client {
                 }
             }
             if (best.empty()) {
-                if (view.state != State::NoLobby) Log("rooms: no lobby channel for build %u listed", lobby::kProtocol);
+                if (!saidNoLobby) Log("rooms: no lobby channel for build %u listed", lobby::kProtocol);
+                saidNoLobby = true;
+                // Any lobby at all? Asked once the server's listing cooldown
+                // (a second) is over; sooner, it refuses.
+                allListAt = NowMs() + 1200;
                 Set(State::NoLobby);
                 nextListMs = NowMs() + kListAgainMs;
                 break;
             }
+            view.otherBuild.clear();
+            saidNoLobby = false;
             view.lobby = best;
             target = best;
             svc->JoinRoom(best);
@@ -202,6 +263,7 @@ struct Client {
                 joinedAt = NowMs();
                 pings.clear();
                 mask.clear();
+                tickets.clear();
                 toldMasked = false;
                 Set(State::Room);
                 if (!chara.empty()) svc->SetMemberData("ch", chara);
@@ -209,6 +271,9 @@ struct Client {
             }
             break;
         case WeyveEvent::Type::RoomError:
+            // A refused listing (the server's cooldown): the next listing is
+            // the build filtered one again, not taken for the all-builds one.
+            if (e.error == WeyveEvent::Error::RateLimited) askedAll = false;
             if (view.state != State::Joining) break;
             if (e.error == WeyveEvent::Error::Other && e.text == "not in a room") break; // a leave with nothing to leave
             if (target == view.lobby) {
@@ -219,11 +284,12 @@ struct Client {
             }
             BackToLobby(e.error == WeyveEvent::Error::NoSuchRoom ? "No room on that code"
                         : e.error == WeyveEvent::Error::Closed   ? "Room full"
+                        : e.error == WeyveEvent::Error::Banned   ? "Removed from that room: its owner took you out"
                                                                  : "Cannot join: " + e.text,
                         false);
             break;
         case WeyveEvent::Type::Removed:
-            if (view.state == State::Room) BackToLobby("Removed from the room", false);
+            if (view.state == State::Room) BackToLobby("Removed from the room", false, true);
             break;
         case WeyveEvent::Type::ServerLost:
             view.notice = e.text;
@@ -287,6 +353,17 @@ struct Client {
                 continue;
             }
             svc->SetMemberData(keeper::kAck, std::to_string(a.seq));
+            if (a.kind == "ticket") {
+                keeper::TableTicket t;
+                if (keeper::ParseTicket(a.text, &t) && view.state == State::Room &&
+                    std::none_of(tickets.begin(), tickets.end(), [&](const keeper::TableTicket& k) { return k.token == t.token && k.host == t.host; }) &&
+                    !(playing.table == t.table && playing.host == t.host && lastTicketToken == t.token)) {
+                    Log("rooms: ticket for table %d: %s", t.table + 1, t.host ? "open the match room" : ("join " + t.code).c_str());
+                    lastTicketToken = t.token;
+                    tickets.push_back(t);
+                }
+                continue;
+            }
             if (a.seq != pendingSeq) continue;
             pendingSeq = 0;
             Log("rooms: the keeper answers #%u %s: %s %s", a.seq, a.kind.c_str(), a.ok ? "ok" : "no", a.text.c_str());
@@ -342,7 +419,25 @@ struct Client {
             view.tables = std::atoi(data(keeper::kTables).c_str());
             view.owner = static_cast<uint32_t>(std::strtoul(data(keeper::kOwner).c_str(), nullptr, 10));
             view.tableRules.clear();
-            for (int t = 0; t < std::min(view.tables, keeper::kMaxTables); t++) view.tableRules.push_back(data(keeper::TableKey(t).c_str()));
+            view.tableViews.clear();
+            for (int t = 0; t < std::min(view.tables, keeper::kMaxTables); t++) {
+                view.tableRules.push_back(data(keeper::TableKey(t).c_str()));
+                TableView tv;
+                keeper::ParseTable(data(keeper::StateKey(t).c_str()), &tv.s);
+                tv.queue = keeper::ParseIds(data(keeper::QueueKey(t).c_str()));
+                tv.rules = view.tableRules.back();
+                // A call's time runs from when it first showed, also while
+                // this player's game was still in a battle.
+                if (callSeen.size() <= static_cast<size_t>(t)) callSeen.resize(t + 1);
+                if (tv.s.phase == keeper::TablePhase::Call && callSeen[t].first != tv.s.call) {
+                    callSeen[t] = {tv.s.call, NowMs()};
+                    if (tv.s.seat[0] == view.self || tv.s.seat[1] == view.self)
+                        Log("rooms: table %d calls this player (call %u, %u s%s)", t + 1, tv.s.call, tv.s.callSeconds,
+                            tv.s.ready[tv.s.seat[0] == view.self ? 0 : 1] ? ", already ready" : "");
+                }
+                tv.callSeenMs = callSeen[t].second;
+                view.tableViews.push_back(std::move(tv));
+            }
         }
         std::vector<RoomMember> members;
         std::map<uint32_t, std::string> now;
@@ -417,6 +512,82 @@ struct Client {
         }
     }
 
+    void TableAsks()
+    {
+        for (auto& [kind, args] : tableAsks) {
+            if (view.state != State::Room) continue;
+            const keeper::Request r{++seq, kind, args};
+            svc->SetMemberData(keeper::kRequest, keeper::FormatRequest(r));
+            Log("rooms: asks the keeper: %s", keeper::FormatRequest(r).c_str());
+        }
+        tableAsks.clear();
+    }
+
+    // The table's session: its code (P1), the score, the result.
+    void Report()
+    {
+        if (playing.table < 0) return;
+        const NetView nv = NetViewNow();
+        const bool live = nv.phase != NetView::Phase::Idle && nv.phase != NetView::Phase::Ended;
+        const std::string t = std::to_string(playing.table);
+        auto ask = [&](const std::string& kind, std::vector<std::string> args) {
+            const keeper::Request r{++seq, kind, std::move(args)};
+            svc->SetMemberData(keeper::kRequest, keeper::FormatRequest(r));
+            Log("rooms: tells the keeper: %s", keeper::FormatRequest(r).c_str());
+        };
+        // The keeper moved the table on before the match began (the other
+        // player left, or the match room never opened): this session goes.
+        const bool matchBegun = nv.phase == NetView::Phase::Jumping || nv.phase == NetView::Phase::Loading ||
+                                nv.phase == NetView::Phase::Running || nv.phase == NetView::Phase::PostMatch;
+        if (matchBegun) playing.begun = true;
+        if (!matchBegun && !playing.begun && playing.table < static_cast<int>(view.tableViews.size()) && NowMs() - playing.at > 3000) {
+            const keeper::TableState& s = view.tableViews[playing.table].s;
+            const bool seated = s.seat[0] == view.self || s.seat[1] == view.self;
+            const bool stillOn = seated && (s.phase == keeper::TablePhase::Connecting || s.phase == keeper::TablePhase::Playing);
+            if (!stillOn && view.keeper) {
+                Log("rooms: table %d moved on before its match began: leaving the session", playing.table + 1);
+                view.tableNotice = s.seat[0] == view.self || s.seat[1] == view.self || !seated
+                                       ? "The match did not start: your opponent left before it began."
+                                       : "The match did not start.";
+                abortSession = true;
+                playing = {};
+                return;
+            }
+        }
+        if (live) playing.started = true;
+        if (!playing.started) {
+            if (NowMs() - playing.at > 30000) {
+                Log("rooms: table %d's session never started", playing.table + 1);
+                view.tableNotice = "The match did not start: the match room never opened.";
+                ask("result", {t, "0", "0"});
+                playing = {};
+            }
+            return;
+        }
+        if (playing.host && !playing.codeSent && !nv.code.empty()) {
+            playing.codeSent = true;
+            ask("code", {t, nv.code});
+        }
+        if (live && playing.host && (nv.seats[0].wins != playing.sent[0] || nv.seats[1].wins != playing.sent[1])) {
+            playing.sent[0] = nv.seats[0].wins;
+            playing.sent[1] = nv.seats[1].wins;
+            ask("score", {t, std::to_string(nv.seats[0].wins), std::to_string(nv.seats[1].wins)});
+        }
+        if (!live) {
+            // Over: the set's result, or 0 - 0 when it did not finish (the
+            // keeper calls the table again). P2 reports too; the keeper takes
+            // it only when P1 is gone.
+            const uint16_t wins[2] = {nv.seats[0].wins, nv.seats[1].wins};
+            const bool done = SetWinner(playing.rules, wins) >= 0;
+            if (!done) {
+                view.tableNotice = std::string(playing.begun ? "The set did not finish" : "The match did not start") + (nv.result.empty() ? std::string(".") : ": " + nv.result + ".");
+                Log("rooms: %s", view.tableNotice.c_str());
+            }
+            ask("result", {t, done ? std::to_string(wins[0]) : "0", done ? std::to_string(wins[1]) : "0"});
+            playing = {};
+        }
+    }
+
     void Asks(const WeyveRoomView& v)
     {
         (void)v;
@@ -443,6 +614,7 @@ struct Client {
             if ((view.state == State::Lobby || view.state == State::Room) && code != view.room) {
                 view.notice.clear();
                 target = code;
+                ForgetTables();
                 svc->LeaveRoom();
                 view.room.clear();
                 view.members.clear();
@@ -485,12 +657,21 @@ struct Client {
                         Set(State::Lobby);
                     }
                     if ((view.state == State::Finding || view.state == State::NoLobby) && NowMs() >= nextListMs) JoinLobby();
+                    if (allListAt >= 0 && NowMs() >= allListAt) {
+                        allListAt = -1;
+                        if (view.state == State::NoLobby) {
+                            askedAll = true;
+                            svc->ListRooms({{keeper::kKind, keeper::kKindLobby}});
+                        }
+                    }
                     if (view.state == State::Lobby || view.state == State::Room) {
                         const WeyveRoomView now = svc->View();
                         Mirror(now);
                         Pings(now, KeeperOf(now));
                     }
                     Peeks();
+                    TableAsks();
+                    if (view.state == State::Room) Report();
                     Asks(v);
                 }
             }
@@ -625,6 +806,67 @@ void RoomsSetCharacter(const std::string& code)
     });
 }
 
+void RoomsTable(const std::string& kind, const std::vector<std::string>& args)
+{
+    WithClient([&](Client& c) {
+        c.tableAsks.push_back({kind, args});
+        return true;
+    });
+}
+
+bool RoomsTakeTicket(keeper::TableTicket* out)
+{
+    return WithClient([&](Client& c) {
+        if (c.tickets.empty()) return false;
+        *out = c.tickets.front();
+        c.tickets.erase(c.tickets.begin());
+        return true;
+    });
+}
+
+void RoomsTableSession(int table, bool host, const std::string& rules)
+{
+    WithClient([&](Client& c) {
+        c.playing = {};
+        c.playing.table = table;
+        c.playing.host = host;
+        ParseRules(rules, &c.playing.rules);
+        c.playing.at = NowMs();
+        return true;
+    });
+}
+
+int64_t RoomsClockMs()
+{
+    return NowMs();
+}
+
+bool RoomsTakeAbort()
+{
+    return WithClient([](Client& c) { return std::exchange(c.abortSession, false); });
+}
+
+std::string RoomsPlace(const RoomsView& v, uint32_t id)
+{
+    static const char* const kOrdinal[] = {"1st", "2nd", "3rd"};
+    for (size_t t = 0; t < v.tableViews.size(); t++) {
+        const TableView& tv = v.tableViews[t];
+        const std::string table = "Table " + std::to_string(t + 1) + " \xC2\xB7 ";
+        if (tv.s.seat[0] == id || tv.s.seat[1] == id) {
+            switch (tv.s.phase) {
+            case keeper::TablePhase::Open: return table + "seated";
+            case keeper::TablePhase::Call: return table + "next";
+            case keeper::TablePhase::After: return table + "set over";
+            default: return table + "playing";
+            }
+        }
+        for (size_t k = 0; k < tv.queue.size(); k++) {
+            if (tv.queue[k] == id) return table + (k < 3 ? kOrdinal[k] : std::to_string(k + 1) + "th");
+        }
+    }
+    return "Idle";
+}
+
 void RoomsPeek(const std::string& code)
 {
     WithClient([&](Client& c) {
@@ -637,6 +879,7 @@ void RoomsClearNotice()
 {
     WithClient([](Client& c) {
         c.view.notice.clear();
+        c.view.tableNotice.clear();
         return true;
     });
 }
@@ -661,6 +904,8 @@ std::string DescribeRooms(const RoomsView& v)
              std::to_string(v.tables) + " tables, owner " + std::to_string(v.owner) + ", members";
         for (const RoomMember& m : v.members) s += " " + m.name + "(" + std::to_string(m.id) + (m.owner ? ",owner" : "") + ")";
         s += ", " + std::to_string(v.chat.size()) + " chat lines";
+        for (size_t t = 0; t < v.tableViews.size(); t++)
+            s += ", t" + std::to_string(t) + "=" + keeper::FormatTable(v.tableViews[t].s) + " q=" + keeper::FormatIds(v.tableViews[t].queue);
     }
     if (!v.notice.empty()) s += ", notice '" + v.notice + "'";
     return s;

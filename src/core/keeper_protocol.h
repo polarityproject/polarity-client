@@ -191,6 +191,77 @@ constexpr size_t kPingSize = 13;
 void FormatPing(bool pong, uint64_t clockUs, uint8_t (&out)[kPingSize]);
 bool ParsePing(const uint8_t* data, size_t size, bool* pong, uint64_t* clockUs);
 
+// --- tables (M4) ---
+// Each table's state (room data s0..s7) and queue (q0..q7, member ids in
+// order), written by the keeper. A table is Open (seats fill from the
+// queue, or by a player sitting down), Call (both seats taken: each player
+// has the your-turn card and readies), Connecting (both ready: P1 hosts the
+// match room, the keeper hands out the tickets), Playing (the set runs in the
+// match room), After (the set ended: the after-set panels, then rotation).
+enum class TablePhase : char { Open = 'o', Call = 'c', Connecting = 'n', Playing = 'p', After = 'a' };
+struct TableState {
+    TablePhase phase = TablePhase::Open;
+    uint32_t seat[2] = {0, 0}; // P1, P2 (0 open)
+    bool ready[2] = {false, false};
+    uint8_t wins[2] = {0, 0};  // the running set's score
+    std::string code;          // the match room (Connecting, Playing)
+    uint32_t stayer = 0;       // who stayed on from the last set (keeps their seat)
+    int streak = 0;            // sets in a row the stayer has played here
+    // The last set (After, and the room's stripe): its winner and loser, the score.
+    uint32_t lastWinner = 0, lastLoser = 0;
+    uint8_t lastScore[2] = {0, 0}; // winner's, loser's
+    // Each call is numbered (a call again for the same two is a new one) and
+    // says how long it lasts: longer after a set that broke off, while its
+    // players' games are still coming back from the battle.
+    uint32_t call = 0;
+    uint8_t callSeconds = 0;
+    bool operator==(const TableState&) const = default;
+};
+std::string StateKey(int table); // "s0"
+std::string QueueKey(int table); // "q0"
+std::string FormatTable(const TableState& s);
+bool ParseTable(std::string_view text, TableState* out);
+std::string FormatIds(const std::vector<uint32_t>& ids);
+std::vector<uint32_t> ParseIds(std::string_view text);
+
+// Seats from the queue: each open seat (P1 first) takes the queue's head;
+// both taken makes it Call (nobody ready yet), else it stays Open.
+void FillSeats(TableState* s, std::vector<uint32_t>* queue);
+// A set ended, `winnerSeat` (0 P1, 1 P2) with `games` (P1's, P2's): who stays
+// (keeping their seat) and who goes to the back of the queue, by the table's
+// rotation (rules.h): winner stays or loser stays, each at most
+// rules.staysLimit sets in a row (0: no limit), or round robin (both go).
+// Leaves the table After with the seats of those who left open.
+void ApplySetResult(const Rules& rules, int winnerSeat, const uint8_t (&games)[2], TableState* s, std::vector<uint32_t>* queue);
+// Takes a member off the table: their seat, their place in the queue. True
+// if they were on it.
+bool LeaveTable(uint32_t id, TableState* s, std::vector<uint32_t>* queue);
+
+// Table requests (member data `rq` in a custom room):
+//   seat:<table>:<0|1|-1>   sit at an open seat (-1: either)
+//   stand                   get up (Open), or out of the call
+//   queue:<table>           into its queue (straight into a seat when one is open)
+//   unqueue                 out of any queue
+//   ready:<table>           the your-turn card's Ready
+//   decline:<table>         the your-turn card's Leave queue
+//   code:<table>:<code>     P1's: the match room is open on this code
+//   score:<table>:<w1>:<w2> P1's: the set's score after each game
+//   result:<table>:<w1>:<w2>  P1's (or P2's when P1 is gone): the set ended; w1 = w2 = 0: it failed
+//   rules:<table>:<rules>   the owner's: a table's rules, from its next set
+//   kick:<member>           the owner's: out of the room (M6)
+// The keeper's ticket (answer kind "ticket"), privately to each player:
+//   host|<table>|<token>|<rules>          P1: open the match room
+//   join|<table>|<code>|<token>|<rules>   P2: join it
+struct TableTicket {
+    bool host = false;
+    int table = 0;
+    std::string code;   // join
+    uint64_t token = 0; // the P2 seat's token (lobby.h Hello)
+    std::string rules;  // FormatRules
+};
+std::string FormatTicket(const TableTicket& t);
+bool ParseTicket(std::string_view text, TableTicket* out);
+
 // --- ownership ---
 // The member who gets a room when its owner leaves: the longest present
 // (`joinOrder`, oldest first), not `leaving`, and not the keeper; 0 if none.

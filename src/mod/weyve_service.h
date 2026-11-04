@@ -53,7 +53,7 @@ struct WeyveEvent {
     Type type = Type::RoomJoined;
     uint32_t peer = 0; // also: who chatted (Chat), the new host (HostChanged)
     std::string text;  // the room code (RoomJoined), what failed (RoomError, ServerLost), the message (Chat)
-    enum class Error { None, NoSuchRoom, Closed, Other };
+    enum class Error { None, NoSuchRoom, Closed, Banned, RateLimited, Other };
     Error error = Error::None; // RoomError
 };
 

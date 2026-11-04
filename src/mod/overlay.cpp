@@ -18,6 +18,7 @@
 #include "mod/rooms_screen.h"
 #include "mod/room_screen.h"
 #include "mod/settings_screen.h"
+#include "core/match_ticket.h"
 #include "mod/rooms_client.h"
 #include "mod/profile.h"
 #include "mod/status.h"
@@ -2694,13 +2695,13 @@ void ToastChanges(const NetView& now)
         return;
     }
     using P = NetView::Phase;
-    if (now.phase == P::Hosting && before.phase != P::Hosting && !g_visible) {
+    if (now.phase == P::Hosting && before.phase != P::Hosting && !g_visible && !now.setPlay) {
         AddToast("Hosting: code " + now.code + " (copied). F1 for the panel.", kGreen, 10);
     }
     for (int i = 0; i < kNumPlayers; i++) {
         const lobby::Seat &a = before.seats[i], &b = now.seats[i];
         if (i == now.you) continue;
-        if (now.host && b.present && !a.present && !b.name.empty()) AddToast(b.name + " joined");
+        if (now.host && b.present && !a.present && !b.name.empty() && !now.setPlay) AddToast(b.name + " joined");
         if (now.phase == P::PostMatch && before.phase == P::PostMatch && b.choice != a.choice &&
             b.choice != lobby::Choice::None) {
             AddToast(b.name + (b.choice == lobby::Choice::Rematch ? " wants a rematch" : " wants character select"));
@@ -2711,7 +2712,8 @@ void ToastChanges(const NetView& now)
                                                     : std::to_string(now.spectators) + " watching",
                  kDim);
     }
-    if (now.phase == P::Ended && before.phase != P::Ended && !now.result.empty()) AddToast("Session over: " + now.result, kRed, 6);
+    // A table's set: the room screen says how it went.
+    if (now.phase == P::Ended && before.phase != P::Ended && !now.result.empty() && !now.setPlay) AddToast("Session over: " + now.result, kRed, 6);
     before = now;
 }
 
@@ -3349,9 +3351,80 @@ void ApplySetting(const SettingsInput& in)
     }
 }
 
-// The hub's live parts, and what its choices do.
 std::mutex g_favoritesMutex;
 ProfileFavorites g_favorites; // read at the title's warm up
+
+// A table's set (M4): the keeper's ticket starts a session on the match
+// ticket path (M2), ready at once, with the player's pick (My character),
+// stage (P1's) and the delay chosen on the your-turn card.
+int g_tableDelay = -1;
+bool g_myCharacterOpen = false;
+// A table's set took this player from the rooms: back at the menus the hub
+// comes back to them, also when the room is gone (removed mid-set: the
+// custom rooms screen says so).
+bool g_backToRooms = false;
+
+void StartTableSession(const keeper::TableTicket& t)
+{
+    g_backToRooms = true;
+    MatchTicket mt;
+    mt.host = t.host;
+    mt.roomCode = t.code;
+    mt.seatToken = t.token;
+    ParseRules(t.rules, &mt.rules);
+    mt.after = AfterMatch::Set;
+    NetplayOptions o = ChosenOptions();
+    o.autoReady = true;
+    if (g_tableDelay >= 0) o.inputDelay = static_cast<uint8_t>(g_tableDelay);
+    if (!o.hasPick) {
+        // Nobody picked yet: the Fighter Profile's favorite, as it is.
+        std::lock_guard lock(g_favoritesMutex);
+        const std::string fav = g_favorites.chara.empty() ? "RYU" : g_favorites.chara;
+        o.hasPick = true;
+        o.pick = PlayerSetup{};
+        o.pick.character = PackCode(fav.c_str());
+    }
+    Log("overlay: table %d's set: %s (delay %u)", t.table + 1, t.host ? "opening the match room" : ("joining " + t.code).c_str(),
+        o.inputDelay);
+    Act([mt, o] { NetPlayTicket(mt, o); });
+    RoomsTableSession(t.table, t.host, t.rules);
+}
+
+// My character from the room (Y): the panel's pick and stage, in a window of
+// its own over the room screen (pad and mouse).
+void DrawMyCharacter()
+{
+    // Outside a session nothing else reads the saved pick in.
+    LoadTables();
+    InitChoices();
+    const ImVec2 screen = ImGui::GetIO().DisplaySize;
+    ImGui::SetNextWindowPos(ImVec2(screen.x * 0.5f, screen.y * 0.45f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(520 * g_uiScale, 0));
+    ImGui::SetNextWindowFocus();
+    bool open = true;
+    if (ImGui::Begin("My character", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextColored(kDim, "What you play at the tables. Your stage is used when you are P1.");
+        ImGui::Spacing();
+        ImGui::PushItemWidth(300 * g_uiScale);
+        DrawPick(g_choices);
+        ImGui::Spacing();
+        DrawStage(g_choices);
+        ImGui::PopItemWidth();
+        ImGui::Spacing();
+        if (TileButton("Done", -1) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) open = false;
+    }
+    ImGui::End();
+    if (!open) {
+        g_myCharacterOpen = false;
+        if (!g_choices.initialised) return; // the list was still being read: nothing to save
+        SaveChoices();
+        const NetplayOptions o = ChosenOptions();
+        if (o.hasPick) RoomsSetCharacter(UnpackCode(o.pick.character));
+        Log("overlay: my character %s", o.hasPick ? UnpackCode(o.pick.character).c_str() : "-");
+    }
+}
+
+// The hub's live parts, and what its choices do.
 
 void DrawHubFrame(bool takeInput)
 {
@@ -3367,18 +3440,21 @@ void DrawHubFrame(bool takeInput)
     live.serverState = rooms.state == S::Off ? 0 : rooms.state == S::Connecting ? 1 : rooms.state == S::Failed ? 3 : 2;
     live.version = g_build;
     if (rooms.state == S::Failed) live.roomsInfo = "Cannot reach the rooms server";
+    else if (!rooms.otherBuild.empty() && !rooms.keeper) live.roomsInfo = "The rooms server runs another SFVR version";
     else if (rooms.state == S::NoLobby || ((rooms.state == S::Lobby || rooms.state == S::Room) && !rooms.keeper))
         live.roomsInfo = "Custom rooms are offline right now";
     else if (rooms.state == S::Lobby && !rooms.publicRooms.empty())
         live.roomsInfo = std::to_string(rooms.publicRooms.size()) + (rooms.publicRooms.size() == 1 ? " public room" : " public rooms") +
-                         " Â· browse, create, or join with a code";
+                         " \xC2\xB7 browse, create, or join with a code";
     else live.roomsInfo = "Browse, create, or join with a code";
     {
         std::lock_guard lock(g_favoritesMutex);
         live.offlineChara = g_favorites.chara.empty() ? "RYU" : g_favorites.chara;
         live.offlineStage = g_favorites.stage;
     }
-    RoomsSetCharacter(live.offlineChara);
+    // In the rooms: the pick played at the tables (My character), else the
+    // profile's favorite.
+    RoomsSetCharacter(o.hasPick ? UnpackCode(o.pick.character) : live.offlineChara);
     live.roomsChara = "CNL";
     live.roomsStage = "CHN";
     if (live.offlineStage.empty() && !g_tables.stages.empty()) live.offlineStage = g_tables.stages.front();
@@ -3403,8 +3479,32 @@ void DrawHubFrame(bool takeInput)
             ResetRoomScreen();
             OpenRoomsScreen();
         }
+        // The card's starting delay: the setting, or with Auto the
+        // suggestion for the ping to the opponent at this player's table.
+        unsigned opponentPing = 0;
+        for (const TableView& t : rooms.tableViews) {
+            for (int i = 0; i < 2; i++) {
+                if (t.s.seat[i] != rooms.self || !t.s.seat[1 - i]) continue;
+                for (const RoomMember& m : rooms.members) {
+                    if (m.id == t.s.seat[1 - i] && m.pingMs > 0) opponentPing = static_cast<unsigned>(m.pingMs);
+                }
+            }
+        }
+        SetCardDelay(PreferredDelay(opponentPing));
+        static bool namesSet = false;
+        if (!namesSet && g_tables.loaded) {
+            namesSet = true;
+            std::vector<std::pair<std::string, std::string>> names;
+            for (size_t i = 0; i < g_tables.charas.size() && i < g_tables.labels.size(); i++) names.push_back({g_tables.charas[i], g_tables.labels[i]});
+            SetCharaNames(std::move(names));
+        }
         RoomScreenInput in;
-        DrawRoomScreen(fonts, rooms, takeInput, &in);
+        DrawRoomScreen(fonts, rooms, takeInput && !g_myCharacterOpen, &in);
+        if (!in.request.empty()) RoomsTable(in.request, in.args);
+        if (in.delay >= 0) g_tableDelay = in.delay;
+        if (in.myCharacter) g_myCharacterOpen = true;
+        if (in.clearNotice) RoomsClearNotice();
+        if (g_myCharacterOpen) DrawMyCharacter();
         if (!in.chat.empty() && !RoomsChat(in.chat)) AddToast("Slow down: one message a second", ImVec4(1, 0.8f, 0.4f, 1), 2);
         if (in.copiedCode) AddToast("Room code copied", ImVec4(1, 1, 1, 1), 2);
         if (in.leave) RoomsLeave();
@@ -3417,6 +3517,7 @@ void DrawHubFrame(bool takeInput)
         DrawRoomsScreen(fonts, rooms, takeInput, &in);
         RoomsPeek(in.focusedRoom);
         if (in.clearNotice) RoomsClearNotice();
+        if (in.settings_) OpenSettingsScreen(rooms.otherBuild.empty() ? "server" : "check");
         if (in.create) RoomsCreate(in.settings);
         if (!in.join.empty()) RoomsJoin(in.join);
         if (in.back) CloseRoomsScreen();
@@ -3667,7 +3768,13 @@ void Draw(IDXGISwapChain* swapChain)
     // match loads.
     static float liveAlpha = 0;
     static bool lobbyWas = false;
-    const bool lobby = phase == NetView::Phase::Lobby && g_tables.loaded && g_choices.initialised && !preview;
+    // A table's set (M4: setPlay) has no select screen: the picks are each
+    // player's My character, both ready at once; the room screen stays up
+    // (its connecting line) until the jump.
+    const bool tableConnecting = view.setPlay && (phase == NetView::Phase::Connecting || phase == NetView::Phase::Hosting ||
+                                                  phase == NetView::Phase::Joining || phase == NetView::Phase::Lobby ||
+                                                  phase == NetView::Phase::Jumping);
+    const bool lobby = phase == NetView::Phase::Lobby && g_tables.loaded && g_choices.initialised && !preview && !view.setPlay;
     if (lobby && !lobbyWas) {
         SetSelectData(PreviewSelectData());
         ResetSelectScreen();
@@ -3723,7 +3830,7 @@ void Draw(IDXGISwapChain* swapChain)
     // The SFVR hub over the game's menus: after the title, and when Start is
     // held there. It goes when a session starts or a battle loads; Play
     // Offline closes it (and the hub's presence connection with it).
-    const bool atMenus = OnMenuScreen() && (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) && !preview;
+    const bool atMenus = OnMenuScreen() && (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended || tableConnecting) && !preview;
     g_hubAllowed = atMenus && g_tables.loaded;
     static bool hubBooted = false;
     if (!hubBooted && atMenus && g_tables.loaded) {
@@ -3733,6 +3840,21 @@ void Draw(IDXGISwapChain* swapChain)
     if (HubOpen() && !atMenus) {
         CloseHub();
         CloseRoomsScreen();
+    }
+    // A table's ticket starts its set; after it, back at the menus, the
+    // room screen comes back.
+    for (keeper::TableTicket ticket; RoomsTakeTicket(&ticket);) StartTableSession(ticket);
+    if (RoomsTakeAbort()) Act([] { NetLeave(); });
+    if (!HubOpen() && atMenus && g_tables.loaded && RoomsOpened()) {
+        if (RoomsSnapshot().state == RoomsView::State::Room) {
+            OpenHub();
+            g_backToRooms = false;
+        }
+        else if (g_backToRooms) {
+            OpenHub();
+            OpenRoomsScreen();
+            g_backToRooms = false;
+        }
     }
     if (HubOpen()) DrawHubFrame(!g_visible);
     if (preview) {
@@ -3746,7 +3868,7 @@ void Draw(IDXGISwapChain* swapChain)
     else if (session) {
         const bool inMatch = phase == NetView::Phase::Running || phase == NetView::Phase::PostMatch;
         if (inMatch) DrawPlayerBars(view);
-        else if (!sides && liveAlpha <= 0) DrawStrip(view);
+        else if (!sides && liveAlpha <= 0 && !HubOpen()) DrawStrip(view);
         if (sides) DrawSides(view);
     }
     if (session && view.desyncFrame >= 0 && (phase == NetView::Phase::Running || phase == NetView::Phase::PostMatch)) {

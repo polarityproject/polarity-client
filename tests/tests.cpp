@@ -1159,6 +1159,89 @@ void TestKeeperProtocol()
     uint64_t clock = 0;
     CHECK(ParsePing(ping, sizeof(ping), &pong, &clock) && pong && clock == 0x0123456789ABCDEFull);
     CHECK(!ParsePing(ping, sizeof(ping) - 1, &pong, &clock) && !ParsePing(reinterpret_cast<const uint8_t*>(a.data()), kPingSize, &pong, &clock));
+    // Tables: the state round trips; seats fill from the queue.
+    TableState ts;
+    ts.phase = TablePhase::Playing;
+    ts.seat[0] = 11;
+    ts.seat[1] = 22;
+    ts.ready[1] = true;
+    ts.wins[0] = 1;
+    ts.code = "ABC234";
+    ts.stayer = 11;
+    ts.streak = 2;
+    ts.lastWinner = 11;
+    ts.lastLoser = 33;
+    ts.lastScore[0] = 2;
+    ts.call = 41;
+    ts.callSeconds = 15;
+    TableState tsBack;
+    CHECK(ParseTable(FormatTable(ts), &tsBack) && tsBack == ts);
+    CHECK(ParseTable(FormatTable(TableState{}), &tsBack) && tsBack == TableState{});
+    for (const char* bad : {"", "x|0|0|0|0|0||0|0|0|0|0|0", "o|0|0|0|0|0||0|0|0|0|0", "o|-1|0|0|0|0||0|0|0|0|0|0"}) CHECK(!ParseTable(bad, &tsBack));
+    CHECK(FormatIds({5, 7}) == "5,7" && ParseIds("5,7") == std::vector<uint32_t>({5, 7}) && ParseIds("").empty());
+    std::vector<uint32_t> q = {1, 2, 3};
+    TableState t;
+    FillSeats(&t, &q);
+    CHECK(t.phase == TablePhase::Call && t.seat[0] == 1 && t.seat[1] == 2 && q == std::vector<uint32_t>({3}));
+    // Winner stays, up to 2 sets in a row: 1 beats 2 (stays, 2 to the back),
+    // 3 sits; 1 beats 3 (2 sets: goes too, after 3), 2 and 3 sit.
+    Rules ws2{2, 3, 99, Rotation::WinnerStays, 2};
+    const uint8_t twoOne[2] = {2, 1}, oneTwo[2] = {1, 2};
+    ApplySetResult(ws2, 0, twoOne, &t, &q);
+    CHECK(t.phase == TablePhase::After && t.seat[0] == 1 && t.seat[1] == 0 && t.stayer == 1 && t.streak == 1 &&
+          t.lastWinner == 1 && t.lastLoser == 2 && t.lastScore[0] == 2 && t.lastScore[1] == 1 && q == std::vector<uint32_t>({3, 2}));
+    FillSeats(&t, &q);
+    CHECK(t.phase == TablePhase::Call && t.seat[0] == 1 && t.seat[1] == 3 && q == std::vector<uint32_t>({2}));
+    ApplySetResult(ws2, 0, twoOne, &t, &q);
+    CHECK(t.seat[0] == 0 && t.seat[1] == 0 && t.stayer == 0 && q == std::vector<uint32_t>({2, 3, 1}));
+    FillSeats(&t, &q);
+    CHECK(t.seat[0] == 2 && t.seat[1] == 3 && q == std::vector<uint32_t>({1}));
+    // P2 wins: the winner keeps seat 2; a new stayer starts at 1 set.
+    ApplySetResult(ws2, 1, oneTwo, &t, &q);
+    CHECK(t.seat[0] == 0 && t.seat[1] == 3 && t.stayer == 3 && t.streak == 1 && q == std::vector<uint32_t>({1, 2}));
+    // Loser stays (no limit); round robin: both to the back, the loser first.
+    Rules ls{2, 3, 99, Rotation::LoserStays, 0}, rr{2, 3, 99, Rotation::RoundRobin, 0};
+    TableState l;
+    l.seat[0] = 1;
+    l.seat[1] = 2;
+    std::vector<uint32_t> lq;
+    for (int i = 0; i < 5; i++) {
+        ApplySetResult(ls, 0, twoOne, &l, &lq);
+        FillSeats(&l, &lq);
+    }
+    CHECK(l.seat[1] == 2 && l.seat[0] == 1 && l.stayer == 2 && l.streak == 5 && lq.empty());
+    TableState r;
+    r.seat[0] = 1;
+    r.seat[1] = 2;
+    std::vector<uint32_t> rq = {3};
+    ApplySetResult(rr, 0, twoOne, &r, &rq);
+    CHECK(r.seat[0] == 0 && r.seat[1] == 0 && r.stayer == 0 && rq == std::vector<uint32_t>({3, 2, 1}));
+    // Three players taking turns whoever wins: 3 vs 2 (2 played the last set
+    // too: they wait longest, whatever the result), then 1 vs 3, 2 vs 1.
+    FillSeats(&r, &rq);
+    CHECK(r.seat[0] == 3 && r.seat[1] == 2 && rq == std::vector<uint32_t>({1}));
+    ApplySetResult(rr, 1, oneTwo, &r, &rq); // 2 wins
+    CHECK(rq == std::vector<uint32_t>({1, 3, 2}));
+    FillSeats(&r, &rq);
+    CHECK(r.seat[0] == 1 && r.seat[1] == 3);
+    ApplySetResult(rr, 0, twoOne, &r, &rq); // 1 wins; 3 played two in a row
+    CHECK(rq == std::vector<uint32_t>({2, 1, 3}));
+    // Leaving the table: seat or queue.
+    TableState lt;
+    lt.seat[0] = 4;
+    std::vector<uint32_t> ltq = {5, 6};
+    CHECK(LeaveTable(4, &lt, &ltq) && !lt.seat[0] && LeaveTable(6, &lt, &ltq) && ltq == std::vector<uint32_t>({5}) &&
+          !LeaveTable(9, &lt, &ltq));
+    // Tickets.
+    TableTicket host{true, 3, "", 0x0123456789abcdefull, "r1 ft2 bo3 t99 ws3"}, join{false, 3, "XYZ234", 42, "r1 ft1 bo1 t30 rr"};
+    TableTicket tb;
+    CHECK(FormatTicket(host) == "host|3|0123456789abcdef|r1 ft2 bo3 t99 ws3");
+    CHECK(ParseTicket(FormatTicket(host), &tb) && tb.host && tb.table == 3 && tb.token == host.token && tb.rules == host.rules);
+    CHECK(ParseTicket(FormatTicket(join), &tb) && !tb.host && tb.code == "XYZ234" && tb.token == 42);
+    for (const char* bad : {"", "host|3|12|r1 ft2 bo3 t99 ws3", "host|9|0123456789abcdef|r1 ft2 bo3 t99 ws3",
+                            "join|1|0123456789abcdef|r1 ft2 bo3 t99 ws3", "host|1|0123456789abcdef|r9"}) {
+        CHECK(!ParseTicket(bad, &tb));
+    }
     // The next owner: the longest present, never the leaver or the keeper.
     CHECK(NextOwner({5, 9, 3}, 5, 1) == 9 && NextOwner({1, 5, 9}, 9, 1) == 5 && NextOwner({5}, 5, 1) == 0 && NextOwner({}, 0, 1) == 0);
 }

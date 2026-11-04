@@ -428,7 +428,7 @@ void RunNetCommand(const std::string& line)
     }
     else if (cmd == "rooms") {
         // rooms open | close | status | create [tables] [public 0|1] [preset] |
-        // join <code> | leave | chat <text>: the hub's presence (rooms_client.h),
+        // join <code> | leave | chat <text> | table <request> [args]: the hub's presence (rooms_client.h),
         // driven by hand until the hub's screens (M3).
         std::string what;
         ss >> what;
@@ -452,6 +452,23 @@ void RunNetCommand(const std::string& line)
         }
         else if (what == "leave") {
             RoomsLeave();
+        }
+        else if (what == "table") {
+            // rooms table <seat|stand|queue|unqueue|ready|decline|rules|kick> [args...]
+            std::string kind, a;
+            ss >> kind;
+            std::vector<std::string> args;
+            if (kind == "rules") {
+                std::string table, rest;
+                ss >> table;
+                std::getline(ss, rest);
+                if (!rest.empty() && rest[0] == ' ') rest.erase(0, 1);
+                args = {table, rest};
+            }
+            else {
+                while (ss >> a) args.push_back(a);
+            }
+            RoomsTable(kind, args);
         }
         else if (what == "chat") {
             std::string text;

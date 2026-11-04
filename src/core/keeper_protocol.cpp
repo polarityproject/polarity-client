@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cstdio>
 
 namespace sfv::keeper {
 
@@ -399,6 +400,180 @@ bool ParsePing(const uint8_t* data, size_t size, bool* pong, uint64_t* clockUs)
     *pong = data[4] == 2;
     *clockUs = 0;
     for (int i = 0; i < 8; i++) *clockUs |= uint64_t(data[5 + i]) << (8 * i);
+    return true;
+}
+
+std::string StateKey(int table) { return "s" + std::to_string(table); }
+std::string QueueKey(int table) { return "q" + std::to_string(table); }
+
+std::string FormatIds(const std::vector<uint32_t>& ids)
+{
+    std::string s;
+    for (uint32_t id : ids) {
+        if (!s.empty()) s += ',';
+        s += std::to_string(id);
+    }
+    return s;
+}
+
+std::vector<uint32_t> ParseIds(std::string_view text)
+{
+    std::vector<uint32_t> ids;
+    if (text.empty()) return ids;
+    for (std::string_view part : Split(text, ',')) {
+        int64_t n = 0;
+        if (Number(part, &n) && n > 0 && n <= UINT32_MAX) ids.push_back(static_cast<uint32_t>(n));
+    }
+    return ids;
+}
+
+// "<phase>|<p1>|<p2>|<ready bits>|<w1>|<w2>|<code>|<stayer>|<streak>|<last winner>|<last loser>|<lw>|<ll>"
+std::string FormatTable(const TableState& s)
+{
+    return std::string(1, static_cast<char>(s.phase)) + "|" + std::to_string(s.seat[0]) + "|" + std::to_string(s.seat[1]) + "|" +
+           std::to_string((s.ready[0] ? 1 : 0) | (s.ready[1] ? 2 : 0)) + "|" + std::to_string(s.wins[0]) + "|" +
+           std::to_string(s.wins[1]) + "|" + s.code + "|" + std::to_string(s.stayer) + "|" + std::to_string(s.streak) + "|" +
+           std::to_string(s.lastWinner) + "|" + std::to_string(s.lastLoser) + "|" + std::to_string(s.lastScore[0]) + "|" +
+           std::to_string(s.lastScore[1]) + "|" + std::to_string(s.call) + "|" + std::to_string(s.callSeconds);
+}
+
+bool ParseTable(std::string_view text, TableState* out)
+{
+    const auto f = Split(text, '|');
+    if (f.size() != 15 || f[0].size() != 1) return false;
+    TableState s;
+    const char p = f[0][0];
+    if (p != 'o' && p != 'c' && p != 'n' && p != 'p' && p != 'a') return false;
+    s.phase = static_cast<TablePhase>(p);
+    int64_t n[14] = {};
+    for (int i = 1; i < 15; i++) {
+        if (i == 6) continue; // the code
+        if (!Number(f[i], &n[i - 1]) || n[i - 1] < 0 || n[i - 1] > UINT32_MAX) return false;
+    }
+    s.seat[0] = static_cast<uint32_t>(n[0]);
+    s.seat[1] = static_cast<uint32_t>(n[1]);
+    s.ready[0] = n[2] & 1;
+    s.ready[1] = n[2] & 2;
+    s.wins[0] = static_cast<uint8_t>(std::min<int64_t>(n[3], 99));
+    s.wins[1] = static_cast<uint8_t>(std::min<int64_t>(n[4], 99));
+    s.code = std::string(f[6]);
+    s.stayer = static_cast<uint32_t>(n[6]);
+    s.streak = static_cast<int>(std::min<int64_t>(n[7], 999));
+    s.lastWinner = static_cast<uint32_t>(n[8]);
+    s.lastLoser = static_cast<uint32_t>(n[9]);
+    s.lastScore[0] = static_cast<uint8_t>(std::min<int64_t>(n[10], 99));
+    s.lastScore[1] = static_cast<uint8_t>(std::min<int64_t>(n[11], 99));
+    s.call = static_cast<uint32_t>(n[12]);
+    s.callSeconds = static_cast<uint8_t>(std::min<int64_t>(n[13], 99));
+    *out = std::move(s);
+    return true;
+}
+
+void FillSeats(TableState* s, std::vector<uint32_t>* queue)
+{
+    for (int i = 0; i < 2; i++) {
+        if (s->seat[i] || queue->empty()) continue;
+        s->seat[i] = queue->front();
+        queue->erase(queue->begin());
+    }
+    s->ready[0] = s->ready[1] = false;
+    s->wins[0] = s->wins[1] = 0;
+    s->code.clear();
+    s->phase = s->seat[0] && s->seat[1] ? TablePhase::Call : TablePhase::Open;
+}
+
+void ApplySetResult(const Rules& rules, int winnerSeat, const uint8_t (&games)[2], TableState* s, std::vector<uint32_t>* queue)
+{
+    const int w = winnerSeat == 1 ? 1 : 0;
+    const uint32_t winner = s->seat[w], loser = s->seat[1 - w];
+    // The set before this one: who played it as well has now played two in
+    // a row.
+    const uint32_t before[2] = {s->lastWinner, s->lastLoser};
+    auto playedBefore = [&](uint32_t id) { return id && (id == before[0] || id == before[1]); };
+    s->lastWinner = winner;
+    s->lastLoser = loser;
+    s->lastScore[0] = games[w];
+    s->lastScore[1] = games[1 - w];
+    // Who may stay: by the rotation, while they have played fewer than the
+    // limit's sets in a row here.
+    uint32_t stays = 0;
+    if (rules.rotation == Rotation::WinnerStays) stays = winner;
+    else if (rules.rotation == Rotation::LoserStays) stays = loser;
+    const int played = stays && stays == s->stayer ? s->streak + 1 : 1; // sets in a row, this one counted
+    if (stays && rules.staysLimit && played >= rules.staysLimit) stays = 0; // done: they go too
+    auto toBack = [&](uint32_t id) {
+        if (!id) return;
+        std::erase(*queue, id);
+        queue->push_back(id);
+    };
+    for (int i = 0; i < 2; i++) {
+        if (s->seat[i] && s->seat[i] != stays) s->seat[i] = 0;
+    }
+    // Both go back (round robin, or a stayer at the limit): who has played
+    // two sets in a row waits longest; otherwise the loser goes first. So
+    // three players at a round robin table take turns whoever wins.
+    const bool winnerFirst = playedBefore(loser) && !playedBefore(winner);
+    if (winnerFirst) {
+        if (winner != stays) toBack(winner);
+        if (loser != stays) toBack(loser);
+    }
+    else {
+        if (loser != stays) toBack(loser);
+        if (winner != stays) toBack(winner);
+    }
+    s->stayer = stays;
+    s->streak = stays ? played : 0;
+    s->ready[0] = s->ready[1] = false;
+    s->wins[0] = s->wins[1] = 0;
+    s->code.clear();
+    s->phase = TablePhase::After;
+}
+
+bool LeaveTable(uint32_t id, TableState* s, std::vector<uint32_t>* queue)
+{
+    bool was = false;
+    for (int i = 0; i < 2; i++) {
+        if (s->seat[i] == id) {
+            s->seat[i] = 0;
+            s->ready[i] = false;
+            was = true;
+        }
+    }
+    const size_t before = queue->size();
+    std::erase(*queue, id);
+    was |= queue->size() != before;
+    if (s->stayer == id) {
+        s->stayer = 0;
+        s->streak = 0;
+    }
+    return was;
+}
+
+std::string FormatTicket(const TableTicket& t)
+{
+    char token[17];
+    std::snprintf(token, sizeof(token), "%016llx", static_cast<unsigned long long>(t.token));
+    if (t.host) return "host|" + std::to_string(t.table) + "|" + token + "|" + t.rules;
+    return "join|" + std::to_string(t.table) + "|" + t.code + "|" + token + "|" + t.rules;
+}
+
+bool ParseTicket(std::string_view text, TableTicket* out)
+{
+    const auto f = Split(text, '|');
+    TableTicket t;
+    if (f.size() == 4 && f[0] == "host") t.host = true;
+    else if (f.size() == 5 && f[0] == "join") t.host = false;
+    else return false;
+    if (!Int(f[1], &t.table) || t.table < 0 || t.table >= kMaxTables) return false;
+    const std::string_view token = t.host ? f[2] : f[3];
+    if (token.size() != 16) return false;
+    const auto [end, ec] = std::from_chars(token.data(), token.data() + 16, t.token, 16);
+    if (ec != std::errc() || end != token.data() + 16) return false;
+    if (!t.host) t.code = std::string(f[2]);
+    t.rules = std::string(t.host ? f[3] : f[4]);
+    Rules rules;
+    if (!ParseRules(t.rules, &rules)) return false;
+    *out = std::move(t);
     return true;
 }
 

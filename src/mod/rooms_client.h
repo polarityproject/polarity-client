@@ -31,6 +31,14 @@ struct RoomMember {
     bool masked = false;
 };
 
+// A table as the room shows it (keeper_protocol.h TableState, queue, rules).
+struct TableView {
+    keeper::TableState s;
+    int64_t callSeenMs = 0; // when this call (s.call) first showed here, RoomsClockMs
+    std::vector<uint32_t> queue;
+    std::string rules; // FormatRules: the next set's
+};
+
 struct ChatLine {
     uint32_t from = 0;  // 0: the room's own line (joins, leaves, owner changes)
     std::string name;
@@ -64,9 +72,16 @@ struct RoomsView {
     bool isPublic = true;
     int tables = 0;
     std::vector<std::string> tableRules; // t0.. (FormatRules), one per table
+    std::vector<TableView> tableViews;   // s0.., q0.. with the rules, one per table
     uint32_t owner = 0;
     std::vector<RoomMember> members; // the keeper left out; oldest first
     std::vector<ChatLine> chat;      // the last kChatKept lines
+    // No lobby for this build, but one for another: the server runs another
+    // SFVR version ("14" the server's lobby protocol; empty otherwise).
+    std::string otherBuild;
+    // A table's match that did not start or finish (the opponent left during
+    // the handoff, the match room never opened): what the room says about it.
+    std::string tableNotice;
     // The last thing that went wrong, for the screen ("No room on that code",
     // "Room full", "Removed from the room", the keeper's refusal).
     std::string notice;
@@ -87,9 +102,25 @@ bool RoomsJoin(const std::string& code);
 void RoomsLeave();
 // False (and nothing sent) past the chat limits.
 bool RoomsChat(const std::string& text);
-void RoomsClearNotice();
+void RoomsClearNotice(); // also the table notice
 // The public room whose detail to keep asking for while it is focused ("" none).
 void RoomsPeek(const std::string& code);
+// A table request to the keeper (keeper_protocol.h: seat, stand, queue,
+// unqueue, ready, decline, rules, kick).
+void RoomsTable(const std::string& kind, const std::vector<std::string>& args);
+// The keeper's ticket for a table's set, once (the overlay starts the session).
+bool RoomsTakeTicket(keeper::TableTicket* out);
+// The session for a table's set has been started: the client reports its
+// match room's code (P1), the score after each game and the result.
+void RoomsTableSession(int table, bool host, const std::string& rules);
+// The table moved on while its set's session had not started (the opponent
+// left during the handoff, the keeper called the table again): true once,
+// and the overlay ends that session.
+bool RoomsTakeAbort();
+// The clock TableView::callSeenMs is on (milliseconds).
+int64_t RoomsClockMs();
+// A member's place, for the player list: "Table 2 · playing", "Idle".
+std::string RoomsPlace(const RoomsView& v, uint32_t id);
 // The character others see beside this player (member data `ch`: the
 // Fighter Profile favorite until My character, M4).
 void RoomsSetCharacter(const std::string& code);

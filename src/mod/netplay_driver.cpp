@@ -658,9 +658,12 @@ private:
             std::lock_guard lock(mutex_);
             code_ = code;
         }
-        CopyToClipboard(code);
+        // A table's set: the keeper hands the code to the other player, so
+        // the clipboard stays the player's.
+        const bool forTable = ticket_.after == AfterMatch::Set;
+        if (!forTable) CopyToClipboard(code);
         SetState(State::Hosting);
-        Log("netplay: hosting, code %s (copied to the clipboard)", code.c_str());
+        Log(forTable ? "netplay: hosting, code %s" : "netplay: hosting, code %s (copied to the clipboard)", code.c_str());
     }
 
     void BeginHello()

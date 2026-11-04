@@ -526,15 +526,26 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     if (busy || v.state == S::Room) {
         text = v.state == S::Creating ? "Making your room." : "Joining.";
     }
+    else if (!v.otherBuild.empty() && !v.keeper) {
+        lead = "UPDATE NEEDED";
+        leadCol = kRed;
+        text = "The rooms server runs another SFVR version. Start: SFVR settings, to check for an update.";
+        prompts = {{"button_start", "SFVR settings"}, {"button_b", "Back"}};
+    }
     else if (!v.keeper && (g.focus == kCreate || g.focus >= 0)) {
-        lead = "OFFLINE";
-        leadCol = kMuted;
-        text = v.state == S::Failed ? "The rooms server cannot be reached." : "Custom rooms are not running right now; try again later.";
-        prompts = {{"button_b", "Back"}};
+        lead = v.state == S::Failed ? "CANNOT CONNECT" : "OFFLINE";
+        leadCol = v.state == S::Failed ? kRed : kMuted;
+        text = v.state == S::Failed ? "The rooms server cannot be reached. Start: SFVR settings (the server)."
+                                    : "Custom rooms are not running right now; try again later.";
+        prompts = {};
+        if (v.state == S::Failed) prompts.push_back({"button_start", "SFVR settings"});
+        prompts.push_back({"button_b", "Back"});
     }
     else if (g.focus == kCreate) {
         if (!v.notice.empty() && v.notice != "No room on that code" && v.notice != "Room full") {
-            lead = "NOT MADE";
+            // The notice is about the room just left (the owner's removal) or
+            // about a room that was asked for.
+            lead = v.notice.rfind("Removed", 0) == 0 ? "REMOVED" : v.notice.rfind("Cannot join", 0) == 0 ? "NOT JOINED" : "NOT MADE";
             leadCol = kRed;
             text = v.notice;
         }
@@ -579,7 +590,10 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
                            (g.inPanel && Pressed({ImGuiKey_Enter, ImGuiKey_KeypadEnter}, false) && g.focus == kCode);
         const bool x = Pressed({ImGuiKey_GamepadFaceLeft}, false) || is("button_x");
         const bool y = Pressed({ImGuiKey_GamepadFaceUp}, false) || is("button_y");
-        if (g.focus == kCreate) {
+        if (!v.keeper && start && (v.state == S::Failed || !v.otherBuild.empty())) {
+            in->settings_ = true;
+        }
+        else if (g.focus == kCreate) {
             if (start && v.keeper) {
                 in->create = true;
                 in->settings = g.settings;

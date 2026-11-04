@@ -135,6 +135,8 @@ struct WeyveService::Impl {
                 ev = {WeyveEvent::Type::RoomError, 0, RoomErrorName(raw.data.room_error.code)};
                 ev.error = raw.data.room_error.code == WEYVE_ROOM_ERROR_NO_SUCH_ROOM ? WeyveEvent::Error::NoSuchRoom
                            : raw.data.room_error.code == WEYVE_ROOM_ERROR_ROOM_CLOSED ? WeyveEvent::Error::Closed
+                           : raw.data.room_error.code == WEYVE_ROOM_ERROR_BANNED       ? WeyveEvent::Error::Banned
+                           : raw.data.room_error.code == WEYVE_ROOM_ERROR_RATE_LIMITED ? WeyveEvent::Error::RateLimited
                                                                                        : WeyveEvent::Error::Other;
                 Log("weyve: room error: %s %s", ev.text.c_str(),
                     Str(raw.data.room_error.context, raw.data.room_error.context_len).c_str());

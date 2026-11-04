@@ -26,6 +26,7 @@ struct RoomsScreenInput {
     std::string join;           // join this room code
     bool clearNotice = false;   // "Try again" after a failed join
     std::string focusedRoom;    // the public room in focus (its detail is asked for: RoomsPeek)
+    bool settings_ = false;     // open SFVR settings (wrong build, no server)
 };
 
 void OpenRoomsScreen();
