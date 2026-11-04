@@ -789,6 +789,9 @@ private:
                 break;
             }
             case WeyveEvent::Type::PeerJoined:
+            case WeyveEvent::Type::Chat:
+            case WeyveEvent::Type::HostChanged:
+            case WeyveEvent::Type::RoomList:
                 break;
             }
         }
@@ -3160,6 +3163,18 @@ void NetSetPick(bool hasPick, const PlayerSetup& pick)
     if (g_driver) g_driver->SetPick(hasPick, pick);
 }
 
+int PreferredDelay(const NetView& v)
+{
+    const int fixed = g_options.delaySetting;
+    return fixed >= 1 && fixed <= kMaxDelaySetting ? fixed : v.SuggestedDelay();
+}
+
+int PreferredDelay(unsigned pingMs)
+{
+    const int fixed = g_options.delaySetting;
+    return fixed >= 1 && fixed <= kMaxDelaySetting ? fixed : core::SuggestedDelay(pingMs, core::kTypicalJitterMs);
+}
+
 void NetSetDelay(uint8_t frames)
 {
     g_options.inputDelay = frames;
@@ -3219,6 +3234,8 @@ void NetSetConditions(const NetConditions& conditions)
 }
 
 NetplayOptions& NetOptions() { return g_options; }
+
+std::string LocalPlayerName() { return g_options.name.empty() ? SteamPersonaName() : g_options.name; }
 
 std::string BattleInfo()
 {

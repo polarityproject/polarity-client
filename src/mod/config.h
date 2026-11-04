@@ -66,5 +66,10 @@ void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const
 // pick's in [loadouts] of the overlay's file), by character code.
 std::map<std::string, PlayerSetup> ReadLoadouts(const std::wstring& path);
 const char* ModeName(Mode mode);
+// sfv_rollback.ini as LoadConfig read it, and one value written into it
+// (SFVR settings' Check at start and At start).
+std::wstring MainIniPath();
+void SaveMainIni(const wchar_t* section, const wchar_t* key, int value);
+int ReadMainIni(const wchar_t* section, const wchar_t* key, int fallback);
 
 } // namespace sfv::mod

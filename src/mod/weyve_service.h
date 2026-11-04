@@ -39,12 +39,22 @@ struct WeyveRoomView {
     const WeyveMember* Member(uint32_t id) const;
 };
 
+// A room from ListRooms.
+struct WeyveListedRoom {
+    std::string code;
+    uint32_t members = 0;
+    bool joinable = true;
+    std::map<std::string, std::string> listing;
+};
+
 // Room happenings, in order, for the session driver.
 struct WeyveEvent {
-    enum class Type { RoomJoined, RoomError, PeerJoined, PeerLeft, Removed, ServerLost };
+    enum class Type { RoomJoined, RoomError, PeerJoined, PeerLeft, Removed, ServerLost, Chat, HostChanged, RoomList };
     Type type = Type::RoomJoined;
-    uint32_t peer = 0;
-    std::string text; // the room code (RoomJoined), what failed (RoomError, ServerLost)
+    uint32_t peer = 0; // also: who chatted (Chat), the new host (HostChanged)
+    std::string text;  // the room code (RoomJoined), what failed (RoomError, ServerLost), the message (Chat)
+    enum class Error { None, NoSuchRoom, Closed, Other };
+    Error error = Error::None; // RoomError
 };
 
 class WeyveService : public ITransport {
@@ -64,6 +74,12 @@ public:
     void LeaveRoom();
     void SetRoomData(const std::string& key, const std::string& value);
     void SetMemberData(const std::string& key, const std::string& value);
+    void SendChat(const std::string& text);
+    void TransferHost(uint32_t id); // host only
+    // Listed rooms whose listing slots equal these; the answer comes as a
+    // RoomList event, then RoomList() has it.
+    void ListRooms(const std::map<std::string, std::string>& equals);
+    std::vector<WeyveListedRoom> RoomList();
 
     WeyveRoomView View();
     bool NextEvent(WeyveEvent& out);

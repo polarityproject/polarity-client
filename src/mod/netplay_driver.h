@@ -51,10 +51,15 @@ struct NetplayOptions {
     std::string savedServer;
     uint16_t serverAlsoPort = 0;            // testing: the server's host on this port too (0: 443 for kDefaultServer)
     std::vector<std::string> recentServers; // the Debug tab's list, newest first
+    std::string keeperKey;                  // [rooms] keeper_key: another trusted keeper key (rooms_client.h; local tests)
     std::string name;                      // display name; empty: the Steam persona name
     uint16_t udpPort = 47001;              // UDP: the host listens here; a joiner binds any port
     std::string udpHost = "127.0.0.1";     // UDP: address the host writes into its code
     uint8_t inputDelay = 2;
+    // SFVR settings' Input delay: 0 Auto (each session starts at the
+    // suggestion for its ping, SuggestedDelay), 1-8 that many frames every
+    // session (user, 2026-11-04). Either can still be changed in a session.
+    uint8_t delaySetting = 0;
     uint8_t predictionWindow = 8;
     bool lockstepPresentation = true;      // no prediction (so no rollbacks) outside the fight (flow.h)
     bool lockstepDelay = true;             // there, a local input delay that covers the one-way trip
@@ -87,6 +92,8 @@ void InstallNetplay(SfvGame* game, const std::wstring& reportDir, const std::str
                     const NetplayOptions& defaults);
 // The options the next host/join uses; commands change them.
 NetplayOptions& NetOptions();
+// The name others see: [netplay] name, else the Steam persona name ("" without Steam).
+std::string LocalPlayerName();
 // With [netplay] hotkeys=1: F7 hosts, F8 joins with the code on the clipboard
 // (game window focused, no session running).
 void NetPollHotkeys();
@@ -100,6 +107,14 @@ void NetLeave();
 // In the lobby: ready to start (a player), and this player's pick.
 void NetSetReady(bool ready);
 void NetSetPick(bool hasPick, const PlayerSetup& pick);
+struct NetView;
+// The delay a session starts at: the setting's, or with Auto the suggestion
+// for this link (NetView::SuggestedDelay; -1 until it is measured).
+int PreferredDelay(const NetView& v);
+// The same where only a ping is known (a room's table card): the setting's,
+// or the suggestion with the testers' typical jitter.
+int PreferredDelay(unsigned pingMs);
+constexpr int kMaxDelaySetting = 8;
 // Between matches: this player's input delay for the next match; the host's
 // stage for the next matches (a stage code, "random", or "" as prepared).
 void NetSetDelay(uint8_t frames);

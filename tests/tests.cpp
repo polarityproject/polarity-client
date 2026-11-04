@@ -5,6 +5,8 @@
 #include "core/lobby.h"
 #include "core/look.h"
 #include "core/match_ticket.h"
+#include "core/keeper_protocol.h"
+#include "keeper/sign.h"
 #include "core/rules.h"
 #include "core/match_code.h"
 #include "core/mux.h"
@@ -1001,6 +1003,166 @@ void TestMatchTicket()
     CHECK(DescribeTicket(host) == "host, first joiner plays, r1 ft2 bo3 t99 ws3, vote after each match");
 }
 
+void TestKeeperProtocol()
+{
+    using namespace sfv::keeper;
+    // Requests: a room's settings round trip; bad ones are refused.
+    const Request room = RoomRequest(7, RoomSettings{8, false, 11});
+    CHECK(FormatRequest(room) == "7:room:8:0:11");
+    Request back;
+    RoomSettings s;
+    CHECK(ParseRequest("7:room:8:0:11", &back) && back.seq == 7 && back.kind == "room" && back.args.size() == 3);
+    CHECK(ParseRoomSettings(back, &s) && s.tables == 8 && !s.isPublic && s.preset == 11);
+    CHECK(ParseRequest("1:peek", &back) && back.kind == "peek" && back.args.empty());
+    for (const char* bad : {"", "room", "0:room", "-1:room", "x:room", "5:", "99999999999:room"}) CHECK(!ParseRequest(bad, &back));
+    for (const char* bad : {"1:room:0:1:0", "1:room:9:1:0", "1:room:4:2:0", "1:room:4:1:12", "1:room:4:1", "1:room:4:1:x", "1:peek:4:1:0"}) {
+        CHECK(ParseRequest(bad, &back) && !ParseRoomSettings(back, &s));
+    }
+    CHECK(std::string(PresetName(0)) == "Casual sets" && std::string(PresetName(11)) == "Friends only" &&
+          std::string(PresetName(12)) == "Room");
+    // Answers: round trip, a newline in the text cannot add a field, other
+    // datagrams are not answers.
+    const std::string a = FormatAnswer({12, "room", true, "ABC234"});
+    Answer ans;
+    CHECK(ParseAnswer(reinterpret_cast<const uint8_t*>(a.data()), a.size(), &ans) && ans.seq == 12 && ans.kind == "room" &&
+          ans.ok && ans.text == "ABC234");
+    const std::string no = FormatAnswer({3, "room", false, "too\nmany rooms"});
+    CHECK(ParseAnswer(reinterpret_cast<const uint8_t*>(no.data()), no.size(), &ans) && !ans.ok && ans.text == "too many rooms");
+    const uint8_t session[] = {0x53, 0x46, 0x56, 0x01, 0x02};
+    CHECK(!ParseAnswer(session, sizeof(session), &ans));
+    // Base64, and the proof's text.
+    const uint8_t bytes[] = {0, 1, 2, 250, 251, 252, 253};
+    for (size_t n = 0; n <= sizeof(bytes); n++) {
+        std::vector<uint8_t> out;
+        CHECK(Base64Decode(Base64Encode(bytes, n), &out) && out == std::vector<uint8_t>(bytes, bytes + n));
+    }
+    std::vector<uint8_t> junk;
+    CHECK(!Base64Decode("ab!d", &junk) && !Base64Decode("abc", &junk) && !Base64Decode("ab=c", &junk));
+    CHECK(ProofMessage("ABC234", 77) == "sfvr-keeper 1 ABC234 77");
+    // The public list: sorted (open seats, then queues only, then full; the
+    // most members first), packed whole into values of at most 512 bytes,
+    // and read back, separators in names dropped.
+    std::vector<ListedRoom> rooms;
+    for (int i = 0; i < 60; i++) {
+        ListedRoom r;
+        r.code = "R" + std::to_string(10000 + i);
+        r.preset = i % kPresetCount;
+        r.owner = "Player\t" + std::to_string(i) + "\n,\xE3\x81\x82";
+        r.members = i % 17;
+        r.tables = 1 + i % 8;
+        r.openSeats = i % 3 == 0 ? 0 : 2;
+        r.rules = "r1 ft2 bo3 t99 ws3";
+        r.faces = {"RYU", "KEN", "Z21", "Z39", "CNL", "NSH", "ZGF"};
+        rooms.push_back(r);
+    }
+    SortRoomList(&rooms);
+    CHECK(rooms.front().openSeats > 0 && rooms.front().members < kRoomCap && rooms.back().members == kRoomCap);
+    for (size_t i = 1; i < rooms.size(); i++) {
+        auto group = [](const ListedRoom& r) { return r.members >= kRoomCap ? 2 : r.openSeats > 0 ? 0 : 1; };
+        CHECK(group(rooms[i - 1]) < group(rooms[i]) || (group(rooms[i - 1]) == group(rooms[i]) && rooms[i - 1].members >= rooms[i].members));
+    }
+    auto pack = [](const std::vector<ListedRoom>& list) {
+        std::map<std::string, std::string> d;
+        const std::vector<std::string> values = PackRoomList(list);
+        CHECK(values.size() <= kListKeys);
+        for (size_t i = 0; i < values.size(); i++) {
+            CHECK(values[i].size() <= kMaxValue);
+            d[ListKey(static_cast<int>(i))] = values[i];
+        }
+        return d;
+    };
+    std::map<std::string, std::string> data = pack(rooms);
+    const std::vector<ListedRoom> read = UnpackRoomList(data);
+    CHECK(read.size() == rooms.size());
+    // Long names: the 16 values fill, the rest is left out (48 or more fit).
+    std::vector<ListedRoom> many = rooms;
+    for (int i = 0; i < 4; i++) many.insert(many.end(), rooms.begin(), rooms.end());
+    for (ListedRoom& r : many) r.owner = std::string(96, 'n');
+    const std::vector<ListedRoom> some = UnpackRoomList(pack(many));
+    CHECK(some.size() >= 48 && some.size() < many.size() && some.front().code == many.front().code &&
+          some.front().owner == many.front().owner);
+    for (size_t i = 0; i < read.size(); i++) {
+        CHECK(read[i].code == rooms[i].code && read[i].members == rooms[i].members && read[i].faces.size() == 6 &&
+              read[i].owner == "Player" + std::to_string(std::stoi(rooms[i].code.substr(1)) - 10000) + "\xE3\x81\x82");
+    }
+    CHECK(PackRoomList({}).empty());
+    data[ListKey(3)] = "not\ta room";
+    CHECK(UnpackRoomList(data).size() < read.size());
+    // Chat: three at once, then one a second; 200 characters (not bytes);
+    // refusals count as strikes for 10 s.
+    ChatLimiter chat;
+    CHECK(chat.Allow(0, "a") && chat.Allow(0, "b") && chat.Allow(10, "c") && !chat.Allow(20, "d"));
+    CHECK(!chat.Allow(500, "e") && chat.Allow(1100, "f") && !chat.Allow(1200, "g"));
+    CHECK(chat.Strikes(1200) == 3 && chat.Strikes(10600) == 1 && chat.Strikes(11300) == 0);
+    std::string longest;
+    for (int i = 0; i < 200; i++) longest += "\xE3\x81\x82";
+    CHECK(Utf8Length(longest) == 200 && chat.Allow(5000, longest) && !chat.Allow(9000, longest + "a") && !chat.Allow(12000, ""));
+    // The keeper's proof: signed with a new key, checked as the mod does; a
+    // proof for another member id or room fails. The key file round trips.
+    KeyPair key;
+    CHECK(GenerateKey(&key));
+    KeyPair readKey;
+    CHECK(KeyFromText(KeyToText(key) + "\n", &readKey) && std::memcmp(&readKey, &key, sizeof(key)) == 0 &&
+          !KeyFromText("12", &readKey));
+    const std::string proof = ProofMessage("ABC234", 77);
+    uint8_t signature[64];
+    CHECK(Sign(key, reinterpret_cast<const uint8_t*>(proof.data()), proof.size(), signature));
+    std::vector<uint8_t> sig;
+    CHECK(Base64Decode(Base64Encode(signature, 64), &sig) && sig.size() == 64);
+    CHECK(VerifySignature(reinterpret_cast<const uint8_t*>(proof.data()), proof.size(), sig.data(), sig.size(), key.pub));
+    for (const std::string& other : {ProofMessage("ABC234", 78), ProofMessage("ABC235", 77)}) {
+        CHECK(!VerifySignature(reinterpret_cast<const uint8_t*>(other.data()), other.size(), sig.data(), sig.size(), key.pub));
+    }
+    // A room's detail: 8 tables and 16 players with the longest names come
+    // back whole over several parts, each fitting a datagram with its answer;
+    // a part out of range or a broken record is refused.
+    RoomDetail detail;
+    for (int t = 0; t < 8; t++) detail.tables.push_back("r1 ft2 bo3 t99 ws3");
+    for (int i = 0; i < 16; i++) detail.people.push_back({std::string(96, static_cast<char>('a' + i)), i % 2 ? "RYU" : "Z41"});
+    detail.people[3].name = "bad\x1Ename\x1F";
+    const std::vector<std::string> parts = PackRoomDetail(detail);
+    CHECK(parts.size() >= 2);
+    std::vector<std::string> bodies;
+    for (size_t i = 0; i < parts.size(); i++) {
+        CHECK(FormatAnswer({99, "peek", true, parts[i]}).size() <= 1024);
+        int part = 0, of = 0;
+        std::string body;
+        CHECK(ReadDetailPart(parts[i], &part, &of, &body) && part == static_cast<int>(i + 1) && of == static_cast<int>(parts.size()));
+        bodies.push_back(body);
+    }
+    RoomDetail back2;
+    back2.code = "ABC234";
+    CHECK(JoinRoomDetail(bodies, &back2) && back2.code == "ABC234" && back2.tables == detail.tables && back2.people.size() == 16);
+    CHECK(back2.people[3].name == "badname" && back2.people[0] == detail.people[0] && back2.people[15].chara == "RYU");
+    RoomDetail empty;
+    const std::vector<std::string> none = PackRoomDetail(empty);
+    int part = 0, of = 0;
+    std::string body;
+    CHECK(none.size() == 1 && ReadDetailPart(none[0], &part, &of, &body) && body.empty() && JoinRoomDetail({body}, &empty));
+    CHECK(!ReadDetailPart("3/2\x1Dtx", &part, &of, &body) && !ReadDetailPart("1/2tx", &part, &of, &body) &&
+          !JoinRoomDetail({"xjunk"}, &empty) && !JoinRoomDetail({"pRYU"}, &empty));
+    CHECK(FormatRequest(PeekRequest(5, "ABC234")) == "5:peek:ABC234");
+    // The name filter: folded (case, digits and symbols as letters, the rest
+    // dropped), a word anywhere in the name.
+    const std::vector<std::string> words = {FoldName("badword"), FoldName("")};
+    CHECK(FoldName("B4.dw0rd-$!") == "badwords" && FoldName("\xE3\x81\x82") == "");
+    CHECK(NameRejected("xX_B4D w0rd_Xx", words) && NameRejected("BADWORD", words) && !NameRejected("Bad Wolf", words) &&
+          !NameRejected("", words));
+    using Numbers = std::map<uint32_t, int>;
+    const Numbers numbers{{12, 1}, {34, 3}}, onlyFive{{5, 2}};
+    CHECK(FormatMask(numbers) == "12=1,34=3" && ParseMask("12=1,34=3") == numbers && ParseMask("").empty() &&
+          ParseMask("x=1,5=2,6,7=x") == onlyFive);
+    // Ping datagrams round trip; other datagrams are not pings.
+    uint8_t ping[kPingSize];
+    FormatPing(true, 0x0123456789ABCDEFull, ping);
+    bool pong = false;
+    uint64_t clock = 0;
+    CHECK(ParsePing(ping, sizeof(ping), &pong, &clock) && pong && clock == 0x0123456789ABCDEFull);
+    CHECK(!ParsePing(ping, sizeof(ping) - 1, &pong, &clock) && !ParsePing(reinterpret_cast<const uint8_t*>(a.data()), kPingSize, &pong, &clock));
+    // The next owner: the longest present, never the leaver or the keeper.
+    CHECK(NextOwner({5, 9, 3}, 5, 1) == 9 && NextOwner({1, 5, 9}, 9, 1) == 5 && NextOwner({5}, 5, 1) == 0 && NextOwner({}, 0, 1) == 0);
+}
+
 void TestTexturePackage()
 {
     // A package as the paks hold one: a name table entry first (the same
@@ -1133,6 +1295,7 @@ int main()
         {"shown setup", TestShownSetup},
         {"rules format", TestRulesFormat},
         {"match ticket", TestMatchTicket},
+        {"keeper protocol", TestKeeperProtocol},
     };
     for (const auto& t : tests) {
         const int before = g_failures;

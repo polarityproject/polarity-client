@@ -101,6 +101,7 @@ void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPr
     const wchar_t* kAbsent = L"\x01";
     auto has = [&](const wchar_t* key) { return !onlyPresent || ReadString(path, L"netplay", key, kAbsent) != kAbsent; };
     if (has(L"input_delay")) n.inputDelay = static_cast<uint8_t>(ReadInt(path, L"netplay", L"input_delay", 2));
+    if (has(L"delay_setting")) n.delaySetting = static_cast<uint8_t>(std::clamp(ReadInt(path, L"netplay", L"delay_setting", 0), 0, kMaxDelaySetting));
     if (has(L"character")) {
         const std::wstring chara = ReadString(path, L"netplay", L"character", L"");
         n.hasPick = !chara.empty();
@@ -176,6 +177,7 @@ void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const
     }
     Write(path, L"stage", stage);
     Write(path, L"input_delay", std::to_string(n.inputDelay));
+    Write(path, L"delay_setting", std::to_string(n.delaySetting));
     // ASCII as it is; anything else as hex in name_utf8 (see ReadNetplayChoices).
     const bool ascii = std::all_of(n.name.begin(), n.name.end(), [](char ch) { return static_cast<unsigned char>(ch) < 0x80; });
     std::string hex;
@@ -225,8 +227,26 @@ std::map<std::string, PlayerSetup> ReadLoadouts(const std::wstring& path)
     return loadouts;
 }
 
+namespace {
+std::wstring g_mainIni;
+}
+
+std::wstring MainIniPath() { return g_mainIni; }
+
+int ReadMainIni(const wchar_t* section, const wchar_t* key, int fallback)
+{
+    return g_mainIni.empty() ? fallback : static_cast<int>(GetPrivateProfileIntW(section, key, fallback, g_mainIni.c_str()));
+}
+
+void SaveMainIni(const wchar_t* section, const wchar_t* key, int value)
+{
+    if (g_mainIni.empty()) return;
+    WritePrivateProfileStringW(section, key, std::to_wstring(value).c_str(), g_mainIni.c_str());
+}
+
 Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const std::wstring& panelPath)
 {
+    g_mainIni = path;
     Config c;
     const std::wstring mode = ReadString(path, L"mod", L"mode", L"probe");
     if (mode == L"off") c.mode = Mode::Off;
@@ -278,6 +298,8 @@ Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const st
     n.conditions.latencyMs = ReadInt(path, L"netsim", L"latency_ms", 0);
     n.conditions.jitterMs = ReadInt(path, L"netsim", L"jitter_ms", 0);
     n.conditions.loss = ReadInt(path, L"netsim", L"loss_pct", 0) / 100.0;
+
+    n.keeperKey = Ascii(ReadString(path, L"rooms", L"keeper_key", L""));
 
     c.virtualPads = ReadInt(path, L"control", L"virtual_pads", 0);
     c.alwaysActive = ReadInt(path, L"control", L"always_active", 0) != 0;

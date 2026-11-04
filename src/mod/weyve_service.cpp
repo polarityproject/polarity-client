@@ -93,6 +93,7 @@ struct WeyveService::Impl {
     WeyveRoomView::Server server = WeyveRoomView::Server::Connecting;
     std::vector<std::function<void(WeyveClient*)>> commands;
     std::deque<WeyveEvent> events;
+    std::vector<WeyveListedRoom> roomList;
     std::deque<Packet> inbox;
     std::map<uint32_t, std::chrono::steady_clock::time_point> kicked; // per peer, last send while unlinked
     std::map<uint32_t, bool> linked;                                   // per peer, as last logged
@@ -132,6 +133,9 @@ struct WeyveService::Impl {
                 break;
             case WEYVE_EVENT_ROOM_ERROR:
                 ev = {WeyveEvent::Type::RoomError, 0, RoomErrorName(raw.data.room_error.code)};
+                ev.error = raw.data.room_error.code == WEYVE_ROOM_ERROR_NO_SUCH_ROOM ? WeyveEvent::Error::NoSuchRoom
+                           : raw.data.room_error.code == WEYVE_ROOM_ERROR_ROOM_CLOSED ? WeyveEvent::Error::Closed
+                                                                                       : WeyveEvent::Error::Other;
                 Log("weyve: room error: %s %s", ev.text.c_str(),
                     Str(raw.data.room_error.context, raw.data.room_error.context_len).c_str());
                 events.push_back(ev);
@@ -152,6 +156,29 @@ struct WeyveService::Impl {
                 if (!heartbeatAnswered) Log("weyve: the server answers heartbeats (every %lld s)", static_cast<long long>(kHeartbeatEvery.count()));
                 heartbeatAnswered = true;
                 break;
+            case WEYVE_EVENT_CHAT:
+                events.push_back({WeyveEvent::Type::Chat, raw.data.chat.from, Str(raw.data.chat.text, raw.data.chat.text_len)});
+                break;
+            case WEYVE_EVENT_HOST_CHANGED:
+                events.push_back({WeyveEvent::Type::HostChanged, raw.data.host_changed.id, {}});
+                break;
+            case WEYVE_EVENT_ROOM_LIST: {
+                roomList.clear();
+                const uint32_t n = weyve_room_list_count(client);
+                for (uint32_t r = 0; r < n; r++) {
+                    WeyveListedRoom& l = roomList.emplace_back();
+                    l.code = Bytes([&](uint32_t* len) { return weyve_room_list_id(client, r, len); });
+                    l.members = weyve_room_list_members(client, r);
+                    l.joinable = weyve_room_list_joinable(client, r);
+                    const uint32_t keys = weyve_room_list_listing_count(client, r);
+                    for (uint32_t k = 0; k < keys; k++) {
+                        const std::string key = Bytes([&](uint32_t* len) { return weyve_room_list_listing_key_at(client, r, k, len); });
+                        l.listing[key] = Bytes([&](uint32_t* len) { return weyve_room_list_listing(client, r, key.c_str(), len); });
+                    }
+                }
+                events.push_back({WeyveEvent::Type::RoomList, 0, {}});
+                break;
+            }
             case WEYVE_EVENT_KICKED:
             case WEYVE_EVENT_BANNED:
                 Log("weyve: removed from the room by its host");
@@ -375,6 +402,31 @@ void WeyveService::SetRoomData(const std::string& key, const std::string& value)
 void WeyveService::SetMemberData(const std::string& key, const std::string& value)
 {
     impl_->Queue([key, value](WeyveClient* c) { weyve_set_member_data(c, key.c_str(), value.c_str()); });
+}
+
+void WeyveService::SendChat(const std::string& text)
+{
+    impl_->Queue([text](WeyveClient* c) { weyve_send_chat(c, text.c_str()); });
+}
+
+void WeyveService::TransferHost(uint32_t id)
+{
+    impl_->Queue([id](WeyveClient* c) { weyve_transfer_host(c, id); });
+}
+
+void WeyveService::ListRooms(const std::map<std::string, std::string>& equals)
+{
+    impl_->Queue([equals](WeyveClient* c) {
+        std::vector<WeyveRoomFilter> filters;
+        for (const auto& [key, value] : equals) filters.push_back({key.c_str(), WEYVE_FILTER_EQUALS, value.c_str()});
+        weyve_list_rooms(c, filters.data(), static_cast<uint32_t>(filters.size()));
+    });
+}
+
+std::vector<WeyveListedRoom> WeyveService::RoomList()
+{
+    std::lock_guard lock(impl_->mutex);
+    return impl_->roomList;
 }
 
 WeyveRoomView WeyveService::View()

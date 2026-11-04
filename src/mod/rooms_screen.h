@@ -1,0 +1,42 @@
+#pragma once
+// The custom rooms screen (custom-rooms-plan.md M3; mock-up board 7): one
+// screen to browse, create and join. On the left, Create a room and Join with
+// a code, then the public rooms (six in view, scrolling with the focus,
+// updating by themselves); on the right a panel that follows the focused row:
+// a room's summary, the create form (name preset, visibility, tables), or the
+// code slots and keypad. B goes back to the hub.
+//
+// Render thread, inside an ImGui frame. It draws from a RoomsView and says
+// what the player asked for; the overlay hands that to rooms_client.
+
+#include "core/keeper_protocol.h"
+#include "mod/hub_screen.h"
+#include "mod/rooms_client.h"
+
+#include <imgui.h>
+
+#include <string>
+
+namespace sfv::mod {
+
+struct RoomsScreenInput {
+    bool back = false;          // to the hub
+    bool create = false;        // ask the keeper for a room with `settings`
+    keeper::RoomSettings settings;
+    std::string join;           // join this room code
+    bool clearNotice = false;   // "Try again" after a failed join
+    std::string focusedRoom;    // the public room in focus (its detail is asked for: RoomsPeek)
+};
+
+void OpenRoomsScreen();
+void CloseRoomsScreen();
+bool RoomsScreenOpen();
+void DrawRoomsScreen(const HubFonts& fonts, const RoomsView& view, bool takeInput, RoomsScreenInput* input);
+
+// Shared with the room screen: a character's face in a slanted frame, the
+// owner's crown, the player glyph.
+void DrawFace(ImDrawList* d, const std::string& chara, float x, float y, float w, float h);
+void DrawCrown(ImDrawList* d, float x, float y, float scale, ImU32 col);
+void DrawPerson(ImDrawList* d, float x, float y, float size, ImU32 col);
+
+} // namespace sfv::mod

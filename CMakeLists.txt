@@ -80,6 +80,14 @@ if(SFV_BUILD_MOD AND WIN32)
   if(NOT departed_links EQUAL 0)
     message(FATAL_ERROR "cannot apply third_party/weyvelength-departed-links.patch")
   endif()
+  # weyve_set_port_range: the keeper's links on a fixed UDP range its
+  # server's firewall opens (the mod does not call it).
+  execute_process(COMMAND ${CMAKE_COMMAND} -DPATCH=${CMAKE_CURRENT_SOURCE_DIR}/third_party/weyvelength-port-range.patch
+                          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/apply-patch.cmake
+                  WORKING_DIRECTORY ${weyvelength_SOURCE_DIR} RESULT_VARIABLE port_range)
+  if(NOT port_range EQUAL 0)
+    message(FATAL_ERROR "cannot apply third_party/weyvelength-port-range.patch")
+  endif()
   set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
   set(NO_SERVER ON CACHE BOOL "" FORCE)
   set(NO_TESTS ON CACHE BOOL "" FORCE)
@@ -123,6 +131,8 @@ add_library(sfvcore STATIC
   src/core/look.cpp
   src/core/rules.cpp
   src/core/match_ticket.cpp
+  src/core/keeper_protocol.cpp
+  src/keeper/sign.cpp
   src/core/replay_file.cpp
   src/core/file_open.cpp
   src/core/recorder.cpp
@@ -152,6 +162,15 @@ enable_testing()
 add_executable(sfvtests tests/tests.cpp)
 target_link_libraries(sfvtests PRIVATE sfvcore sfvtestbed bcrypt)
 add_test(NAME sfvtests COMMAND sfvtests WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+if(SFV_BUILD_MOD AND WIN32)
+  # sfvr-keeper (src/keeper/keeper.h): hosts the lobby channel and the custom
+  # rooms. Built here for local tests; the server builds it on Linux
+  # (scripts/keeper-bundle.ps1 copies its sources into sfvr-server).
+  add_executable(sfvr_keeper src/keeper/main.cpp src/keeper/keeper.cpp)
+  set_target_properties(sfvr_keeper PROPERTIES OUTPUT_NAME sfvr-keeper)
+  target_link_libraries(sfvr_keeper PRIVATE sfvcore weyvelength_client bcrypt ws2_32)
+endif()
 
 if(SFV_BUILD_MOD AND WIN32)
   add_library(sfv_rollback SHARED
@@ -189,6 +208,12 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/mod_main.cpp
     src/mod/netplay_driver.cpp
     src/mod/udp_transport.cpp
+    src/mod/rooms_client.cpp
+    src/mod/ui_kit.cpp
+    src/mod/hub_screen.cpp
+    src/mod/rooms_screen.cpp
+    src/mod/room_screen.cpp
+    src/mod/settings_screen.cpp
     src/mod/weyve_service.cpp
     src/mod/fonts.rc)
   target_link_libraries(sfv_rollback PRIVATE sfvcore minhook imgui weyvelength_client ws2_32 iphlpapi shell32 winhttp dbghelp)

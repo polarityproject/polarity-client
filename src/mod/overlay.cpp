@@ -14,6 +14,12 @@
 #include "mod/log.h"
 #include "mod/netplay_driver.h"
 #include "mod/select_screen.h"
+#include "mod/hub_screen.h"
+#include "mod/rooms_screen.h"
+#include "mod/room_screen.h"
+#include "mod/settings_screen.h"
+#include "mod/rooms_client.h"
+#include "mod/profile.h"
 #include "mod/status.h"
 #include "mod/report_upload.h"
 #include "mod/updater.h"
@@ -82,6 +88,7 @@ HWND g_window = nullptr;
 bool g_imgui = false;
 
 std::atomic<bool> g_visible{false};
+std::atomic<bool> g_hubAllowed{false}; // at the game's menus with no session: hold Start opens the hub
 std::atomic<bool> g_startCloses{false};  // the panel was opened with Start (held in a match): Start closes it
 std::atomic<float> g_startHold{0};       // in a match: how far Start is held towards opening the panel (0..1)
 std::atomic<bool> g_selectMatchTab{true}; // the panel opens on its Match tab next time
@@ -202,6 +209,21 @@ void FeedPads(ImGuiIO& io)
             g_selectMatchTab = true;
             SetOverlayVisible(true);
             g_startCloses = true;
+        }
+    }
+    // At the game's menus (no session), Start held kHoldForHubMs brings the
+    // SFVR hub back (a tap stays the menus').
+    constexpr ULONGLONG kHoldForHubMs = 1000;
+    static ULONGLONG hubHeldSince = 0;
+    if (!start || !g_hubAllowed || g_visible || HubOpen()) {
+        hubHeldSince = 0;
+    }
+    else {
+        const ULONGLONG now = GetTickCount64();
+        if (!hubHeldSince) hubHeldSince = now;
+        if (now - hubHeldSince >= kHoldForHubMs) {
+            hubHeldSince = 0;
+            OpenHub();
         }
     }
     for (const Map& m : kButtons) io.AddKeyEvent(m.key, (buttons & m.button) != 0);
@@ -1422,11 +1444,13 @@ void DrawDelay(Choices& c, const char* label = "Delay")
 void DrawDelaySuggestion(const NetView& v)
 {
     // A spectator has no input delay of its own.
+    if (v.spectator) return;
+    const int fixed = NetOptions().delaySetting;
     const int suggested = v.SuggestedDelay();
-    if (suggested < 0 || v.spectator) return;
     // Wrapped at the window's edge: the post-match side windows are narrow.
     ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextColored(kDim, "Suggested delay %d (ping %u ms)", suggested, v.link.pingMs);
+    if (fixed) ImGui::TextColored(kDim, "Your setting: delay %d (SFVR settings)", fixed);
+    else if (suggested >= 0) ImGui::TextColored(kDim, "Suggested delay %d (ping %u ms)", suggested, v.link.pingMs);
     ImGui::PopTextWrapPos();
 }
 
@@ -2157,9 +2181,11 @@ SelectSide SelectSideFor(const NetView& v, int i)
     s.chara = chara;
     const int delay = mine ? c.delay : seat.inputDelay;
     s.rows[6].value = FramesText(delay);
+    const int fixed = NetOptions().delaySetting;
     const int suggested = v.SuggestedDelay();
-    s.rows[6].hint = suggested >= 0 ? "Suggested: " + FramesText(suggested) + " for a " + std::to_string(v.link.pingMs) + " ms ping. Lower reacts sooner, with more rollbacks."
-                                    : "Input delay: how many frames your inputs wait (fewer: sooner, with more rollbacks).";
+    s.rows[6].hint = fixed ? "Your setting: " + FramesText(fixed) + " (SFVR settings). Lower reacts sooner, with more rollbacks."
+                     : suggested >= 0 ? "Suggested: " + FramesText(suggested) + " for a " + std::to_string(v.link.pingMs) + " ms ping. Lower reacts sooner, with more rollbacks."
+                                      : "Input delay: how many frames your inputs wait (fewer: sooner, with more rollbacks).";
     if (chara < 0) return s;
     if (IsEleven(chara)) {
         for (int r = 0; r < 6; r++) {
@@ -3078,6 +3104,341 @@ NetView PreviewView(NetView::Phase phase)
 std::mutex g_previewMutex;
 std::string g_previewWords; // from PreviewOverlay, applied on the render thread
 
+// SFVR settings' rows from the live state (settings_screen.h), and what
+// changing them does.
+void UseServer(const std::string& chosen)
+{
+    if (chosen.empty()) return;
+    Act([chosen] {
+        NetplayOptions& o = NetOptions();
+        o.server = o.savedServer = chosen;
+        auto& recent = o.recentServers;
+        recent.erase(std::remove(recent.begin(), recent.end(), chosen), recent.end());
+        recent.insert(recent.begin(), chosen);
+        if (recent.size() > 6) recent.resize(6);
+        if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, o, o.stageCode);
+        Log("overlay: server %s for the next sessions", chosen.c_str());
+    });
+}
+
+// The servers SFVR settings offers: the public one first, then the ones used before.
+std::vector<std::string> ServerChoices()
+{
+    std::vector<std::string> list{kDefaultServer};
+    for (const std::string& s : NetOptions().recentServers) {
+        if (std::find(list.begin(), list.end(), s) == list.end()) list.push_back(s);
+    }
+    if (std::find(list.begin(), list.end(), NetOptions().server) == list.end()) list.push_back(NetOptions().server);
+    return list;
+}
+
+std::string ServerLabel(const std::string& server) { return server == kDefaultServer ? "Public server" : server; }
+
+std::vector<SettingsRow> SettingsRows()
+{
+    std::vector<SettingsRow> rows;
+    auto row = [&](const char* id, const char* section, const std::string& label) -> SettingsRow& {
+        SettingsRow& r = rows.emplace_back();
+        r.id = id;
+        r.section = section;
+        r.label = label;
+        return r;
+    };
+    const UpdateView u = UpdateViewNow();
+    using U = UpdateView::State;
+    const std::string current = u.current.empty() ? g_build : "SFVR " + u.current;
+    // Updates.
+    if (u.state == U::Available || u.state == U::Downloading || u.state == U::Ready) {
+        SettingsRow& r = row("install", "UPDATES", "Install " + u.latest);
+        r.highlight = true;
+        r.kicker = "NEW VERSION";
+        r.title = "SFVR " + u.latest;
+        if (!u.notes.empty()) r.lines.push_back((u.published.empty() ? "" : "From " + u.published + ": ") + u.notes);
+        r.goldFirst = !r.lines.empty();
+        r.lines.push_back("Both players need the same version to play each other.");
+        if (u.state == U::Available) {
+            r.value = "Download and install";
+            r.action = "Install";
+            r.hint = "The update is signed. It downloads now and installs when the game restarts.";
+        }
+        else if (u.state == U::Downloading) {
+            const int pct = u.total ? static_cast<int>(100 * u.done / u.total) : 0;
+            r.value = "Downloading " + std::to_string(pct) + "%";
+            r.hint = "Downloading. Keep playing; it installs when the game restarts.";
+        }
+        else {
+            r.value = "Restart the game to use it";
+            r.hint = "Installed. The next start runs SFVR " + u.latest + ".";
+        }
+    }
+    {
+        SettingsRow& r = row("check", "UPDATES", "Check now");
+        r.highlight = true;
+        r.value = u.state == U::Checking ? "Checking..." : u.state == U::Off ? "Off" : "Check";
+        r.enabled = u.state != U::Off;
+        r.action = u.state == U::Checking ? "" : "Check";
+        r.kicker = "UPDATES";
+        r.title = current;
+        switch (u.state) {
+        case U::Off: r.lines = {"Updates are off: " + u.message + "."}; break;
+        case U::Idle: r.lines = {"Not checked yet."}; break;
+        case U::Checking: r.lines = {"Checking for updates..."}; break;
+        case U::UpToDate: r.lines = {"This is the latest."}; break;
+        case U::Available: r.lines = {"SFVR " + u.latest + " is available."}; break;
+        case U::Downloading: r.lines = {"Downloading SFVR " + u.latest + "."}; break;
+        case U::Ready: r.lines = {"SFVR " + u.latest + " is installed: restart the game to use it."}; break;
+        case U::Failed: r.lines = {"The check failed: " + u.message + "."}; break;
+        }
+        r.hint = "Asks the SFVR site for a newer version. Nothing installs without you.";
+    }
+    {
+        SettingsRow& r = row("checkstart", "UPDATES", "Check at start");
+        r.arrows = true;
+        r.value = ReadMainIni(L"update", L"check", 1) ? "On" : "Off";
+        r.kicker = "UPDATES";
+        r.title = "Check at start";
+        r.lines = {"Looks for a new version each time the game starts, and says so here. Nothing installs without you."};
+        r.hint = "Left and right: on or off.";
+    }
+    // Online.
+    {
+        SettingsRow& r = row("name", "ONLINE", "Name");
+        r.text = true;
+        r.editValue = g_choices.name;
+        r.value = g_choices.name[0] ? std::string(g_choices.name) : LocalPlayerName() + " (Steam name)";
+        r.kicker = "ONLINE";
+        r.title = g_choices.name[0] ? std::string(g_choices.name) : LocalPlayerName();
+        r.lines = {"What other players see in rooms, matches and chat. Empty: your Steam name.",
+                   "Typing needs a keyboard for now (on a Steam Deck, Steam + X opens one)."};
+        r.hint = "A: type a name. Enter keeps it.";
+    }
+    {
+        SettingsRow& r = row("fps", "ONLINE", "My frame rate");
+        r.arrows = true;
+        r.value = g_choices.showFps ? "Shown" : "Hidden";
+        r.kicker = "ONLINE";
+        r.title = "My frame rate";
+        r.lines = {"Shown: your own frame rate goes beside your name in a match, as the other player's always does."};
+        r.hint = "Left and right: shown or hidden.";
+    }
+    {
+        SettingsRow& r = row("delay", "ONLINE", "Input delay");
+        const int fixed = NetOptions().delaySetting;
+        r.arrows = true;
+        r.value = fixed ? FramesText(fixed) : "Auto";
+        r.kicker = "ONLINE";
+        r.title = fixed ? "Input delay: " + FramesText(fixed) : "Input delay: Auto";
+        r.lines = {fixed ? "Every match starts at " + FramesText(fixed) + " of input delay, whatever the connection."
+                         : "Auto: each match starts at the delay that suits its connection, about half the round trip in frames (1 "
+                           "to 3).",
+                   "Fewer frames: your inputs show sooner, with more rollbacks. You can still change it for a match on the select "
+                   "screen."};
+        r.hint = "Left and right: Auto, or 1 to 8 frames every match.";
+    }
+    {
+        SettingsRow& r = row("server", "ONLINE", "Server");
+        const std::vector<std::string> servers = ServerChoices();
+        r.arrows = servers.size() > 1;
+        r.value = ServerLabel(NetOptions().server);
+        r.kicker = "ONLINE";
+        r.title = ServerLabel(NetOptions().server);
+        r.lines = {"Custom rooms and Direct Match use this server. Public server: the SFVR server everyone plays on.",
+                   "Other servers show here once used (the F1 panel's Debug tab adds them)."};
+        r.hint = r.arrows ? "Left and right: the server." : "The public server. Others show here once used.";
+    }
+    // Game.
+    {
+        SettingsRow& r = row("boot", "GAME", "At start");
+        r.arrows = true;
+        r.value = ReadMainIni(L"boot", L"offline", 1) ? "Skip the server login" : "Log in to the server";
+        r.kicker = "GAME";
+        r.title = "At start";
+        r.lines = {"Skip the server login: the title goes straight to the menus. SFVR does not need the game's own servers.",
+                   "Log in: the game's own online modes work, and the start waits for Capcom's servers. From the next start."};
+        r.hint = "Left and right: skip the login or log in. From the next start.";
+    }
+    // Reports.
+    {
+        SettingsRow& r = row("reports", "REPORTS", "Send reports");
+        r.arrows = true;
+        r.value = g_choices.uploadReports ? "On" : "Off";
+        r.kicker = "REPORTS";
+        r.title = "Send reports";
+        r.lines = {"After a match with a desync, its recording and match log (names, picks, inputs) go to the SFVR server so "
+                   "both players' halves can be compared. After a crash, the end of the log and a small crash dump go at the "
+                   "next start."};
+        r.hint = "Left and right: on or off.";
+    }
+    {
+        SettingsRow& r = row("folder", "REPORTS", "SFVR folder");
+        r.highlight = true;
+        r.value = "Open";
+        r.action = "Open";
+        r.kicker = "SFVR FOLDER";
+        std::string path;
+        for (wchar_t ch : DataDir()) path += ch < 128 ? static_cast<char>(ch) : '_';
+        r.title = path;
+        r.lines = {"Event logs, match recordings and crash reports are kept here."};
+        r.hint = "Opens the folder in Explorer (the game stays open).";
+    }
+    {
+        SettingsRow& r = row("pack", "REPORTS", "Pack logs");
+        r.highlight = true;
+        r.value = "Pack to share";
+        r.action = "Pack";
+        r.kicker = "PACK LOGS";
+        r.title = "Pack logs";
+        r.lines = {"Zips the logs and recent recordings into one file in the SFVR folder, to send with a report."};
+        if (!g_packResult.empty()) r.lines.push_back(g_packResult);
+        r.hint = "Zips the logs and recent recordings into one file in the SFVR folder, to send with a report.";
+    }
+    return rows;
+}
+
+void ApplySetting(const SettingsInput& in)
+{
+    if (in.row == "install" && in.confirm) UpdateInstall();
+    else if (in.row == "check" && in.confirm) UpdateCheck();
+    else if (in.row == "checkstart" && in.delta) SaveMainIni(L"update", L"check", ReadMainIni(L"update", L"check", 1) ? 0 : 1);
+    else if (in.row == "boot" && in.delta) SaveMainIni(L"boot", L"offline", ReadMainIni(L"boot", L"offline", 1) ? 0 : 1);
+    else if (in.row == "name" && in.typed) {
+        std::snprintf(g_choices.name, sizeof(g_choices.name), "%s", in.text.c_str());
+        SaveChoices();
+    }
+    else if (in.row == "delay" && in.delta) {
+        // Auto, 1, ... 8, around.
+        const int n = kMaxDelaySetting + 1;
+        const uint8_t next = static_cast<uint8_t>(((NetOptions().delaySetting + in.delta) % n + n) % n);
+        NetOptions().delaySetting = next; // shown at once; saved on the game thread
+        Act([next] {
+            NetOptions().delaySetting = next;
+            if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, NetOptions(), NetOptions().stageCode);
+            Log("overlay: input delay setting %s", next ? std::to_string(next).c_str() : "auto");
+        });
+    }
+    else if (in.row == "fps" && in.delta) {
+        g_choices.showFps = !g_choices.showFps;
+        SaveChoices();
+    }
+    else if (in.row == "reports" && in.delta) {
+        g_choices.uploadReports = !g_choices.uploadReports;
+        SaveChoices();
+    }
+    else if (in.row == "server" && in.delta) {
+        const std::vector<std::string> servers = ServerChoices();
+        const auto at = std::find(servers.begin(), servers.end(), NetOptions().server);
+        const int i = at == servers.end() ? 0 : static_cast<int>(at - servers.begin());
+        const int n = static_cast<int>(servers.size());
+        const std::string next = servers[((i + in.delta) % n + n) % n];
+        if (next != NetOptions().server) {
+            UseServer(next);
+            RoomsClose(); // the hub opens its connection again, to the new server
+        }
+    }
+    else if (in.row == "folder" && in.confirm) OpenDataFolder();
+    else if (in.row == "pack" && in.confirm) {
+        std::string error;
+        const std::wstring zip = PackLogsToShare(&error);
+        if (zip.empty()) g_packResult = "Could not pack the logs: " + error;
+        else {
+            std::string name;
+            for (wchar_t ch : zip.substr(zip.find_last_of(L'\\') + 1)) name += ch < 128 ? static_cast<char>(ch) : '_';
+            g_packResult = "Packed " + name;
+            OpenDataFolder(zip);
+        }
+    }
+}
+
+// The hub's live parts, and what its choices do.
+std::mutex g_favoritesMutex;
+ProfileFavorites g_favorites; // read at the title's warm up
+
+void DrawHubFrame(bool takeInput)
+{
+    NetplayOptions& o = NetOptions();
+    if (!RoomsOpened()) {
+        RoomsOpen(o.server, LocalPlayerName(), o.server == kDefaultServer ? kDefaultServerAlsoPort : o.serverAlsoPort, o.keeperKey);
+    }
+    const RoomsView rooms = RoomsSnapshot();
+    HubLive live;
+    live.player = LocalPlayerName();
+    live.server = o.server == kDefaultServer ? "Public server" : o.server;
+    using S = RoomsView::State;
+    live.serverState = rooms.state == S::Off ? 0 : rooms.state == S::Connecting ? 1 : rooms.state == S::Failed ? 3 : 2;
+    live.version = g_build;
+    if (rooms.state == S::Failed) live.roomsInfo = "Cannot reach the rooms server";
+    else if (rooms.state == S::NoLobby || ((rooms.state == S::Lobby || rooms.state == S::Room) && !rooms.keeper))
+        live.roomsInfo = "Custom rooms are offline right now";
+    else if (rooms.state == S::Lobby && !rooms.publicRooms.empty())
+        live.roomsInfo = std::to_string(rooms.publicRooms.size()) + (rooms.publicRooms.size() == 1 ? " public room" : " public rooms") +
+                         " Â· browse, create, or join with a code";
+    else live.roomsInfo = "Browse, create, or join with a code";
+    {
+        std::lock_guard lock(g_favoritesMutex);
+        live.offlineChara = g_favorites.chara.empty() ? "RYU" : g_favorites.chara;
+        live.offlineStage = g_favorites.stage;
+    }
+    RoomsSetCharacter(live.offlineChara);
+    live.roomsChara = "CNL";
+    live.roomsStage = "CHN";
+    if (live.offlineStage.empty() && !g_tables.stages.empty()) live.offlineStage = g_tables.stages.front();
+    static bool warmed = false;
+    if (!warmed) {
+        warmed = true;
+        WarmHubTextures(live);
+    }
+    const HubFonts fonts{g_fontHuge, g_fontBig, g_fontBody};
+    if (SettingsScreenOpen()) {
+        SettingsInput in;
+        DrawSettingsScreen(fonts, g_build.rfind("SFVR ", 0) == 0 ? g_build.substr(5) : g_build, SettingsRows(), takeInput, &in);
+        if (!in.row.empty()) ApplySetting(in);
+        if (in.back) CloseSettingsScreen();
+        return;
+    }
+    // In a room: its screen (leaving comes back to the custom rooms screen).
+    static std::string roomShown;
+    if (rooms.state == S::Room) {
+        if (roomShown != rooms.room) {
+            roomShown = rooms.room;
+            ResetRoomScreen();
+            OpenRoomsScreen();
+        }
+        RoomScreenInput in;
+        DrawRoomScreen(fonts, rooms, takeInput, &in);
+        if (!in.chat.empty() && !RoomsChat(in.chat)) AddToast("Slow down: one message a second", ImVec4(1, 0.8f, 0.4f, 1), 2);
+        if (in.copiedCode) AddToast("Room code copied", ImVec4(1, 1, 1, 1), 2);
+        if (in.leave) RoomsLeave();
+        return;
+    }
+    roomShown.clear();
+    if (!RoomsScreenOpen()) RoomsPeek("");
+    if (RoomsScreenOpen()) {
+        RoomsScreenInput in;
+        DrawRoomsScreen(fonts, rooms, takeInput, &in);
+        RoomsPeek(in.focusedRoom);
+        if (in.clearNotice) RoomsClearNotice();
+        if (in.create) RoomsCreate(in.settings);
+        if (!in.join.empty()) RoomsJoin(in.join);
+        if (in.back) CloseRoomsScreen();
+        return;
+    }
+    switch (DrawHub(fonts, live, takeInput)) {
+    case HubAction::PlayOffline:
+        CloseHub();
+        RoomsClose();
+        break;
+    case HubAction::CustomRooms:
+        RoomsClearNotice();
+        OpenRoomsScreen();
+        break;
+    case HubAction::Settings:
+        OpenSettingsScreen();
+        break;
+    case HubAction::None:
+        break;
+    }
+}
+
 // On the game's menus, with the panel closed and no session: a hint at the
 // top center of how to open online play.
 bool OnMenuScreen()
@@ -3090,8 +3451,8 @@ void DrawMenuHint()
 {
     const ImVec2 screen = ImGui::GetIO().DisplaySize;
     ImDrawList* d = ImGui::GetBackgroundDrawList();
-    const char* title = "ONLINE PLAY";
-    const char* keys = "F1   or   Back + Start";
+    const char* title = "SFVR";
+    const char* keys = "Hold Start: the hub      F1: the panel";
     const float gap = 14 * g_uiScale, pad = 40 * g_uiScale;
     const ImVec2 titleSize = g_fontHeading->CalcTextSizeA(g_fontHeading->LegacySize, FLT_MAX, 0, title);
     const ImVec2 keysSize = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, 0, keys);
@@ -3212,6 +3573,8 @@ void Draw(IDXGISwapChain* swapChain)
             ProfileFavorites favorites;
             ReadProfileFavorites(&favorites);
             WarmBootTextures(data, favorites.chara, favorites.stage);
+            std::lock_guard lock(g_favoritesMutex);
+            g_favorites = favorites;
         });
     }
     static bool warmed = false;
@@ -3221,22 +3584,25 @@ void Draw(IDXGISwapChain* swapChain)
         SetSelectData(PreviewSelectData());
         WarmSelectTextures();
     }
-    // Reaching a session's lobby sets this player's input delay to the
-    // suggestion for the ping between them (once a session; it can be
-    // changed from there). A session a command started (tests) keeps the
-    // delay its commands set.
+    // Reaching a session's lobby sets this player's input delay to their
+    // setting (SFVR settings), with Auto the suggestion for the ping between
+    // them (once a session; it can be changed from there). A session a
+    // command started (tests) keeps the delay its commands set.
     static bool delaySet = false;
     if (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) {
         delaySet = false;
     }
-    else if (!delaySet && phase == NetView::Phase::Lobby && view.SuggestedDelay() >= 0 && g_choices.initialised &&
+    else if (!delaySet && phase == NetView::Phase::Lobby && PreferredDelay(view) >= 0 && g_choices.initialised &&
              !view.spectator && !view.scripted) {
         delaySet = true;
-        const int delay = view.SuggestedDelay();
+        const int delay = PreferredDelay(view);
         g_choices.delay = delay;
         Act([delay] { NetSetDelay(static_cast<uint8_t>(delay)); });
-        Log("overlay: input delay %d, suggested for a %u ms ping, %u ms jitter (%zu heartbeats)", delay, view.link.pingMs,
-            view.link.jitterMs, view.link.samples);
+        if (NetOptions().delaySetting) Log("overlay: input delay %d, the player's setting", delay);
+        else {
+            Log("overlay: input delay %d, suggested for a %u ms ping, %u ms jitter (%zu heartbeats)", delay, view.link.pingMs,
+                view.link.jitterMs, view.link.samples);
+        }
     }
     // After a match, over its results screen (the vote, then character
     // select's lobby): both sides' windows; they take the pads while this
@@ -3268,7 +3634,7 @@ void Draw(IDXGISwapChain* swapChain)
     }
     const bool visible = g_visible;
     const bool session = phase != NetView::Phase::Idle;
-    io.MouseDrawCursor = visible || g_voting || g_selectLive || SelectPreviewOpen(); // the game hides the system cursor
+    io.MouseDrawCursor = visible || g_voting || g_selectLive || SelectPreviewOpen() || HubOpen(); // the game hides the system cursor
     // Fonts for the game's resolution (1.0 at 720 lines): again when it
     // changed (last frame's size; the backend makes the new atlas). Glyphs a
     // name needs are made as it is drawn (ImGui 1.92).
@@ -3354,6 +3720,21 @@ void Draw(IDXGISwapChain* swapChain)
             ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, static_cast<int>(black * 255)));
         }
     }
+    // The SFVR hub over the game's menus: after the title, and when Start is
+    // held there. It goes when a session starts or a battle loads; Play
+    // Offline closes it (and the hub's presence connection with it).
+    const bool atMenus = OnMenuScreen() && (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) && !preview;
+    g_hubAllowed = atMenus && g_tables.loaded;
+    static bool hubBooted = false;
+    if (!hubBooted && atMenus && g_tables.loaded) {
+        hubBooted = true;
+        OpenHub();
+    }
+    if (HubOpen() && !atMenus) {
+        CloseHub();
+        CloseRoomsScreen();
+    }
+    if (HubOpen()) DrawHubFrame(!g_visible);
     if (preview) {
         DrawSelectPreview(SelectFonts{g_fontBig, g_fontHuge, g_fontBody});
     }
@@ -3371,7 +3752,7 @@ void Draw(IDXGISwapChain* swapChain)
     if (session && view.desyncFrame >= 0 && (phase == NetView::Phase::Running || phase == NetView::Phase::PostMatch)) {
         DrawDesyncBanner(view);
     }
-    const bool hint = !visible && !preview && (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) && OnMenuScreen();
+    const bool hint = !visible && !preview && !HubOpen() && (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) && OnMenuScreen();
     if (hint) DrawMenuHint();
     DrawPreviews();
     DrawToasts(liveAlpha > 0);
@@ -3382,7 +3763,7 @@ void Draw(IDXGISwapChain* swapChain)
         std::lock_guard lock(g_textureMutex);
         texture = g_texture != nullptr;
     }
-    const bool draw = visible || preview || liveAlpha > 0 || session || hint || !g_toasts.empty() || g_preview.Any() || texture;
+    const bool draw = visible || preview || liveAlpha > 0 || session || hint || HubOpen() || !g_toasts.empty() || g_preview.Any() || texture;
     if (!draw || (!g_rtv && !CreateTarget(swapChain))) {
         ImGui::EndFrame();
         return;
@@ -3648,7 +4029,7 @@ namespace {
 // The mod's screens take the input now.
 bool ScreensTakeInput()
 {
-    return g_visible || g_voting || g_watchHold || g_selectLive || SelectPreviewOpen();
+    return g_visible || g_voting || g_watchHold || g_selectLive || SelectPreviewOpen() || HubOpen();
 }
 
 // Any pad button, key or mouse button down: the pads as the XInput hook last
