@@ -264,6 +264,18 @@ void GradientQuad(ImDrawList* d, const ImVec2 (&q)[4], ImU32 top, ImU32 bottom)
     d->PrimWriteVtx(q[3], uv, bottom);
 }
 
+const TextureView* TextureSized(const std::string& path, float pixels)
+{
+    // In steps of 32 px, so a window resize asks for few new sizes.
+    const uint32_t side = std::max(32u, static_cast<uint32_t>(std::ceil(pixels / 32.0f)) * 32u);
+    const TextureView* full = Texture(path);
+    bool failed = false;
+    const TextureView* shrunk = PakTexture(path, side, g_drawing, &failed);
+    // Swapped in once its fade-in is over, so the art does not flash.
+    if (shrunk && (!full || TextureClockMs() - shrunk->readyMs >= kFadeInMs)) return shrunk;
+    return full;
+}
+
 ImTextureID Id(const TextureView* t) { return reinterpret_cast<ImTextureID>(t->srv); }
 
 // A texture's tint while it fades in after arriving.

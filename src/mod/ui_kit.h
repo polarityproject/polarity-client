@@ -21,6 +21,11 @@ namespace sfv::mod::ui {
 // from the paks on the mod's own threads (or loaded on the game thread when
 // the paks cannot give it); null until it is there. Drawing asks every frame.
 const TextureView* Texture(const std::string& path);
+// The same texture shrunk (an area average, from the paks) near the size it is
+// drawn at, `pixels` wide: the UI samples without mips (ImGui's DX11 sampler
+// stops at the top level), so a big image drawn small skips pixels and looks
+// grainy. The full size stands in until the small one has arrived.
+const TextureView* TextureSized(const std::string& path, float pixels);
 extern bool g_drawing; // false while asking ahead (not drawing): those load after what is drawn
 std::string CharaTex(const std::string& code, const char* name); // "/Game/Chara/<code>/Hud/<name>"
 std::string StageTex(const std::string& code, const char* name); // "/Game/Stage/<code>/UI/<name>"

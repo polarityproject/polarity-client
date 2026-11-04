@@ -110,7 +110,7 @@ void Seat(ImDrawList* d, const HubFonts& f, float x, float y, const RoomMember* 
     d->AddRectFilledMultiColor(a, b, Rgba(26, 31, 38, 230), Rgba(26, 31, 38, 230), Rgba(14, 17, 21, 230), Rgba(14, 17, 21, 230));
     if (m) {
         const bool p2 = seat == 1;
-        if (const TextureView* art = m->chara.empty() ? nullptr : Texture(CharaTex(m->chara, "PartCharacter"))) {
+        if (const TextureView* art = m->chara.empty() ? nullptr : TextureSized(CharaTex(m->chara, "PartCharacter"), g_v.L(250))) {
             // Opaque over the face, fading only in the art's last quarter toward
             // the score (user, 2026-11-04: the earlier, longer fade hid faces).
             static const FadeStop kP1[] = {{0, 1}, {0.72f, 1}, {0.84f, 0.6f}, {0.98f, 0}, {1, 0}};
@@ -236,7 +236,7 @@ void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
         if (m.id == v.self) d->AddRectFilled(g_v.P(908, y), g_v.P(1534, y + kRowH - 1), Rgba(42, 38, 24, 160));
         // The character: head and shoulders, from the panel's edge, fading in
         // and then out under the name.
-        if (const TextureView* art = m.chara.empty() ? nullptr : Texture(CharaTex(m.chara, "PartCharacter"))) {
+        if (const TextureView* art = m.chara.empty() ? nullptr : TextureSized(CharaTex(m.chara, "PartCharacter"), g_v.L(200))) {
             // The fade stays put (x 892..1082); the art moves under it to
             // frame the face.
             static const FadeStop kRow[] = {{0, 0}, {0.06f, 0}, {0.22f, 1}, {0.38f, 1}, {0.60f, 0.5f}, {0.86f, 0}, {1, 0}};
@@ -480,7 +480,8 @@ void HandoffModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, c
     // The opponent's character, head and shoulders.
     float tx = x0 + 28;
     const RoomMember* other = Member(v, otherId);
-    if (const TextureView* art = other && !other->chara.empty() ? Texture(CharaTex(other->chara, "PartCharacter")) : nullptr) {
+    // The portrait shows 0.24 of the art's width in 48 px: the art at 200 px.
+    if (const TextureView* art = other && !other->chara.empty() ? TextureSized(CharaTex(other->chara, "PartCharacter"), g_v.L(200)) : nullptr) {
         Image(d, art, g_v.P(x0 + 26, y0 + 26), g_v.P(x0 + 74, y0 + 98), ImVec2(0.38f, 0.06f), ImVec2(0.62f, 0.42f), Rgba(255, 255, 255));
         d->AddRect(g_v.P(x0 + 26, y0 + 26), g_v.P(x0 + 74, y0 + 98), Rgba(93, 90, 82, 160), 0, 0, g_v.L(1));
         tx = x0 + 92;
