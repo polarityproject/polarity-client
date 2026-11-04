@@ -823,6 +823,7 @@ void TestUpdateInfo()
 
     CHECK(CompareVersions("0.1.0-prototype", "0.1.0") < 0 && CompareVersions("0.1.0", "0.1.1") < 0);
     CHECK(CompareVersions("0.10.0", "0.9.9") > 0 && CompareVersions("0.2", "0.2.0") == 0);
+    CHECK(CompareVersions("0.2.6.1", "0.2.6") > 0 && CompareVersions("0.2.6.1", "0.2.7") < 0);
     CHECK(CompareVersions("0.1.1-test", "0.1.0-prototype") > 0 && CompareVersions("1.0.0-a", "1.0.0-b") < 0);
 
     CHECK(ResolveUrl("https://sfvr.example/update.json", "releases/a.dll") == "https://sfvr.example/releases/a.dll");

@@ -7,6 +7,28 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.2.6.1] - 2026-11-03
+
+Fixes the game closing on the Steam Deck and other Linux installs at the
+end of a session's first match, as it saved the match's recording. Such
+crashes now send a report. Both players need 0.2.6.1.
+
+### Fixed
+
+- The game closed on the Steam Deck and other Linux (Proton) installs after
+  the first match of a session, when leaving the results screen: saving the
+  match's recording called Windows' compression, which Proton does not have,
+  and Proton ends a game that calls a missing function. Recordings (and
+  desync reports) are saved uncompressed there now.
+
+### Changed
+
+- Crash reports cover more crashes: a game that ends itself after an error
+  it caught (with who ended it and the error just before), a call to a
+  function Proton does not have (naming it), and a crash dump the game
+  wrote itself goes with the report. Such crashes counted as a normal exit,
+  so they sent nothing.
+
 ## [0.2.6] - 2026-11-03
 
 Fixes crashes on the Steam Deck and other Linux installs a few seconds
