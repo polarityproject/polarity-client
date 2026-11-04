@@ -3169,13 +3169,14 @@ void NetSetPick(bool hasPick, const PlayerSetup& pick)
 int PreferredDelay(const NetView& v)
 {
     const int fixed = g_options.delaySetting;
-    return fixed >= 1 && fixed <= kMaxDelaySetting ? fixed : v.SuggestedDelay();
+    return fixed >= 0 && fixed <= kMaxDelaySetting ? fixed : v.SuggestedDelay();
 }
 
 int PreferredDelay(unsigned pingMs)
 {
     const int fixed = g_options.delaySetting;
-    return fixed >= 1 && fixed <= kMaxDelaySetting ? fixed : core::SuggestedDelay(pingMs, core::kTypicalJitterMs);
+    if (fixed >= 0 && fixed <= kMaxDelaySetting) return fixed;
+    return pingMs ? core::SuggestedDelay(pingMs, core::kTypicalJitterMs) : 1;
 }
 
 void NetSetDelay(uint8_t frames)

@@ -1450,7 +1450,7 @@ void DrawDelaySuggestion(const NetView& v)
     const int suggested = v.SuggestedDelay();
     // Wrapped at the window's edge: the post-match side windows are narrow.
     ImGui::PushTextWrapPos(0.0f);
-    if (fixed) ImGui::TextColored(kDim, "Your setting: delay %d (SFVR settings)", fixed);
+    if (fixed >= 0) ImGui::TextColored(kDim, "Your setting: delay %d (SFVR settings)", fixed);
     else if (suggested >= 0) ImGui::TextColored(kDim, "Suggested delay %d (ping %u ms)", suggested, v.link.pingMs);
     ImGui::PopTextWrapPos();
 }
@@ -2184,7 +2184,7 @@ SelectSide SelectSideFor(const NetView& v, int i)
     s.rows[6].value = FramesText(delay);
     const int fixed = NetOptions().delaySetting;
     const int suggested = v.SuggestedDelay();
-    s.rows[6].hint = fixed ? "Your setting: " + FramesText(fixed) + " (SFVR settings). Lower reacts sooner, with more rollbacks."
+    s.rows[6].hint = fixed >= 0 ? "Your setting: " + FramesText(fixed) + " (SFVR settings). Lower reacts sooner, with more rollbacks."
                      : suggested >= 0 ? "Suggested: " + FramesText(suggested) + " for a " + std::to_string(v.link.pingMs) + " ms ping. Lower reacts sooner, with more rollbacks."
                                       : "Input delay: how many frames your inputs wait (fewer: sooner, with more rollbacks).";
     if (chara < 0) return s;
@@ -3227,15 +3227,17 @@ std::vector<SettingsRow> SettingsRows()
         SettingsRow& r = row("delay", "ONLINE", "Input delay");
         const int fixed = NetOptions().delaySetting;
         r.arrows = true;
-        r.value = fixed ? FramesText(fixed) : "Auto";
+        r.value = fixed >= 0 ? FramesText(fixed) : "Auto";
         r.kicker = "ONLINE";
-        r.title = fixed ? "Input delay: " + FramesText(fixed) : "Input delay: Auto";
-        r.lines = {fixed ? "Every match starts at " + FramesText(fixed) + " of input delay, whatever the connection."
-                         : "Auto: each match starts at the delay that suits its connection, about half the round trip in frames (1 "
-                           "to 3).",
+        r.title = fixed >= 0 ? "Input delay: " + FramesText(fixed) : "Input delay: Auto";
+        r.lines = {fixed == 0 ? "Every match starts with no input delay, as the game's own online played: each late input from "
+                                "the other player is a rollback."
+                   : fixed > 0 ? "Every match starts at " + FramesText(fixed) + " of input delay, whatever the connection."
+                               : "Auto: each match starts at the delay that suits its connection: none for nearby players, up to 3 "
+                                 "frames for far ones, so rollbacks stay at about 2 frames.",
                    "Fewer frames: your inputs show sooner, with more rollbacks. You can still change it for a match on the select "
                    "screen."};
-        r.hint = "Left and right: Auto, or 1 to 8 frames every match.";
+        r.hint = "Left and right: Auto, or 0 to 8 frames every match.";
     }
     {
         SettingsRow& r = row("server", "ONLINE", "Server");
@@ -3308,14 +3310,14 @@ void ApplySetting(const SettingsInput& in)
         SaveChoices();
     }
     else if (in.row == "delay" && in.delta) {
-        // Auto, 1, ... 8, around.
-        const int n = kMaxDelaySetting + 1;
-        const uint8_t next = static_cast<uint8_t>(((NetOptions().delaySetting + in.delta) % n + n) % n);
+        // Auto, 0, 1, ... 8, around.
+        const int n = kMaxDelaySetting + 2;
+        const int8_t next = static_cast<int8_t>(((NetOptions().delaySetting + 1 + in.delta) % n + n) % n - 1);
         NetOptions().delaySetting = next; // shown at once; saved on the game thread
         Act([next] {
             NetOptions().delaySetting = next;
             if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, NetOptions(), NetOptions().stageCode);
-            Log("overlay: input delay setting %s", next ? std::to_string(next).c_str() : "auto");
+            Log("overlay: input delay setting %s", next >= 0 ? std::to_string(next).c_str() : "auto");
         });
     }
     else if (in.row == "fps" && in.delta) {
@@ -3699,7 +3701,7 @@ void Draw(IDXGISwapChain* swapChain)
         const int delay = PreferredDelay(view);
         g_choices.delay = delay;
         Act([delay] { NetSetDelay(static_cast<uint8_t>(delay)); });
-        if (NetOptions().delaySetting) Log("overlay: input delay %d, the player's setting", delay);
+        if (NetOptions().delaySetting >= 0) Log("overlay: input delay %d, the player's setting", delay);
         else {
             Log("overlay: input delay %d, suggested for a %u ms ping, %u ms jitter (%zu heartbeats)", delay, view.link.pingMs,
                 view.link.jitterMs, view.link.samples);

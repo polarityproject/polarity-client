@@ -101,7 +101,17 @@ void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPr
     const wchar_t* kAbsent = L"\x01";
     auto has = [&](const wchar_t* key) { return !onlyPresent || ReadString(path, L"netplay", key, kAbsent) != kAbsent; };
     if (has(L"input_delay")) n.inputDelay = static_cast<uint8_t>(ReadInt(path, L"netplay", L"input_delay", 2));
-    if (has(L"delay_setting")) n.delaySetting = static_cast<uint8_t>(std::clamp(ReadInt(path, L"netplay", L"delay_setting", 0), 0, kMaxDelaySetting));
+    // fixed_delay: "auto" or 0-8 frames. Before it, delay_setting had 0 for
+    // Auto and 1-8; those carry over.
+    if (has(L"fixed_delay")) {
+        const std::wstring v = ReadString(path, L"netplay", L"fixed_delay", L"auto");
+        const bool frames = !v.empty() && v[0] >= L'0' && v[0] <= L'9';
+        n.delaySetting = frames ? static_cast<int8_t>(std::clamp(_wtoi(v.c_str()), 0, kMaxDelaySetting)) : kDelayAuto;
+    }
+    else if (has(L"delay_setting")) {
+        const int old = ReadInt(path, L"netplay", L"delay_setting", 0);
+        n.delaySetting = old >= 1 && old <= kMaxDelaySetting ? static_cast<int8_t>(old) : kDelayAuto;
+    }
     if (has(L"character")) {
         const std::wstring chara = ReadString(path, L"netplay", L"character", L"");
         n.hasPick = !chara.empty();
@@ -177,7 +187,7 @@ void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const
     }
     Write(path, L"stage", stage);
     Write(path, L"input_delay", std::to_string(n.inputDelay));
-    Write(path, L"delay_setting", std::to_string(n.delaySetting));
+    Write(path, L"fixed_delay", n.delaySetting >= 0 ? std::to_string(n.delaySetting) : std::string("auto"));
     // ASCII as it is; anything else as hex in name_utf8 (see ReadNetplayChoices).
     const bool ascii = std::all_of(n.name.begin(), n.name.end(), [](char ch) { return static_cast<unsigned char>(ch) < 0x80; });
     std::string hex;
