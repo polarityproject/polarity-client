@@ -7,6 +7,12 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-11-03
+
+Fixes crashes on the Steam Deck and other Linux installs a few seconds
+after hosting or joining a session, while the select screen loaded. Both
+players need 0.2.6.
+
 ### Fixed
 
 - Crashes on the Steam Deck and other Linux (Proton) installs a few seconds
