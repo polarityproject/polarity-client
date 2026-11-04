@@ -99,27 +99,41 @@ void Panel(ImDrawList* d, float x0, float y0, float x1, float y1)
     d->AddLine(g_v.P(x0, y1), g_v.P(x1, y1), kLine, g_v.L(1));
 }
 
-// A seat: the player's character (art from the right) and name, or "Open
-// seat" ("Sit here as P1" when it is the one A would take).
+// A seat: the player's character and name, or "Open seat" ("Sit here as P1"
+// when it is the one A would take). The art faces right: P1's sits at the
+// card's left as drawn and P2's at its right mirrored, so both look at the
+// score, each fading out toward it; the text is on the side toward the score
+// (mock-up Room2, 2026-11-04).
 void Seat(ImDrawList* d, const HubFonts& f, float x, float y, const RoomMember* m, bool ready, bool sitHere, int seat, bool dim)
 {
     const ImVec2 a = g_v.P(x, y), b = g_v.P(x + 330, y + 120);
     d->AddRectFilledMultiColor(a, b, Rgba(26, 31, 38, 230), Rgba(26, 31, 38, 230), Rgba(14, 17, 21, 230), Rgba(14, 17, 21, 230));
     if (m) {
+        const bool p2 = seat == 1;
         if (const TextureView* art = m->chara.empty() ? nullptr : Texture(CharaTex(m->chara, "PartCharacter"))) {
+            // Opaque over the face, fading only in the art's last quarter toward
+            // the score (user, 2026-11-04: the earlier, longer fade hid faces).
+            static const FadeStop kP1[] = {{0, 1}, {0.72f, 1}, {0.84f, 0.6f}, {0.98f, 0}, {1, 0}};
+            static const FadeStop kP2[] = {{0, 0}, {0.02f, 0}, {0.16f, 0.6f}, {0.28f, 1}, {1, 1}};
+            const float ax = p2 ? x + 110 : x - 30; // the whole 250 px art, 30 px past the card's outer edge
             d->PushClipRect(a, b, true);
-            // The upper body: the 800 px art's top 300 px, from its middle.
-            Image(d, art, g_v.P(x + 130, y - 10), g_v.P(x + 330, y + 190), ImVec2(0.2f, 0.06f), ImVec2(0.8f, 0.66f), Dim(Rgba(255, 255, 255), dim));
-            d->AddRectFilledMultiColor(a, g_v.P(x + 230, y + 120), Rgba(14, 17, 21, 240), Rgba(14, 17, 21, 0), Rgba(14, 17, 21, 0),
-                                       Rgba(14, 17, 21, 240));
+            ImageFadeX(d, art, g_v.P(ax, y - 18), g_v.P(ax + 250, y + 232), ImVec2(0, 0), ImVec2(1, 1), p2 ? kP2 : kP1, 5, p2,
+                       Dim(Rgba(255, 255, 255), dim));
             d->PopClipRect();
         }
+        const float tx = p2 ? x + 16 : x + 314, align = p2 ? 0.0f : 1.0f;
         const auto name = g_names.find(m->chara);
-        if (name != g_names.end()) Text(d, f.body, g_v.L(14), g_v.P(x + 16, y + 64), Dim(kSoft, dim), name->second);
+        if (name != g_names.end()) Text(d, f.body, g_v.L(14), g_v.P(tx, y + 64), Dim(kSoft, dim), name->second, align, true);
         std::string who = Upper(m->name);
-        while (who.size() > 1 && TextW(f.strong, 21, who) > 200) who.pop_back();
-        Text(d, f.strong, g_v.L(21), g_v.P(x + 16, y + 84), Dim(kCream, dim), who);
-        if (ready) Text(d, f.strong, g_v.L(13), g_v.P(x + 16, y + 12), Dim(kGreen, dim), "READY");
+        if (TextW(f.strong, 21, who) > 164) {
+            while (who.size() > 1 && TextW(f.strong, 21, who + "...") > 164) {
+                who.pop_back();
+                while (!who.empty() && (static_cast<unsigned char>(who.back()) & 0xC0) == 0x80) who.pop_back(); // whole characters
+            }
+            who += "...";
+        }
+        Text(d, f.strong, g_v.L(21), g_v.P(tx, y + 84), Dim(kCream, dim), who, align, true);
+        if (ready) Text(d, f.strong, g_v.L(13), g_v.P(tx, y + 12), Dim(kGreen, dim), "READY", align, true);
         d->AddRect(a, b, Rgba(93, 90, 82, 160), 0, 0, g_v.L(1));
         return;
     }
@@ -177,58 +191,114 @@ std::vector<RoomMember> PlayerOrder(const RoomsView& v)
     return list;
 }
 
+// The player list: eight 50 px rows, each with the player's character fading
+// in from the left under the name (mock-up Room2: SF6's lists), then the
+// chat under it.
+
+// Where each character's eyes are in its PartCharacter art drawn 200 px
+// wide, marked by hand (2026-11-04), then tuned per character from the
+// in-game sheet (user): a row moves the art so this point lands at kRowFace,
+// clear of the name. Big characters' faces sit far right in
+// their art (Zangief's at 126, under the name without this).
+struct FacePoint {
+    const char* code;
+    int8_t x, y;
+};
+constexpr FacePoint kFaces[] = {
+    {"ALX", 75, 68}, {"BLR", 83, 51}, {"BRD", 81, 49}, {"BSN", 86, 62}, {"CMY", 83, 50}, {"CNL", 98, 64}, {"DSM", 75, 52},
+    {"ELV", 90, 74}, {"FAN", 84, 52}, {"GUL", 94, 52}, {"IBK", 98, 42}, {"JRI", 110, 65}, {"KEN", 80, 48}, {"KRN", 69, 53},
+    {"LAR", 85, 51}, {"NCL", 101, 53}, {"NSH", 73, 58}, {"RMK", 102, 53}, {"RSD", 78, 53}, {"RYU", 87, 54}, {"URN", 79, 44},
+    {"VEG", 91, 44}, {"Z20", 88, 49}, {"Z21", 102, 64}, {"Z22", 85, 44}, {"Z23", 89, 46}, {"Z24", 107, 46}, {"Z25", 76, 66},
+    {"Z26", 83, 54}, {"Z27", 110, 56}, {"Z28", 95, 52}, {"Z29", 87, 50}, {"Z30", 84, 52}, {"Z31", 86, 50}, {"Z32", 108, 50},
+    {"Z33", 90, 52}, {"Z34", 85, 53}, {"Z35", 82, 58}, {"Z36", 104, 46}, {"Z37", 116, 53}, {"Z38", 88, 53}, {"Z39", 100, 53},
+    {"Z40", 75, 54}, {"Z41", 85, 49}, {"Z42", 99, 54}, {"ZGF", 126, 64},
+};
+constexpr int kRowFaceX = 80, kRowFaceY = 52;
+
+ImVec2 RowArtShift(const std::string& code)
+{
+    for (const FacePoint& p : kFaces) {
+        if (code == p.code) return ImVec2(static_cast<float>(kRowFaceX - p.x), static_cast<float>(kRowFaceY - p.y));
+    }
+    return ImVec2(0, 0);
+}
+constexpr float kRowsTop = 112, kRowH = 50, kPlayersBottom = 526, kChatTop = 538;
+
 void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
 {
-    Panel(d, 892, 80, 1552, 493);
+    Panel(d, 892, 80, 1552, kPlayersBottom);
     Text(d, f.body, g_v.L(14), g_v.P(910, 94), kMuted, "PLAYERS \xC2\xB7 " + std::to_string(v.members.size()) + " / 16");
     const std::vector<RoomMember> list = PlayerOrder(v);
     const int first = std::clamp(g.player - kPlayersInView + 1, 0, std::max(0, static_cast<int>(list.size()) - kPlayersInView));
     for (int i = first; i < static_cast<int>(list.size()) && i < first + kPlayersInView; i++) {
         const RoomMember& m = list[i];
-        const float y = 115 + (i - first) * 45.0f;
-        if (m.id == v.self) d->AddRectFilled(g_v.P(908, y), g_v.P(1534, y + 41), Rgba(42, 38, 24, 160));
-        if (g.onPlayers && i == g.player) d->AddRect(g_v.P(908, y), g_v.P(1534, y + 41), kRing, 0, 0, g_v.L(2));
-        d->AddLine(g_v.P(908, y + 43), g_v.P(1534, y + 43), Rgba(255, 255, 255, 14), g_v.L(1));
-        DrawFace(d, m.chara, 912, y + 5, 22, 30);
-        float x = 952;
+        const float y = kRowsTop + (i - first) * kRowH, ty = y + 15;
+        if (m.id == v.self) d->AddRectFilled(g_v.P(908, y), g_v.P(1534, y + kRowH - 1), Rgba(42, 38, 24, 160));
+        // The character: head and shoulders, from the panel's edge, fading in
+        // and then out under the name.
+        if (const TextureView* art = m.chara.empty() ? nullptr : Texture(CharaTex(m.chara, "PartCharacter"))) {
+            // The fade stays put (x 892..1082); the art moves under it to
+            // frame the face.
+            static const FadeStop kRow[] = {{0, 0}, {0.06f, 0}, {0.22f, 1}, {0.38f, 1}, {0.60f, 0.5f}, {0.86f, 0}, {1, 0}};
+            const ImVec2 shift = RowArtShift(m.chara);
+            d->PushClipRect(g_v.P(893, y), g_v.P(1534, y + kRowH - 1), true);
+            ImageFadeX(d, art, g_v.P(872 + shift.x, y - 28 + shift.y), g_v.P(1072 + shift.x, y + 172 + shift.y), ImVec2(0, 0), ImVec2(1, 1),
+                       kRow, 7, false, IM_COL32_WHITE, g_v.P(892, 0).x, g_v.P(1082, 0).x);
+            d->PopClipRect();
+        }
+        if (g.onPlayers && i == g.player) d->AddRect(g_v.P(908, y), g_v.P(1534, y + kRowH - 1), kRing, 0, 0, g_v.L(2));
+        d->AddLine(g_v.P(908, y + kRowH - 1), g_v.P(1534, y + kRowH - 1), Rgba(255, 255, 255, 14), g_v.L(1));
+        float x = 994;
         if (m.owner) {
-            DrawCrown(d, x, y + 26, 0.85f, kGold);
+            DrawCrown(d, x, ty + 15, 0.85f, kGold);
             x += 20;
         }
-        Text(d, f.strong, g_v.L(16), g_v.P(x, y + 11), kCream, Upper(m.name));
-        x += TextW(f.strong, 16, Upper(m.name)) + 6;
-        if (m.id == v.self) Text(d, f.body, g_v.L(16), g_v.P(x, y + 11), kMuted, "(you)");
-        if (g.muted.count(m.id)) Text(d, f.body, g_v.L(14), g_v.P(x, y + 12), kMuted, "muted");
+        std::string who = Upper(m.name);
+        const float room = 1162 - x - (m.id == v.self ? TextW(f.body, 16, "(you)") + 6 : 0);
+        if (TextW(f.strong, 16, who) > room) {
+            while (who.size() > 1 && TextW(f.strong, 16, who + "...") > room) {
+                who.pop_back();
+                while (!who.empty() && (static_cast<unsigned char>(who.back()) & 0xC0) == 0x80) who.pop_back(); // whole characters
+            }
+            who += "...";
+        }
+        Text(d, f.strong, g_v.L(16), g_v.P(x, ty), kCream, who, 0, true);
+        x += TextW(f.strong, 16, who) + 6;
+        if (m.id == v.self) Text(d, f.body, g_v.L(16), g_v.P(x, ty), kMuted, "(you)", 0, true);
+        if (g.muted.count(m.id)) Text(d, f.body, g_v.L(14), g_v.P(x, ty + 1), kMuted, "muted", 0, true);
         const std::string place = RoomsPlace(v, m.id);
-        Text(d, f.body, g_v.L(16), g_v.P(1128, y + 11), place == "Idle" ? kSoft : kGreen, place);
+        Text(d, f.body, g_v.L(16), g_v.P(1170, ty), place == "Idle" ? kSoft : kGreen, place);
         // The round trip to them (green under 60 ms, gold under 120, red
         // after), with a cloud when it goes through a relay.
         if (m.pingMs >= 0) {
             const ImU32 col = m.pingMs < 60 ? kGreen : m.pingMs < 120 ? kGold : kRed;
             const std::string ms = std::to_string(m.pingMs) + " ms";
-            Text(d, f.strong, g_v.L(16), g_v.P(1418, y + 11), col, ms, 1);
-            if (m.relayed) IconCloud(d, g_v.P(1418 - TextW(f.strong, 16, ms) - 16, y + 21), g_v.L(1.6f), col);
+            Text(d, f.strong, g_v.L(16), g_v.P(1418, ty), col, ms, 1);
+            if (m.relayed) IconCloud(d, g_v.P(1418 - TextW(f.strong, 16, ms) - 16, ty + 10), g_v.L(1.6f), col);
         }
         if (m.link) {
             const char* what = m.link == 1 ? "Wired" : "Wi-Fi";
-            Text(d, f.body, g_v.L(15), g_v.P(1512, y + 12), kSoft, what, 1);
-            IconLinkType(d, g_v.P(1512 - TextW(f.body, 15, what) - 14, y + 21), g_v.L(1.4f), m.link, kSoft);
+            Text(d, f.body, g_v.L(15), g_v.P(1512, ty + 1), kSoft, what, 1);
+            IconLinkType(d, g_v.P(1512 - TextW(f.body, 15, what) - 14, ty + 10), g_v.L(1.4f), m.link, kSoft);
         }
     }
     if (static_cast<int>(list.size()) > kPlayersInView) {
-        Text(d, f.body, g_v.L(14), g_v.P(910, 476), kMuted, std::to_string(list.size()) + " players: RB, then up and down, to see them all");
+        // A thin scrollbar (the rest: RB, then up and down).
+        const float top = kRowsTop + 4, h = kPlayersInView * kRowH - 8, n = static_cast<float>(list.size());
+        d->AddRectFilled(g_v.P(1541, top), g_v.P(1546, top + h), Rgba(255, 255, 255, 20), g_v.L(3));
+        d->AddRectFilled(g_v.P(1541, top + h * first / n), g_v.P(1546, top + h * (first + kPlayersInView) / n), Rgba(233, 196, 106, 190), g_v.L(3));
     }
 }
 
 void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox, bool* clickedSend)
 {
-    Panel(d, 892, 507, 1552, 832);
-    Text(d, f.body, g_v.L(14), g_v.P(910, 518), kMuted, "ROOM CHAT");
+    Panel(d, 892, kChatTop, 1552, 832);
+    Text(d, f.body, g_v.L(14), g_v.P(910, kChatTop + 11), kMuted, "ROOM CHAT");
     // The newest at the bottom, above the box; older lines go up and out.
     const float wrap = 620, size = 16;
     float bottom = 773;
-    d->PushClipRect(g_v.P(900, 540), g_v.P(1544, 775), true);
-    for (int i = static_cast<int>(v.chat.size()) - 1; i >= 0 && bottom > 540; i--) {
+    d->PushClipRect(g_v.P(900, kChatTop + 32), g_v.P(1544, 775), true);
+    for (int i = static_cast<int>(v.chat.size()) - 1; i >= 0 && bottom > kChatTop + 32; i--) {
         const ChatLine& line = v.chat[i];
         if (line.from && g.muted.count(line.from)) continue;
         // A player's line: the name in bold, the message after it, its first

@@ -280,6 +280,67 @@ void Image(ImDrawList* d, const TextureView* t, ImVec2 a, ImVec2 b, ImVec2 uv0, 
     if (t) d->AddImage(Id(t), a, b, uv0, uv1, FadeIn(t, tint));
 }
 
+void ImageFadeX(ImDrawList* d, const TextureView* t, ImVec2 a, ImVec2 b, ImVec2 uv0, ImVec2 uv1, const FadeStop* stops, int count,
+                bool mirror, ImU32 tint, float fadeA, float fadeB)
+{
+    if (!t || count < 2 || b.x <= a.x) return;
+    const ImU32 col = FadeIn(t, tint);
+    const float base = static_cast<float>(col >> IM_COL32_A_SHIFT & 0xFF);
+    if (base <= 0) return;
+    auto at = [&](float alpha) {
+        const uint32_t v = static_cast<uint32_t>(std::clamp(alpha, 0.0f, 1.0f) * base + 0.5f);
+        return (col & ~IM_COL32_A_MASK) | v << IM_COL32_A_SHIFT;
+    };
+    // The fade's stretch of the screen, and its alpha at a screen x.
+    const float fa = fadeB > fadeA ? fadeA : a.x, fb = fadeB > fadeA ? fadeB : b.x;
+    auto alphaAt = [&](float x) {
+        const float f = (x - fa) / (fb - fa);
+        if (f <= stops[0].x) return stops[0].alpha;
+        for (int i = 1; i < count; i++) {
+            if (f <= stops[i].x) {
+                const float span = stops[i].x - stops[i - 1].x;
+                return span > 0 ? stops[i - 1].alpha + (stops[i].alpha - stops[i - 1].alpha) * (f - stops[i - 1].x) / span : stops[i].alpha;
+            }
+        }
+        return stops[count - 1].alpha;
+    };
+    // The image's x at a screen x, as a texture coordinate.
+    auto u = [&](float x) {
+        const float f = (x - a.x) / (b.x - a.x);
+        return mirror ? uv1.x - (uv1.x - uv0.x) * f : uv0.x + (uv1.x - uv0.x) * f;
+    };
+    // A strip from each stop to the next, within the image.
+    float xs[34];
+    int n = 0;
+    xs[n++] = a.x;
+    for (int i = 0; i < count && n < 33; i++) {
+        const float x = fa + (fb - fa) * stops[i].x;
+        if (x > a.x && x < b.x) xs[n++] = x;
+    }
+    xs[n++] = b.x;
+    std::sort(xs, xs + n);
+    d->PushTexture(ImTextureRef(Id(t)));
+    for (int i = 0; i + 1 < n; i++) {
+        const float x0 = xs[i], x1 = xs[i + 1];
+        const float a0 = alphaAt(x0), a1 = alphaAt(x1);
+        if (x1 <= x0 || (a0 <= 0 && a1 <= 0)) continue;
+        const ImU32 c0 = at(a0), c1 = at(a1);
+        d->PrimReserve(6, 4);
+        const ImDrawIdx idx = static_cast<ImDrawIdx>(d->_VtxCurrentIdx);
+        d->PrimWriteIdx(idx);
+        d->PrimWriteIdx(static_cast<ImDrawIdx>(idx + 1));
+        d->PrimWriteIdx(static_cast<ImDrawIdx>(idx + 2));
+        d->PrimWriteIdx(idx);
+        d->PrimWriteIdx(static_cast<ImDrawIdx>(idx + 2));
+        d->PrimWriteIdx(static_cast<ImDrawIdx>(idx + 3));
+        d->PrimWriteVtx(ImVec2(x0, a.y), ImVec2(u(x0), uv0.y), c0);
+        d->PrimWriteVtx(ImVec2(x1, a.y), ImVec2(u(x1), uv0.y), c1);
+        d->PrimWriteVtx(ImVec2(x1, b.y), ImVec2(u(x1), uv1.y), c1);
+        d->PrimWriteVtx(ImVec2(x0, b.y), ImVec2(u(x0), uv1.y), c0);
+    }
+    d->PopTexture();
+}
+
 // The timer's infinity (a lemniscate; the fonts may not have the glyph).
 void Infinity(ImDrawList* d, ImVec2 c, float w, ImU32 col)
 {

@@ -11,6 +11,7 @@
 //   create <tables> <public 0|1> <preset>   join <code>   joinpublic   leave
 //   sit <table> <seat 0|1|-1>   stand   queue <table>   unqueue   ready <table>   decline <table>
 //   rules <table> <rules...>    kick <member id>   kickname <name>   chat <text>   flood <n>   status   wait <ms>   quit
+//   chara <code> (the character others see beside the name, member data "ch")
 // Logs one line per happening on stdout ("bot Bot1: ...").
 
 #include "core/keeper_protocol.h"
@@ -119,6 +120,12 @@ struct Bot {
             s.isPublic = pub != 0;
             Ask(RoomRequest(++seq, s));
             Log("asks for a room");
+        }
+        else if (cmd == "chara") {
+            std::string code;
+            ss >> code;
+            weyve_set_member_data(c, "ch", code.c_str());
+            Log("plays " + code);
         }
         else if (cmd == "join") {
             std::string code;

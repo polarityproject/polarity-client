@@ -68,6 +68,16 @@ ImTextureID Id(const TextureView* t);
 ImU32 FadeIn(const TextureView* t, ImU32 tint = IM_COL32_WHITE); // a texture fades in after arriving
 void Image(ImDrawList* d, const TextureView* t, ImVec2 a, ImVec2 b, ImVec2 uv0 = ImVec2(0, 0), ImVec2 uv1 = ImVec2(1, 1),
            ImU32 tint = IM_COL32_WHITE);
+// An image whose alpha runs across it, left to right on the screen, through
+// `stops` ({x 0..1, alpha 0..1}, in order, from 0 to 1): the fades the
+// mock-ups draw with CSS masks. The stops span the image (a..b), or with
+// fadeA < fadeB that stretch of the screen, so an image can move under a
+// fade that stays put. `mirror` flips the image itself.
+struct FadeStop {
+    float x, alpha;
+};
+void ImageFadeX(ImDrawList* d, const TextureView* t, ImVec2 a, ImVec2 b, ImVec2 uv0, ImVec2 uv1, const FadeStop* stops, int count,
+                bool mirror = false, ImU32 tint = IM_COL32_WHITE, float fadeA = 0, float fadeB = 0);
 void Infinity(ImDrawList* d, ImVec2 c, float w, ImU32 col);
 void Pill(ImDrawList* d, ImVec2 a, ImVec2 b);
 void IconWired(ImDrawList* d, ImVec2 c, float s, ImU32 col);
