@@ -842,6 +842,51 @@ void RunNetCommand(const std::string& line)
         Log("watchmatch: %s of %zu", which.c_str(), v.matches.size());
         NetWatchMatch(id);
     }
+    else if (cmd == "warmupsleep") {
+        // warmupsleep <ms>: each neutral warm-up tick before the battle's
+        // objects exist waits first (a slower PC's warm-up; sfv_game.h).
+        int ms = 0;
+        ss >> ms;
+        SetWarmupSleep(ms);
+        Log("control: warm-up ticks wait %d ms", ms);
+    }
+    else if (cmd == "watchcamera") {
+        // watchcamera: write watches on the battle camera's +0x94 and +0xE4
+        // from the next freeze (research; watchreport, unwatch).
+        // watchcamera new: from the next camera's construction instead
+        // (+0x90, +0xE0, +0x1D0, +0x1F0).
+        std::string when;
+        ss >> when;
+        if (when == "new") {
+            WatchNextCamera();
+            Log("control: the next battle camera is watched from its construction");
+        }
+        else {
+            WatchCameraAtFreeze();
+            Log("control: the camera is watched from the next freeze");
+        }
+    }
+    else if (cmd == "emptystage") {
+        TestEmptyStageRequest();
+        Log("control: the next jump's stage request is emptied (test)");
+    }
+    else if (cmd == "warmupextra") {
+        // warmupextra <n>: n more neutral warm-up ticks once the battle's
+        // objects exist (test; sfv_game.h).
+        int n = 0;
+        ss >> n;
+        SetWarmupExtra(n);
+        Log("control: %d warm-up ticks after the objects", n);
+    }
+    else if (cmd == "shot") {
+        // shot <path> [scale]: the next frame as shown, to a PNG (overlay.h
+        // RequestScreenshot; path relative to Win64).
+        std::string path;
+        int scale = 1;
+        ss >> path >> scale;
+        if (path.empty()) Log("control: shot <path> [scale]");
+        else RequestScreenshot(path, scale > 0 ? scale : 1);
+    }
     else if (cmd == "echo") {
         // echo <text>: logs it once every step before it has run (scripts
         // wait for it: cmd.ps1 -Wait).
@@ -1560,7 +1605,7 @@ bool Parse(const std::string& line, Step& step)
         step.setup.stage = static_cast<uint16_t>(stage);
         return !ss.fail();
     }
-    if (cmd == "host" || cmd == "join" || cmd == "matchchat" || cmd == "spectate" || cmd == "ticket" || cmd == "presence" || cmd == "rooms" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "crash" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
+    if (cmd == "host" || cmd == "join" || cmd == "matchchat" || cmd == "shot" || cmd == "warmupsleep" || cmd == "warmupextra" || cmd == "watchcamera" || cmd == "emptystage" || cmd == "spectate" || cmd == "ticket" || cmd == "presence" || cmd == "rooms" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "crash" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
         cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "startprobe" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
         step.kind = Step::Net;
         step.line = line;

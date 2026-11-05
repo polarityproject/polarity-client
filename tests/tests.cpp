@@ -16,6 +16,7 @@
 #include "core/update_info.h"
 #include "core/spectate.h"
 #include "core/spectate_relay.h"
+#include "core/png.h"
 #include "core/state.h"
 #include "core/texture_package.h"
 #include "core/verifier.h"
@@ -1351,6 +1352,51 @@ void TestSpectateRelay()
     CHECK(relay.Done(now));
 }
 
+// The screenshot PNG (core/png.h): signature, IHDR, chunk CRCs, and the
+// stored deflate blocks carrying every row (a 300x80 image is over 65535 bytes:
+// two blocks).
+void TestPng()
+{
+    const int w = 300, h = 80;
+    std::vector<uint8_t> rgb(static_cast<size_t>(w) * h * 3);
+    for (size_t i = 0; i < rgb.size(); i++) rgb[i] = static_cast<uint8_t>(i * 7);
+    const std::vector<uint8_t> png = EncodePng(w, h, rgb.data());
+    CHECK(png.size() > rgb.size() && std::memcmp(png.data(), "\x89PNG\r\n\x1a\n", 8) == 0);
+    auto be32 = [&](size_t at) {
+        return (uint32_t(png[at]) << 24) | (uint32_t(png[at + 1]) << 16) | (uint32_t(png[at + 2]) << 8) | uint32_t(png[at + 3]);
+    };
+    size_t at = 8;
+    std::vector<std::string> types;
+    std::vector<uint8_t> idat;
+    bool crcs = true;
+    while (at + 12 <= png.size()) {
+        const uint32_t len = be32(at);
+        const std::string type(reinterpret_cast<const char*>(&png[at + 4]), 4);
+        types.push_back(type);
+        crcs &= Crc32(&png[at + 4], len + 4) == be32(at + 8 + len);
+        if (type == "IHDR") CHECK(be32(at + 8) == uint32_t(w) && be32(at + 12) == uint32_t(h) && png[at + 16] == 8 && png[at + 17] == 2);
+        if (type == "IDAT") idat.assign(png.begin() + at + 8, png.begin() + at + 8 + len);
+        at += 12 + len;
+    }
+    CHECK(crcs && types == std::vector<std::string>({"IHDR", "IDAT", "IEND"}) && at == png.size());
+    // Inflate the stored blocks back: the rows, each after filter byte 0.
+    std::vector<uint8_t> raw;
+    size_t p = 2;
+    bool last = false;
+    while (!last && p + 5 <= idat.size()) {
+        last = idat[p] & 1;
+        const size_t n = idat[p + 1] | (idat[p + 2] << 8);
+        CHECK(((idat[p + 3] | (idat[p + 4] << 8)) ^ 0xFFFF) == n);
+        raw.insert(raw.end(), idat.begin() + p + 5, idat.begin() + p + 5 + n);
+        p += 5 + n;
+    }
+    bool rows = raw.size() == static_cast<size_t>(w * 3 + 1) * h;
+    for (int y = 0; rows && y < h; y++) {
+        rows = raw[y * (w * 3 + 1)] == 0 && std::memcmp(&raw[y * (w * 3 + 1) + 1], &rgb[y * w * 3], w * 3) == 0;
+    }
+    CHECK(last && rows);
+}
+
 void TestKeeperProtocol()
 {
     using namespace sfv::keeper;
@@ -1743,6 +1789,7 @@ int main()
         {"match ticket", TestMatchTicket},
         {"keeper protocol", TestKeeperProtocol},
         {"spectate relay", TestSpectateRelay},
+        {"png", TestPng},
     };
     for (const auto& t : tests) {
         const int before = g_failures;

@@ -39,6 +39,11 @@ void UnhookPresentTable();
 void ShutdownOverlay();
 
 void SetOverlayVisible(bool visible);
+// The next frame as shown (the overlay drawn) to a PNG at `path` (relative to
+// the game's Win64 folder unless absolute), `scale` 1 full size, 2 half, ...
+// (the `shot` command; the test agents' screenshots, also where no outside
+// tool can capture the game, as in Steam's Game Mode on a Steam Deck).
+void RequestScreenshot(const std::string& path, int scale);
 void ToggleOverlay();
 // The Debug tab's previews of the match windows (`overlay preview ...`):
 // words hud, strip, desync, p1, p2 switch a window on; relay or p2p the link

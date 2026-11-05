@@ -152,7 +152,8 @@ add_library(sfvcore STATIC
   src/core/match_code.cpp
   src/core/mux.cpp
   src/core/spectate.cpp
-  src/core/spectate_relay.cpp)
+  src/core/spectate_relay.cpp
+  src/core/png.cpp)
 target_include_directories(sfvcore PUBLIC src)
 target_link_libraries(sfvcore PUBLIC GekkoNet PRIVATE bcrypt) # bcrypt: update signatures (the codec, compress.cpp, is looked up at run time)
 

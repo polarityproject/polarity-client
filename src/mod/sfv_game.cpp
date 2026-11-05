@@ -10,6 +10,7 @@
 #include "mod/watch.h"
 
 #include <windows.h>
+#include <MinHook.h>
 
 #include <algorithm>
 #include <atomic>
@@ -952,15 +953,154 @@ bool SfvGame::MatchWins(uint32_t& left, uint32_t& right) const
     return false;
 }
 
+namespace {
+std::atomic<int> g_warmupSleepMs{0};
+std::atomic<int> g_warmupExtra{0};
+} // namespace
+
+void SetWarmupSleep(int ms) { g_warmupSleepMs = std::max(0, ms); }
+void SetWarmupExtra(int ticks) { g_warmupExtra = std::max(0, ticks); }
+
+std::atomic<bool> g_watchCamera{false};
+void WatchCameraAtFreeze() { g_watchCamera = true; }
+
+// The battle camera's constructor: (this, the object initializer, ...).
+constexpr uint32_t kBattleCameraCtor = 0x3C72A0;
+using CameraCtorFn = void* (*)(void*, void*, void*, void*);
+CameraCtorFn g_origCameraCtor = nullptr;
+std::atomic<bool> g_watchNewCamera{false};
+
+void* CameraCtorDetour(void* self, void* a, void* b, void* c)
+{
+    void* r = g_origCameraCtor(self, a, b, c);
+    if (g_watchNewCamera.exchange(false)) {
+        auto* cam = static_cast<uint8_t*>(self);
+        const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+        Log("watch: battle camera constructed at %p (thread %lu); watching +0x90, +0xE0, +0x1D0, +0x1F0", self,
+            GetCurrentThreadId());
+        // Armed from another thread (a thread cannot set its own debug
+        // registers while it runs); this one waits so nothing is missed.
+        std::thread arm([cam, base] {
+            ThreadGuard running;
+            ArmWatch(0, cam + 0x90, 8, base);
+            ArmWatch(1, cam + 0xE0, 8, base);
+            ArmWatch(2, cam + 0x1D0, 8, base);
+            ArmWatch(3, cam + 0x1F0, 8, base);
+        });
+        arm.join();
+    }
+    return r;
+}
+
+void WatchNextCamera()
+{
+    if (!g_origCameraCtor) {
+        void* target = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr)) + kBattleCameraCtor;
+        if (MH_CreateHook(target, reinterpret_cast<void*>(&CameraCtorDetour), reinterpret_cast<void**>(&g_origCameraCtor)) != MH_OK ||
+            MH_EnableHook(target) != MH_OK) {
+            Log("watch: could not hook the battle camera's constructor");
+            g_origCameraCtor = nullptr;
+            return;
+        }
+    }
+    g_watchNewCamera = true;
+}
+
+const uint8_t* SfvGame::FindBattleCamera() const
+{
+    for (const StateRegion& r : regions_) {
+        if (r.size == kBattleCameraRegionSize && IsReadable(r.ptr - (kBattleCameraRegionAt - 0xE8), 8) &&
+            *reinterpret_cast<const uintptr_t*>(r.ptr - (kBattleCameraRegionAt - 0xE8)) == image_.base + kBattleCameraVtable) {
+            const uint8_t* camera = r.ptr - kBattleCameraRegionAt;
+            if (IsReadable(camera, kBattleCameraSize)) return camera;
+        }
+    }
+    return nullptr;
+}
+
+std::string SfvGame::CameraSetupText() const
+{
+    const uint8_t* cam = FindBattleCamera();
+    if (!cam) return "no battle camera";
+    uint32_t flags, set = 0;
+    float e4, x;
+    std::memcpy(&flags, cam + 0x94, 4);
+    std::memcpy(&e4, cam + 0xE4, 4);
+    std::memcpy(&x, cam + kBattleCameraRegionAt, 4);
+    for (size_t at = kBattleCameraRegionAt + 0x28; at < kBattleCameraRegionAt + 0x60; at += 4) {
+        uint32_t v;
+        std::memcpy(&v, cam + at, 4);
+        set += v != 0;
+    }
+    char text[160];
+    std::snprintf(text, sizeof(text), "battle camera: +0x94 %08x, +0xE4 %.3f, %u of 14 setup words set, x %.4f", flags, e4, set, x);
+    return text;
+}
+
+bool SfvGame::CameraNotStarted() const
+{
+    const uint8_t* cam = FindBattleCamera();
+    if (!cam) return false;
+    uint32_t flags;
+    std::memcpy(&flags, cam + 0x94, 4);
+    for (size_t at = kBattleCameraRegionAt + 0x28; at < kBattleCameraRegionAt + 0x60; at += 4) {
+        uint32_t v;
+        std::memcpy(&v, cam + at, 4);
+        if (v) return false;
+    }
+    return flags == 0x100;
+}
+
+void SfvGame::WatchCameraIfAsked()
+{
+    if (!g_watchCamera.exchange(false)) return;
+    const uint8_t* cam = FindBattleCamera();
+    if (!cam) {
+        Log("watch: no battle camera to watch");
+        return;
+    }
+    const uintptr_t base = image_.base;
+    Log("watch: battle camera at %p (%s); watching +0x90 and +0xE0", static_cast<const void*>(cam), CameraSetupText().c_str());
+    // From another thread: arming sets every thread's debug registers, and
+    // this (the game) thread cannot set its own while it runs.
+    std::thread([cam, base] {
+        ThreadGuard running;
+        ArmWatch(0, cam + 0x90, 8, base);
+        ArmWatch(1, cam + 0xE0, 8, base);
+    }).detach();
+}
+
+bool SfvGame::CameraSetUp() const
+{
+    const uint8_t* cam = FindBattleCamera();
+    if (!cam) return false;
+    uint32_t flags;
+    std::memcpy(&flags, cam + 0x94, 4);
+    return (flags & 0x80000000u) != 0;
+}
+
 bool SfvGame::WarmupStep()
 {
     RefreshRegions();
     if (Regions().empty() || !InputUnit()) {
+        if (const int ms = g_warmupSleepMs; ms > 0) Sleep(ms);
         Advance(FrameInputs{}, false);
         warmupTicks_++;
         return true;
     }
     if (objectsAt_ < 0) objectsAt_ = warmupTicks_;
+    // Test only (warmupextra): more ticks once the objects exist. They move
+    // the fighters, the round's flow and the camera (40 regions differ after
+    // 2), and a session started so desyncs from frame 0 even after the
+    // reconcile (2026-11-05). (43c9c9cb, the 3-tick start, was a battle
+    // started without its stage loaded first: flow.cpp's jump.)
+    const int after = warmupTicks_ - objectsAt_;
+    if (after < g_warmupExtra) {
+        Advance(FrameInputs{}, false);
+        warmupTicks_++;
+        cameraWait_++;
+        return true;
+    }
     return false;
 }
 

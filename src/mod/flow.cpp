@@ -528,6 +528,8 @@ uint32_t TickNow()
     return g_roundFlow.ticks;
 }
 
+std::atomic<bool> g_testEmptyStage{false};
+
 uint8_t* LivePhaseMachine()
 {
     uint8_t* m = g_phaseMachine;
@@ -1803,15 +1805,39 @@ void JumpOnGameThread(int setupFrames)
             std::lock_guard lock(g_stageMutex);
             stage = g_pendingStage;
         }
+        // A request with no characters to write into (a freshly made
+        // loader's can be empty: no stage was loaded before the switch, the
+        // battle loaded it in its own setup and started differently from
+        // frame 0, 43c9c9cb) borrows these for the request below, then gets
+        // its own back (the game frees its own buffer, never this one).
+        static wchar_t lent[4];
+        uint8_t* lentTo = nullptr;
+        uint8_t saved[16] = {};
         if (!stage.empty()) {
             auto* holder = *reinterpret_cast<uint8_t* const*>(loader + 0x10);
             using GetFn = uint8_t* (*)(void*);
             uint8_t* request = holder ? (*reinterpret_cast<GetFn* const*>(holder))[0x70 / 8](holder) : nullptr;
+            if (request && g_testEmptyStage.exchange(false) && IsReadable(request + 0x18, 4)) {
+                *reinterpret_cast<int32_t*>(request + 0x18) = 0;
+                Log("flow: test: the new loader's stage request emptied");
+            }
             const std::string before = request ? FStringText(request + 0x10) : "";
             if (request && before.size() == 3 && stage.size() == 3) {
                 auto* chars = *reinterpret_cast<wchar_t* const*>(request + 0x10);
                 for (int i = 0; i < 3; i++) chars[i] = static_cast<wchar_t>(stage[i]);
                 Log("flow: stage %s -> %s", before.c_str(), stage.c_str());
+            }
+            else if (request && stage.size() == 3 && IsReadable(request + 0x10, 16)) {
+                for (int i = 0; i < 3; i++) lent[i] = static_cast<wchar_t>(stage[i]);
+                lent[3] = 0;
+                std::memcpy(saved, request + 0x10, 16);
+                const wchar_t* data = lent;
+                const int32_t count = 4;
+                std::memcpy(request + 0x10, &data, 8);
+                std::memcpy(request + 0x18, &count, 4);
+                std::memcpy(request + 0x1C, &count, 4);
+                lentTo = request;
+                Log("flow: stage request '%s' -> %s for this request", before.c_str(), stage.c_str());
             }
             else {
                 Log("flow: cannot set the stage (request '%s')", before.c_str());
@@ -1821,6 +1847,7 @@ void JumpOnGameThread(int setupFrames)
         // prepared: nothing else requests it), and switch once it is loaded:
         // the battle state uses the stage already prepared.
         if (g_origStep) g_origStep(loader, 0, 1);
+        if (lentTo) std::memcpy(lentTo + 0x10, saved, 16);
         WaitForStageThenSwitch(manager, stateClass, loader, 0);
     }
 }
@@ -2924,6 +2951,8 @@ uint8_t* BattleContext(uint8_t* task)
     using GetFn = uint8_t* (*)(uint8_t*);
     return reinterpret_cast<GetFn>(g_base + 0x307F90)(task + 0xE8);
 }
+
+void TestEmptyStageRequest() { g_testEmptyStage = true; }
 
 std::string RoundEndState()
 {

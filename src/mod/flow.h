@@ -251,6 +251,10 @@ void LogPhaseMachine();
 void SetRegionLookup(std::function<std::string(const void*)> lookup);
 // Research: director state and stop kind, phase machine index / requested, tick count.
 std::string RoundEndState();
+// Test (`emptystage`): the next jump finds its new loader's stage request
+// empty, as a freshly started game's once did (43c9c9cb: "cannot set the
+// stage (request '')", its battle objects after 3 ticks).
+void TestEmptyStageRequest();
 // Research: a character's costume arrays (`costumes <code>`).
 void LogCharaCostumes(const std::string& code);
 // Research (`variants`): every character's costumes with their names,

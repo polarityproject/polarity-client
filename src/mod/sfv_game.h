@@ -60,6 +60,19 @@ void SetSkippedLoadCallbacks(std::vector<uint64_t> keys);
 // The callbacks loads leave out by default ([netplay] skip_load_callbacks).
 std::vector<uint64_t> DefaultSkippedLoadCallbacks();
 
+// Test (`warmupsleep <ms>`): each neutral warm-up tick before the battle's
+// objects exist waits this long first, so a game reaches them after more
+// ticks (a slower PC's warm-up; 0 off).
+void SetWarmupSleep(int ms);
+// Test (`warmupextra <n>`): n more neutral ticks once the objects exist (as
+// the camera wait runs them), to see what they do to a session.
+void SetWarmupExtra(int ticks);
+// `watchcamera`: SfvGame::WatchCameraIfAsked at the next freeze.
+void WatchCameraAtFreeze();
+// `watchcamera new`: write watches on the next battle camera from its
+// constructor (rva 0x3C72A0) on, to see what sets it up.
+void WatchNextCamera();
+
 class SfvGame : public IGame {
 public:
     explicit SfvGame(const GameImage& image) : image_(image) {}
@@ -117,13 +130,16 @@ public:
     // as it is at that moment, which does not depend on how many ticks that
     // took (12 or 14 give the same state). Ticks after that would start the
     // round's flow (outside the snapshot). A battle whose objects came after
-    // only 3 ticks (its game busy loading) went on differently from frame 0
-    // than one that took 6 or more (2026-10-30: two players at 3, their
-    // spectator at 16, a desync from frame 0; cause open).
+    // only 3 ticks went on differently from frame 0 than one that took 6 or
+    // more (2026-10-30: two players at 3, their spectator at 16; 43c9c9cb):
+    // its jump had found the loader's stage request empty, so no stage was
+    // loaded before the switch and the battle loaded it in its own setup
+    // (fixed in flow.cpp's jump, 2026-11-05; `emptystage` reproduces it).
     void BeginWarmup()
     {
         warmupTicks_ = 0;
         objectsAt_ = -1;
+        cameraWait_ = 0;
     }
     bool WarmupStep();
     int WarmupTicks() const { return warmupTicks_; }
@@ -181,6 +197,20 @@ public:
     void ArmStartProbe();
     void CaptureStartProbe(const char* when);
     void LogStartProbe(const char* why);
+    // The battle camera's setup as the warm-up sees it (2026-11-05: in that
+    // desync the 3-tick side froze before its camera was set up: its setup
+    // words, region +0x28..+0x60, all zero, +0x94 0x100 and +0xE4 0, where
+    // the other side had them set, +0x94 0x80000000 and +0xE4 1.0).
+    std::string CameraSetupText() const;
+    bool CameraSetUp() const;
+    // The camera has not begun its setup (+0x94 still 0x100, no setup word
+    // set): the 3-tick side of 43c9c9cb at its freeze (a battle started
+    // without its stage loaded first, see BeginWarmup).
+    bool CameraNotStarted() const;
+    // Research (`watchcamera`): at the freeze, write watches on the camera's
+    // +0x94 and +0xE4 (what sets it up; watchreport tells who wrote them).
+    void WatchCameraIfAsked();
+    int CameraWaitTicks() const { return cameraWait_; } // ticks run after the objects (warmupextra)
 
     // Words that differ between the first simulation of a frame and its
     // resimulation without affecting gameplay (engine-side transforms read by
@@ -233,6 +263,7 @@ public:
     bool OutcomeDecided() override;
 
 private:
+    const uint8_t* FindBattleCamera() const;
     // A region of a pooled visual effect object (kEffectRegions in sfv_game.cpp):
     // out of the checksum.
     bool IsEffectRegion(const StateRegion& r) const;
@@ -276,6 +307,7 @@ private:
     int layoutVersion_ = 0;
     int battleFrameVersion_ = 0;
     int warmupTicks_ = 0;
+    int cameraWait_ = 0;
     int objectsAt_ = -1;
     std::atomic<uint64_t> lastFrameMs_{0};
     std::map<size_t, std::set<size_t>> noise_;

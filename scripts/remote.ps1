@@ -100,7 +100,7 @@ function RemoteDeploy {
   RemotePut $dll 'sfv-rollback\build\Release\sfv_rollback.dll' | Out-Null
   # The loader too: its up.ps1 copies it into the game folder with no game running.
   RemotePut (Join-Path $PSScriptRoot '..\build\Release\xinput1_3.dll') 'sfv-rollback\build\Release\xinput1_3.dll' | Out-Null
-  foreach ($s in 'agent.ps1', 'cmd.ps1', 'up.ps1', 'lib.ps1', 'logtail.ps1', 'win.ps1', 'weyve-server.ps1') {
+  foreach ($s in 'agent.ps1', 'agent_steamos.py', 'cmd.ps1', 'up.ps1', 'lib.ps1', 'logtail.ps1', 'win.ps1', 'weyve-server.ps1') {
     RemotePut (Join-Path $PSScriptRoot $s) "sfv-rollback\scripts\$s" | Out-Null
   }
 }

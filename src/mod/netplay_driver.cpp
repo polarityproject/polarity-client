@@ -2202,6 +2202,14 @@ private:
             ReadMatchSetup(&loadedSetup_);
             Log("netplay: battle objects ready after %d neutral ticks (%zu regions, checksum %08X); frozen",
                 game.ObjectsAt(), hashes.size(), frozenChecksum_);
+            // Where the battle's flow and camera stand at the freeze (43c9c9cb:
+            // a battle started without its stage loaded first froze with its
+            // camera not set up; flow.cpp's jump).
+            game.WatchCameraIfAsked();
+            Log("netplay: at the freeze, %s", RoundEndState().c_str());
+            Log("netplay: at the freeze, %s%s%s", game.CameraSetupText().c_str(),
+                game.CameraWaitTicks() ? (" (" + std::to_string(game.CameraWaitTicks()) + " ticks after the objects)").c_str() : "",
+                game.CameraNotStarted() ? "; the camera has not begun its setup" : "");
             game.ArmStartProbe();
             Log("netplay: loaded %s", DescribeSetup(loadedSetup_).c_str());
         }
