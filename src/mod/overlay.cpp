@@ -3179,14 +3179,21 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
             if (setWinner >= 0) {
                 if (setWinner == i) ImGui::TextColored(kGreen, "Wins the set");
                 else ImGui::TextColored(kDim, "Set over");
-                const std::string next = RoomsAfterSet(i, setWinner);
+                const std::string next = v.againVote ? std::string() : RoomsAfterSet(i, setWinner);
                 if (!next.empty()) {
                     ImGui::PushTextWrapPos(0.0f);
                     ImGui::TextColored(kDim, "%s", next.c_str());
                     ImGui::PopTextWrapPos();
                 }
             }
-            else {
+            // Between games; or the set won with nobody else waiting for the
+            // table, where Rematch is the next set (keeper again).
+            if (setWinner < 0 || v.againVote) {
+                if (v.againVote && mine) {
+                    ImGui::PushTextWrapPos(0.0f);
+                    ImGui::TextColored(kDim, "Nobody is waiting: play on into the next set.");
+                    ImGui::PopTextWrapPos();
+                }
                 ImGui::TextColored(s.choice == lobby::Choice::None ? kDim : kGreen, "%s", VoteText(s.choice));
                 if (mine) {
                     auto button = [&](const char* label, lobby::Choice c) {
@@ -3201,9 +3208,10 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
                     if (button("Leave", lobby::Choice::None)) Act([] { NetLeave(); });
                     ImGui::PushTextWrapPos(0.0f);
                     if (v.voteSecondsLeft >= 0 && s.choice == lobby::Choice::None) {
-                        ImGui::TextColored(kDim, "No choice in %d s: rematch", v.voteSecondsLeft);
+                        ImGui::TextColored(kDim, v.againVote ? "No choice in %d s: the next set" : "No choice in %d s: rematch",
+                                           v.voteSecondsLeft);
                     }
-                    ImGui::TextColored(kDim, "Leave ends the set here.");
+                    ImGui::TextColored(kDim, v.againVote ? "Leave: back to the room." : "Leave ends the set here.");
                     ImGui::PopTextWrapPos();
                     ImGui::Spacing();
                     DrawDelay(g_choices, v);

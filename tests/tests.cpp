@@ -1295,6 +1295,18 @@ void TestSpectateRelay()
     asks = upOf(Type::StateRequest);
     CHECK(!asks.empty() && asks[0].matchId == kGame1 && asks[0].regions == (std::vector<uint32_t>{0, 2}));
     CHECK(relay.Stats().decided);
+    // The same two play on (keeper again): the score starts over and the
+    // set end is to come again; then back to where the test was.
+    {
+        Message next = state;
+        next.seats[0].wins = 0;
+        relay.SetFirstTo(3);
+        relay.FromHost(next, now);
+        CHECK(!relay.Stats().decided);
+        next.seats[0].wins = 3;
+        relay.FromHost(next, now);
+        CHECK(relay.Stats().decided);
+    }
 
     // The host leaves. A on game 1 through its end is not done (game 2 was
     // played); on game 2 through its end it is: Bye. B, still on game 1, is not.
@@ -1517,8 +1529,14 @@ void TestKeeperProtocol()
     TableState tw = ts;
     tw.watch = "RLY123";
     CHECK(ParseTable(FormatTable(tw), &tsBack) && tsBack == tw && tsBack.watch == "RLY123");
+    // The again mark (17th field); keepers before it wrote 16 or 15.
+    tw.again = true;
+    CHECK(ParseTable(FormatTable(tw), &tsBack) && tsBack == tw && tsBack.again);
     {
-        std::string old15 = FormatTable(ts);
+        std::string old16 = FormatTable(ts);
+        old16.resize(old16.rfind('|'));
+        CHECK(ParseTable(old16, &tsBack) && tsBack == ts && !tsBack.again);
+        std::string old15 = old16;
         old15.resize(old15.rfind('|'));
         CHECK(ParseTable(old15, &tsBack) && tsBack == ts && tsBack.watch.empty());
     }

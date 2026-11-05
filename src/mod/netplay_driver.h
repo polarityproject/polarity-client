@@ -133,6 +133,11 @@ void NetWatchMatch(uint64_t id);
 void NetTestMatchChat(const std::string& text);
 // After a match: Rematch or CharacterSelect.
 void NetChoose(lobby::Choice choice);
+// A table's set (rooms_client): whether the keeper marks the table as one the
+// same two may play on at (TableState::again), and its answer to P1's again
+// request (both players get it: ok with the next set's rules).
+void NetSetAgainOffered(bool offered);
+void NetAgainAnswer(bool ok, const std::string& rules);
 // Testing: leaves a running battle for stage select (pause menu).
 void NetPark();
 void NetSetConditions(const NetConditions& conditions);
@@ -159,6 +164,10 @@ struct NetView {
     int you = -1;
     bool setPlay = false; // a table's set (AfterMatch::Set): a vote after each game, a timer on it
     int voteSecondsLeft = -1; // a table set's vote: seconds until no choice counts as rematch (-1 none)
+    // The set is won and nobody else waits for the table (the keeper's again
+    // mark): the vote as between games, Rematch the next set (rooms_client).
+    bool againVote = false;
+    bool againAsk = false; // P1: both chose to play on; ask the keeper for the next set
     int forfeitSeat = -1;     // the seat that left the set (a forfeit), -1 none
     uint8_t firstTo = 0;  // ... games to win it
     int played = 0;

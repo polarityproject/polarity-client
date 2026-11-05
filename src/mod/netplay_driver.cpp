@@ -85,6 +85,8 @@ constexpr auto kSetNextGameAfter = std::chrono::seconds(6);
 // How much longer a won set's host stays for the keeper's relay to take the
 // starting states of games its viewers have not reached.
 constexpr auto kKeeperStatesFor = std::chrono::seconds(25);
+// P1 asked the keeper for the next set (again): back to the room without its word.
+constexpr auto kAgainAnswerWait = std::chrono::seconds(5);
 // ... and its vote after each game: no choice by then counts as a rematch,
 // so a player who walks away does not hold the table (user, 2026-11-04).
 constexpr auto kSetVote = std::chrono::seconds(15);
@@ -517,7 +519,10 @@ public:
         v.you = role_ == Role::Spectator ? -1 : host_ ? 0 : 1;
         v.setPlay = ticket_.after == AfterMatch::Set;
         v.build = Hex64(build_);
-        if (v.setPlay && state_ == State::PostMatch && SetWinnerLocked() < 0 && forfeitSeat_ < 0) {
+        v.againVote = v.setPlay && role_ == Role::Player && state_ == State::PostMatch && SetWinnerLocked() >= 0 &&
+                      forfeitSeat_ < 0 && AgainOn();
+        v.againAsk = host_ && again_ == Again::Ask;
+        if (v.setPlay && state_ == State::PostMatch && (SetWinnerLocked() < 0 || v.againVote) && forfeitSeat_ < 0) {
             const auto left = kSetVote - (Clock::now() - decidedAt_);
             v.voteSecondsLeft = static_cast<int>(std::max<int64_t>(0, std::chrono::duration_cast<std::chrono::seconds>(left).count() + 1));
         }
@@ -1119,7 +1124,7 @@ private:
         // A table's set won: the host ends the session (MaybeResolve), and
         // so does this side a moment later, from the host's score: the host's
         // Bye can miss it (the host leaves the room first).
-        if (role_ == Role::Player && s == State::PostMatch && ticket_.after == AfterMatch::Set &&
+        if (role_ == Role::Player && s == State::PostMatch && ticket_.after == AfterMatch::Set && !againOffered_ &&
             Clock::now() - decidedAt_ > kSetNextGameAfter + std::chrono::seconds(1)) {
             if (const std::string over = SetOverText(); !over.empty()) {
                 EndSession(over);
@@ -1620,6 +1625,12 @@ private:
             // back to the room; else a vote as Direct Match's, where no
             // choice in kSetVote counts as a rematch.
             if (const std::string over = SetOverText(); !over.empty()) {
+                // Nobody else waits for the table: the vote as between games,
+                // and both on is the next set in this session (the keeper says).
+                if (AgainOn()) {
+                    ResolveAgain(mine, theirs);
+                    return;
+                }
                 if (Clock::now() - decidedAt_ >= kSetNextGameAfter && !KeeperTakingStates()) EndSession(over);
                 return;
             }
@@ -1652,6 +1663,97 @@ private:
         next_ = Next::Lobby;
     }
 
+    // ----- playing on: the next set with the same two (keeper again) -------
+
+    enum class Again { None, Ask, Granted, Refused };
+
+    // The set's end may be a vote for the next set: the keeper marks the
+    // table (nobody else waits), or it was asked already.
+    bool AgainOn() const
+    {
+        const Again a = again_;
+        if (a == Again::Refused) return false;
+        return a != Again::None || againOffered_;
+    }
+
+    // Host, the set won and nobody waiting: the vote; both on asks the
+    // keeper (rooms_client, NetView::againAsk), whose yes starts the next set.
+    void ResolveAgain(Choice mine, Choice theirs)
+    {
+        const auto now = Clock::now();
+        const Again a = again_;
+        if (a == Again::Granted) {
+            ContinueSet();
+            return;
+        }
+        if (a == Again::Ask) {
+            if (now - againAskedAt_ > kAgainAnswerWait) {
+                Log("netplay: no word from the keeper on the next set; back to the room");
+                again_ = Again::Refused;
+            }
+            return;
+        }
+        const bool late = now - decidedAt_ >= kSetVote;
+        if (late) {
+            if (mine == Choice::None) mine = Choice::Rematch;
+            if (theirs == Choice::None) theirs = Choice::Rematch;
+        }
+        const bool select = mine == Choice::CharacterSelect || theirs == Choice::CharacterSelect;
+        if (!select && (mine == Choice::None || theirs == Choice::None)) return;
+        againSelect_ = select;
+        againAskedAt_ = now;
+        again_ = Again::Ask;
+        Log("netplay: %s won; both play on (%s)%s: asking the keeper for the next set", SetOverText().c_str(),
+            select ? "character select" : "rematch", late ? ", the vote's time up" : "");
+    }
+
+    // The keeper's yes: the score starts over, the next set's rules, and on
+    // as the vote said (its game, or the select screen).
+    void ContinueSet()
+    {
+        Rules rules = againRules_;
+        {
+            std::lock_guard lock(mutex_);
+            for (auto& seat : seats_) seat.wins = 0;
+            forfeitSeat_ = -1;
+            ticket_.rules = rules;
+        }
+        g_forfeitSeat = -1;
+        again_ = Again::None;
+        loggedKeeperStates_ = false;
+        Log("netplay: the next set: %s", FormatRules(rules).c_str());
+        if (againSelect_) {
+            std::lock_guard lock(mutex_);
+            next_ = Next::Lobby;
+        }
+        else {
+            StartMatch(true);
+        }
+    }
+
+public:
+    void SetAgainOffered(bool offered) { againOffered_ = offered; }
+
+    void AgainAnswer(bool ok, const std::string& text)
+    {
+        Rules rules;
+        if (ok && !ParseRules(text, &rules)) ok = false;
+        if (host_) {
+            if (again_ != Again::Ask) return;
+            againRules_ = rules;
+            again_ = ok ? Again::Granted : Again::Refused;
+            Log("netplay: the keeper %s", ok ? ("starts the next set: " + text).c_str() : "has someone waiting: back to the room");
+            return;
+        }
+        // The other side: the next set's target (the host's score says when it starts).
+        if (ok) {
+            std::lock_guard lock(mutex_);
+            ticket_.rules = rules;
+            Log("netplay: the next set: %s", text.c_str());
+        }
+    }
+
+private:
     // Acts on next_ once the game thread has let go of the match.
     void Transitions()
     {
@@ -2889,7 +2991,12 @@ private:
     uint8_t selectScreen_ = 0, selectRow_ = 0; // SetSelectState, under mutex_
     uint32_t selectHover_ = 0;
     std::atomic<bool> beatNow_{false};
-    bool loggedKeeperStates_ = false;     // the next ControlTick beats at once (a select screen change)
+    bool loggedKeeperStates_ = false;
+    std::atomic<bool> againOffered_{false};  // the keeper's again mark on this player's table (rooms_client)
+    std::atomic<Again> again_{Again::None};
+    Clock::time_point againAskedAt_{};
+    Rules againRules_;
+    bool againSelect_ = false; // the vote said character select     // the next ControlTick beats at once (a select screen change)
     std::atomic<int> hostStageRule_{-1};   // host: the stage rule set in the lobby (-1: from the options)
     uint16_t streaks_[kNumPlayers] = {};   // host: each player's current win streak this session
     uint32_t winsAtStart_[2] = {};         // the game's match win counts as the match started
@@ -3503,6 +3610,18 @@ void NetChoose(lobby::Choice choice)
 {
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->Choose(choice);
+}
+
+void NetSetAgainOffered(bool offered)
+{
+    std::lock_guard lock(g_driverMutex);
+    if (g_driver) g_driver->SetAgainOffered(offered);
+}
+
+void NetAgainAnswer(bool ok, const std::string& rules)
+{
+    std::lock_guard lock(g_driverMutex);
+    if (g_driver) g_driver->AgainAnswer(ok, rules);
 }
 
 void NetPark()

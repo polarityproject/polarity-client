@@ -79,6 +79,7 @@ struct Client {
         bool started = false, codeSent = false;
         bool begun = false; // the match itself (the jump), not only the session
         int sent[2] = {-1, -1};
+        bool againAsked = false; // P1: the next set asked for (again)
     } playing;
 
     // The thread's own.
@@ -383,6 +384,15 @@ struct Client {
                 }
                 continue;
             }
+            if (a.kind == "again") {
+                // The next set with the same two (ok: its rules), or someone
+                // waits (no: the session ends as a set's does).
+                Log("rooms: the keeper on the next set: %s %s", a.ok ? "ok" : "no", a.text.c_str());
+                Rules rules;
+                if (a.ok && ParseRules(a.text, &rules)) playing.rules = rules;
+                NetAgainAnswer(a.ok, a.text);
+                continue;
+            }
             if (a.seq != pendingSeq) continue;
             pendingSeq = 0;
             Log("rooms: the keeper answers #%u %s: %s %s", a.seq, a.kind.c_str(), a.ok ? "ok" : "no", a.text.c_str());
@@ -642,6 +652,17 @@ struct Client {
             // With the build: the keeper's relay room shows it to viewers.
             ask("code", {t, nv.code, nv.build});
         }
+        // Nobody else waits for the table (the keeper's mark): the set's end
+        // is a vote for the next one; both on, P1 asks the keeper.
+        if (playing.table < static_cast<int>(view.tableViews.size())) {
+            const keeper::TableState& s = view.tableViews[playing.table].s;
+            NetSetAgainOffered(s.again && s.phase == keeper::TablePhase::Playing);
+        }
+        if (live && playing.host && nv.againAsk && !playing.againAsked) {
+            playing.againAsked = true;
+            ask("again", {t, std::to_string(nv.seats[0].wins), std::to_string(nv.seats[1].wins)});
+        }
+        if (!nv.againAsk) playing.againAsked = false;
         if (live && playing.host && (nv.seats[0].wins != playing.sent[0] || nv.seats[1].wins != playing.sent[1])) {
             playing.sent[0] = nv.seats[0].wins;
             playing.sent[1] = nv.seats[1].wins;
