@@ -2421,6 +2421,7 @@ SelectLive SelectLiveFor(const NetView& v)
     live.pingMs = v.linkPingMs;
     live.relayed = v.linkPath == NetView::Path::Relayed;
     live.spectators = v.spectators;
+    live.set = v.setPlay;
     return live;
 }
 
@@ -3202,7 +3203,7 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
                     if (v.voteSecondsLeft >= 0 && s.choice == lobby::Choice::None) {
                         ImGui::TextColored(kDim, "No choice in %d s: rematch", v.voteSecondsLeft);
                     }
-                    ImGui::TextColored(kDim, "Leave gives the set to your opponent.");
+                    ImGui::TextColored(kDim, "Leave ends the set here.");
                     ImGui::PopTextWrapPos();
                     ImGui::Spacing();
                     DrawDelay(g_choices, v);

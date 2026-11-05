@@ -534,8 +534,10 @@ void DrawLeaveDialog(ImDrawList* d, const SelectFonts& f, const SelectLive& live
         if (!g_ui.leaving) return;
     }
     const bool watching = live.you < 0;
-    const char* title = watching ? "STOP WATCHING?" : "LEAVE THE SESSION?";
-    const char* detail = watching ? "You go back to the main menu." : "The session ends for both players.";
+    const char* title = watching ? "STOP WATCHING?" : live.set ? "LEAVE THE SET?" : "LEAVE THE SESSION?";
+    const char* detail = watching   ? "You go back to the main menu."
+                         : live.set ? "The set ends here for both players."
+                                    : "The session ends for both players.";
     const float w = std::max({460.0f, TextW(f.name, 34, title) + 90, TextW(f.text, 17, detail) + 90});
     const float x0 = 800 - w / 2;
     d->AddRectFilled(g_v.P(0, 0), g_v.P(1600, 900), Rgba(0, 0, 0, 150));

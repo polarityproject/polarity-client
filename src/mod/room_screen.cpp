@@ -952,8 +952,12 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     }
     else if (ms && ms->phase == TablePhase::After && (ms->lastWinner == v.self || ms->lastLoser == v.self)) {
         const bool won = ms->lastWinner == v.self;
-        lead = won ? "YOU WON THE SET" : "YOU LOST THE SET";
-        leadCol = won ? kGreen : kSoft;
+        // Ended before anyone reached the set's target (a player left, maybe
+        // with the games they meant to play): no winner or loser to name.
+        Rules rules;
+        const bool early = ParseRules(v.tableViews[myTable].rules, &rules) && ms->lastScore[0] < rules.firstTo;
+        lead = early ? "SET ENDED" : won ? "YOU WON THE SET" : "YOU LOST THE SET";
+        leadCol = early ? kSoft : won ? kGreen : kSoft;
         text = std::to_string(won ? ms->lastScore[0] : ms->lastScore[1]) + " - " + std::to_string(won ? ms->lastScore[1] : ms->lastScore[0]) + ". ";
         const std::vector<uint32_t>& q = v.tableViews[myTable].queue;
         const auto at = std::find(q.begin(), q.end(), v.self);

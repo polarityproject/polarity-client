@@ -472,6 +472,14 @@ public:
 
     void Choose(Choice c)
     {
+        // Only while the vote is on: a choice that lands after the other
+        // player's has already taken both to the select screen stayed in this
+        // side's heartbeats there, and the host, taking a player with a
+        // choice as not ready yet, never started the next game (2026-11-05).
+        if (GetState() != State::PostMatch) {
+            Log("netplay: no vote now; %s not taken", c == Choice::Rematch ? "rematch" : c == Choice::CharacterSelect ? "character select" : "the choice");
+            return;
+        }
         myChoice_ = c;
         Log("netplay: after the match: %s", c == Choice::Rematch ? "rematch" : c == Choice::CharacterSelect ? "character select" : "none");
     }
@@ -1677,6 +1685,11 @@ private:
                 }
             }
             SetState(State::Lobby);
+            // A table's set too starts this select screen at stage select:
+            // the host may take another stage (a quieter one, say) before
+            // the characters (user, 2026-11-05). The set's first game still
+            // has no select screen (SetState keeps its stage confirmed).
+            if (host_ && ticket_.after == AfterMatch::Set) SetStageLocked(false);
             // Character select after a match: the picks change over the
             // results screen (held), and the next match jumps from there as a
             // rematch does, without a load of the menus in between.
@@ -1810,7 +1823,7 @@ private:
             forfeitSeat_ = seat;
         }
         g_forfeitSeat = seat;
-        EndSession("the other player left the set: it is yours");
+        EndSession("the other player left: the set ends here");
         return true;
     }
 
@@ -2823,8 +2836,9 @@ private:
         else if (s == State::Hosting) SetStatus("HOST " + code_ + " (copied) - waiting for a player");
         else if (s == State::Joining) SetStatus("joining " + code_);
         else if (s == State::Lobby) SetStatus(role_ == Role::Spectator ? "watching: waiting for a match" : "lobby");
-        // Each lobby starts at stage select; a table set's goes straight to
-        // the characters (the set keeps its stage).
+        // Each lobby starts at stage select; a table set's first goes
+        // straight to the characters (it has no select screen; character
+        // select within the set opens stage select again, Next::Lobby).
         if (s == State::Lobby && host_) stageLocked_ = ticket_.after == AfterMatch::Set;
         else if (s == State::Jumping) SetStatus("jumping into battle");
         else if (s == State::PostMatch) SetStatus("match over: rematch or character select?");

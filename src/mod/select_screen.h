@@ -104,6 +104,7 @@ struct SelectLive {
     int stage = 0;            // the host's stage: into SelectData::stages; == their count: random
     int setting = 0;          // its setting: 0 the stage itself, k its settings[k - 1]
     bool stageLocked = false; // the host confirmed it: on to the characters
+    bool set = false;         // a table's set: leaving gives it to the other player
     bool bothReady = false;   // the match is locked in (nobody can say not ready)
     bool loading = false;     // both ready, the games loading the characters
     unsigned pingMs = 0;      // the link's round trip (a spectator's: to the host)
