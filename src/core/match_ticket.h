@@ -27,6 +27,9 @@ struct MatchTicket {
     bool host = false;      // creates the match room and plays P1
     std::string roomCode;   // the match room (joiners and spectators)
     bool spectate = false;  // joins to watch
+    // Watching a table (M5): from the set's first game (the host's oldest kept
+    // match), not the one being played; each game follows the last.
+    bool watchFromFirst = false;
     // The P2 seat's token. The host's: what a joiner must present (0: the
     // first player to join takes the seat, as Direct Match always did); a
     // joiner's: what it presents. Whoever joins without it watches.

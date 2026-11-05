@@ -401,16 +401,15 @@ void IconLinkType(ImDrawList* d, ImVec2 c, float s, int link, ImU32 col)
 // A click acts as the button (A and B on the next frame).
 
 
-void DrawPrompts(ImDrawList* d, ImFont* text, const std::vector<Prompt>& prompts)
+void DrawPrompts(ImDrawList* d, ImFont* text, const std::vector<Prompt>& prompts, float right, float top)
 {
-    float right = 1572;
     for (int i = static_cast<int>(prompts.size()) - 1; i >= 0; i--) {
         const Prompt& p = prompts[i];
         const float w = TextW(text, 17, p.label) + 50;
-        const ImVec2 a = g_v.P(right - w, 14), b = g_v.P(right, 56);
+        const ImVec2 a = g_v.P(right - w, top), b = g_v.P(right, top + 42);
         d->AddRectFilled(a, b, Rgba(0, 0, 0, 150), g_v.L(21));
-        if (const TextureView* icon = Texture(PadTex(p.icon))) Image(d, icon, g_v.P(right - w + 5, 19), g_v.P(right - w + 37, 51));
-        Text(d, text, g_v.L(17), g_v.P(right - w + 42, 24), Rgba(244, 241, 232), p.label);
+        if (const TextureView* icon = Texture(PadTex(p.icon))) Image(d, icon, g_v.P(right - w + 5, top + 5), g_v.P(right - w + 37, top + 37));
+        Text(d, text, g_v.L(17), g_v.P(right - w + 42, top + 10), Rgba(244, 241, 232), p.label);
         if (Clicked() && MouseIn(a, b)) {
             if (p.action == 0) g_clickConfirm = true;
             else if (p.action == 1) g_clickBack = true;

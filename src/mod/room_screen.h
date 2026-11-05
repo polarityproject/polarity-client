@@ -40,6 +40,7 @@ struct RoomScreenInput {
     bool myCharacter = false; // Y
     bool clearNotice = false; // the table notice read
     bool cancelHandoff = false; // B on the connecting modal: out of this set before it began
+    int watch = -2;             // X on a table: watch it (M5); -1 stop watching; -2 nothing
 };
 
 // This player's table session as the overlay sees it (NetView), for the

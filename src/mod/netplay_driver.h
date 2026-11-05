@@ -129,6 +129,8 @@ void NetSetStageLocked(bool locked);
 void NetSetSelectState(uint8_t screen, uint8_t row, uint32_t hover);
 // Spectator: watch this match of the session (0: the newest) from its start.
 void NetWatchMatch(uint64_t id);
+// Testing: chat into the session's match room (as a modified client).
+void NetTestMatchChat(const std::string& text);
 // After a match: Rematch or CharacterSelect.
 void NetChoose(lobby::Choice choice);
 // Testing: leaves a running battle for stage select (pause menu).
@@ -147,6 +149,7 @@ struct NetView {
     bool scripted = false; // started by a command (tests): it keeps the delay the command set
     bool udp = false;
     std::string code;     // the match code (hosting or joining)
+    std::string build;    // this side's build, as its match room's data says (the keeper's relay room says it too)
     std::string status;   // the status line
     std::string result;   // how the last session ended, or the last failure
     std::string server;   // the Weyvelength server

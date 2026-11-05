@@ -35,6 +35,8 @@ using State = RoomsView::State;
 constexpr uint8_t kKeeperPublicKey[64] = {};
 constexpr size_t kChatKept = 100;
 constexpr int64_t kListAgainMs = 5000;   // no lobby channel yet: look again
+constexpr int64_t kUnkeptLobbyMs = 30000; // a lobby channel with no keeper this long is left
+constexpr int64_t kStaleLobbyMs = 120000; // ... and passed over this long
 constexpr int64_t kAnswerWaitMs = 20000; // the keeper's answer to a request
 constexpr int64_t kVerifyMs = 4000;      // a joined room shows it is a custom room within this
 constexpr int64_t kHandBackEveryMs = 2000;
@@ -62,6 +64,13 @@ struct Client {
     std::string peekWanted; // RoomsPeek
     std::vector<std::pair<std::string, std::vector<std::string>>> tableAsks; // RoomsTable
     std::vector<keeper::TableTicket> tickets; // from the keeper, for the overlay
+    // Watching (RoomsWatch): the table, the match room last handed out (one
+    // ticket a set), the tickets for the overlay; watchSession: one of them
+    // runs (a call ends it).
+    int watchTable = -1;
+    std::string watchCode;
+    std::vector<WatchTicket> watchTickets;
+    bool watchSession = false;
     struct Playing {
         int table = -1;
         bool host = false;
@@ -102,6 +111,8 @@ struct Client {
     uint64_t lastTicketToken = 0; // a ticket sent again is taken once
     bool askedAll = false;        // the second listing (every build) is out
     bool saidNoLobby = false;     // logged once until a lobby shows
+    int64_t lobbyUnkeptSince = -1;            // in the lobby channel with no keeper since (ms)
+    std::map<std::string, int64_t> staleLobbies; // lobby channels passed over, until (ms)
     int64_t allListAt = -1;       // when to ask for it (the server takes one listing a second)
     bool abortSession = false;    // RoomsTakeAbort
     std::vector<std::pair<uint32_t, int64_t>> callSeen; // per table: the call, when it showed
@@ -176,6 +187,13 @@ struct Client {
         playing = {};
         tickets.clear();
         callSeen.clear();
+        if (watchTable >= 0) Log("rooms: out of the room: no longer watching table %d", watchTable + 1);
+        if (watchSession && NetViewNow().spectator) abortSession = true;
+        watchTable = -1;
+        view.watching = -1;
+        watchCode.clear();
+        watchTickets.clear();
+        watchSession = false;
         view.tableViews.clear();
         view.tableNotice.clear();
     }
@@ -226,6 +244,7 @@ struct Client {
                 const auto count = r.listing.find(keeper::kCount);
                 const int n = count != r.listing.end() ? std::atoi(count->second.c_str()) : 0;
                 if (!r.joinable || n >= keeper::kLobbyCap) continue;
+                if (const auto stale = staleLobbies.find(r.code); stale != staleLobbies.end() && NowMs() < stale->second) continue;
                 if (n > bestCount) {
                     best = r.code;
                     bestCount = n;
@@ -395,8 +414,25 @@ struct Client {
         }
         if (view.state == State::Lobby) {
             if (view.keeper) view.publicRooms = keeper::UnpackRoomList(v.data);
+            // No keeper for kUnkeptLobbyMs: a channel an earlier keeper left
+            // (the players' presence kept it alive) while the keeper hosts
+            // another; the hubs chose the busiest and stayed here. Leave it
+            // and look again without it (a keeper restart takes seconds).
+            if (view.keeper) lobbyUnkeptSince = -1;
+            else if (lobbyUnkeptSince < 0) lobbyUnkeptSince = NowMs();
+            else if (NowMs() - lobbyUnkeptSince >= kUnkeptLobbyMs) {
+                Log("rooms: lobby channel %s has had no keeper for %lld s; looking for another", view.lobby.c_str(),
+                    static_cast<long long>(kUnkeptLobbyMs / 1000));
+                staleLobbies[view.lobby] = NowMs() + kStaleLobbyMs;
+                lobbyUnkeptSince = -1;
+                svc->LeaveRoom();
+                view.lobby.clear();
+                view.publicRooms.clear();
+                JoinLobby();
+            }
             return;
         }
+        lobbyUnkeptSince = -1;
         if (view.state != State::Room) return;
         auto data = [&](const char* key) {
             const auto it = v.data.find(key);
@@ -454,6 +490,8 @@ struct Client {
             if (ch != m.data.end()) r.chara = ch->second;
             const auto netData = m.data.find("net");
             if (netData != m.data.end()) r.link = netData->second == "w" ? 1 : netData->second == "f" ? 2 : 0;
+            const auto watch = m.data.find("w");
+            if (watch != m.data.end() && !watch->second.empty()) r.watching = std::atoi(watch->second.c_str()) - 1;
             r.owner = m.id == view.owner;
             const auto ping = pings.find(m.id);
             if (ping != pings.end() && m.id != v.self) {
@@ -523,6 +561,41 @@ struct Client {
         tableAsks.clear();
     }
 
+    // Watching: a table's new match room is a ticket, once; a call to play
+    // (any table) stops it.
+    void Watch()
+    {
+        if (watchTable < 0) return;
+        for (const TableView& tv : view.tableViews) {
+            const bool mine = tv.s.seat[0] == view.self || tv.s.seat[1] == view.self;
+            if (mine && tv.s.phase != keeper::TablePhase::Open) {
+                Log("rooms: called to play: no longer watching table %d", watchTable + 1);
+                if (watchSession && NetViewNow().spectator) abortSession = true;
+                watchTable = -1;
+                view.watching = -1;
+                watchSession = false;
+                watchTickets.clear();
+                svc->SetMemberData("w", "");
+                return;
+            }
+        }
+        if (watchTable >= static_cast<int>(view.tableViews.size()) || !view.keeper) return;
+        const TableView& tv = view.tableViews[watchTable];
+        // The set's viewers watch in the keeper's relay room (`watch`), which
+        // the host streams to once, never in the match room.
+        const bool on = tv.s.phase == keeper::TablePhase::Connecting || tv.s.phase == keeper::TablePhase::Playing;
+        if (!on || tv.s.watch.empty() || tv.s.watch == watchCode) return;
+        // Still on the last set's games (behind the players): those first;
+        // the relay keeps them, and this set waits its turn.
+        if (watchSession) {
+            const NetView nv = NetViewNow();
+            if (nv.spectator && nv.phase != NetView::Phase::Idle && nv.phase != NetView::Phase::Ended) return;
+        }
+        watchCode = tv.s.watch;
+        watchTickets.push_back({watchTable, tv.s.watch, tv.rules});
+        Log("rooms: table %d's set: watching through the keeper's relay room %s", watchTable + 1, tv.s.watch.c_str());
+    }
+
     // The table's session: its code (P1), the score, the result.
     void Report()
     {
@@ -566,7 +639,8 @@ struct Client {
         }
         if (playing.host && !playing.codeSent && !nv.code.empty()) {
             playing.codeSent = true;
-            ask("code", {t, nv.code});
+            // With the build: the keeper's relay room shows it to viewers.
+            ask("code", {t, nv.code, nv.build});
         }
         if (live && playing.host && (nv.seats[0].wins != playing.sent[0] || nv.seats[1].wins != playing.sent[1])) {
             playing.sent[0] = nv.seats[0].wins;
@@ -634,6 +708,21 @@ struct Client {
         if (leaveAsk) {
             leaveAsk = false;
             if (view.state == State::Room) {
+                // Leaving the room during this player's table set is leaving
+                // the set: a forfeit (as Leave in the vote), told to the
+                // keeper before the room hears of the leave (it only sees a
+                // member go, as when a game crashes: that breaks the set
+                // off). The session ends too (its Bye tells the opponent).
+                if (playing.table >= 0 && playing.table < static_cast<int>(view.tableViews.size())) {
+                    const keeper::TableState& s = view.tableViews[playing.table].s;
+                    const int seat = s.seat[0] == view.self ? 0 : s.seat[1] == view.self ? 1 : -1;
+                    if (seat >= 0 && (s.phase == keeper::TablePhase::Playing || s.phase == keeper::TablePhase::Connecting)) {
+                        const keeper::Request r{++seq, "forfeit", {std::to_string(playing.table), std::to_string(seat)}};
+                        svc->SetMemberData(keeper::kRequest, keeper::FormatRequest(r));
+                        Log("rooms: leaving during table %d's set: a forfeit (%s)", playing.table + 1, keeper::FormatRequest(r).c_str());
+                        abortSession = true;
+                    }
+                }
                 Log("rooms: leaving %s", view.room.c_str());
                 BackToLobby("", true);
             }
@@ -680,6 +769,7 @@ struct Client {
                     Peeks();
                     TableAsks();
                     if (view.state == State::Room) Report();
+                    if (view.state == State::Room) Watch();
                     Asks(v);
                 }
             }
@@ -690,6 +780,11 @@ struct Client {
 
 std::mutex g_clientMutex; // guards g_client itself
 std::unique_ptr<Client> g_client;
+// Held through a whole open or close: two at once (the hub frame reopening
+// on the render thread while a `rooms open` ran on the game thread) each
+// made a client, and the second replaced the first with its thread still
+// running: std::terminate (2026-11-05, the second test PC).
+std::recursive_mutex g_openMutex;
 
 } // namespace
 
@@ -711,6 +806,7 @@ const char* RoomsStateName(RoomsView::State state)
 
 void RoomsOpen(const std::string& server, const std::string& name, uint16_t alsoPort, const std::string& keeperKey)
 {
+    std::lock_guard open(g_openMutex);
     RoomsClose();
     auto c = std::make_unique<Client>();
     std::array<uint8_t, 64> builtIn;
@@ -741,6 +837,7 @@ void RoomsOpen(const std::string& server, const std::string& name, uint16_t also
 
 void RoomsClose()
 {
+    std::lock_guard open(g_openMutex);
     std::unique_ptr<Client> c;
     {
         std::lock_guard lock(g_clientMutex);
@@ -822,6 +919,40 @@ void RoomsTable(const std::string& kind, const std::vector<std::string>& args)
     });
 }
 
+void RoomsWatch(int table)
+{
+    WithClient([&](Client& c) {
+        if (c.view.state != State::Room) return false;
+        if (table >= c.view.tables) table = -1;
+        if (table == c.watchTable) return true;
+        if (c.watchSession && table != c.watchTable && NetViewNow().spectator) c.abortSession = true;
+        c.watchTable = table;
+        c.view.watching = table;
+        c.watchCode.clear();
+        c.watchTickets.clear();
+        c.watchSession = false;
+        c.svc->SetMemberData("w", table >= 0 ? std::to_string(table + 1) : "");
+        Log(table >= 0 ? "rooms: watching table %d" : "rooms: stopped watching%s", table >= 0 ? table + 1 : 0);
+        return true;
+    });
+}
+
+bool RoomsIsKeeper(const std::string& room, uint32_t id, const std::string& proof)
+{
+    return WithClient([&](Client& c) { return c.Proven(room, id, proof); });
+}
+
+bool RoomsTakeWatch(WatchTicket* out)
+{
+    return WithClient([&](Client& c) {
+        if (c.watchTickets.empty()) return false;
+        *out = c.watchTickets.front();
+        c.watchTickets.erase(c.watchTickets.begin());
+        c.watchSession = true;
+        return true;
+    });
+}
+
 bool RoomsTakeTicket(keeper::TableTicket* out)
 {
     return WithClient([&](Client& c) {
@@ -834,6 +965,7 @@ bool RoomsTakeTicket(keeper::TableTicket* out)
 
 void RoomsTableSession(int table, bool host, const std::string& rules)
 {
+    NetTakeForfeit(); // a forfeit left from an earlier set (its room left meanwhile) is not this one's
     WithClient([&](Client& c) {
         c.playing = {};
         c.playing.table = table;
@@ -922,6 +1054,9 @@ std::string RoomsPlace(const RoomsView& v, uint32_t id)
         for (size_t k = 0; k < tv.queue.size(); k++) {
             if (tv.queue[k] == id) return table + (k < 3 ? kOrdinal[k] : std::to_string(k + 1) + "th");
         }
+    }
+    for (const RoomMember& m : v.members) {
+        if (m.id == id && m.watching >= 0) return "Watching Table " + std::to_string(m.watching + 1);
     }
     return "Idle";
 }

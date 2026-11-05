@@ -21,6 +21,7 @@ class In {
 public:
     In(const uint8_t* p, size_t n) : p_(p), end_(p + n) {}
     bool ok = true;
+    bool AtEnd() const { return p_ >= end_; }
     template <typename T> T Get()
     {
         T v{};
@@ -206,10 +207,14 @@ std::vector<uint8_t> Encode(const Message& m)
     case Type::InputsAck:
         o.Put(m.matchId);
         o.Put(m.first);
+        o.Put(m.playedTo);
+        o.Put(static_cast<uint8_t>(m.decided));
         break;
     case Type::Matches:
-        o.Put(static_cast<uint8_t>(std::min(m.matches.size(), kKeptMatches)));
-        for (size_t i = 0; i < m.matches.size() && i < kKeptMatches; i++) {
+    {
+        const size_t n = std::min(m.matches.size(), kMatchesPerMessage);
+        o.Put(static_cast<uint8_t>(n));
+        for (size_t i = 0; i < n; i++) {
             const MatchEntry& e = m.matches[i];
             o.Put(e.id);
             PutSetup(o, e.setup);
@@ -217,7 +222,11 @@ std::vector<uint8_t> Encode(const Message& m)
             o.Put(static_cast<uint8_t>(e.finished));
             o.Put(e.winner);
         }
+        // After the entries: builds before M5 stop reading there.
+        o.Put(m.sliceAt);
+        o.Put(m.sliceOf ? m.sliceOf : static_cast<uint8_t>(n));
         break;
+    }
     case Type::Welcome:
         o.Put(m.matchId);
         PutSetup(o, m.setup);
@@ -316,6 +325,10 @@ std::optional<Message> Decode(const uint8_t* data, size_t len)
     case Type::InputsAck:
         m.matchId = in.Get<uint64_t>();
         m.first = in.Get<uint32_t>();
+        if (!in.AtEnd()) {
+            m.playedTo = in.Get<uint32_t>();
+            m.decided = in.Get<uint8_t>() != 0;
+        }
         break;
     case Type::Matches: {
         const uint8_t n = in.Get<uint8_t>();
@@ -327,6 +340,16 @@ std::optional<Message> Decode(const uint8_t* data, size_t len)
             e.frames = in.Get<uint32_t>();
             e.finished = in.Get<uint8_t>() != 0;
             e.winner = in.Get<int8_t>();
+        }
+        if (!in.ok) break;
+        if (in.AtEnd()) {
+            m.sliceAt = 0;
+            m.sliceOf = n;
+        }
+        else {
+            m.sliceAt = in.Get<uint8_t>();
+            m.sliceOf = in.Get<uint8_t>();
+            if (m.sliceOf > kKeptMatches || m.sliceAt + n > m.sliceOf) return std::nullopt;
         }
         break;
     }

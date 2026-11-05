@@ -88,6 +88,14 @@ if(SFV_BUILD_MOD AND WIN32)
   if(NOT port_range EQUAL 0)
     message(FATAL_ERROR "cannot apply third_party/weyvelength-port-range.patch")
   endif()
+  # weyve_set_link_mux: the keeper's links on one UDP socket (the mod does not
+  # call it); a link sends its description only once its socket is bound.
+  execute_process(COMMAND ${CMAKE_COMMAND} -DPATCH=${CMAKE_CURRENT_SOURCE_DIR}/third_party/weyvelength-link-mux.patch
+                          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/apply-patch.cmake
+                  WORKING_DIRECTORY ${weyvelength_SOURCE_DIR} RESULT_VARIABLE link_mux)
+  if(NOT link_mux EQUAL 0)
+    message(FATAL_ERROR "cannot apply third_party/weyvelength-link-mux.patch")
+  endif()
   set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
   set(NO_SERVER ON CACHE BOOL "" FORCE)
   set(NO_TESTS ON CACHE BOOL "" FORCE)
@@ -143,7 +151,8 @@ add_library(sfvcore STATIC
   src/core/lobby.cpp
   src/core/match_code.cpp
   src/core/mux.cpp
-  src/core/spectate.cpp)
+  src/core/spectate.cpp
+  src/core/spectate_relay.cpp)
 target_include_directories(sfvcore PUBLIC src)
 target_link_libraries(sfvcore PUBLIC GekkoNet PRIVATE bcrypt) # bcrypt: update signatures (the codec, compress.cpp, is looked up at run time)
 
@@ -218,6 +227,7 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/hub_screen.cpp
     src/mod/rooms_screen.cpp
     src/mod/room_screen.cpp
+    src/mod/watch_panel.cpp
     src/mod/settings_screen.cpp
     src/mod/weyve_service.cpp
     src/mod/fonts.rc)

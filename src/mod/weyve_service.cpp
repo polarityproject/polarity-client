@@ -416,6 +416,11 @@ void WeyveService::TransferHost(uint32_t id)
     impl_->Queue([id](WeyveClient* c) { weyve_transfer_host(c, id); });
 }
 
+void WeyveService::Ban(uint32_t id)
+{
+    impl_->Queue([id](WeyveClient* c) { weyve_ban_member(c, id); });
+}
+
 void WeyveService::ListRooms(const std::map<std::string, std::string>& equals)
 {
     impl_->Queue([equals](WeyveClient* c) {

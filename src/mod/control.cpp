@@ -470,6 +470,12 @@ void RunNetCommand(const std::string& line)
             }
             RoomsTable(kind, args);
         }
+        else if (what == "watch") {
+            // rooms watch <table, from 0> | -1: as X on the room screen.
+            int table = -1;
+            ss >> table;
+            RoomsWatch(table);
+        }
         else if (what == "chat") {
             std::string text;
             std::getline(ss, text);
@@ -485,6 +491,13 @@ void RunNetCommand(const std::string& line)
             for (size_t i = v.chat.size() > 5 ? v.chat.size() - 5 : 0; i < v.chat.size(); i++)
                 Log("rooms:   chat %s: %s", v.chat[i].from ? v.chat[i].name.c_str() : "*", v.chat[i].text.c_str());
         }
+    }
+    else if (cmd == "matchchat") {
+        // matchchat <text>: chat into the session's match room (testing the
+        // host's ban of a modified client).
+        std::string text;
+        std::getline(ss >> std::ws, text);
+        NetTestMatchChat(text);
     }
     else if (cmd == "delay") {
         // delay <frames>: this player's input delay for the next host/join.
@@ -1371,6 +1384,7 @@ void RunNetCommand(const std::string& line)
         }
         o.hasPick = !code.empty();
         o.pick.character = PackCode(code.c_str());
+        ReloadOverlayChoices();
         o.pick.costume = static_cast<uint16_t>(costume);
         o.pick.color = static_cast<uint8_t>(color - 1);
         o.pick.comment = static_cast<uint8_t>(comment);
@@ -1546,7 +1560,7 @@ bool Parse(const std::string& line, Step& step)
         step.setup.stage = static_cast<uint16_t>(stage);
         return !ss.fail();
     }
-    if (cmd == "host" || cmd == "join" || cmd == "spectate" || cmd == "ticket" || cmd == "presence" || cmd == "rooms" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "crash" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
+    if (cmd == "host" || cmd == "join" || cmd == "matchchat" || cmd == "spectate" || cmd == "ticket" || cmd == "presence" || cmd == "rooms" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "crash" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
         cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "startprobe" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
         step.kind = Step::Net;
         step.line = line;

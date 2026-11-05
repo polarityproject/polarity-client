@@ -18,6 +18,7 @@
 #include "mod/hub_screen.h"
 #include "mod/rooms_screen.h"
 #include "mod/room_screen.h"
+#include "mod/watch_panel.h"
 #include "mod/settings_screen.h"
 #include "core/match_ticket.h"
 #include "mod/rooms_client.h"
@@ -93,6 +94,9 @@ std::atomic<bool> g_visible{false};
 std::atomic<bool> g_hubAllowed{false}; // at the game's menus with no session: hold Start opens the hub
 std::atomic<bool> g_startCloses{false};  // the panel was opened with Start (held in a match): Start closes it
 std::atomic<float> g_startHold{0};       // in a match: how far Start is held towards opening the panel (0..1)
+std::atomic<bool> g_reloadChoices{false}; // ReloadOverlayChoices: read the choices again
+std::atomic<bool> g_spectating{false};   // a spectator's session: a Start tap opens the watch panel (M5)
+std::atomic<bool> g_watchPanelTap{false}; // ... tapped (the frame toggles the panel)
 std::atomic<bool> g_selectMatchTab{true}; // the panel opens on its Match tab next time
 std::atomic<ULONGLONG> g_xinputAt{0};    // when the XInput hook last saw a pad (OverlayPad)
 std::atomic<bool> g_voting{false};        // the post-match vote is up and takes input
@@ -188,6 +192,13 @@ void FeedPads(ImGuiIO& io)
         closeOnRelease = false;
         SetOverlayVisible(false);
     }
+    // Watching: a tap (pressed and let go within kTapMs) opens or closes the
+    // watch panel (the players' tap skips intros; a spectator's does nothing
+    // else). Held, it still opens the SFVR panel.
+    constexpr ULONGLONG kTapMs = 450;
+    static ULONGLONG startDownAt = 0;
+    if (start && !startWas) startDownAt = GetTickCount64();
+    if (!start && startWas && g_spectating && !g_visible && GetTickCount64() - startDownAt < kTapMs) g_watchPanelTap = true;
     startWas = start;
     // In a match the panel opens with Start held kHoldToOpenMs (a tap is the
     // match's: it skips intros and win poses); the stripe at the bottom
@@ -1806,7 +1817,9 @@ void DrawSessionLine(const NetView& v)
 {
     std::string text = "Matches " + std::to_string(v.played);
     if (v.linkPingMs) text += "   ping " + std::to_string(v.linkPingMs) + " ms";
-    if (v.spectators) text += "   " + std::to_string(v.spectators) + " watching";
+    // Who watches is the spectators' business: players see no count (user,
+    // 2026-11-05; in a table set it was the keeper's relay anyway).
+    if (v.spectators && v.spectator) text += "   " + std::to_string(v.spectators) + " watching";
     if (v.host && !v.code.empty()) text += "   code " + v.code;
     ImGui::TextColored(kDim, "%s", text.c_str());
 }
@@ -2661,7 +2674,6 @@ void DrawHosting(const NetView& v)
     if (ImGui::SmallButton("Copy again")) ImGui::SetClipboardText(v.code.c_str());
     ImGui::Spacing();
     ImGui::Text("Waiting for the other player...");
-    if (v.spectators) ImGui::TextColored(kDim, "%d watching", v.spectators);
     if (TileButton("Cancel", -1)) Act([] { NetLeave(); });
 }
 
@@ -2879,7 +2891,7 @@ void ToastChanges(const NetView& now)
             AddToast(b.name + (b.choice == lobby::Choice::Rematch ? " wants a rematch" : " wants character select"));
         }
     }
-    if (now.spectators != before.spectators && now.phase != P::Idle && now.phase != P::Ended) {
+    if (now.spectator && now.spectators != before.spectators && now.phase != P::Idle && now.phase != P::Ended) {
         AddToast(now.spectators > before.spectators ? "A spectator joined (" + std::to_string(now.spectators) + " watching)"
                                                     : std::to_string(now.spectators) + " watching",
                  kDim);
@@ -3581,6 +3593,29 @@ bool g_myCharacterOpen = false;
 // custom rooms screen says so).
 bool g_backToRooms = false;
 
+// Watching a table (M5): its set's match room as a spectator, from the
+// set's first game; the room screen comes back after it, and the next set's
+// match room is the next watch ticket.
+int g_watchTable = -1;
+
+void StartTableWatch(const WatchTicket& w)
+{
+    g_backToRooms = true;
+    g_watchTable = w.table;
+    MatchTicket mt;
+    mt.host = false;
+    mt.spectate = true;
+    mt.watchFromFirst = true;
+    mt.roomCode = w.code;
+    ParseRules(w.rules, &mt.rules);
+    mt.after = AfterMatch::Set;
+    LoadTables();
+    InitChoices();
+    const NetplayOptions o = ChosenOptions();
+    Log("overlay: watching table %d's set: joining %s", w.table + 1, w.code.c_str());
+    Act([mt, o] { NetPlayTicket(mt, o); });
+}
+
 void StartTableSession(const keeper::TableTicket& t)
 {
     g_backToRooms = true;
@@ -3590,6 +3625,15 @@ void StartTableSession(const keeper::TableTicket& t)
     mt.seatToken = t.token;
     ParseRules(t.rules, &mt.rules);
     mt.after = AfterMatch::Set;
+    // The saved pick (My character), read in if nothing has yet: the first
+    // set after a boot played the Fighter Profile's favorite while the room
+    // showed the saved pick (2026-11-05, both PCs' game 1).
+    LoadTables();
+    InitChoices();
+    // Kept to what this profile owns now (entitlements): moved later, in the
+    // lobby, the new pick cleared Ready and the set's lobby, which has no
+    // select screen, waited for good.
+    PickValid(g_choices);
     NetplayOptions o = ChosenOptions();
     o.autoReady = true;
     if (g_tableDelay >= 0) o.inputDelay = static_cast<uint8_t>(g_tableDelay);
@@ -3961,6 +4005,10 @@ void DrawHubFrame(bool takeInput)
         if (!in.request.empty()) RoomsTable(in.request, in.args);
         if (in.delay >= 0) g_tableDelay = in.delay;
         if (in.myCharacter && !g_myCharacterOpen) OpenMyCharacter();
+        if (in.watch != -2) {
+            RoomsWatch(in.watch);
+            if (in.watch < 0) g_watchTable = -1;
+        }
         if (in.clearNotice) RoomsClearNotice();
         else if (g_myCharacterOpen) DrawMyCharacter(rooms, takeInput);
         if (!in.chat.empty() && !RoomsChat(in.chat)) AddToast("Slow down: one message a second", ImVec4(1, 0.8f, 0.4f, 1), 2);
@@ -4112,6 +4160,7 @@ void Draw(IDXGISwapChain* swapChain)
     // was never opened. They are read once the game is at a menu, so that the
     // select screen is there as soon as a session starts (the read takes a
     // while: every character's costume names, colors, comments).
+    if (g_reloadChoices.exchange(false)) g_choices.initialised = false;
     if (phase != NetView::Phase::Idle) {
         LoadTables();
         InitChoices();
@@ -4305,6 +4354,7 @@ void Draw(IDXGISwapChain* swapChain)
     // A table's ticket starts its set; after it, back at the menus, the
     // room screen comes back.
     for (keeper::TableTicket ticket; RoomsTakeTicket(&ticket);) StartTableSession(ticket);
+    for (WatchTicket w; RoomsTakeWatch(&w);) StartTableWatch(w);
     if (RoomsTakeAbort()) Act([] { NetLeave(); });
     if (!HubOpen() && atMenus && g_tables.loaded && RoomsOpened()) {
         if (RoomsSnapshot().state == RoomsView::State::Room) {
@@ -4334,6 +4384,48 @@ void Draw(IDXGISwapChain* swapChain)
     }
     if (session && view.desyncFrame >= 0 && (phase == NetView::Phase::Running || phase == NetView::Phase::PostMatch)) {
         DrawDesyncBanner(view);
+    }
+    // Watching (M5): the pause panel, opened and closed by a Start tap.
+    {
+        static bool watchPanel = false;
+        static float watchAlpha = 0;
+        const bool watchingNow = session && view.spectator;
+        g_spectating = watchingNow;
+        if (g_watchPanelTap.exchange(false) && watchingNow) watchPanel = !watchPanel;
+        if (!watchingNow) watchPanel = false;
+        watchAlpha = std::clamp(watchAlpha + (watchPanel ? 1.0f : -1.0f) * io.DeltaTime / 0.15f, 0.0f, 1.0f);
+        if (watchAlpha > 0 && watchingNow) {
+            WatchPanelLive wl;
+            wl.table = view.setPlay ? g_watchTable : -1; // a Direct Match watched: no table
+            for (size_t i = 0; i < view.matches.size(); i++) {
+                const lobby::MatchEntry& e = view.matches[i];
+                wl.games.push_back({ShortCharaName(UnpackCode(e.setup.players[0].character)), ShortCharaName(UnpackCode(e.setup.players[1].character)),
+                                    e.winner, e.finished});
+                if (e.id == view.watchingMatch) wl.at = static_cast<int>(i);
+            }
+            wl.behindSeconds = view.behind / 60.0f;
+            wl.players[0] = view.seats[0].name;
+            wl.players[1] = view.seats[1].name;
+            WatchPanelInput wi;
+            DrawWatchPanel(HubFonts{g_fontHuge, g_fontBig, g_fontBody}, wl, watchAlpha, watchPanel && !g_visible, &wi);
+            if (wi.resume) watchPanel = false;
+            if (wi.stop) {
+                watchPanel = false;
+                Log("overlay: stopped watching from the watch panel");
+                RoomsWatch(-1);
+                g_watchTable = -1;
+                Act([] { NetLeave(); });
+            }
+            if (wi.watch >= 0 && wi.watch < static_cast<int>(view.matches.size())) {
+                const uint64_t id = view.matches[wi.watch].id;
+                Log("overlay: watch panel: game %d", wi.watch + 1);
+                Act([id] { NetWatchMatch(id); });
+            }
+            else if (wi.watch == -1) {
+                Log("overlay: watch panel: the current game");
+                Act([] { NetWatchMatch(0); });
+            }
+        }
     }
     const bool hint = !visible && !preview && !HubOpen() && (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) && OnMenuScreen();
     if (hint) DrawMenuHint();
@@ -4578,6 +4670,8 @@ void ShutdownOverlay()
 }
 
 void RequestSelectPreview(int phase, bool spectator) { g_selectRequest = phase + (spectator ? 4 : 0); }
+
+void ReloadOverlayChoices() { g_reloadChoices = true; }
 
 void SetOverlayVisible(bool visible)
 {

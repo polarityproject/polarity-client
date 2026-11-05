@@ -29,6 +29,7 @@ struct RoomMember {
     bool relayed = false; // that link goes through TURN
     int link = 0;      // their connection: 0 unknown, 1 wired, 2 Wi-Fi (member data `net`)
     bool masked = false;
+    int watching = -1; // the table they watch (member data `w`, 1-based), -1 none
 };
 
 // A table as the room shows it (keeper_protocol.h TableState, queue, rules).
@@ -85,6 +86,15 @@ struct RoomsView {
     // The last thing that went wrong, for the screen ("No room on that code",
     // "Room full", "Removed from the room", the keeper's refusal).
     std::string notice;
+    // The table this player watches (RoomsWatch), -1 none.
+    int watching = -1;
+};
+
+// Watching a table (M5): its set's match room, as a spectator.
+struct WatchTicket {
+    int table = 0;
+    std::string code;  // the match room
+    std::string rules; // FormatRules
 };
 const char* RoomsStateName(RoomsView::State state);
 
@@ -125,6 +135,17 @@ std::string RoomsAfterSet(int seat, int winnerSeat);
 // Cancel on the connecting modal: off the table before its match began (the
 // keeper calls the table again), and this player's session ends.
 void RoomsCancelHandoff();
+// Watch a table (M5; -1 stops): each set it plays, its match room is a watch
+// ticket (RoomsTakeWatch) once, so watching follows the table from set to
+// set; it never queues. Others see "Watching Table N". It stops on leaving
+// the room, and when this player is called to a table (RoomsTakeAbort ends
+// the watching session then).
+void RoomsWatch(int table);
+bool RoomsTakeWatch(WatchTicket* out);
+// Whether member `id` of room `room` (a match room) is the keeper, by the
+// proof in its member data (keeper_protocol.h): a table set's host lets only
+// the keeper watch (its relay serves every viewer).
+bool RoomsIsKeeper(const std::string& room, uint32_t id, const std::string& proof);
 // The clock TableView::callSeenMs is on (milliseconds).
 int64_t RoomsClockMs();
 // A member's place, for the player list: "Table 2 · playing", "Idle".

@@ -51,6 +51,9 @@ void PreviewOverlay(const std::string& words);
 // 0 stage select, 1 the grid, 2 the loadout, 3 ready; `spectator`: as one
 // watching.
 void RequestSelectPreview(int phase, bool spectator = false);
+// Testing (`pick`): the panel's choices are read again from the netplay
+// options (else a session's lobby sends the panel's saved pick over it).
+void ReloadOverlayChoices();
 // Vsync: off presents every frame at once (sync interval 0) instead of
 // waiting for the display's refresh, whatever the game asked for.
 void SetVsync(bool on);

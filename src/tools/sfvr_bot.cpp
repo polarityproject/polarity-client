@@ -12,10 +12,17 @@
 //   sit <table> <seat 0|1|-1>   stand   queue <table>   unqueue   ready <table>   decline <table>
 //   rules <table> <rules...>    kick <member id>   kickname <name>   chat <text>   flood <n>   status   wait <ms>   quit
 //   chara <code> (the character others see beside the name, member data "ch")
+//   watch <table>   unwatch   (a headless viewer: each set of the table through
+//   the keeper's relay room, from its first game, played at 60 frames a
+//   second; logs each game and the set. --diff: claims a differing starting
+//   state each game, so the relay sends hashes and a region.)
 // Logs one line per happening on stdout ("bot Bot1: ...").
 
 #include "core/keeper_protocol.h"
 #include "core/lobby.h"
+
+#include <algorithm>
+#include <functional>
 
 #include <weyvelength.h>
 
@@ -45,6 +52,298 @@ int64_t NowMs()
 
 std::string Str(const char* p, uint32_t len) { return p ? std::string(p, len) : std::string(); }
 
+// A viewer with no game (watch): what a spectator's netplay driver says to the
+// relay, and the stream played at 60 frames a second.
+struct Viewer {
+    std::string name, code;
+    bool diff = false;
+    WeyveClient* c = nullptr;
+    uint32_t host = 0;
+    uint64_t build = 0;
+    bool joined = false, accepted = false, done = false;
+    int64_t helloMs = 0, beatMs = 0, startMs = 0, stateMs = 0;
+    std::vector<lobby::MatchEntry> slices, list;
+    uint64_t match = 0;
+    int gameIndex = -1;
+    bool hostLoaded = false, reconciled = false;
+    uint32_t hostChecksum = 0;
+    std::vector<uint64_t> hashes;
+    uint32_t hashTotal = 0;
+    bool regionAsked = false, regionGot = false;
+    int64_t regionAskedMs = 0;
+    uint32_t regionWanted = 0;
+    bool gameDone = false; // this game watched through (counted once)
+    std::vector<lobby::FrameRecord> frames;
+    std::map<uint32_t, lobby::FrameRecord> ahead;
+    double played = 0;
+    int64_t playedAtMs = 0;
+    int stalls = 0;
+    bool stalled = false;
+    int gamesWatched = 0;
+    uint64_t framesWatched = 0;
+    std::function<void(const std::string&)> log;
+
+    void Send(const lobby::Message& m)
+    {
+        const std::vector<uint8_t> bytes = lobby::Encode(m);
+        std::vector<uint8_t> tagged(bytes.size() + 1);
+        tagged[0] = 1; // the driver's control channel
+        std::copy(bytes.begin(), bytes.end(), tagged.begin() + 1);
+        weyve_send_p2p(c, host, tagged.data(), static_cast<uint32_t>(tagged.size()));
+    }
+
+    bool Start(const std::string& server, uint16_t port, const std::string& room)
+    {
+        code = room;
+        c = weyve_client_create();
+        if (!weyve_connect(c, server.c_str(), port)) {
+            weyve_client_destroy(c);
+            c = nullptr;
+            return false;
+        }
+        weyve_set_name(c, (name + "-w").c_str());
+        weyve_join_room(c, room.c_str(), nullptr);
+        startMs = NowMs();
+        return true;
+    }
+
+    void Stop()
+    {
+        if (!c) return;
+        if (!done) log("stopped: " + State());
+        Quit();
+    }
+
+    std::string State() const
+    {
+        if (gameIndex >= 0 && gameIndex < static_cast<int>(list.size())) {
+            const lobby::MatchEntry& e = list[gameIndex];
+            return ("game " + std::to_string(gameIndex + 1) + " of " + std::to_string(list.size()) + ": played " +
+                std::to_string(static_cast<int>(played)) + ", in hand " + std::to_string(frames.size()) + ", the list says " +
+                std::to_string(e.frames) + (e.finished ? " finished" : " not finished") + (reconciled ? "" : ", not reconciled") +
+                (gameDone ? ", done" : ""));
+        }
+        return "no game yet (" + std::to_string(list.size()) + " listed)";
+    }
+
+    void Quit()
+    {
+        if (accepted) {
+            lobby::Message bye;
+            bye.type = lobby::Type::Bye;
+            Send(bye);
+        }
+        weyve_leave_room(c);
+        for (int i = 0; i < 3 && weyve_poll(c); i++) {
+        }
+        weyve_client_destroy(c);
+        c = nullptr;
+    }
+
+    void Load(int index)
+    {
+        gameIndex = index;
+        match = list[index].id;
+        hostLoaded = reconciled = regionAsked = regionGot = gameDone = false;
+        hashes.clear();
+        hashTotal = 0;
+        frames.clear();
+        ahead.clear();
+        played = 0;
+        playedAtMs = NowMs();
+        stalled = true; // fills its buffer first
+        log("loads game " + std::to_string(index + 1));
+        SendLoaded();
+    }
+
+    void SendLoaded()
+    {
+        lobby::Message l;
+        l.type = lobby::Type::Loaded;
+        l.matchId = match;
+        l.stateChecksum = diff && !regionGot ? 0xB0B : hostChecksum;
+        l.reconciled = !diff || regionGot;
+        Send(l);
+    }
+
+    void OnMessage(const lobby::Message& m)
+    {
+        switch (m.type) {
+        case lobby::Type::Accept:
+            if (!accepted) log("watching " + code + " (host " + m.name + ")");
+            accepted = true;
+            break;
+        case lobby::Type::Reject:
+            log("the relay turned this viewer away (" + std::to_string(static_cast<int>(m.reason)) + ")");
+            done = true;
+            break;
+        case lobby::Type::Matches: {
+            if (slices.size() != m.sliceOf) slices.assign(m.sliceOf, lobby::MatchEntry{});
+            for (size_t i = 0; i < m.matches.size() && m.sliceAt + i < slices.size(); i++) slices[m.sliceAt + i] = m.matches[i];
+            if (!std::all_of(slices.begin(), slices.end(), [](const lobby::MatchEntry& e) { return e.id != 0; })) break;
+            list = slices;
+            // Its game by id (the list may have moved it).
+            if (match) {
+                for (size_t i = 0; i < list.size(); i++) {
+                    if (list[i].id == match) gameIndex = static_cast<int>(i);
+                }
+            }
+            if (gameIndex < 0 && !list.empty()) Load(0);
+            break;
+        }
+        case lobby::Type::Loaded:
+            if (m.matchId == match && !hostLoaded) {
+                hostLoaded = true;
+                hostChecksum = m.stateChecksum;
+                log("game " + std::to_string(gameIndex + 1) + ": the host's Loaded");
+                if (!diff) {
+                    reconciled = true;
+                    SendLoaded();
+                }
+            }
+            break;
+        case lobby::Type::StateHashes:
+            if (m.matchId != match || !diff) break;
+            hashTotal = m.total;
+            if (!regionAsked && m.total > 0) {
+                // One region, as a differing state usually lacks (asked
+                // again until it comes, as the driver does).
+                regionWanted = m.total / 2;
+                regionAsked = true;
+                regionAskedMs = 0;
+            }
+            break;
+        case lobby::Type::StateData:
+            if (m.matchId == match && diff && !regionGot && m.offset + m.bytes.size() >= m.total) {
+                regionGot = true;
+                reconciled = true;
+                SendLoaded();
+            }
+            break;
+        case lobby::Type::Inputs:
+            if (m.matchId != match) break;
+            for (size_t i = 0; i < m.frames.size(); i++) {
+                const uint32_t at = m.first + static_cast<uint32_t>(i);
+                if (at < frames.size()) continue;
+                if (at == frames.size()) frames.push_back(m.frames[i]);
+                else ahead[at] = m.frames[i];
+            }
+            for (auto it = ahead.begin(); it != ahead.end() && it->first <= frames.size();) {
+                if (it->first == frames.size()) frames.push_back(it->second);
+                it = ahead.erase(it);
+            }
+            break;
+        case lobby::Type::Bye:
+            log("set watched: " + std::to_string(gamesWatched) + " games, " + std::to_string(framesWatched) + " frames, " +
+                std::to_string(stalls) + " stalls" + (m.text.empty() ? std::string() : " (" + m.text + ")"));
+            done = true;
+            break;
+        default:
+            break;
+        }
+    }
+
+    void Step()
+    {
+        if (!c || done) return;
+        if (!weyve_poll(c)) {
+            log("viewer: lost the server");
+            done = true;
+            return;
+        }
+        WeyveEvent e;
+        while (weyve_next(c, &e)) {
+            if (e.type == WEYVE_EVENT_ROOM_ID_ASSIGNED) joined = true;
+            else if (e.type == WEYVE_EVENT_ROOM_ERROR && !joined) {
+                log("viewer: cannot join " + code);
+                done = true;
+            }
+            else if (e.type == WEYVE_EVENT_PEER_LEFT && e.data.peer_left.id == host && host) {
+                log("viewer: the relay left");
+                done = true;
+            }
+        }
+        const int64_t now = NowMs();
+        if (joined && !host) {
+            uint32_t len = 0;
+            const char* b = weyve_room_data(c, "build", &len);
+            const uint32_t h = weyve_host_id(c);
+            if (b && len && h && h != weyve_id(c)) {
+                host = h;
+                build = std::strtoull(Str(b, len).c_str(), nullptr, 16);
+            }
+        }
+        if (host && !accepted && now - helloMs >= 1000) {
+            helloMs = now;
+            lobby::Message hello;
+            hello.type = lobby::Type::Hello;
+            hello.build = build;
+            hello.role = lobby::Role::Spectator;
+            hello.name = name;
+            Send(hello);
+        }
+        uint32_t from = 0, len = 0;
+        while (const uint8_t* d = weyve_next_p2p(c, &from, &len)) {
+            if (len < 2 || d[0] != 1 || from != host) continue;
+            if (auto m = lobby::Decode(d + 1, len - 1)) OnMessage(*m);
+            if (done) return;
+        }
+        // Play at 60 a second, from the frames in hand.
+        if (gameIndex >= 0 && reconciled) {
+            // As the driver's table viewer: 120 frames in hand before
+            // playing, and again after running dry (kRelayWatchDelayFrames).
+            const lobby::MatchEntry& entry = list[gameIndex];
+            const bool all = entry.finished && frames.size() >= entry.frames;
+            if (stalled && (frames.size() - played >= 120 || all)) stalled = false;
+            const double want = played + (now - playedAtMs) * 0.06;
+            playedAtMs = now;
+            if (!stalled) {
+                if (want > frames.size()) {
+                    played = static_cast<double>(frames.size());
+                    if (!all) {
+                        stalls++;
+                        stalled = true;
+                    }
+                }
+                else {
+                    played = want;
+                }
+            }
+            // Through a finished game: the next one, once there is one.
+            if (!gameDone && entry.finished && played >= entry.frames && frames.size() >= entry.frames) {
+                gameDone = true;
+                gamesWatched++;
+                framesWatched += frames.size();
+                log("watched game " + std::to_string(gameIndex + 1) + ": " + std::to_string(frames.size()) + " frames");
+            }
+            if (gameDone && gameIndex + 1 < static_cast<int>(list.size())) Load(gameIndex + 1);
+        }
+        if (now - stateMs >= 15000) {
+            stateMs = now;
+            log(State());
+        }
+        if (host && accepted && now - beatMs >= 250) {
+            beatMs = now;
+            lobby::Message ack;
+            ack.type = lobby::Type::InputsAck;
+            ack.matchId = reconciled ? match : 0;
+            ack.first = static_cast<uint32_t>(frames.size());
+            ack.playedTo = static_cast<uint32_t>(played);
+            ack.decided = gameDone;
+            Send(ack);
+            if (gameIndex >= 0 && !reconciled) SendLoaded();
+            if (regionAsked && !regionGot && now - regionAskedMs >= 500) {
+                regionAskedMs = now;
+                lobby::Message r;
+                r.type = lobby::Type::StateRequest;
+                r.matchId = match;
+                r.regions = {regionWanted};
+                Send(r);
+            }
+        }
+    }
+};
+
 struct Bot {
     std::string name = "Bot";
     std::string host = "127.0.0.1";
@@ -52,6 +351,10 @@ struct Bot {
     bool autoPlay = false;
     int64_t setMs = 3000;
     std::string wins = "random";
+    bool diff = false; // --diff: the viewer's starting state differs each game
+    int watchTable = -1;
+    std::string watchedCode;
+    std::unique_ptr<Viewer> viewer;
     WeyveClient* c = nullptr;
     std::string lobby, room;
     bool inLobby = false, inRoom = false;
@@ -200,6 +503,15 @@ struct Bot {
                 if (!s.empty()) Log("  table " + std::to_string(t) + " " + s + " queue " + Data(QueueKey(t).c_str()));
             }
         }
+        else if (cmd == "watch") {
+            ss >> watchTable;
+            Log("watches table " + std::to_string(watchTable));
+        }
+        else if (cmd == "unwatch") {
+            watchTable = -1;
+            if (viewer) viewer->Stop();
+            viewer.reset();
+        }
         else if (cmd == "quit") {
             std::exit(0);
         }
@@ -327,6 +639,35 @@ struct Bot {
         }
     }
 
+    // watch: each set of the table, through its relay room (`watch` in the
+    // table's state), one after another.
+    void Watch()
+    {
+        if (viewer) {
+            viewer->Step();
+            if (viewer->done) {
+                viewer->Stop();
+                viewer.reset();
+            }
+            return;
+        }
+        if (watchTable < 0 || !inRoom) return;
+        TableState st;
+        if (!ParseTable(Data(StateKey(watchTable).c_str()), &st)) return;
+        const bool on = st.phase == TablePhase::Connecting || st.phase == TablePhase::Playing;
+        if (!on || st.watch.empty() || st.watch == watchedCode) return;
+        watchedCode = st.watch;
+        viewer = std::make_unique<Viewer>();
+        viewer->name = name;
+        viewer->diff = diff;
+        viewer->log = [this](const std::string& line) { Log("viewer: " + line); };
+        Log("watches table " + std::to_string(watchTable) + "'s set in relay room " + st.watch);
+        if (!viewer->Start(host, port, st.watch)) {
+            Log("viewer: cannot connect");
+            viewer.reset();
+        }
+    }
+
     void Loop()
     {
         for (;;) {
@@ -336,6 +677,7 @@ struct Bot {
             }
             Events();
             Tables();
+            Watch();
             std::string line;
             bool have = false;
             if (NowMs() >= waitUntil && (inLobby || inRoom)) {
@@ -384,11 +726,12 @@ int main(int argc, char** argv)
             bot.host = s;
         }
         else if (a == "--auto") bot.autoPlay = true;
+        else if (a == "--diff") bot.diff = true;
         else if (a == "--set-ms" && v) bot.setMs = std::atoll(argv[++i]);
         else if (a == "--wins" && v) bot.wins = argv[++i];
         else if (a == "--script" && v) Split(argv[++i], &bot.script);
         else {
-            std::fprintf(stderr, "usage: sfvr-bot --name N [--server host:port] [--auto] [--set-ms ms] [--wins p1|p2|random] [--script \"...\"]\n");
+            std::fprintf(stderr, "usage: sfvr-bot --name N [--server host:port] [--auto] [--set-ms ms] [--wins p1|p2|random] [--diff] [--script \"...\"]\n");
             return 2;
         }
     }

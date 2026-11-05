@@ -831,6 +831,8 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
                 else if (!atFocused) Request(in, "queue", {t});
             }
             if (y && !back) in->myCharacter = true;
+            // X: watch this table's sets (not the one you sit at); again, stop.
+            if (Pressed({ImGuiKey_GamepadFaceLeft, ImGuiKey_X}, false) && !paused && !atFocused) in->watch = v.watching == g.table ? -1 : g.table;
             if (Pressed({ImGuiKey_GamepadStart}, false) && v.owner == v.self && !paused) {
                 g.modal = Modal::Rules;
                 g.rulesTable = g.table;
@@ -979,6 +981,10 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
             lead = "ROOM OPEN";
             text = "Friends join with the code.";
         }
+        else if (v.watching >= 0 && place.rfind("Watching", 0) == 0) {
+            lead = Upper(place);
+            text = "Its sets open on their own. X on it: stop watching.";
+        }
         else if (place != "Idle") {
             lead = Upper(place);
             text = "RB: the players. Y: My character.";
@@ -993,6 +999,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         }
         else if (queuedHere) prompts.push_back({"button_a", "Leave the queue"});
         else if (!atFocused) prompts.push_back({"button_a", "Join the queue"});
+        if (!atFocused) prompts.push_back({"button_x", v.watching == g.table ? "Stop watching" : "Watch"});
         prompts.push_back({"button_y", "My character"});
         if (v.owner == v.self) prompts.push_back({"button_start", "Table rules"});
         prompts.push_back({"button_b", "Leave"});
@@ -1019,6 +1026,8 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         }
         else if (what == "Leave queue") Request(in, "decline", {std::to_string(g.cardTable)});
         else if (what == "My character") in->myCharacter = true;
+        else if (what == "Watch") in->watch = g.table;
+        else if (what == "Stop watching") in->watch = -1;
         else if (what == "OK") in->clearNotice = true;
         else if (what == "Cancel" && handoffTable >= 0) in->cancelHandoff = true;
     }

@@ -19,6 +19,7 @@
 #include "mod/log.h"
 #include "mod/overlay.h"
 #include "mod/report_upload.h"
+#include "mod/rooms_client.h"
 #include "mod/sfv_game.h"
 #include "mod/status.h"
 #include "mod/sfv_offsets.h"
@@ -81,12 +82,17 @@ constexpr auto kPreloadWait = std::chrono::seconds(90);
 // A table's set (AfterMatch::Set) won: back to the room this long after the
 // last game is decided, the side panels saying what follows meanwhile.
 constexpr auto kSetNextGameAfter = std::chrono::seconds(6);
+// How much longer a won set's host stays for the keeper's relay to take the
+// starting states of games its viewers have not reached.
+constexpr auto kKeeperStatesFor = std::chrono::seconds(25);
 // ... and its vote after each game: no choice by then counts as a rematch,
 // so a player who walks away does not hold the table (user, 2026-11-04).
 constexpr auto kSetVote = std::chrono::seconds(15);
 // NetTakeForfeit.
 std::atomic<int> g_forfeitSeat{-1};
 constexpr size_t kMaxSpectators = 8;
+// Frames a table set's viewer keeps in hand before playing (StartWatching).
+constexpr int kRelayWatchDelayFrames = 120;
 // Spectator stream: batches in flight per spectator before an ack, and how
 // long without progress before resending from the last ack.
 constexpr int kStreamBatchesAhead = 4;
@@ -229,6 +235,7 @@ const char* RejectText(lobby::RejectReason r)
     case lobby::RejectReason::Busy: return "the session is full";
     case lobby::RejectReason::ProtocolMismatch: return "different protocol";
     case lobby::RejectReason::NoSpectators: return "the host does not allow spectators";
+    case lobby::RejectReason::ViaKeeper: return "table sets are watched from the room";
     }
     return "?";
 }
@@ -247,6 +254,8 @@ struct Watcher {
     int wanted = 0;                    // next frame it needs
     int sentThrough = -1;
     Clock::time_point progressAt;      // when `wanted` last moved
+    bool keeper = false;               // the keeper's relay (a table set's only spectator)
+    Clock::time_point statesAskedAt;   // its last StateRequest
 };
 
 class NetplayDriver : public IFrameDriver {
@@ -388,7 +397,10 @@ public:
         }
         options_.hasPick = hasPick;
         options_.pick = pick;
-        ready_ = false; // a new pick has to be confirmed again
+        // A new pick has to be confirmed again; a Direct Match a command
+        // started (tests: ready at once, nobody presses Ready) stays ready, or
+        // the panel's choices sent after a `pick` held its lobby forever.
+        if (!(options_.autoReady && ticket_.after == AfterMatch::Vote)) ready_ = false;
     }
 
     // Between matches (lobby, post-match): this player's input delay for the
@@ -401,6 +413,14 @@ public:
 
     // The host, in the lobby: the stage (or a stage setting) of the next
     // matches: a stage code, "random" or "" (as prepared).
+    // Testing (`matchchat`): chat into the match room, as a modified client
+    // would (the host bans the sender).
+    void TestChat(const std::string& text)
+    {
+        if (weyve_) weyve_->SendChat(text);
+        Log("netplay: sent chat into the match room (test): %s", text.c_str());
+    }
+
     // Spectator, from the panel: this match (0: the newest) from its start,
     // ending the one being watched.
     void ChooseMatch(uint64_t id)
@@ -488,6 +508,7 @@ public:
         v.desyncReport = desyncReport_;
         v.you = role_ == Role::Spectator ? -1 : host_ ? 0 : 1;
         v.setPlay = ticket_.after == AfterMatch::Set;
+        v.build = Hex64(build_);
         if (v.setPlay && state_ == State::PostMatch && SetWinnerLocked() < 0 && forfeitSeat_ < 0) {
             const auto left = kSetVote - (Clock::now() - decidedAt_);
             v.voteSecondsLeft = static_cast<int>(std::max<int64_t>(0, std::chrono::duration_cast<std::chrono::seconds>(left).count() + 1));
@@ -707,6 +728,7 @@ private:
         }
         if (host_) StreamToWatchers();
         Transitions();
+        EndAfterJumpTick();
 
         // A select screen change goes out at once (at most every kMinBeat).
         const auto now = Clock::now();
@@ -787,6 +809,7 @@ private:
                     if ((s == State::Running || s == State::PostMatch || s == State::Loading || s == State::Jumping) &&
                         weyve_->PeerLinked(e.peer)) {
                         Log("netplay: the server says the other side left the room; the link is up, so the match goes on");
+                        peerLeftRoom_ = true;
                         break;
                     }
                     if (s != State::Ended) {
@@ -815,8 +838,17 @@ private:
                 EndSession(e.text);
                 break;
             }
-            case WeyveEvent::Type::PeerJoined:
             case WeyveEvent::Type::Chat:
+                // No SFVR build chats in a match room: a member who does runs
+                // a modified client (a flood costs every member, the host
+                // most). The host bans it (custom-rooms-plan.md M6; the plan
+                // had the keeper do it, which is not in match rooms).
+                if (host_ && e.peer && weyve_) {
+                    Log("netplay: member %u chatted in the match room (no SFVR build does): banned", e.peer);
+                    weyve_->Ban(e.peer);
+                }
+                break;
+            case WeyveEvent::Type::PeerJoined:
             case WeyveEvent::Type::HostChanged:
             case WeyveEvent::Type::RoomList:
                 break;
@@ -907,7 +939,10 @@ private:
         if (!waiting && peer_ && now - heard_ > kSilence) {
             Log("netplay: nothing from the other side for %lld s",
                 static_cast<long long>(std::chrono::duration_cast<std::chrono::seconds>(now - heard_).count()));
-            EndSession("connection lost");
+            // A table's set already won (a spectator: the host left the room
+            // before its Bye reached here): its result, not "connection lost".
+            const std::string over = SetOverText();
+            EndSession(!over.empty() ? over : "connection lost");
             return true;
         }
         if (host_) {
@@ -1054,7 +1089,17 @@ private:
                 std::lock_guard lock(mutex_);
                 list = MatchListLocked();
             }
-            for (const auto& [id, w] : watchers) SendTo(id, list);
+            const size_t total = list.matches.size();
+            for (size_t at = 0; at < std::max<size_t>(total, 1); at += lobby::kMatchesPerMessage) {
+                lobby::Message slice;
+                slice.type = lobby::Type::Matches;
+                slice.sliceAt = static_cast<uint8_t>(at);
+                slice.sliceOf = static_cast<uint8_t>(total);
+                const size_t end = std::min(total, at + lobby::kMatchesPerMessage);
+                slice.matches.assign(list.matches.begin() + static_cast<std::ptrdiff_t>(std::min(at, total)),
+                                     list.matches.begin() + static_cast<std::ptrdiff_t>(end));
+                for (const auto& [id, w] : watchers) SendTo(id, slice);
+            }
         }
 
         if (s == State::Lobby) MaybeStartMatch();
@@ -1086,6 +1131,8 @@ private:
             ack.type = lobby::Type::InputsAck;
             ack.matchId = watchingMatch_;
             ack.first = static_cast<uint32_t>(std::max(0, specWanted_.load()));
+            ack.playedTo = static_cast<uint32_t>(std::max(0, specPlayed_.load()));
+            ack.decided = watchingMatch_ && s == State::PostMatch;
             ack.time = Now();
             Send(ack);
         }
@@ -1185,15 +1232,26 @@ private:
                 SendTo(from, accept);
                 break;
             }
+            // A table set streams to the keeper alone: its relay serves the
+            // viewers (custom-rooms-plan.md M5), so neither player's upload
+            // grows with them. Anyone else is sent to the room.
+            const bool tableSet = ticket_.after == AfterMatch::Set && weyve_;
+            const bool isKeeper = tableSet && IsKeeperMember(from);
+            if (tableSet && !isKeeper) {
+                Log("netplay: %s asked to watch; table sets are watched through the keeper's relay", m.name.c_str());
+                Reject(from, lobby::RejectReason::ViaKeeper);
+                break;
+            }
             std::lock_guard l(mutex_);
-            if (!options_.allowSpectators || watchers_.size() >= kMaxSpectators) {
+            if (!options_.allowSpectators || (!isKeeper && watchers_.size() >= kMaxSpectators)) {
                 Reject(from, options_.allowSpectators ? lobby::RejectReason::Busy : lobby::RejectReason::NoSpectators);
                 break;
             }
             Watcher& nw = watchers_[from];
             nw.name = m.name;
             nw.heard = Clock::now();
-            Log("netplay: %s watches (from %s)", m.name.c_str(), Hex64(from).c_str());
+            nw.keeper = isKeeper;
+            Log("netplay: %s watches (from %s)%s", m.name.c_str(), Hex64(from).c_str(), isKeeper ? ": the keeper's relay" : "");
             accept.role = Role::Spectator;
             SendTo(from, accept);
             break;
@@ -1253,7 +1311,13 @@ private:
             break;
         case lobby::Type::StateRequest:
             if (from == peer_ && m.matchId == matchId_) OnStateRequest(from, m);
-            else if (w) OnKeptStateRequest(from, m);
+            else if (w) {
+                {
+                    std::lock_guard l(mutex_);
+                    w->statesAskedAt = Clock::now();
+                }
+                OnKeptStateRequest(from, m);
+            }
             break;
         case lobby::Type::InputsAck:
             if (w) {
@@ -1396,8 +1460,36 @@ private:
             break;
         case lobby::Type::Matches:
             if (role_ == Role::Spectator) {
-                std::lock_guard l(mutex_);
-                matchList_ = m.matches;
+                uint64_t first = 0;
+                {
+                    std::lock_guard l(mutex_);
+                    // The host's list in slices: this one's entries at their
+                    // places; the list is the host's size (a match the host
+                    // no longer keeps drops off the front).
+                    std::vector<lobby::MatchEntry>& list = sliceList_;
+                    if (list.size() != m.sliceOf) {
+                        // A new size: start over from the host's newest view,
+                        // the entries already known kept where they still are.
+                        std::vector<lobby::MatchEntry> fresh(m.sliceOf);
+                        list = std::move(fresh);
+                    }
+                    for (size_t i = 0; i < m.matches.size() && m.sliceAt + i < list.size(); i++) list[m.sliceAt + i] = m.matches[i];
+                    // Complete (every place filled): the list to pick from.
+                    if (std::all_of(list.begin(), list.end(), [](const lobby::MatchEntry& e) { return e.id != 0; })) {
+                        matchList_ = list;
+                        if (ticket_.watchFromFirst && !watchedFirst_ && !matchList_.empty()) first = matchList_.front().id;
+                    }
+                }
+                // Once the spectator can switch (ChooseMatch drops a pick
+                // made while joining).
+                const State st = GetState();
+                if (first && (st == State::Lobby || st == State::Running || st == State::PostMatch || st == State::Jumping || st == State::Loading)) {
+                    watchedFirst_ = true;
+                    if (first != watchingMatch_) {
+                        Log("netplay: watching the table from its set's first game (%s)", Hex64(first).c_str());
+                        ChooseMatch(first);
+                    }
+                }
             }
             break;
         case lobby::Type::Inputs:
@@ -1418,6 +1510,37 @@ private:
         default:
             break;
         }
+    }
+
+    // A member of this match room the keeper proves itself in (its relay).
+    bool IsKeeperMember(uint64_t from)
+    {
+        if (!weyve_) return false;
+        const WeyveRoomView v = weyve_->View();
+        for (const WeyveMember& member : v.members) {
+            if (member.id != from) continue;
+            const auto p = member.data.find(keeper::kProof);
+            return p != member.data.end() && RoomsIsKeeper(v.room, member.id, p->second);
+        }
+        return false;
+    }
+
+    // The set is won: the keeper's relay is taking the starting states of the
+    // games a viewer has not reached (it serves them after this side has
+    // gone). The results screen waits for it, kKeeperStatesFor at most.
+    bool KeeperTakingStates()
+    {
+        const auto now = Clock::now();
+        if (now - decidedAt_ > kSetNextGameAfter + kKeeperStatesFor) return false;
+        std::lock_guard lock(mutex_);
+        for (const auto& [id, w] : watchers_) {
+            if (w.keeper && now - w.statesAskedAt < std::chrono::milliseconds(1500)) {
+                if (!loggedKeeperStates_) Log("netplay: the keeper's relay takes the set's starting states; leaving once it has them");
+                loggedKeeperStates_ = true;
+                return true;
+            }
+        }
+        return false;
     }
 
     void Reject(uint64_t to, lobby::RejectReason reason)
@@ -1489,7 +1612,7 @@ private:
             // back to the room; else a vote as Direct Match's, where no
             // choice in kSetVote counts as a rematch.
             if (const std::string over = SetOverText(); !over.empty()) {
-                if (Clock::now() - decidedAt_ >= kSetNextGameAfter) EndSession(over);
+                if (Clock::now() - decidedAt_ >= kSetNextGameAfter && !KeeperTakingStates()) EndSession(over);
                 return;
             }
             const bool late = Clock::now() - decidedAt_ >= kSetVote;
@@ -1567,17 +1690,49 @@ private:
                 SetBlockPause(true);
             }
             break;
-        case Next::End:
+        case Next::End: {
+            const State before = GetState();
             ReleaseResults();
             SetState(State::Ended);
             // Staying in the battle: let its results screen open.
             if (!options_.menuAfterMatch) SetHoldResults(false);
-            if (options_.menuAfterMatch && game_.BattleRunning()) ReturnToMainMenu(kMenuAfterMatchFrames);
+            if (options_.menuAfterMatch && (before == State::Jumping || before == State::Loading)) {
+                // A jump under way (a spectator off to the next kept match
+                // as the host left after the set, 2026-11-05): the menu now
+                // reset its battle loader, which was made again without the
+                // setup (used up) and crashed on the defaults (rva 0x2FF130,
+                // flow.cpp JumpToBattle). Back to the menu once that battle
+                // is up instead (EndAfterJumpTick).
+                endAfterJump_ = true;
+                endAfterJumpAt_ = Clock::now();
+                Log("netplay: the session ended during a jump: back to the menu once its battle is up");
+            }
+            else if (options_.menuAfterMatch && game_.BattleRunning()) {
+                ReturnToMainMenu(kMenuAfterMatchFrames);
+            }
             if (weyve_) weyve_->LeaveRoom();
             break;
+        }
         case Next::None:
             break;
         }
+    }
+
+    // After a session that ended mid-jump (Next::End): the battle it was
+    // jumping to is up (the scene switched and a battle runs), or it never
+    // came: back to the main menu.
+    void EndAfterJumpTick()
+    {
+        if (!endAfterJump_) return;
+        // The switch can come before the end (a rematch switches at once),
+        // so it counts from the jump's start. A battle that never comes (its
+        // loader found no setup once the session let go) waits 15 s at most.
+        const bool up = BattleSceneSwitches() != switchesAtJump_ && game_.BattleRunning();
+        const bool late = Clock::now() - endAfterJumpAt_ > std::chrono::seconds(15);
+        if (!up && !late) return;
+        endAfterJump_ = false;
+        Log("netplay: %s: back to the menu", up ? "the battle the ended session jumped to is up" : "no battle after the ended session's jump");
+        ReturnToMainMenu(kMenuAfterMatchFrames);
     }
 
     // EndSession, with the reason the other side is told in a Bye sent at
@@ -1823,6 +1978,7 @@ private:
     void BeginJump()
     {
         switchNow_ = false;
+        switchesAtJump_ = BattleSceneSwitches(); // EndAfterJumpTick: has this jump's battle scene come?
         ReleaseResults();
         // A delay chosen between matches takes effect with this one.
         if (nextDelay_ >= 0) options_.inputDelay = static_cast<uint8_t>(nextDelay_.exchange(-1));
@@ -1852,6 +2008,7 @@ private:
         bothLoadedAt_ = {};
         myChoice_ = Choice::None;
         specWanted_ = 0;
+        specPlayed_ = 0;
         {
             std::lock_guard lock(mutex_);
             requested_ = false;
@@ -2045,6 +2202,11 @@ private:
         sc.matchId = matchId_;
         sc.setup = setup_;
         sc.modVersion = modVersion_;
+        // A table set's viewers watch through the keeper's relay, one hop
+        // more: 20 frames in hand ran dry every few seconds there (user,
+        // 2026-11-05), so they start (and start again after running dry) 2 s
+        // behind. Direct Match spectators watch the host itself.
+        if (ticket_.after == AfterMatch::Set) sc.delayFrames = kRelayWatchDelayFrames;
         sc.log = [](const std::string& m) { Log("netplay: %s", m.c_str()); };
         game.localInput = nullptr;
         spectate_ = std::make_unique<SpectatorPlayback>(game, sc);
@@ -2332,6 +2494,7 @@ private:
         }
         if (!ResultsHeld()) spectate_->Update();
         specWanted_ = spectate_->NextWanted();
+        specPlayed_ = spectate_->NextFrame();
         framesRun_++;
         if (spectate_->DesyncFrame() >= 0 && desyncFrame_ < 0) {
             desyncFrame_ = spectate_->DesyncFrame();
@@ -2344,7 +2507,13 @@ private:
             SetHoldResults(true);
             Log("netplay: the match is decided at frame %d", spectate_->NextFrame());
             // Then the match after this one (or, none yet, the next Welcome).
-            if (next_ == Next::None || next_ == Next::Lobby) WatchNext();
+            // The host gone from the room (a table's set over): no stream
+            // can come for another, so the session ends here.
+            if ((next_ == Next::None || next_ == Next::Lobby) && peerLeftRoom_) {
+                const std::string over = SetOverText();
+                EndSession(!over.empty() ? over : "the host left");
+            }
+            else if (next_ == Next::None || next_ == Next::Lobby) WatchNext();
         }
         {
             std::lock_guard lock(mutex_);
@@ -2705,7 +2874,8 @@ private:
     std::atomic<bool> lockedIn_{false};    // the player said ready: their pick (and the host's stage) hold
     uint8_t selectScreen_ = 0, selectRow_ = 0; // SetSelectState, under mutex_
     uint32_t selectHover_ = 0;
-    std::atomic<bool> beatNow_{false};     // the next ControlTick beats at once (a select screen change)
+    std::atomic<bool> beatNow_{false};
+    bool loggedKeeperStates_ = false;     // the next ControlTick beats at once (a select screen change)
     std::atomic<int> hostStageRule_{-1};   // host: the stage rule set in the lobby (-1: from the options)
     uint16_t streaks_[kNumPlayers] = {};   // host: each player's current win streak this session
     uint32_t winsAtStart_[2] = {};         // the game's match win counts as the match started
@@ -2761,6 +2931,10 @@ private:
     std::atomic<bool> selfLoaded_{false};
     std::atomic<bool> peerLoaded_{false};
     std::atomic<bool> peerLeft_{false};
+    std::atomic<bool> peerLeftRoom_{false}; // the server said so while the link held (the match went on)
+    bool endAfterJump_ = false;     // Next::End came mid-jump: the menu waits for that battle (EndAfterJumpTick)
+    uint64_t switchesAtJump_ = 0;
+    Clock::time_point endAfterJumpAt_{};
     std::atomic<bool> sessionSyncing_{false};
 
     std::unique_ptr<NetplaySession> session_;
@@ -2804,6 +2978,8 @@ private:
     // Spectator: the host's matches as last heard, the one last watched, and
     // a switch asked for in the panel (Previous, Next, Live).
     std::vector<lobby::MatchEntry> matchList_; // guarded by mutex_
+    std::vector<lobby::MatchEntry> sliceList_; // the host's list as its slices come in (mutex_)
+    bool watchedFirst_ = false;                // watchFromFirst done (a table watch starts at game 1)
     std::atomic<uint64_t> lastWatched_{0};
     std::atomic<bool> switchNow_{false};
     // A pick made mid-switch (ChooseMatch), for once the switch is done.
@@ -2813,6 +2989,7 @@ private:
     std::unique_ptr<SpectatorPlayback> spectate_;
     std::vector<lobby::Message> inbound_;    // guarded by mutex_
     std::atomic<int> specWanted_{0};
+    std::atomic<int> specPlayed_{0}; // the next frame its playback shows (InputsAck.played)
     std::atomic<uint64_t> watchingMatch_{0};
 
     // ----- frozen state reconciliation (lobby.h) ------------------------------
@@ -2845,6 +3022,15 @@ private:
             at += r.size;
         }
         frozenHashes_ = hashes;
+        {
+            // What the keeper's relay takes of it at a set's end (a game a
+            // viewer has not reached): its size and its regions'.
+            std::vector<size_t> sizes = frozenSizes_;
+            std::sort(sizes.begin(), sizes.end());
+            Log("netplay: frozen state %zu bytes in %zu regions (median %zu, 90%% %zu, largest %zu)", frozenState_.size(),
+                sizes.size(), sizes.empty() ? 0 : sizes[sizes.size() / 2], sizes.empty() ? 0 : sizes[sizes.size() * 9 / 10],
+                sizes.empty() ? 0 : sizes.back());
+        }
         if (host_) {
             std::lock_guard lock(mutex_);
             KeepMatchLocked(matchId_);
@@ -3052,8 +3238,9 @@ private:
                 taken[i] = true;
             }
         }
-        size_t regionsChanged = 0, wordsCopied = 0, pointersKept = 0;
+        size_t regionsChanged = 0, wordsCopied = 0, pointersKept = 0, fetched = 0;
         for (const auto& [hostIndex, bytes] : host) {
+            fetched += bytes.size();
             size_t best = SIZE_MAX, bestDiff = SIZE_MAX;
             for (size_t i = 0; i < regions.size(); i++) {
                 if (taken[i] || regions[i].size != bytes.size()) continue;
@@ -3095,8 +3282,8 @@ private:
         HashRegions(regions, hashes.data());
         frozenChecksum_ = FoldChecksum(hashes.data(), hashes.size());
         frozenHashes_ = hashes;
-        Log("netplay: took the host's values: %zu words in %zu regions (%zu pointer-like words kept); checksum now %08X",
-            wordsCopied, regionsChanged, pointersKept, frozenChecksum_);
+        Log("netplay: took the host's values: %zu words in %zu regions (%zu pointer-like words kept, %zu bytes fetched); checksum now %08X",
+            wordsCopied, regionsChanged, pointersKept, fetched, frozenChecksum_);
     }
 
     // Both loaded: start when the frozen states agree, when the joiner has
@@ -3265,6 +3452,12 @@ void NetSetDelay(uint8_t frames)
     g_options.inputDelay = frames;
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->SetDelay(frames);
+}
+
+void NetTestMatchChat(const std::string& text)
+{
+    std::lock_guard lock(g_driverMutex);
+    if (g_driver) g_driver->TestChat(text);
 }
 
 void NetWatchMatch(uint64_t id)

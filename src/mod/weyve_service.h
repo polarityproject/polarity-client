@@ -76,6 +76,7 @@ public:
     void SetMemberData(const std::string& key, const std::string& value);
     void SendChat(const std::string& text);
     void TransferHost(uint32_t id); // host only
+    void Ban(uint32_t id);          // host only: out of the room, and kept out
     // Listed rooms whose listing slots equal these; the answer comes as a
     // RoomList event, then RoomList() has it.
     void ListRooms(const std::map<std::string, std::string>& equals);

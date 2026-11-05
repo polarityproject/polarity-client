@@ -98,6 +98,7 @@ struct Prompt {
     std::string label;
     int action; // 0 confirm (A), 1 back (B), 3 Y
 };
-void DrawPrompts(ImDrawList* d, ImFont* text, const std::vector<Prompt>& prompts);
+// `right` and `top` (design units) place the row elsewhere (a panel's own).
+void DrawPrompts(ImDrawList* d, ImFont* text, const std::vector<Prompt>& prompts, float right = 1572, float top = 14);
 
 } // namespace sfv::mod::ui
