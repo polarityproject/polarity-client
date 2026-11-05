@@ -574,6 +574,14 @@ struct Client {
             ask("score", {t, std::to_string(nv.seats[0].wins), std::to_string(nv.seats[1].wins)});
         }
         if (!live) {
+            // A player left the set (this one, or the other's Bye said so):
+            // a forfeit, which both tell the keeper (it takes the first).
+            if (const int seat = NetTakeForfeit(); seat >= 0) {
+                Log("rooms: table %d's set: P%d left it (a forfeit)", playing.table + 1, seat + 1);
+                ask("forfeit", {t, std::to_string(seat)});
+                playing = {};
+                return;
+            }
             // Over: the set's result, or 0 - 0 when it did not finish (the
             // keeper calls the table again). P2 reports too; the keeper takes
             // it only when P1 is gone.
@@ -839,6 +847,45 @@ void RoomsTableSession(int table, bool host, const std::string& rules)
 int64_t RoomsClockMs()
 {
     return NowMs();
+}
+
+std::string RoomsAfterSet(int seat, int winnerSeat)
+{
+    std::string out;
+    WithClient([&](Client& c) {
+        const int t = c.playing.table;
+        if (t < 0 || t >= static_cast<int>(c.view.tableViews.size()) || seat < 0 || seat > 1) return false;
+        keeper::TableState s = c.view.tableViews[t].s;
+        std::vector<uint32_t> queue = c.view.tableViews[t].queue;
+        const uint32_t who = s.seat[seat];
+        if (!who || !s.seat[1 - seat]) return false;
+        const uint8_t games[2] = {s.wins[0], s.wins[1]};
+        keeper::ApplySetResult(c.playing.rules, winnerSeat, games, &s, &queue);
+        auto nameOf = [&](uint32_t id) {
+            for (const RoomMember& m : c.view.members) {
+                if (m.id == id) return m.name;
+            }
+            return std::string("the next player");
+        };
+        const std::string table = "Table " + std::to_string(t + 1);
+        if (s.seat[0] == who || s.seat[1] == who) {
+            out = "Stays on " + table;
+            const uint32_t other = s.seat[0] == who ? s.seat[1] : s.seat[0];
+            const uint32_t next = other ? other : queue.empty() ? 0 : queue.front();
+            if (next) out += " \xC2\xB7 plays " + nameOf(next) + " next";
+            return true;
+        }
+        const auto at = std::find(queue.begin(), queue.end(), who);
+        if (at == queue.end()) {
+            out = "Back to the room";
+            return true;
+        }
+        static const char* const kNth[] = {"next", "2nd", "3rd"};
+        const size_t n = static_cast<size_t>(at - queue.begin());
+        out = "Back in the queue \xC2\xB7 " + (n < 3 ? std::string(kNth[n]) : std::to_string(n + 1) + "th");
+        return true;
+    });
+    return out;
 }
 
 bool RoomsTakeAbort()

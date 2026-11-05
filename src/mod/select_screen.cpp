@@ -36,6 +36,7 @@ void DrawPrompts(ImDrawList* d, const SelectFonts& f, const std::vector<Prompt>&
 
 std::mutex g_dataMutex;
 SelectData g_data; // the live screen's lists (SetSelectData)
+bool g_myCharacter = false; // Render's live.myCharacter (DrawLoadout's banner)
 
 const char* const kRowLabels[kSelectRows] = {"Costume", "Color", "Variant", "V-Skill", "V-Trigger", "V-Comment", "Input delay"};
 
@@ -51,6 +52,7 @@ struct Ui {
     bool wasLocked = false;
     bool leaving = false;     // the leave dialog is up
     bool leaveChosen = false; // ... on Leave (it opens on Stay)
+    bool cameFromStage = false; // My character: back from its stage select (the grid or loadout as left)
 } g_ui;
 
 // The game's grid, from the middle outwards (the final roster's screen):
@@ -244,9 +246,9 @@ void DrawLoadout(ImDrawList* d, const SelectFonts& f, bool right, const SelectSi
     if (side.ready) {
         const ImU32 g1 = Rgba(217, 166, 50), g2 = Rgba(150, 108, 28, 230);
         d->AddRectFilledMultiColor(a, b, right ? g2 : g1, right ? g1 : g2, right ? g1 : g2, right ? g2 : g1);
-        Text(d, f.name, g_v.L(19), g_v.P(x0 + 44, y + 4), Rgba(26, 20, 5), "READY");
+        Text(d, f.name, g_v.L(19), g_v.P(x0 + 44, y + 4), Rgba(26, 20, 5), g_myCharacter ? "SAVED" : "READY");
     }
-    else {
+    else if (!g_myCharacter) {
         d->AddRectFilled(a, b, Rgba(8, 9, 11, 185));
         const std::string& hint = side.rows[interactive ? g_ui.row : 5].hint;
         Text(d, font, g_v.L(14), g_v.P(x0 + 44, y + 7), Rgba(217, 212, 198), hint);
@@ -532,17 +534,69 @@ void DrawLeaveDialog(ImDrawList* d, const SelectFonts& f, const SelectLive& live
 }
 
 // The whole screen for a lobby's state; what the player does goes to `in`.
+// My character's CURRENT LOADOUT card, where the other player's side is.
+void DrawCard(ImDrawList* d, const SelectFonts& f, const SelectCard& c)
+{
+    const float x0 = 980, y0 = 108, x1 = 1552, y1 = 438;
+    const ImU32 white = Rgba(244, 241, 232), dim = Rgba(168, 162, 147), text = Rgba(217, 212, 198), gold = Rgba(233, 196, 106),
+                green = Rgba(127, 216, 139);
+    d->AddRectFilled(g_v.P(x0, y0), g_v.P(x1, y1), Rgba(8, 9, 11, 220));
+    d->AddRect(g_v.P(x0, y0), g_v.P(x1, y1), Rgba(201, 168, 92, 150), 0, 0, std::max(1.0f, g_v.L(1)));
+    Text(d, f.text, g_v.L(13), g_v.P(x0 + 22, y0 + 20), dim, "CURRENT LOADOUT");
+    // The player bar: the pick's grid icon, name (you), character, place.
+    const float bx0 = x0 + 22, by0 = y0 + 48, bx1 = x1 - 22, by1 = by0 + 66;
+    d->AddRectFilled(g_v.P(bx0, by0), g_v.P(bx1, by1), Rgba(0, 0, 0, 120));
+    float x = bx0 + 12;
+    if (const TextureView* t = c.chara.empty() ? nullptr : Texture(CharaTex(c.chara, "CharaSelectIconLeft"))) {
+        // The icon's portrait (116x144) as the grid shows it, upright.
+        Image(d, t, g_v.P(x, by0 + 8), g_v.P(x + 40, by0 + 58), ImVec2(0.12f, 0.0f), ImVec2(0.88f, 0.95f));
+    }
+    x += 52;
+    const std::string player = Upper(c.player.empty() ? "Player" : c.player);
+    Text(d, f.title, g_v.L(17), g_v.P(x, by0 + 22), white, player);
+    x += TextW(f.title, 17, player) + 6;
+    Text(d, f.text, g_v.L(15), g_v.P(x, by0 + 24), dim, "(you)");
+    x += TextW(f.text, 15, "(you)") + 14;
+    Text(d, f.text, g_v.L(15), g_v.P(x, by0 + 24), white, c.charaName);
+    Text(d, f.text, g_v.L(15), g_v.P(bx1 - 12, by0 + 24), gold, c.place, 1.0f);
+    // The rows.
+    float y = by1 + 18;
+    for (const SelectCard::Row& r : c.rows) {
+        Text(d, f.text, g_v.L(15), g_v.P(x0 + 26, y), dim, r.label);
+        Text(d, f.text, g_v.L(15), g_v.P(x0 + 156, y), white, r.value);
+        if (r.swatch1) {
+            const float sx = x0 + 156 + TextW(f.text, 15, r.value) + 10;
+            d->AddRectFilled(g_v.P(sx, y + 1), g_v.P(sx + 15, y + 16), FromArgb(r.swatch1));
+            d->AddRectFilled(g_v.P(sx + 19, y + 1), g_v.P(sx + 34, y + 16), FromArgb(r.swatch2));
+        }
+        y += 30;
+    }
+    // The status and the loading bar.
+    const float sy = y1 - 46;
+    Text(d, f.text, g_v.L(14), g_v.P(x0 + 22, sy), c.done ? green : text, c.status);
+    Text(d, f.text, g_v.L(14), g_v.P(x1 - 22, sy), c.done ? green : gold, c.statusRight, 1.0f);
+    if (c.progress >= 0) {
+        const float ly = y1 - 22, lx0 = x0 + 22, lx1 = x1 - 22;
+        d->AddRectFilled(g_v.P(lx0, ly), g_v.P(lx1, ly + 4), Rgba(255, 255, 255, 40));
+        const float p = std::clamp(c.progress, 0.0f, 1.0f);
+        d->AddRectFilled(g_v.P(lx0, ly), g_v.P(lx0 + (lx1 - lx0) * p, ly + 4), c.done ? green : gold);
+    }
+}
+
 void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectInput* in)
 {
+    g_myCharacter = live.myCharacter;
     if (g_gridFor != g_draw) BuildGrid(*g_draw);
     const bool watching = live.you < 0;
     const SelectSide* me = watching ? nullptr : &live.sides[live.you];
-    if (live.stageLocked && !g_ui.wasLocked) {
+    if (live.stageLocked && !g_ui.wasLocked && !(live.myCharacter && g_ui.cameFromStage)) {
         // On to the characters: the cursor starts on the player's pick.
         g_ui.loadout = false;
         g_ui.onRandom = false;
         g_ui.lastChara = -2;
     }
+    if (!live.stageLocked) g_ui.cameFromStage = true;
+    else if (g_ui.wasLocked) g_ui.cameFromStage = false;
     g_ui.wasLocked = live.stageLocked;
     // While the leave dialog is up it takes the input: the screen behind is
     // drawn as it is.
@@ -569,8 +623,11 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         const SelectStage* stage = Shown(live.stage, 0);
         if (live.host && !watching && stage && !stage->settings.empty()) prompts.push_back({"button_y", "Setting", 3});
         if (live.host && !watching) prompts.push_back({"button_a", "Confirm stage", 0});
-        prompts.push_back({"button_b", "Leave", 1});
-        if (Back()) OpenLeave();
+        prompts.push_back({"button_b", live.myCharacter ? "Back" : "Leave", 1});
+        if (Back()) {
+            if (live.myCharacter) in->closeStage = true;
+            else OpenLeave();
+        }
     }
     else {
         const bool ready = me && me->ready;
@@ -629,13 +686,19 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             if (showLoadout[i]) DrawLoadout(d, f, i == 1, live.sides[i], lit[i], loadout && live.you == i, in);
         }
         for (int i = 0; i < 2; i++) {
+            if (live.myCharacter && i == 1) continue;
             DrawPlayerLine(d, f, live, i);
             const SelectChara* c = Chara(shown[i]);
             const std::string name = onRandom[i] ? "RANDOM" : c ? Upper(c->name) : "";
             Text(d, f.name, g_v.L(74), g_v.P(i ? 1482.0f : 118.0f, 496), Rgba(255, 255, 255), name, i ? 1.0f : 0.0f, true);
         }
-        Text(d, f.name, g_v.L(42), g_v.P(800, 502), Rgba(255, 255, 255), "CHARACTER SELECT", 0.5f, true);
-        Infinity(d, g_v.P(800, 578), g_v.L(56), Rgba(242, 201, 76));
+        Text(d, f.name, g_v.L(42), g_v.P(800, 502), Rgba(255, 255, 255), live.myCharacter ? "MY CHARACTER" : "CHARACTER SELECT", 0.5f, true);
+        if (live.myCharacter) {
+            DrawCard(d, f, live.card);
+            const std::string& note = loadout ? me->rows[g_ui.row].hint : live.note;
+            Text(d, f.text, g_v.L(15), g_v.P(48, 864), Rgba(217, 212, 198), note);
+        }
+        else Infinity(d, g_v.P(800, 578), g_v.L(56), Rgba(242, 201, 76));
         // The grid: each side's tag on what it shows; on the random tile while
         // that player's cursor is there.
         for (int r = 0; r < 2; r++) {
@@ -654,18 +717,33 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
                 }
             }
         }
-        if (grid) {
+        if (grid && live.myCharacter) {
+            prompts.push_back({"button_a", "Select", 0});
+            prompts.push_back({"button_x", "Preferred stage", 2});
+            prompts.push_back({"button_y", "Random", 3});
+            prompts.push_back({"button_b", live.keepLabel.empty() ? "Back" : live.keepLabel, 1});
+        }
+        else if (grid) {
             prompts.push_back({"button_a", "Select", 0});
             prompts.push_back({"button_b", live.host ? "Stage" : "Leave", 1});
         }
         else if (watching) {
             prompts.push_back({"button_b", "Leave", 1});
         }
+        else if (loadout && live.myCharacter) {
+            prompts.push_back({"button_a", "Confirm", 0});
+            prompts.push_back({"button_x", "Preferred stage", 2});
+            prompts.push_back({"button_b", "Characters", 1});
+        }
         else if (loadout) {
             prompts.push_back({"button_a", "Ready", 0});
             prompts.push_back({"button_b", "Back", 1});
         }
-        if (ready) {
+        if (ready && live.myCharacter) {
+            prompts.push_back({"button_a", "Back to the room", 0});
+            prompts.push_back({"button_b", "Change again", 1});
+        }
+        else if (ready) {
             // B says not ready, until both are: then the match is locked in
             // (B leaves).
             if (live.bothReady) {
@@ -690,8 +768,20 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         else if (loadout && a) {
             in->ready = true;
         }
+        else if (ready && a && live.myCharacter) {
+            in->done = true;
+        }
+        if ((grid || loadout) && live.myCharacter && Pressed({ImGuiKey_GamepadFaceLeft, ImGuiKey_X}, false)) in->openStage = true;
+        if (grid && live.myCharacter && Pressed({ImGuiKey_GamepadFaceUp, ImGuiKey_Y}, false)) {
+            in->randomPick = true;
+            g_ui.loadout = true;
+            g_ui.onRandom = false;
+            g_ui.lastChara = -2;
+            g_ui.row = 0;
+        }
         if (Back()) {
-            if (ready && !live.bothReady) in->unready = true;
+            if (grid && live.myCharacter) in->cancel = true;
+            else if (ready && !live.bothReady) in->unready = true;
             else if (loadout) g_ui.loadout = false;
             else if (grid && live.host) in->unlockStage = true;
             else OpenLeave();

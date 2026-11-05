@@ -853,6 +853,22 @@ void Keeper::TableRequest(Room& room, Member& m, const Request& r, int64_t nowMs
             }
         }
     }
+    else if (r.kind == "forfeit" && t && r.args.size() == 2 &&
+             (t->s.phase == TablePhase::Playing || t->s.phase == TablePhase::Connecting)) {
+        // A player left the set (both games say so; the first counts): the
+        // other wins it, the rotation runs, and the one who left is off the
+        // table and its queue (user, 2026-11-04: a forfeit, not queued again).
+        const int seat = std::atoi(r.args[1].c_str());
+        if (seatOf(*t) >= 0 && (seat == 0 || seat == 1) && t->s.seat[0] && t->s.seat[1]) {
+            const uint32_t leaver = t->s.seat[seat];
+            const uint8_t games[2] = {t->s.wins[0], t->s.wins[1]};
+            ApplySetResult(t->setRules, 1 - seat, games, &t->s, &t->queue);
+            LeaveTable(leaver, &t->s, &t->queue);
+            t->phaseAtMs = nowMs;
+            Log("keeper: room %s: table %d: %u beat %u by forfeit (%d-%d)", room.code.c_str(), index + 1, t->s.lastWinner,
+                t->s.lastLoser, t->s.lastScore[0], t->s.lastScore[1]);
+        }
+    }
     else if (r.kind == "rules" && t && r.args.size() == 2 && m.id == room.owner) {
         Rules rules;
         if (ParseRules(r.args[1], &rules)) {

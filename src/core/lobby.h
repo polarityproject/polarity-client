@@ -143,6 +143,9 @@ struct Message {
     std::string name;         // Hello: the joiner's; Accept: the host's
     bool reports = false;     // Hello, Accept: the sender sends desync reports (report_upload.h)
     uint64_t seatToken = 0;   // Hello: the P2 seat's token from the joiner's ticket (match_ticket.h); 0: none
+    // Bye: the sender gives up the table set it was playing (match_ticket.h):
+    // the other player wins it.
+    bool forfeit = false;
     // PlayerState (the sender's seat; its name and wins are not used)
     Seat seat;
     // PlayerState, SessionState: heartbeat timestamps (ms, the sender's clock)

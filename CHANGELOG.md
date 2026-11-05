@@ -49,6 +49,9 @@ are on the way. Rooms builds only play other rooms builds.
   main menu once the session had ended: it opened Arcade ("You are not
   logged in to the server") or whatever the cursor was on. The game now gets
   no input until the button is released.
+- After a match, the first A on the side panel (Rematch, Character select,
+  Ready) did nothing when the panel had just appeared or the mouse had
+  moved: a direction had to be pressed first. A works at once now.
 - Desync warnings during the round call on a stage whose scenery shakes
   the screen: the shake follows the scenery's animation, so when a frame
   hitched it began a few frames apart on each PC. The fight was never

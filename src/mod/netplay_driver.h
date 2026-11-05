@@ -154,7 +154,9 @@ struct NetView {
     // for a spectator), matches finished, spectators watching.
     lobby::Seat seats[kNumPlayers];
     int you = -1;
-    bool setPlay = false; // a table's set (AfterMatch::Set): the next game on its own, no vote
+    bool setPlay = false; // a table's set (AfterMatch::Set): a vote after each game, a timer on it
+    int voteSecondsLeft = -1; // a table set's vote: seconds until no choice counts as rematch (-1 none)
+    int forfeitSeat = -1;     // the seat that left the set (a forfeit), -1 none
     uint8_t firstTo = 0;  // ... games to win it
     int played = 0;
     int spectators = 0;
@@ -200,6 +202,9 @@ struct NetView {
     uint64_t watchingMatch = 0;
 };
 NetView NetViewNow();
+// The seat that last forfeited a table set (this player leaving one, or the
+// other's Bye saying so), once: -1 none. rooms_client tells the keeper.
+int NetTakeForfeit();
 // Whether a battle is running and ticking, and its frame counters (diagnostics).
 std::string BattleInfo();
 

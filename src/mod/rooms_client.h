@@ -117,6 +117,11 @@ void RoomsTableSession(int table, bool host, const std::string& rules);
 // left during the handoff, the keeper called the table again): true once,
 // and the overlay ends that session.
 bool RoomsTakeAbort();
+// The table set this player plays, once `winnerSeat` has won it: what follows
+// for the player in `seat` ("Stays on Table 2 \xC2\xB7 plays Yuzu next",
+// "Back in the queue \xC2\xB7 2nd", "Back to the room"), worked out as the
+// keeper will (ApplySetResult); "" outside a table set.
+std::string RoomsAfterSet(int seat, int winnerSeat);
 // Cancel on the connecting modal: off the table before its match began (the
 // keeper calls the table again), and this player's session ends.
 void RoomsCancelHandoff();

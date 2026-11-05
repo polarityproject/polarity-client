@@ -235,6 +235,7 @@ std::vector<uint8_t> Encode(const Message& m)
         break;
     case Type::Bye:
         PutName(o, m.text, kMaxText);
+        o.Put(static_cast<uint8_t>(m.forfeit));
         break;
     case Type::StateHashes:
         o.Put(m.matchId);
@@ -346,6 +347,7 @@ std::optional<Message> Decode(const uint8_t* data, size_t len)
         break;
     case Type::Bye:
         m.text = GetName(in, kMaxText);
+        m.forfeit = in.Get<uint8_t>() != 0;
         break;
     case Type::StateHashes: {
         m.matchId = in.Get<uint64_t>();

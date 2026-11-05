@@ -1279,6 +1279,9 @@ uint64_t g_preloadSeenAt = 0;                // ... since this queue run
 std::map<std::string, int> g_preloadTries;   // per character key, preloads started
 std::atomic<bool> g_preloadsDone{false};     // every pick of the source is in the cache (or tried enough)
 std::string g_preloadsDoneFor;               // ... the picks that was checked for (PreloadsDoneFor)
+std::map<std::string, int> g_preloadStatus;  // per "code/costume" of the source: PreloadStatus's 2, 0 or -1
+std::string g_preloadingKey;                 // the preload running now ("code/costume")
+std::chrono::steady_clock::time_point g_preloadingSince;
 constexpr int kPreloadStableFrames = 60;     // picks unchanged this long before preloading
 constexpr int kPreloadMaxTries = 2;          // per key, so one that never stays cached is not loaded forever
 
@@ -1310,6 +1313,11 @@ bool StartPreload(const std::string& code, int costume, int setupVersion, const 
     Log("flow: preloading %s costume %d version %d (%s)", code.c_str(), costume, version, why);
     g_preloading = true;
     {
+        std::lock_guard lock(g_preloadMutex);
+        g_preloadingKey = code + "/" + std::to_string(costume);
+        g_preloadingSince = std::chrono::steady_clock::now();
+    }
+    {
         const FStringArg codeArg(WideOf(code));
         const FStringArg xArg(x);
         reinterpret_cast<void (*)(void*, const void*, int, int, const void*, int)>(g_base + kQueueAddChara)(
@@ -1332,6 +1340,10 @@ bool StartPreload(const std::string& code, int costume, int setupVersion, const 
             }
             Log("flow: preloaded %s costume %d in %.1f s (%d frames)%s", code.c_str(), costume, seconds, frames,
                 InCharaCache(code, costume, version, y) ? "" : "; NOT in the character cache");
+            {
+                std::lock_guard lock(g_preloadMutex);
+                g_preloadingKey.clear();
+            }
             g_preloading = false;
         }
     };
@@ -1364,9 +1376,13 @@ void PreloadTick()
         int y = 0;
         CacheArgs(&x, &y);
         bool done = !g_preloading;
+        std::map<std::string, int> status;
         for (const auto& p : picks) {
-            done = done && (p.code.empty() || InCharaCache(p.code, p.costume, MatchVersion(p.code, p.version), y) ||
-                            g_preloadTries[p.code + "/" + std::to_string(p.costume)] >= kPreloadMaxTries);
+            const std::string key = p.code + "/" + std::to_string(p.costume);
+            const bool cached = !p.code.empty() && InCharaCache(p.code, p.costume, MatchVersion(p.code, p.version), y);
+            const bool tried = g_preloadTries[key] >= kPreloadMaxTries;
+            status[key] = cached ? 2 : tried ? -1 : 0;
+            done = done && (p.code.empty() || cached || tried);
         }
         // Preloads run at the main menu only. In the lobby over a held results
         // screen a new pick cannot be preloaded: waiting for it would only hold
@@ -1375,6 +1391,7 @@ void PreloadTick()
         std::lock_guard lock(g_preloadMutex);
         g_preloadsDone = done;
         g_preloadsDoneFor = seen;
+        g_preloadStatus = std::move(status);
     }
     if (seen != g_preloadSeen) {
         g_preloadSeen = seen;
@@ -1431,6 +1448,19 @@ bool PreloadsDoneFor(const std::string& picks)
 {
     std::lock_guard lock(g_preloadMutex);
     return g_preloadsDone && g_preloadsDoneFor == picks;
+}
+
+int PreloadStatus(const std::string& code, int costume, double* seconds)
+{
+    const std::string key = code + "/" + std::to_string(costume);
+    std::lock_guard lock(g_preloadMutex);
+    *seconds = 0;
+    if (g_preloadingKey == key) {
+        *seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - g_preloadingSince).count();
+        return 1;
+    }
+    const auto it = g_preloadStatus.find(key);
+    return it == g_preloadStatus.end() ? -1 : it->second;
 }
 
 void PreloadCharacter(const std::string& code, int costume)

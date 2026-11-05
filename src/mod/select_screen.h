@@ -74,6 +74,24 @@ struct SelectSide {
     int row = -1;
 };
 
+// My character's side card (CURRENT LOADOUT): the pick in effect until a new
+// one is saved, where the player is, and its background loading.
+struct SelectCard {
+    std::string player;    // "POLARITYDEV"
+    std::string chara;     // its code (the grid icon); empty: none
+    std::string charaName; // "RYU"
+    std::string place;     // "Table 2 \xC2\xB7 2nd" (gold, right)
+    struct Row {
+        std::string label, value;
+        uint32_t swatch1 = 0, swatch2 = 0;
+    };
+    std::vector<Row> rows;
+    std::string status;      // under the rows
+    std::string statusRight; // "loading", "ready"
+    float progress = -1;     // the bar (0..1); -1: none
+    bool done = false;       // green: loaded
+};
+
 // A session's lobby, as of this frame.
 struct SelectLive {
     int you = -1; // the seat this game plays; -1 watching
@@ -87,6 +105,15 @@ struct SelectLive {
     unsigned pingMs = 0;      // the link's round trip (a spectator's: to the host)
     bool relayed = false;
     int spectators = 0;
+    // My character (custom rooms, mock-up board 5): one player, no match.
+    // MY CHARACTER over the grid; on the grid X opens the stage select (the
+    // preferred stage, stageLocked false), Y picks at random, B keeps the
+    // current pick ("Keep RYU": keepLabel); ready is "saved" (SAVED, A back
+    // to the room, B changes again).
+    bool myCharacter = false;
+    std::string keepLabel;
+    SelectCard card;  // in place of the other player
+    std::string note; // the line at the bottom left (the loadout: the row's hint)
 };
 
 // What the local player did this frame.
@@ -101,6 +128,10 @@ struct SelectInput {
     bool lockStage = false, unlockStage = false;
     bool ready = false;
     bool unready = false; // B while ready, until both are
+    // My character: X on the grid (the stage select), B there (back to the
+    // grid), A once saved (back to the room), B on the grid (keep the
+    // current pick and close).
+    bool openStage = false, closeStage = false, done = false, cancel = false;
     // Leave, confirmed: B with nothing to go back to asks first (the screen's
     // own dialog; the panel does not open over this screen).
     bool leave = false;

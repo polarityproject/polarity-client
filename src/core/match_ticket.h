@@ -16,8 +16,11 @@ namespace sfv {
 
 enum class AfterMatch : uint8_t {
     Vote, // Direct Match: both choose rematch, character select or leave
-    Set,  // a table: the next game of the set at once, until one player wins
-          // the set (rules.firstTo); then the session ends, back to the room
+    Set,  // a table: after each game a vote as Vote's (rematch: the set's next
+          // game; character select: the select screen, then the next game;
+          // 15 s without a choice counts as rematch), until one player wins
+          // the set (rules.firstTo) or leaves it (a forfeit); then the
+          // session ends, back to the room
 };
 
 struct MatchTicket {

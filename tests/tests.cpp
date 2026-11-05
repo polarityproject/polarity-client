@@ -704,7 +704,12 @@ void TestLobbyMessages()
     bye.text = "the other player's game lacks Urien's final version (60)";
     bytes = lobby::Encode(bye);
     back = lobby::Decode(bytes.data(), bytes.size());
-    CHECK(back && back->type == lobby::Type::Bye && back->text == bye.text);
+    CHECK(back && back->type == lobby::Type::Bye && back->text == bye.text && !back->forfeit);
+    // Leaving a table set mid-way: a forfeit.
+    bye.forfeit = true;
+    bytes = lobby::Encode(bye);
+    back = lobby::Decode(bytes.data(), bytes.size());
+    CHECK(back && back->forfeit);
 
     lobby::Message loaded;
     loaded.type = lobby::Type::Loaded;

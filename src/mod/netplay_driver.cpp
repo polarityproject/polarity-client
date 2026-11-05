@@ -77,9 +77,14 @@ constexpr auto kConnectTimeout = std::chrono::seconds(15);
 constexpr auto kJoinTimeout = std::chrono::seconds(20);
 // Both ready but a game still loading characters: start anyway after this.
 constexpr auto kPreloadWait = std::chrono::seconds(90);
-// A table's set (AfterMatch::Set): the next game this long after a match is
-// decided, the side panels showing the score meanwhile.
-constexpr auto kSetNextGameAfter = std::chrono::seconds(4);
+// A table's set (AfterMatch::Set) won: back to the room this long after the
+// last game is decided, the side panels saying what follows meanwhile.
+constexpr auto kSetNextGameAfter = std::chrono::seconds(6);
+// ... and its vote after each game: no choice by then counts as a rematch,
+// so a player who walks away does not hold the table (user, 2026-11-04).
+constexpr auto kSetVote = std::chrono::seconds(15);
+// NetTakeForfeit.
+std::atomic<int> g_forfeitSeat{-1};
 constexpr size_t kMaxSpectators = 8;
 // Spectator stream: batches in flight per spectator before an ack, and how
 // long without progress before resending from the last ack.
@@ -376,7 +381,7 @@ public:
     {
         std::lock_guard lock(mutex_);
         if (options_.hasPick == hasPick && options_.pick == pick) return;
-        if (lockedIn_) {
+        if (lockedIn_ && state_ != State::Ended) {
             Log("netplay: the pick is locked in (ready)");
             return;
         }
@@ -482,6 +487,11 @@ public:
         v.desyncReport = desyncReport_;
         v.you = role_ == Role::Spectator ? -1 : host_ ? 0 : 1;
         v.setPlay = ticket_.after == AfterMatch::Set;
+        if (v.setPlay && state_ == State::PostMatch && SetWinnerLocked() < 0 && forfeitSeat_ < 0) {
+            const auto left = kSetVote - (Clock::now() - decidedAt_);
+            v.voteSecondsLeft = static_cast<int>(std::max<int64_t>(0, std::chrono::duration_cast<std::chrono::seconds>(left).count() + 1));
+        }
+        v.forfeitSeat = forfeitSeat_;
         v.firstTo = ticket_.rules.firstTo;
         v.played = played_;
         v.spectators = host_ ? static_cast<int>(watchers_.size()) : spectators_;
@@ -507,7 +517,19 @@ public:
         stop_ = true;
         if (thread_.joinable()) thread_.join();
         if (jump_.joinable()) jump_.join();
-        if (control_) SendBye();
+        if (control_) {
+            if (LeavingMidSet()) {
+                const int seat = host_ ? 0 : 1;
+                {
+                    std::lock_guard lock(mutex_);
+                    forfeitOnBye_ = true;
+                    forfeitSeat_ = seat;
+                }
+                g_forfeitSeat = seat;
+                Log("netplay: left the table's set: a forfeit");
+            }
+            SendBye();
+        }
         SetPadIsolation(false);
         game_.localInput = nullptr;
         game_.exclusiveTicks = false;
@@ -648,6 +670,7 @@ private:
         {
             std::lock_guard lock(mutex_);
             bye.text = std::exchange(byeText_, {});
+            bye.forfeit = forfeitOnBye_;
         }
         for (uint64_t to : Members()) SendTo(to, bye);
     }
@@ -1258,8 +1281,9 @@ private:
             break;
         case lobby::Type::Bye:
             if (from == peer_ && s != State::Ended && s != State::Idle) {
-                Log("netplay: the other player left%s%s", m.text.empty() ? "" : ": ", m.text.c_str());
+                Log("netplay: the other player left%s%s%s", m.text.empty() ? "" : ": ", m.text.c_str(), m.forfeit ? " (a forfeit)" : "");
                 peerLeft_ = true;
+                if (m.forfeit && TookForfeit(1)) break;
                 const std::string over = SetOverText();
                 EndSession(!over.empty() ? over : m.text.empty() ? "the other player left" : m.text);
             }
@@ -1383,8 +1407,9 @@ private:
             break;
         case lobby::Type::Bye:
             if (s != State::Ended && s != State::Idle) {
-                Log("netplay: the host left%s%s", m.text.empty() ? "" : ": ", m.text.c_str());
+                Log("netplay: the host left%s%s%s", m.text.empty() ? "" : ": ", m.text.c_str(), m.forfeit ? " (a forfeit)" : "");
                 peerLeft_ = true;
+                if (m.forfeit && TookForfeit(0)) break;
                 const std::string over = SetOverText();
                 EndSession(!over.empty() ? over : !m.text.empty() ? m.text : role_ == Role::Player ? "the other player left" : "the host left");
             }
@@ -1452,25 +1477,39 @@ private:
     void MaybeResolve()
     {
         if (next_ != Next::None) return;
-        if (ticket_.after == AfterMatch::Set) {
-            // A table's set: the next game on its own, a moment after the
-            // result (the side panels say what follows), until one player
-            // has won it; then back to the room.
-            if (Clock::now() - decidedAt_ < kSetNextGameAfter) return;
-            if (const std::string over = SetOverText(); !over.empty()) {
-                EndSession(over);
-                return;
-            }
-            Log("netplay: next game of the set (%s)", SetScoreText().c_str());
-            StartMatch(true);
-            return;
-        }
         Choice theirs;
         {
             std::lock_guard lock(mutex_);
             theirs = seats_[1].choice;
         }
-        const Choice mine = myChoice_;
+        Choice mine = myChoice_;
+        if (ticket_.after == AfterMatch::Set) {
+            // A table's set: won, the side panels say so a moment and it is
+            // back to the room; else a vote as Direct Match's, where no
+            // choice in kSetVote counts as a rematch.
+            if (const std::string over = SetOverText(); !over.empty()) {
+                if (Clock::now() - decidedAt_ >= kSetNextGameAfter) EndSession(over);
+                return;
+            }
+            const bool late = Clock::now() - decidedAt_ >= kSetVote;
+            if (late) {
+                if (mine == Choice::None) mine = Choice::Rematch;
+                if (theirs == Choice::None) theirs = Choice::Rematch;
+            }
+            // Either player's Character select is the select screen at once
+            // (the other's Rematch cannot outvote it).
+            const bool select = mine == Choice::CharacterSelect || theirs == Choice::CharacterSelect;
+            if (!select && (mine == Choice::None || theirs == Choice::None)) return;
+            if (mine == Choice::Rematch && theirs == Choice::Rematch) {
+                Log("netplay: next game of the set (%s)%s", SetScoreText().c_str(), late ? ", the vote's time up" : "");
+                StartMatch(true);
+                return;
+            }
+            Log("netplay: character select within the set (%s)", SetScoreText().c_str());
+            std::lock_guard lock(mutex_);
+            next_ = Next::Lobby;
+            return;
+        }
         if (mine == Choice::None || theirs == Choice::None) return;
         if (mine == Choice::Rematch && theirs == Choice::Rematch) {
             Log("netplay: both chose a rematch");
@@ -1500,7 +1539,9 @@ private:
             break;
         case Next::Lobby:
             myChoice_ = Choice::None;
-            ready_ = options_.autoReady;
+            // Within a table's set (character select): the players ready by
+            // hand on the select screen, the set's stage kept.
+            ready_ = options_.autoReady && ticket_.after != AfterMatch::Set;
             lockedIn_ = false;
             {
                 std::lock_guard lock(mutex_);
@@ -1580,6 +1621,41 @@ private:
         std::lock_guard lock(mutex_);
         return "P1 " + std::to_string(seats_[0].wins) + " - " + std::to_string(seats_[1].wins) + " P2, first to " +
                std::to_string(ticket_.rules.firstTo);
+    }
+
+    // The set's winner seat (-1 while it goes on), mutex_ held.
+    int SetWinnerLocked()
+    {
+        if (ticket_.after != AfterMatch::Set) return -1;
+        uint16_t wins[kNumPlayers];
+        for (int i = 0; i < kNumPlayers; i++) wins[i] = seats_[i].wins;
+        return SetWinner(ticket_.rules, wins);
+    }
+
+    // Leaving now gives up a table set: a player, the set begun (a game
+    // played or on), not won, the session not over.
+    bool LeavingMidSet()
+    {
+        if (ticket_.after != AfterMatch::Set || role_ != Role::Player) return false;
+        std::lock_guard lock(mutex_);
+        const bool begun = played_ > 0 || state_ == State::Jumping || state_ == State::Loading || state_ == State::Running ||
+                           state_ == State::PostMatch;
+        return begun && state_ != State::Ended && state_ != State::Idle && SetWinnerLocked() < 0 && forfeitSeat_ < 0;
+    }
+
+    // The other player's Bye gave up the set (`seat` theirs): the set is
+    // this player's. False when there was no set to give up.
+    bool TookForfeit(int seat)
+    {
+        if (ticket_.after != AfterMatch::Set || role_ != Role::Player) return false;
+        {
+            std::lock_guard lock(mutex_);
+            if (SetWinnerLocked() >= 0) return false;
+            forfeitSeat_ = seat;
+        }
+        g_forfeitSeat = seat;
+        EndSession("the other player left the set: it is yours");
+        return true;
     }
 
     std::string SetOverText()
@@ -2576,8 +2652,9 @@ private:
         else if (s == State::Hosting) SetStatus("HOST " + code_ + " (copied) - waiting for a player");
         else if (s == State::Joining) SetStatus("joining " + code_);
         else if (s == State::Lobby) SetStatus(role_ == Role::Spectator ? "watching: waiting for a match" : "lobby");
-        // Each lobby starts at stage select.
-        if (s == State::Lobby && host_) stageLocked_ = false;
+        // Each lobby starts at stage select; a table set's goes straight to
+        // the characters (the set keeps its stage).
+        if (s == State::Lobby && host_) stageLocked_ = ticket_.after == AfterMatch::Set;
         else if (s == State::Jumping) SetStatus("jumping into battle");
         else if (s == State::PostMatch) SetStatus("match over: rematch or character select?");
     }
@@ -2677,6 +2754,8 @@ private:
     uint32_t peerChecksum_ = 0;
     std::atomic<bool> byePending_{false};
     std::string byeText_; // the Bye's reason, for the other side (mutex_)
+    bool forfeitOnBye_ = false; // the Bye gives up the table set (mutex_)
+    int forfeitSeat_ = -1;      // the seat that left the set, -1 none (mutex_)
     std::atomic<bool> selfLoaded_{false};
     std::atomic<bool> peerLoaded_{false};
     std::atomic<bool> peerLeft_{false};
@@ -3317,6 +3396,8 @@ std::string NetStatus()
     std::lock_guard lock(g_driverMutex);
     return g_driver ? g_driver->Status() : "idle";
 }
+
+int NetTakeForfeit() { return g_forfeitSeat.exchange(-1); }
 
 NetView NetViewNow()
 {

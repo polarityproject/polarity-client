@@ -72,6 +72,11 @@ bool PreloadsDone();
 // PreloadsDone, and the check was made for these picks as the source gives
 // them ("RYU/0 KEN/0 "): false until it has seen a change of picks.
 bool PreloadsDoneFor(const std::string& picks);
+// One of the source's picks at the menus (My character's card): 2 in the
+// character cache (as of the last check), 1 loading now (`seconds` since it
+// started), 0 waiting for its turn, -1 not a pick of the source, or it does
+// not stay cached (tried enough: the match loads it).
+int PreloadStatus(const std::string& code, int costume, double* seconds);
 // The version a battle resolves this character's to when asked for its latest.
 int LatestCharaVersion(const std::string& code);
 // The final game's balance version of a playable character (60, 61 or 62),

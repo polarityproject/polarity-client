@@ -2960,6 +2960,13 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
         ImGui::Begin(i == 0 ? "##side1" : "##side2", nullptr,
                      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings |
                          (mine ? 0 : ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing));
+        // The pad's A only presses a button while ImGui shows its nav cursor:
+        // a window that just took focus has it hidden (and a mouse move
+        // hides it), so A did nothing until a direction was pressed. Shown
+        // as the window appears; an A while hidden shows it.
+        if (mine && ImGui::IsWindowFocused() && (appearing || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false))) {
+            ImGui::SetNavCursorVisible(true);
+        }
         // Fields fill the window but for their labels ("V-Trigger" the widest).
         ImGui::PushItemWidth(-(ImGui::CalcTextSize("V-Trigger").x + ImGui::GetStyle().ItemInnerSpacing.x));
         ImGui::PushFont(g_fontHeading);
@@ -2972,8 +2979,10 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
         ImGui::PopFont();
         Rule();
         if (!lobbyPhase && v.setPlay) {
-            // A table's set: the score and what follows, no vote (the next
-            // game starts on its own; core/match_ticket.h).
+            // A table's set: the score; then a vote as Direct Match's (rematch:
+            // the set's next game, character select, leave: a forfeit), with
+            // a timer (no choice counts as rematch; core/match_ticket.h). Won:
+            // what follows for each player (rooms_client.h RoomsAfterSet).
             const int setWinner = v.seats[0].wins >= v.firstTo ? 0 : v.seats[1].wins >= v.firstTo ? 1 : -1;
             ImGui::PushFont(g_fontBig);
             ImGui::TextColored(kGold, "%u", s.wins);
@@ -2982,9 +2991,43 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
             ImGui::SameLine();
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (g_fontBig->LegacySize - ImGui::GetFontSize()) * 0.62f);
             ImGui::TextColored(kDim, "of %u to win the set", v.firstTo);
-            if (setWinner == i) ImGui::TextColored(kGreen, "Wins the set");
-            else if (setWinner >= 0) ImGui::TextColored(kDim, "Set over");
-            else ImGui::TextColored(kDim, "Next game in a moment");
+            if (setWinner >= 0) {
+                if (setWinner == i) ImGui::TextColored(kGreen, "Wins the set");
+                else ImGui::TextColored(kDim, "Set over");
+                const std::string next = RoomsAfterSet(i, setWinner);
+                if (!next.empty()) {
+                    ImGui::PushTextWrapPos(0.0f);
+                    ImGui::TextColored(kDim, "%s", next.c_str());
+                    ImGui::PopTextWrapPos();
+                }
+            }
+            else {
+                ImGui::TextColored(s.choice == lobby::Choice::None ? kDim : kGreen, "%s", VoteText(s.choice));
+                if (mine) {
+                    auto button = [&](const char* label, lobby::Choice c) {
+                        const bool chosen = s.choice == c && c != lobby::Choice::None;
+                        return TileButton(label, -1, chosen) && armed;
+                    };
+                    if (button("Rematch", lobby::Choice::Rematch)) Act([] { NetChoose(lobby::Choice::Rematch); });
+                    ImGui::SetItemDefaultFocus();
+                    if (button("Character select", lobby::Choice::CharacterSelect)) {
+                        Act([] { NetChoose(lobby::Choice::CharacterSelect); });
+                    }
+                    if (button("Leave", lobby::Choice::None)) Act([] { NetLeave(); });
+                    ImGui::PushTextWrapPos(0.0f);
+                    if (v.voteSecondsLeft >= 0 && s.choice == lobby::Choice::None) {
+                        ImGui::TextColored(kDim, "No choice in %d s: rematch", v.voteSecondsLeft);
+                    }
+                    ImGui::TextColored(kDim, "Leave gives the set to your opponent.");
+                    ImGui::PopTextWrapPos();
+                    ImGui::Spacing();
+                    DrawDelay(g_choices, v);
+                    SyncChoices(v);
+                }
+                else {
+                    ImGui::TextColored(kDim, "input delay %u", s.inputDelay);
+                }
+            }
         }
         else if (!lobbyPhase) {
             ImGui::TextColored(s.choice == lobby::Choice::None ? kDim : kGreen, "%s", VoteText(s.choice));
@@ -3392,38 +3435,258 @@ void StartTableSession(const keeper::TableTicket& t)
     RoomsTableSession(t.table, t.host, t.rules);
 }
 
-// My character from the room (Y): the panel's pick and stage, in a window of
-// its own over the room screen (pad and mouse).
-void DrawMyCharacter()
+// My character from the room (Y; mock-up board 5): the select screen for one
+// player, with the CURRENT LOADOUT card where the other player would be. The
+// grid and loadout change the panel's pick (g_choices) as the session's
+// select screen does; Confirm saves it (the panel ini, the netplay options:
+// the menus' preload loads it, the room sees it); B on the grid keeps the
+// pick that was in effect. X opens the stage select: the preferred stage,
+// played when this player hosts as P1. Input delay is the player's usual
+// delay (SFVR settings' Input delay): the your-turn card starts from it.
+struct MyCharacter {
+    Choices saved;               // the pick in effect: the card's, B's on the grid
+    bool fromProfile = false;    // nothing saved yet: the Fighter Profile's favorite
+    bool stagePage = false;      // on the stage select
+    int stageBefore = 1, settingBefore = 0; // the stage as the stage select opened (its B)
+    bool savedNow = false;       // SAVED: A goes back to the room, B changes again
+    int8_t delaySetting = kDelayAuto; // the Input delay row (saved with the pick)
+    int openedFrame = 0;         // the Y that opened it is not read again here
+    float alpha = 0;
+} g_my;
+
+// Nothing saved yet: the Fighter Profile's favorite character with its saved
+// loadout, and the profile's stage as the preferred stage.
+void ApplyProfileFavorite(Choices& c)
 {
-    // Outside a session nothing else reads the saved pick in.
+    ProfileFavorites fav;
+    {
+        std::lock_guard lock(g_favoritesMutex);
+        fav = g_favorites;
+    }
+    const std::string code = fav.chara.empty() ? "RYU" : fav.chara;
+    const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), code);
+    if (it == g_tables.charas.end()) return;
+    SwitchCharacter(c, static_cast<int>(it - g_tables.charas.begin()));
+    for (const FavoriteChara& f : fav.charas) {
+        if (f.code != code || IsEleven(c.chara)) continue;
+        c.costume = f.costume;
+        c.color = f.color;
+        c.vskill = std::clamp(f.vskill + 1, 1, 2);
+        c.vtrigger = std::clamp(f.vtrigger + 1, 1, 2);
+    }
+    for (int i = 0; i < static_cast<int>(g_tables.stages.size()) && !fav.stage.empty(); i++) {
+        if (g_tables.stages[i] == fav.stage) c.stage = 2 + i, c.setting = 0;
+        const auto& settings = g_tables.settings[i];
+        if (const auto s = std::find(settings.begin(), settings.end(), fav.stage); s != settings.end()) {
+            c.stage = 2 + i;
+            c.setting = 1 + static_cast<int>(s - settings.begin());
+        }
+    }
+    PickValid(c);
+}
+
+void OpenMyCharacter()
+{
     LoadTables();
     InitChoices();
-    const ImVec2 screen = ImGui::GetIO().DisplaySize;
-    ImGui::SetNextWindowPos(ImVec2(screen.x * 0.5f, screen.y * 0.45f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(520 * g_uiScale, 0));
-    ImGui::SetNextWindowFocus();
-    bool open = true;
-    if (ImGui::Begin("My character", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextColored(kDim, "What you play at the tables. Your stage is used when you are P1.");
-        ImGui::Spacing();
-        ImGui::PushItemWidth(300 * g_uiScale);
-        DrawPick(g_choices);
-        ImGui::Spacing();
-        DrawStage(g_choices);
-        ImGui::PopItemWidth();
-        ImGui::Spacing();
-        if (TileButton("Done", -1) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) open = false;
+    if (!g_choices.initialised) return; // the lists are still being read
+    g_my = MyCharacter{};
+    g_my.fromProfile = !NetOptions().hasPick;
+    if (g_my.fromProfile) ApplyProfileFavorite(g_choices);
+    PickValid(g_choices);
+    g_my.saved = g_choices;
+    g_my.delaySetting = NetOptions().delaySetting;
+    g_my.openedFrame = ImGui::GetFrameCount();
+    SetSelectData(PreviewSelectData());
+    ResetSelectScreen();
+    g_myCharacterOpen = true;
+    Log("overlay: my character opened (%s%s)", g_tables.charas[g_choices.chara].c_str(), g_my.fromProfile ? ", the profile's" : "");
+}
+
+// Closes it; `keep`: back to the pick that was in effect (what changed since
+// the last save is dropped).
+void CloseMyCharacter(bool keep, const char* why)
+{
+    if (keep) g_choices = g_my.saved;
+    g_myCharacterOpen = false;
+    Log("overlay: my character closed (%s): %s", why, g_tables.charas[g_choices.chara].c_str());
+}
+
+void SaveMyCharacter()
+{
+    Choices& c = g_choices;
+    if (IsEleven(c.chara)) RollEleven(c);
+    g_my.saved = c;
+    g_my.fromProfile = false;
+    SaveChoices();
+    const NetplayOptions o = ChosenOptions();
+    const int8_t delay = g_my.delaySetting;
+    // Outside a session the pick goes to the driver too (an ended one keeps
+    // its last session: the menus' preload asks it); a session on its way
+    // keeps the pick it started with (its next set plays this one).
+    const NetView::Phase phase = NetViewNow().phase;
+    const bool idle = phase == NetView::Phase::Idle || phase == NetView::Phase::Ended;
+    Act([o, delay, idle] {
+        NetOptions().delaySetting = delay;
+        NetOptions().stageCode = o.stageCode;
+        if (idle) NetSetPick(o.hasPick, o.pick);
+        else {
+            NetOptions().hasPick = o.hasPick;
+            NetOptions().pick = o.pick;
+        }
+        if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, NetOptions(), o.stageCode);
+    });
+    Log("overlay: my character saved: %s costume %d color %d, stage %s, delay %s", g_tables.charas[c.chara].c_str(), c.costume, c.color,
+        o.stageCode.c_str(), delay >= 0 ? std::to_string(delay).c_str() : "auto");
+}
+
+// The card's rows: the pick in effect.
+SelectCard MyCharacterCard(const RoomsView& rooms)
+{
+    const Choices& c = g_my.saved;
+    SelectCard card;
+    card.player = LocalPlayerName();
+    if (c.chara < 0 || c.chara >= static_cast<int>(g_tables.charas.size())) return card;
+    const std::string& code = g_tables.charas[c.chara];
+    const bool eleven = IsEleven(c.chara);
+    card.chara = code;
+    card.charaName = g_tables.labels[c.chara];
+    card.place = RoomsPlace(rooms, rooms.self);
+    if (card.place == "Idle") card.place = "In the room"; // no table or queue
+    const int slot = std::max(0, CostumeSlot(c.chara, c.costume));
+    if (eleven) {
+        for (const char* label : {"Costume", "Color", "V-Skill", "V-Trigger"}) card.rows.push_back({label, "Random"});
     }
-    ImGui::End();
-    if (!open) {
-        g_myCharacterOpen = false;
-        if (!g_choices.initialised) return; // the list was still being read: nothing to save
-        SaveChoices();
-        const NetplayOptions o = ChosenOptions();
-        if (o.hasPick) RoomsSetCharacter(UnpackCode(o.pick.character));
-        Log("overlay: my character %s", o.hasPick ? UnpackCode(o.pick.character).c_str() : "-");
+    else {
+        card.rows.push_back({"Costume", g_tables.costumeNames[c.chara][slot]});
+        SelectCard::Row color{"Color", ColorLabel(c.color)};
+        const auto swatch = SwatchOf(c.chara, slot, c.color);
+        color.swatch1 = swatch.first;
+        color.swatch2 = swatch.second;
+        card.rows.push_back(color);
+        card.rows.push_back({"V-Skill", SkillText(code, false, c.vskill - 1)});
+        card.rows.push_back({"V-Trigger", SkillText(code, true, c.vtrigger - 1)});
     }
+    std::string stage = "Random";
+    if (c.stage >= 2 && c.stage - 2 < static_cast<int>(g_tables.stages.size())) {
+        const int i = c.stage - 2;
+        const auto& labels = g_tables.settingLabels[i];
+        stage = c.setting > 0 && c.setting <= static_cast<int>(labels.size()) ? labels[c.setting - 1] : g_tables.stageLabels[i];
+    }
+    card.rows.push_back({"Stage", stage});
+    // Its loading: the menus' preload of the saved pick (Eleven: the fighter
+    // it copies this time).
+    const NetplayOptions& o = NetOptions();
+    if (g_my.fromProfile || !o.hasPick) {
+        card.status = "Now: " + card.charaName + " (from your Fighter Profile)";
+        return card;
+    }
+    const std::string loads = eleven ? "ELEVEN" : card.charaName;
+    double seconds = 0;
+    switch (PreloadStatus(UnpackCode(o.pick.character), o.pick.costume, &seconds)) {
+    case 2:
+        card.status = loads + " is loaded";
+        card.statusRight = "ready";
+        card.progress = 1;
+        card.done = true;
+        break;
+    case 1:
+        // No progress to read from the asset queue: a bar on the time a
+        // character takes (about 14 s on a test PC, CPU-bound), held short
+        // of the end.
+        card.status = "Loading " + loads + " in the background";
+        card.statusRight = "loading";
+        card.progress = static_cast<float>(std::min(0.9, seconds / 15.0));
+        break;
+    case 0:
+        card.status = loads + " loads in the background in a moment";
+        card.progress = 0;
+        break;
+    default: card.status = loads + " loads with the match"; break;
+    }
+    return card;
+}
+
+void ApplyMyCharacterInput(const SelectInput& in)
+{
+    Choices& c = g_choices;
+    if (in.cancel) return CloseMyCharacter(true, "kept");
+    if (in.done) return CloseMyCharacter(false, "saved");
+    if (in.openStage) {
+        g_my.stagePage = true;
+        g_my.stageBefore = c.stage;
+        g_my.settingBefore = c.setting;
+    }
+    if (in.closeStage) {
+        c.stage = g_my.stageBefore;
+        c.setting = g_my.settingBefore;
+        g_my.stagePage = false;
+    }
+    if (in.lockStage) g_my.stagePage = false;
+    if (in.unready) g_my.savedNow = false;
+    if (g_my.savedNow) return;
+    if (in.chara >= 0 && in.chara < static_cast<int>(g_tables.charas.size())) SwitchCharacter(c, in.chara);
+    if (in.randomPick) {
+        static std::mt19937 rng{std::random_device{}()};
+        std::vector<int> fighters;
+        for (int i = 0; i < static_cast<int>(g_tables.charas.size()); i++) {
+            if (!IsEleven(i)) fighters.push_back(i);
+        }
+        if (!fighters.empty()) SwitchCharacter(c, fighters[rng() % fighters.size()]);
+    }
+    if (in.row == 6 && in.delta) {
+        // Auto, 0, 1, ... 8, around (as SFVR settings).
+        const int n = kMaxDelaySetting + 2;
+        g_my.delaySetting = static_cast<int8_t>(((g_my.delaySetting + 1 + in.delta) % n + n) % n - 1);
+    }
+    else if (in.row >= 0 && in.delta) StepRow(c, in.row, in.delta);
+    if (in.stage >= 0) {
+        const int count = static_cast<int>(g_tables.stages.size());
+        c.stage = in.stage < count ? 2 + in.stage : 1;
+        c.setting = 0;
+    }
+    if (in.setting >= 0) c.setting = in.setting;
+    PickValid(c);
+    if (in.ready) {
+        SaveMyCharacter();
+        g_my.savedNow = true;
+    }
+}
+
+void DrawMyCharacter(const RoomsView& rooms, bool takeInput)
+{
+    // A table calling this player (or a set on its way) needs the room
+    // screen: what was last confirmed is played.
+    bool called = false;
+    for (const TableView& t : rooms.tableViews) {
+        if (t.s.phase == keeper::TablePhase::Call && (t.s.seat[0] == rooms.self || t.s.seat[1] == rooms.self)) called = true;
+    }
+    const NetView::Phase phase = NetViewNow().phase;
+    if (called || (phase != NetView::Phase::Idle && phase != NetView::Phase::Ended)) return CloseMyCharacter(true, "the table calls");
+    NetView v;
+    v.you = 0;
+    v.host = true;
+    v.seats[0].present = true;
+    v.seats[0].ready = g_my.savedNow;
+    v.stageLocked = !g_my.stagePage;
+    SelectLive live = SelectLiveFor(v);
+    live.sides[0].player = LocalPlayerName();
+    live.sides[1] = SelectSide{};
+    live.bothReady = false;
+    live.loading = false;
+    live.myCharacter = true;
+    live.keepLabel = "Keep " + g_tables.labels[std::clamp(g_my.saved.chara, 0, static_cast<int>(g_tables.labels.size()) - 1)];
+    SelectRow& delay = live.sides[0].rows[6];
+    delay.value = g_my.delaySetting >= 0 ? FramesText(g_my.delaySetting) : "Auto";
+    delay.hint = g_my.delaySetting >= 0 ? "Your usual input delay. The your-turn card starts from it; lower feels sharper, higher rolls back less."
+                                        : "Auto: the your-turn card suggests a delay for the ping to your opponent.";
+    live.card = MyCharacterCard(rooms);
+    live.note = g_my.savedNow ? "Saved as your default. The room sees it next to your name."
+                              : "You keep your place in the room. If your turn comes first, you play with what you last confirmed.";
+    g_my.alpha = std::min(1.0f, g_my.alpha + ImGui::GetIO().DeltaTime / 0.15f);
+    SelectInput in;
+    DrawSelectLive(SelectFonts{g_fontBig, g_fontHuge, g_fontBody}, live, g_my.alpha, takeInput && ImGui::GetFrameCount() > g_my.openedFrame, &in);
+    ApplyMyCharacterInput(in);
 }
 
 // The hub's live parts, and what its choices do.
@@ -3518,16 +3781,16 @@ void DrawHubFrame(bool takeInput)
             h.played = h.session ? nv.played : 0;
             SetTableHandoff(h);
         }
-        DrawRoomScreen(fonts, rooms, takeInput && !g_myCharacterOpen, &in);
+        if (!g_myCharacterOpen) DrawRoomScreen(fonts, rooms, takeInput, &in);
         if (in.cancelHandoff) {
             RoomsCancelHandoff();
             Log("overlay: the connecting modal's Cancel");
         }
         if (!in.request.empty()) RoomsTable(in.request, in.args);
         if (in.delay >= 0) g_tableDelay = in.delay;
-        if (in.myCharacter) g_myCharacterOpen = true;
+        if (in.myCharacter && !g_myCharacterOpen) OpenMyCharacter();
         if (in.clearNotice) RoomsClearNotice();
-        if (g_myCharacterOpen) DrawMyCharacter();
+        else if (g_myCharacterOpen) DrawMyCharacter(rooms, takeInput);
         if (!in.chat.empty() && !RoomsChat(in.chat)) AddToast("Slow down: one message a second", ImVec4(1, 0.8f, 0.4f, 1), 2);
         if (in.copiedCode) AddToast("Room code copied", ImVec4(1, 1, 1, 1), 2);
         if (in.leave) RoomsLeave();
@@ -3791,13 +4054,16 @@ void Draw(IDXGISwapChain* swapChain)
     // match loads.
     static float liveAlpha = 0;
     static bool lobbyWas = false;
-    // A table's set (M4: setPlay) has no select screen: the picks are each
-    // player's My character, both ready at once; the room screen stays up
-    // (its connecting line) until the jump.
-    const bool tableConnecting = view.setPlay && (phase == NetView::Phase::Connecting || phase == NetView::Phase::Hosting ||
-                                                  phase == NetView::Phase::Joining || phase == NetView::Phase::Lobby ||
-                                                  phase == NetView::Phase::Jumping);
-    const bool lobby = phase == NetView::Phase::Lobby && g_tables.loaded && g_choices.initialised && !preview && !view.setPlay;
+    // A table's set (M4: setPlay) starts without a select screen: the picks
+    // are each player's My character, both ready at once; the room screen
+    // stays up (its connecting modal) until the jump. Character select within
+    // the set (the vote after a game) is the select screen, over the results.
+    const bool setSelect = view.setPlay && phase == NetView::Phase::Lobby && view.overResults;
+    const bool tableConnecting = view.setPlay && !setSelect &&
+                                 (phase == NetView::Phase::Connecting || phase == NetView::Phase::Hosting ||
+                                  phase == NetView::Phase::Joining || phase == NetView::Phase::Lobby ||
+                                  phase == NetView::Phase::Jumping);
+    const bool lobby = phase == NetView::Phase::Lobby && g_tables.loaded && g_choices.initialised && !preview && (!view.setPlay || setSelect);
     if (lobby && !lobbyWas) {
         SetSelectData(PreviewSelectData());
         ResetSelectScreen();
