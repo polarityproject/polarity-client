@@ -143,8 +143,15 @@ std::string VariantLabel(const std::string& code, uint8_t variation);
 struct CostumeSpec {
     std::string name;        // "Battle Outfit 1", "Track Suit", a team's name
     std::vector<int> colors; // sorted
+    // Entitlement codes (entitlements.h, OwnsEntitlement): the character's
+    // (playable, listed), the costume's, each color's (by color id).
+    std::string charaCode, charaVisibleCode, costumeCode;
+    std::map<int, std::string> colorCodes;
 };
 std::map<int, CostumeSpec> CharaCostumeSpecs(int index);
+// A stage's entitlement code (StageSpec RefAvailableCode, by its index in the
+// stage list; "" when it has none or the table is not loaded).
+std::string StageAvailableCode(int index);
 // The character's English display name ("" if its data is not loaded).
 std::string CharaName(int index);
 // A stage's display name ("Training Stage"; "" if unknown). The first call

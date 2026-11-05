@@ -290,7 +290,8 @@ void DrawTile(ImDrawList* d, const Slot& t, bool p1, bool p2, const SelectFonts&
             // The portrait corner to corner: same angle as the frame, no gaps.
             const ImVec2* art = t.right ? kArtRight : kArtLeft;
             auto uv = [&](int i) { return ImVec2(art[i].x / 116.0f, art[i].y / 144.0f); };
-            d->AddImageQuad(Id(tex), iq[0], iq[1], iq[2], iq[3], uv(0), uv(1), uv(2), uv(3), FadeIn(tex, on ? IM_COL32_WHITE : Rgba(205, 205, 205)));
+            const ImU32 tint = c->locked ? Rgba(70, 70, 70) : on ? IM_COL32_WHITE : Rgba(205, 205, 205);
+            d->AddImageQuad(Id(tex), iq[0], iq[1], iq[2], iq[3], uv(0), uv(1), uv(2), uv(3), FadeIn(tex, tint));
         }
     }
     // The bottom fade.
@@ -374,14 +375,32 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
     const bool picking = live.host && live.you >= 0;
     int stage = std::clamp(live.stage, 0, count);
     int setting = live.setting;
-    if (picking && Left()) in->stage = stage = (stage + count) % (count + 1), setting = 0;
-    if (picking && Right()) in->stage = stage = (stage + 1) % (count + 1), setting = 0;
+    // The cursor steps over stages (and settings) this profile does not own;
+    // random (the last place) is always there.
+    auto lockedAt = [&](int i, int k) {
+        const SelectStage* at = Shown(i, k);
+        return at && at->locked;
+    };
+    auto step = [&](int from, int by) {
+        int i = from;
+        for (int tries = 0; tries <= count; tries++) {
+            i = (i + by + count + 1) % (count + 1);
+            if (!lockedAt(i, 0)) return i;
+        }
+        return from;
+    };
+    if (picking && Left()) in->stage = stage = step(stage, -1), setting = 0;
+    if (picking && Right()) in->stage = stage = step(stage, 1), setting = 0;
     const int settings = stage < count ? static_cast<int>(g_draw->stages[stage].settings.size()) : 0;
     setting = std::clamp(setting, 0, settings);
     if (picking && settings) {
         const bool up = Up(), down = Down(), next = NextSetting();
-        if (up) in->setting = setting = (setting + settings) % (settings + 1);
-        else if (down || next) in->setting = setting = (setting + 1) % (settings + 1);
+        const int by = up ? -1 : (down || next) ? 1 : 0;
+        for (int tries = 0; by && tries <= settings; tries++) {
+            setting = (setting + by + settings + 1) % (settings + 1);
+            if (!lockedAt(stage, setting)) break;
+        }
+        if (by) in->setting = setting;
     }
     const SelectStage* shown = Shown(stage, setting);
     Text(d, f.name, g_v.L(42), g_v.P(800, 76), Rgba(255, 255, 255), "STAGE SELECT", 0.5f, true);
@@ -436,14 +455,15 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
         const TextureView* t = i < count ? Texture(StageTex(icon, "StageSelectIcon")) : Texture(MenuTex("StageSelect_Random"));
         if (t) Image(d, t, a, b);
         else d->AddRectFilled(a, b, Rgba(30, 32, 36));
+        if (i < count && g_draw->stages[i].locked) d->AddRectFilled(a, b, Rgba(0, 0, 0, 170));
         if (on) {
             if (const TextureView* cursor = Texture(MenuTex("StageSelectCursor"))) Image(d, cursor, ImVec2(a.x - g_v.L(1), a.y - g_v.L(1)), ImVec2(b.x + g_v.L(1), b.y + g_v.L(1)));
         }
-        if (picking && Clicked() && MouseIn(g_v.P(x, sy), g_v.P(x + sw, sy + sh))) in->stage = i;
+        if (picking && Clicked() && MouseIn(g_v.P(x, sy), g_v.P(x + sw, sy + sh)) && !lockedAt(i, 0)) in->stage = i;
     }
     Text(d, f.text, g_v.L(16), g_v.P(800, sy + sh + 18), Rgba(189, 184, 170),
          picking ? "You select the stage." : "Player 1 is selecting the stage...", 0.5f);
-    if (picking && Confirm()) in->lockStage = true;
+    if (picking && Confirm() && !lockedAt(stage, setting)) in->lockStage = true;
 }
 
 void MoveCursor(int dr, int dx)
@@ -739,6 +759,10 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             prompts.push_back({"button_a", "Ready", 0});
             prompts.push_back({"button_b", "Back", 1});
         }
+        // A character this profile does not own: its art shows, it cannot be
+        // picked (the game's own select has it the same way).
+        const SelectChara* under = !g_ui.onRandom && hover >= 0 ? Chara(hover) : nullptr;
+        if (grid && under && under->locked) StatusPill(d, f, ("Locked: this profile does not own " + under->name).c_str());
         if (ready && live.myCharacter) {
             prompts.push_back({"button_a", "Back to the room", 0});
             prompts.push_back({"button_b", "Change again", 1});
@@ -757,7 +781,10 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         }
         // A and B.
         const bool a = Confirm();
-        if (grid && a) {
+        if (grid && a && under && under->locked) {
+            // Not owned: stays on the grid (as the game's select does).
+        }
+        else if (grid && a) {
             if (g_ui.onRandom) in->randomPick = true;
             else if (hover >= 0) in->chara = hover;
             g_ui.loadout = true;
@@ -962,8 +989,15 @@ void PreviewReset()
     BuildGrid(g_preview);
     g_mock.chara[0] = std::max(0, CharaAt(g_preview, "RYU"));
     g_mock.chara[1] = std::max(0, CharaAt(g_preview, "CNL"));
+    // Ring of Destiny when owned, else the first stage that is.
+    int first = -1;
     for (size_t i = 0; i < g_preview.stages.size(); i++) {
+        if (g_preview.stages[i].locked) continue;
+        if (first < 0) first = static_cast<int>(i);
         if (g_preview.stages[i].code == "TAI") g_mock.stage = static_cast<int>(i);
+    }
+    if (g_mock.stage < 0 || g_mock.stage >= static_cast<int>(g_preview.stages.size()) || g_preview.stages[g_mock.stage].locked) {
+        g_mock.stage = std::max(0, first);
     }
     SetMockPhase(g_previewPhase);
 }

@@ -17,6 +17,9 @@ namespace sfv::mod {
 struct SelectChara {
     std::string code;  // "RYU"; "ELV" for Eleven
     std::string name;  // "RYU"
+    // Not owned by this profile (entitlements.h): shown dimmed, not picked,
+    // as the game's own character select has it.
+    bool locked = false;
     // The rest is for the preview's mock players (a session's rows come from
     // the overlay): costume names, per costume each color's swatches, skills.
     std::vector<std::string> costumes;
@@ -27,6 +30,7 @@ struct SelectChara {
 struct SelectStage {
     std::string code; // "TAI"
     std::string name; // "Ring of Destiny"
+    bool locked = false; // not owned: dimmed, the cursor steps over it
     // Its other settings, each a stage of its own (The Grid: The Grid
     // Alternative, S25), as the game's stage select offers them.
     std::vector<SelectStage> settings;

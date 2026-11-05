@@ -2441,6 +2441,8 @@ void ReadCharaSpecs()
     const auto* rowStruct = *reinterpret_cast<const uint8_t* const*>(table + 0x28);
     const int chara = PropertyOffset(rowStruct, "CharaID"), costume = PropertyOffset(rowStruct, "CostumeId");
     const int text = PropertyOffset(rowStruct, "CostumeText"), color = PropertyOffset(rowStruct, "ColorId");
+    const int charaCode = PropertyOffset(rowStruct, "RefAvailableCode"), visibleCode = PropertyOffset(rowStruct, "RefVisibleCode");
+    const int costumeCode = PropertyOffset(rowStruct, "RefCostumeAvailableCode"), colorCode = PropertyOffset(rowStruct, "RefColorAvailableCode");
     if (chara < 0 || costume < 0 || text < 0 || color < 0) {
         Log("flow: the CharaSpec table has other fields than expected");
         return;
@@ -2453,7 +2455,13 @@ void ReadCharaSpecs()
         CostumeSpec& spec = g_specs[*reinterpret_cast<const int32_t*>(row + chara)][*reinterpret_cast<const int32_t*>(row + costume)];
         const std::string name = FTextText(row + text);
         if (spec.name.empty() && !name.empty()) spec.name = name;
-        spec.colors.push_back(*reinterpret_cast<const int32_t*>(row + color));
+        const int colorId = *reinterpret_cast<const int32_t*>(row + color);
+        spec.colors.push_back(colorId);
+        auto code = [row](int at) { return at >= 0 && IsReadable(row + at, 16) ? FStringText(row + at) : std::string(); };
+        if (spec.charaCode.empty()) spec.charaCode = code(charaCode);
+        if (spec.charaVisibleCode.empty()) spec.charaVisibleCode = code(visibleCode);
+        if (spec.costumeCode.empty()) spec.costumeCode = code(costumeCode);
+        spec.colorCodes[colorId] = code(colorCode);
     }
     for (auto& [c, costumes] : g_specs) {
         for (auto& [k, spec] : costumes) std::sort(spec.colors.begin(), spec.colors.end());
@@ -2661,6 +2669,32 @@ void LogDataTable(const std::string& name, const std::string& filter, int limit)
         Log("  %s", line.c_str());
         shown++;
     }
+}
+
+std::string StageAvailableCode(int index)
+{
+    // StageSpec (DA_Spec; KWStageSpec rows): StageId is the stage's index.
+    static std::mutex m;
+    static std::map<int, std::string> codes;
+    static bool read = false;
+    std::lock_guard lock(m);
+    if (!read && g_base && ue4::EnsureObjects(g_base)) {
+        const auto* table = static_cast<const uint8_t*>(ue4::FindObject("StageSpec", "DataTable"));
+        if (table && IsReadable(table + 0x28, 0x28)) {
+            read = true;
+            const auto* rowStruct = *reinterpret_cast<const uint8_t* const*>(table + 0x28);
+            const int id = PropertyOffset(rowStruct, "StageId"), code = PropertyOffset(rowStruct, "RefAvailableCode");
+            const auto* elements = *reinterpret_cast<const uint8_t* const*>(table + 0x40);
+            const int count = *reinterpret_cast<const int32_t*>(table + 0x48);
+            for (int i = 0; id >= 0 && code >= 0 && elements && i < count; i++) {
+                const auto* row = *reinterpret_cast<const uint8_t* const*>(elements + i * 0x18 + 8);
+                if (row && IsReadable(row, std::max(id + 4, code + 16))) codes[*reinterpret_cast<const int32_t*>(row + id)] = FStringText(row + code);
+            }
+            Log("flow: stage codes of %zu stages", codes.size());
+        }
+    }
+    const auto it = codes.find(index);
+    return it == codes.end() ? std::string() : it->second;
 }
 
 std::string StageName(int index)

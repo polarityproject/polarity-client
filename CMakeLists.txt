@@ -209,6 +209,7 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/synctest.cpp
     src/mod/tracer.cpp
     src/mod/watch.cpp
+    src/mod/entitlements.cpp
     src/mod/mod_main.cpp
     src/mod/netplay_driver.cpp
     src/mod/udp_transport.cpp
@@ -241,6 +242,13 @@ if(SFV_BUILD_MOD AND WIN32)
   string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," SFV_NOISE_BYTES "${SFV_NOISE_HEX}")
   file(CONFIGURE OUTPUT ${CMAKE_BINARY_DIR}/generated/builtin_noise.h
        CONTENT "#pragma once\n// Generated from data/sfv_noise.txt by CMakeLists.txt.\nnamespace sfv::mod {\ninline constexpr unsigned char kBuiltinNoise[] = {${SFV_NOISE_BYTES}};\n}\n")
+  # The Steam app -> entitlement code table (data/steam_grants.txt), the same way.
+  set(SFV_GRANTS_FILE ${CMAKE_SOURCE_DIR}/data/steam_grants.txt)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SFV_GRANTS_FILE})
+  file(READ ${SFV_GRANTS_FILE} SFV_GRANTS_HEX HEX)
+  string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," SFV_GRANTS_BYTES "${SFV_GRANTS_HEX}")
+  file(CONFIGURE OUTPUT ${CMAKE_BINARY_DIR}/generated/builtin_steam_grants.h
+       CONTENT "#pragma once\n// Generated from data/steam_grants.txt by CMakeLists.txt.\nnamespace sfv::mod {\ninline constexpr unsigned char kSteamGrants[] = {${SFV_GRANTS_BYTES}};\n}\n")
   target_include_directories(sfv_rollback PRIVATE ${CMAKE_BINARY_DIR}/generated)
   if(MSVC)
     # Symbols for crash stacks (scripts/symbolize.py); the code stays optimised.

@@ -17,6 +17,7 @@
 #include "mod/probes.h"
 #include "mod/sfv_game.h"
 #include "mod/report_upload.h"
+#include "mod/entitlements.h"
 #include "mod/updater.h"
 #include "mod/status.h"
 #include "mod/stress_driver.h"
@@ -131,6 +132,8 @@ DWORD WINAPI ModMain(LPVOID self)
     Log("game files: %s", GameFilesText().c_str());
 
     if (!InstallProbes(image, config, &game, &stateMap, stateMapPath)) return 0;
+    // The content the Steam account owns, into the profile as it loads (entitlements.h).
+    InstallEntitlements(image.base, iniPath);
     HookProcessEnd();
     InstallControl(dir + L"\\sfv_cmd" + suffix + L".txt", config.virtualPads, config.alwaysActive);
     InstallOverlay(panelPath);

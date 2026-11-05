@@ -6,6 +6,7 @@
 #include "core/match_code.h"
 #include "mod/config.h"
 #include "mod/control.h"
+#include "mod/entitlements.h"
 #include "mod/files.h"
 #include "mod/font_resources.h"
 #include "mod/flow.h"
@@ -713,6 +714,15 @@ struct Tables {
     std::vector<std::vector<std::string>> vcomments; // the V-Comments after Auto
     std::vector<int> elevenCostume;                   // the 0C costume Eleven wears in each fighter (-1: none)
     std::vector<std::vector<CostumeSwatches>> swatches; // per costume (as listed): the colors' swatches
+    // What this profile owns (entitlements.h), as the game's own menus offer
+    // it: per character, per costume (as listed), per color (as listed); per
+    // stage and per setting. The lists stay whole (the other player's pick
+    // shows from them); only this player's choices skip what is not owned.
+    std::vector<bool> charaOwned;
+    std::vector<std::vector<bool>> costumeOwned;
+    std::vector<std::vector<std::vector<bool>>> colorOwned;
+    std::vector<bool> stageOwned;
+    std::vector<std::vector<bool>> settingOwned;
     bool loaded = false;
 };
 Tables g_tables;
@@ -733,7 +743,13 @@ Tables ReadTables()
         std::vector<int> costumes;
         std::vector<std::string> names;
         std::vector<std::vector<int>> colors;
+        std::vector<bool> costumeOwned;
+        std::vector<std::vector<bool>> colorOwned;
         const std::map<int, CostumeSpec> specs = CharaCostumeSpecs(i);
+        std::string charaCode;
+        for (const auto& [k, spec] : specs) {
+            if (charaCode.empty()) charaCode = spec.charaCode;
+        }
         for (int k = 0; k < CharaCostumeCount(i); k++) {
             const int n = CostumeColorCount(i, k);
             if (n <= 0) continue;
@@ -745,9 +761,23 @@ Tables ReadTables()
             if (ids.empty()) {
                 for (int c = 0; c < n; c++) ids.push_back(c);
             }
+            costumeOwned.push_back(spec == specs.end() || OwnsEntitlement(spec->second.costumeCode));
+            std::vector<bool> owned;
+            for (int id : ids) {
+                bool has = true;
+                if (spec != specs.end()) {
+                    const auto code = spec->second.colorCodes.find(id);
+                    has = code == spec->second.colorCodes.end() || OwnsEntitlement(code->second);
+                }
+                owned.push_back(has);
+            }
+            colorOwned.push_back(std::move(owned));
             colors.push_back(std::move(ids));
         }
         if (costumes.empty()) continue;
+        t.charaOwned.push_back(OwnsEntitlement(charaCode));
+        t.costumeOwned.push_back(std::move(costumeOwned));
+        t.colorOwned.push_back(std::move(colorOwned));
         std::vector<CostumeSwatches> swatches;
         for (int k : costumes) swatches.push_back(CostumeSwatchColors(i, k));
         t.swatches.push_back(std::move(swatches));
@@ -788,6 +818,9 @@ Tables ReadTables()
     reorder(t.vcomments);
     reorder(t.elevenCostume);
     reorder(t.swatches);
+    reorder(t.charaOwned);
+    reorder(t.costumeOwned);
+    reorder(t.colorOwned);
     // Eleven: random select in the silver model (each fighter's 0C costume).
     // The player's own game picks the fighter (ChosenOptions), so the pick
     // others see is an ordinary one; labels show it as Eleven.
@@ -803,22 +836,49 @@ Tables ReadTables()
         t.vcomments.emplace_back();
         t.elevenCostume.push_back(-1);
         t.swatches.push_back({CostumeSwatches{}});
+        t.charaOwned.push_back(true); // everyone has Eleven
+        t.costumeOwned.push_back({true});
+        t.colorOwned.push_back({{true}});
     }
     for (int i = 0; i < StageCount() && !Stopping(); i++) {
         if (!IsMenuStage(i)) continue;
         t.stages.push_back(StageCode(i));
         const std::string name = StageName(i);
         t.stageLabels.push_back(name.empty() ? StageCode(i) : name);
+        t.stageOwned.push_back(OwnsEntitlement(StageAvailableCode(i)));
         std::vector<std::string> codes, names;
+        std::vector<bool> owned;
         for (int k : StageSettings(i)) {
             if (!IsPlayableStage(k)) continue;
             codes.push_back(StageCode(k));
             names.push_back(StageName(k).empty() ? StageCode(k) : StageName(k));
+            owned.push_back(OwnsEntitlement(StageAvailableCode(k)));
         }
         t.settings.push_back(std::move(codes));
         t.settingLabels.push_back(std::move(names));
+        t.settingOwned.push_back(std::move(owned));
     }
     t.loaded = !t.charas.empty() && !t.stages.empty();
+    if (t.loaded) {
+        int charas = 0, stages = 0, costumes = 0, costumesOwned = 0, colors = 0, colorsOwned = 0;
+        std::string lockedCharas, lockedStages;
+        for (size_t i = 0; i < t.charas.size(); i++) {
+            charas += t.charaOwned[i];
+            if (!t.charaOwned[i]) lockedCharas += " " + t.charas[i];
+            for (bool b : t.costumeOwned[i]) costumes++, costumesOwned += b;
+            for (const auto& v : t.colorOwned[i]) {
+                for (bool b : v) colors++, colorsOwned += b;
+            }
+        }
+        for (size_t i = 0; i < t.stages.size(); i++) {
+            stages += t.stageOwned[i];
+            if (!t.stageOwned[i]) lockedStages += " " + t.stages[i];
+        }
+        Log("overlay: owned (%s): %d of %zu characters, %d of %d costumes, %d of %d colors, %d of %zu stages; locked:%s; stages:%s",
+            EntitlementsKnown() ? "the profile's list" : "no list read: all open", charas, t.charas.size(), costumesOwned, costumes,
+            colorsOwned, colors, stages, t.stages.size(), lockedCharas.empty() ? " none" : lockedCharas.c_str(),
+            lockedStages.empty() ? " none" : lockedStages.c_str());
+    }
     return t;
 }
 
@@ -865,6 +925,37 @@ int CostumeSlot(int chara, int costume)
     const std::vector<int>& costumes = g_tables.costumes[chara];
     const auto it = std::find(costumes.begin(), costumes.end(), costume);
     return it == costumes.end() ? -1 : static_cast<int>(it - costumes.begin());
+}
+
+// Ownership (Tables::charaOwned and the rest): what this player may pick.
+bool CharaOwned(int chara)
+{
+    return chara >= 0 && chara < static_cast<int>(g_tables.charaOwned.size()) && g_tables.charaOwned[chara];
+}
+
+bool CostumeOwned(int chara, int slot)
+{
+    if (chara < 0 || chara >= static_cast<int>(g_tables.costumeOwned.size())) return false;
+    const auto& v = g_tables.costumeOwned[chara];
+    return slot >= 0 && slot < static_cast<int>(v.size()) && v[slot];
+}
+
+// A color by its place in the costume's list.
+bool ColorOwnedAt(int chara, int slot, int at)
+{
+    if (chara < 0 || chara >= static_cast<int>(g_tables.colorOwned.size())) return false;
+    const auto& costumes = g_tables.colorOwned[chara];
+    if (slot < 0 || slot >= static_cast<int>(costumes.size())) return false;
+    return at >= 0 && at < static_cast<int>(costumes[slot].size()) && costumes[slot][at];
+}
+
+// A stage select stage (into Tables::stages), itself (setting 0) or one of its settings.
+bool StageOwned(int stage, int setting)
+{
+    if (stage < 0 || stage >= static_cast<int>(g_tables.stageOwned.size())) return false;
+    if (setting <= 0) return g_tables.stageOwned[stage];
+    const auto& s = g_tables.settingOwned[stage];
+    return setting - 1 < static_cast<int>(s.size()) && s[setting - 1];
 }
 
 // What the player chose in the panel; applied to the netplay options when
@@ -1209,9 +1300,48 @@ bool PickValid(Choices& c)
 {
     if (!g_tables.loaded || !c.initialised) return false;
     c.chara = std::clamp(c.chara, 0, static_cast<int>(g_tables.charas.size()) - 1);
-    if (CostumeSlot(c.chara, c.costume) < 0) c.costume = g_tables.costumes[c.chara][0];
-    const std::vector<int>& colors = g_tables.colors[c.chara][CostumeSlot(c.chara, c.costume)];
-    if (std::find(colors.begin(), colors.end(), c.color) == colors.end()) c.color = colors[0];
+    // Only what this profile owns (a saved pick may be something it lacks):
+    // else the first owned character, costume, color.
+    if (!CharaOwned(c.chara)) {
+        for (int i = 0; i < static_cast<int>(g_tables.charas.size()); i++) {
+            if (CharaOwned(i) && !IsEleven(i)) {
+                c.chara = i;
+                break;
+            }
+        }
+    }
+    int slot = CostumeSlot(c.chara, c.costume);
+    if (slot < 0 || !CostumeOwned(c.chara, slot)) {
+        slot = 0;
+        for (int k = 0; k < static_cast<int>(g_tables.costumes[c.chara].size()); k++) {
+            if (CostumeOwned(c.chara, k)) {
+                slot = k;
+                break;
+            }
+        }
+        c.costume = g_tables.costumes[c.chara][slot];
+    }
+    const std::vector<int>& colors = g_tables.colors[c.chara][slot];
+    const auto at = std::find(colors.begin(), colors.end(), c.color);
+    if (at == colors.end() || !ColorOwnedAt(c.chara, slot, static_cast<int>(at - colors.begin()))) {
+        c.color = colors[0];
+        for (int k = 0; k < static_cast<int>(colors.size()); k++) {
+            if (ColorOwnedAt(c.chara, slot, k)) {
+                c.color = colors[k];
+                break;
+            }
+        }
+    }
+    // The host's stage: one not owned goes to its default setting, or random.
+    if (c.stage >= 2 && !StageOwned(c.stage - 2, c.setting)) {
+        if (StageOwned(c.stage - 2, 0)) {
+            c.setting = 0;
+        }
+        else {
+            c.stage = 1;
+            c.setting = 0;
+        }
+    }
     return true;
 }
 
@@ -1240,7 +1370,14 @@ void AvoidTakenColor(Choices& c)
     const std::vector<int>& ids = g_tables.colors[c.chara][std::max(0, CostumeSlot(c.chara, c.costume))];
     const int n = static_cast<int>(ids.size());
     const int at = static_cast<int>(std::find(ids.begin(), ids.end(), c.color) - ids.begin());
-    if (n > 1 && at < n) c.color = ids[(at + 1) % n];
+    const int slot = std::max(0, CostumeSlot(c.chara, c.costume));
+    for (int k = 1; n > 1 && at < n && k < n; k++) {
+        const int next = (at + k) % n;
+        if (ColorOwnedAt(c.chara, slot, next)) {
+            c.color = ids[next];
+            break;
+        }
+    }
 }
 
 // Another character: the one left keeps its loadout for later, the new one
@@ -1248,7 +1385,7 @@ void AvoidTakenColor(Choices& c)
 // and V-Trigger I).
 void SwitchCharacter(Choices& c, int chara)
 {
-    if (chara == c.chara) return;
+    if (chara == c.chara || !CharaOwned(chara)) return;
     PlayerSetup& left = g_loadouts[g_tables.charas[c.chara]];
     left.costume = static_cast<uint16_t>(c.costume);
     left.color = static_cast<uint8_t>(c.color);
@@ -1275,7 +1412,9 @@ void PickCharacter(Choices& c, const char* label)
     if (ImGui::BeginCombo(label, g_tables.labels[c.chara].c_str())) {
         for (int i = 0; i < static_cast<int>(g_tables.charas.size()); i++) {
             ImGui::PushID(i);
-            if (ImGui::Selectable(g_tables.labels[i].c_str(), i == c.chara)) SwitchCharacter(c, i);
+            const bool owned = CharaOwned(i);
+            const std::string text = owned ? g_tables.labels[i] : g_tables.labels[i] + " (locked)";
+            if (ImGui::Selectable(text.c_str(), i == c.chara, owned ? 0 : ImGuiSelectableFlags_Disabled)) SwitchCharacter(c, i);
             ImGui::PopID();
         }
         ImGui::EndCombo();
@@ -1291,7 +1430,9 @@ void PickCostume(Choices& c, const char* label)
     const std::vector<std::string>& names = g_tables.costumeNames[c.chara];
     if (ImGui::BeginCombo(label, names[CostumeSlot(c.chara, c.costume)].c_str())) {
         for (size_t k = 0; k < costumes.size(); k++) {
-            if (ImGui::Selectable(names[k].c_str(), costumes[k] == c.costume)) {
+            const bool owned = CostumeOwned(c.chara, static_cast<int>(k));
+            const std::string text = owned ? names[k] : names[k] + " (locked)";
+            if (ImGui::Selectable(text.c_str(), costumes[k] == c.costume, owned ? 0 : ImGuiSelectableFlags_Disabled)) {
                 c.costume = costumes[k];
                 PickValid(c);
                 AvoidTakenColor(c);
@@ -1308,10 +1449,16 @@ void PickColor(Choices& c, const char* label)
     const std::vector<int>& colors = g_tables.colors[c.chara][CostumeSlot(c.chara, c.costume)];
     const int taken = TakenColor(c);
     if (ImGui::BeginCombo(label, ColorLabel(c.color).c_str())) {
-        for (int id : colors) {
-            // The other player's color on this costume: shown, not offered.
-            const std::string text = id == taken ? ColorLabel(id) + " (the other player's)" : ColorLabel(id);
-            if (ImGui::Selectable(text.c_str(), id == c.color, id == taken ? ImGuiSelectableFlags_Disabled : 0)) c.color = id;
+        const int slot = CostumeSlot(c.chara, c.costume);
+        for (int k = 0; k < static_cast<int>(colors.size()); k++) {
+            const int id = colors[k];
+            // The other player's color on this costume, and colors not
+            // owned: shown, not offered.
+            const bool owned = ColorOwnedAt(c.chara, slot, k);
+            const std::string text = !owned ? ColorLabel(id) + " (locked)"
+                                     : id == taken ? ColorLabel(id) + " (the other player's)"
+                                                   : ColorLabel(id);
+            if (ImGui::Selectable(text.c_str(), id == c.color, id == taken || !owned ? ImGuiSelectableFlags_Disabled : 0)) c.color = id;
         }
         ImGui::EndCombo();
     }
@@ -1404,7 +1551,9 @@ void DrawStage(Choices& c)
         if (ImGui::Selectable("Random", c.stage <= 1)) c.stage = 1;
         for (int i = 0; i < static_cast<int>(g_tables.stages.size()); i++) {
             ImGui::PushID(i);
-            const bool picked = ImGui::Selectable(g_tables.stageLabels[i].c_str(), c.stage == i + 2);
+            const bool owned = StageOwned(i, 0);
+            const std::string text = owned ? g_tables.stageLabels[i] : g_tables.stageLabels[i] + " (locked)";
+            const bool picked = ImGui::Selectable(text.c_str(), c.stage == i + 2, owned ? 0 : ImGuiSelectableFlags_Disabled);
             ImGui::PopID();
             if (picked) {
                 c.stage = i + 2;
@@ -1424,7 +1573,9 @@ void DrawStage(Choices& c)
     if (ImGui::BeginCombo("Setting", setting.c_str())) {
         if (ImGui::Selectable("Default", c.setting == 0)) c.setting = 0;
         for (int k = 0; k < static_cast<int>(names.size()); k++) {
-            if (ImGui::Selectable(names[k].c_str(), c.setting == k + 1)) c.setting = k + 1;
+            const bool owned = StageOwned(c.stage - 2, k + 1);
+            const std::string text = owned ? names[k] : names[k] + " (locked)";
+            if (ImGui::Selectable(text.c_str(), c.setting == k + 1, owned ? 0 : ImGuiSelectableFlags_Disabled)) c.setting = k + 1;
         }
         ImGui::EndCombo();
     }
@@ -2103,12 +2254,16 @@ SelectData PreviewSelectData()
         c.vskills = g_tables.vskills[i];
         c.vtriggers = g_tables.vtriggers[i];
         c.vcomments = g_tables.vcomments[i];
+        c.locked = !CharaOwned(static_cast<int>(i));
         data.charas.push_back(std::move(c));
     }
     for (size_t i = 0; i < g_tables.stages.size(); i++) {
         SelectStage stage{g_tables.stages[i], g_tables.stageLabels[i], {}};
+        stage.locked = !StageOwned(static_cast<int>(i), 0);
         for (size_t k = 0; k < g_tables.settings[i].size(); k++) {
-            stage.settings.push_back({g_tables.settings[i][k], g_tables.settingLabels[i][k], {}});
+            SelectStage setting{g_tables.settings[i][k], g_tables.settingLabels[i][k], {}};
+            setting.locked = !StageOwned(static_cast<int>(i), static_cast<int>(k) + 1);
+            stage.settings.push_back(std::move(setting));
         }
         data.stages.push_back(std::move(stage));
     }
@@ -2262,8 +2417,15 @@ void StepRow(Choices& c, int row, int delta)
     auto cycle = [delta](int at, int n) { return n <= 0 ? 0 : ((at + delta) % n + n) % n; };
     switch (row) {
     case 0: {
+        // Over the costumes this profile owns.
         const std::vector<int>& list = g_tables.costumes[c.chara];
-        c.costume = list[cycle(std::max(0, CostumeSlot(c.chara, c.costume)), static_cast<int>(list.size()))];
+        const int n = static_cast<int>(list.size());
+        int at = std::max(0, CostumeSlot(c.chara, c.costume));
+        for (int tries = 0; tries < n; tries++) {
+            at = cycle(at, n);
+            if (CostumeOwned(c.chara, at)) break;
+        }
+        c.costume = list[at];
         c.variant = 0;
         PickValid(c);
         AvoidTakenColor(c);
@@ -2272,15 +2434,25 @@ void StepRow(Choices& c, int row, int delta)
     case 1: {
         // The other player's color on this costume is stepped over; at the
         // list's end that way, the step does not happen.
-        const std::vector<int>& ids = g_tables.colors[c.chara][std::max(0, CostumeSlot(c.chara, c.costume))];
+        // Colors this profile does not own are stepped over too.
+        const int slot = std::max(0, CostumeSlot(c.chara, c.costume));
+        const std::vector<int>& ids = g_tables.colors[c.chara][slot];
         const int n = static_cast<int>(ids.size());
         const int at = static_cast<int>(std::find(ids.begin(), ids.end(), c.color) - ids.begin());
-        int next = cycle(at < n ? at : 0, n);
-        if (ids[next] == TakenColor(c)) {
-            if (delta > 0 ? next == n - 1 : next == 0) break;
+        const int taken = TakenColor(c);
+        int next = at < n ? at : 0;
+        bool found = false;
+        for (int tries = 0; tries < n; tries++) {
             next = cycle(next, n);
+            if (!ColorOwnedAt(c.chara, slot, next)) continue;
+            if (ids[next] == taken) {
+                if (delta > 0 ? next == n - 1 : next == 0) break;
+                continue;
+            }
+            found = true;
+            break;
         }
-        c.color = ids[next];
+        if (found) c.color = ids[next];
         break;
     }
     case 2: {
@@ -2341,7 +2513,7 @@ void ApplySelectInput(const SelectInput& in, const NetView& v)
             static std::mt19937 rng{std::random_device{}()};
             std::vector<int> fighters;
             for (int i = 0; i < static_cast<int>(g_tables.charas.size()); i++) {
-                if (!IsEleven(i)) fighters.push_back(i);
+                if (!IsEleven(i) && CharaOwned(i)) fighters.push_back(i);
             }
             if (!fighters.empty()) SwitchCharacter(c, fighters[rng() % fighters.size()]);
         }
@@ -3630,7 +3802,7 @@ void ApplyMyCharacterInput(const SelectInput& in)
         static std::mt19937 rng{std::random_device{}()};
         std::vector<int> fighters;
         for (int i = 0; i < static_cast<int>(g_tables.charas.size()); i++) {
-            if (!IsEleven(i)) fighters.push_back(i);
+            if (!IsEleven(i) && CharaOwned(i)) fighters.push_back(i);
         }
         if (!fighters.empty()) SwitchCharacter(c, fighters[rng() % fighters.size()]);
     }

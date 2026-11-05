@@ -1,4 +1,5 @@
 #include "mod/netplay_driver.h"
+#include "mod/entitlements.h"
 
 #include "core/match_code.h"
 #include "core/match_ticket.h"
@@ -1749,9 +1750,10 @@ private:
             const uint16_t rule = StageRule();
             s.stage = rule == lobby::kAnyStage ? kKeepStage : rule;
             if (rule == lobby::kRandomStage) {
+                // The host's random stage: one its profile owns, as the game's own random would.
                 std::vector<int> playable;
                 for (int i = 0; i < StageCount(); i++) {
-                    if (IsSelectableStage(i)) playable.push_back(i);
+                    if (IsSelectableStage(i) && OwnsEntitlement(StageAvailableCode(i))) playable.push_back(i);
                 }
                 s.stage = playable.empty() ? kKeepStage : static_cast<uint16_t>(playable[rng_() % playable.size()]);
             }
