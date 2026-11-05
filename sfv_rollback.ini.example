@@ -15,10 +15,11 @@ multi_instance=0
 ;   need the same file)
 ; report_dir=   (match recordings and logs; default: SFVR\matches next to the DLL)
 ; 1: the profile gets the content this Steam account owns (characters,
-; costumes, colors, stages of the DLC it bought), added to the game's own list
-; as the save loads; a fresh profile gets the free content too. The game then
-; shows and saves them as it did the ones CFN granted. Anything else comes
-; from what the save already holds. 0: the list stays as the game has it.
+; costumes, colors, stages of the DLC it bought) and the Dojo stage (only a
+; CFN clan unlocked it), added to the game's own list as the save loads; a
+; fresh profile gets the free content too. The game then shows and saves them
+; as it did the ones CFN granted. Anything else comes from what the save
+; already holds. 0: the list stays as the game has it.
 steam_entitlements=1
 
 [boot]

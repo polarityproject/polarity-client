@@ -8,9 +8,9 @@
 // stages on it, offline too. CFN filled that list; without it the game only
 // puts the free content in (EntitlementSpec rows with DefaultValue). As the
 // save loads, right after the game decodes it, the mod adds the codes of the
-// Steam apps the account owns (data/steam_grants.txt, built in), nothing
-// else: what CFN granted beyond that comes from the list the save already
-// holds. The game then loads, uses and saves them like codes CFN sent. A profile with no list (a fresh install) gets the free
+// Steam apps the account owns (data/steam_grants.txt, built in) and the
+// Dojo stage, which only joining a clan on CFN unlocked. Nothing else: what
+// CFN granted beyond that comes from the list the save already holds. The game then loads, uses and saves them like codes CFN sent. A profile with no list (a fresh install) gets the free
 // content and the list version too: otherwise the game would replace the list
 // with the free content alone. A fresh profile also gets the Steam name as
 // its fighter name (CFN gave it the fighter ID).

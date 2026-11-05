@@ -56,6 +56,10 @@ std::atomic<int> g_decodes{0};
 bool g_freshProfile = false;   // the profile being loaded is the default one the game just wrote
 
 std::map<uint32_t, std::vector<std::string>> g_grants;   // Steam app -> codes it grants
+// Granted to every profile: content only a CFN feature unlocked, which no
+// one can get any more. The Dojo stage (StageSpec 50, DOJ) came with joining
+// a clan on CFN.
+const char* const kAlwaysGranted[] = {"VeUuEoC0"};
 bool g_merge = true;   // [mod] steam_entitlements
 
 // What the profile owns as it loaded (OwnsEntitlement): its list after the merge.
@@ -352,8 +356,8 @@ void WorkOutWant()
     if (g_wantReady) return;
     g_wantReady = true;
     std::vector<uint32_t> owned;
-    if (!OwnedApps(&owned)) Log("entitlements: no Steam (SteamApps() is null): nothing to add");
-    std::set<std::string> want;
+    if (!OwnedApps(&owned)) Log("entitlements: no Steam (SteamApps() is null): only the Dojo stage to add");
+    std::set<std::string> want(std::begin(kAlwaysGranted), std::end(kAlwaysGranted));
     std::string apps;
     for (uint32_t app : owned) {
         for (const std::string& c : g_grants[app]) want.insert(c);
@@ -361,7 +365,8 @@ void WorkOutWant()
     }
     g_want.assign(want.begin(), want.end());
     char buf[128];
-    std::snprintf(buf, sizeof(buf), "%zu of %zu Steam apps owned, %zu codes", owned.size(), g_grants.size(), g_want.size());
+    std::snprintf(buf, sizeof(buf), "%zu of %zu Steam apps owned, %zu codes with the Dojo", owned.size(), g_grants.size(),
+                  g_want.size());
     g_wantSummary = buf;
     Log("entitlements: %s; apps:%s", buf, apps.empty() ? " none" : apps.c_str());
 }
