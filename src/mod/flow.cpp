@@ -2496,7 +2496,51 @@ void ReadCharaSpecs()
     Log("flow: costume names and colors of %zu characters", g_specs.size());
 }
 
+// The game's Battle Lounge comments (FixedPhraseCommentSpec; rows of
+// KWFixedPhraseCommentSpec: Id, CommentText with {common1}/{common2}), in the
+// game's language; read once the table is loaded (at the main menu).
+std::mutex g_commentMutex;
+std::map<int, std::string> g_comments;
+bool g_commentsRead = false;
+uint64_t g_commentsTriedAt = 0;
+
+void ReadLoungeComments()
+{
+    if (g_commentsRead || !g_base) return;
+    const uint64_t now = GetTickCount64();
+    if (g_commentsTriedAt && now - g_commentsTriedAt < 2000) return;
+    g_commentsTriedAt = now;
+    if (!ue4::EnsureObjects(g_base)) return;
+    const auto* table = static_cast<const uint8_t*>(ue4::FindObject("FixedPhraseCommentSpec", "DataTable"));
+    if (!table || !IsReadable(table + 0x28, 0x28)) return;
+    g_commentsRead = true;
+    const auto* rowStruct = *reinterpret_cast<const uint8_t* const*>(table + 0x28);
+    const int id = PropertyOffset(rowStruct, "Id"), text = PropertyOffset(rowStruct, "CommentText");
+    if (id < 0 || text < 0) {
+        Log("flow: the FixedPhraseCommentSpec table has other fields than expected");
+        return;
+    }
+    const auto* elements = *reinterpret_cast<const uint8_t* const*>(table + 0x40);
+    const int count = *reinterpret_cast<const int32_t*>(table + 0x48);
+    for (int i = 0; elements && i < count; i++) {
+        const auto* row = *reinterpret_cast<const uint8_t* const*>(elements + i * 0x18 + 8);
+        if (!row || !IsReadable(row, std::max(id, text) + 8)) continue;
+        std::string s = FTextText(row + text);
+        while (!s.empty() && s.back() == ' ') s.pop_back();
+        g_comments[*reinterpret_cast<const int32_t*>(row + id)] = s;
+    }
+    Log("flow: %zu Battle Lounge comments (room titles)", g_comments.size());
+}
+
 } // namespace
+
+std::string LoungeCommentText(int id)
+{
+    std::lock_guard lock(g_commentMutex);
+    ReadLoungeComments();
+    const auto it = g_comments.find(id);
+    return it != g_comments.end() ? it->second : std::string();
+}
 
 void LogAllVariants()
 {

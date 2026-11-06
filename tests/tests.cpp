@@ -1401,19 +1401,30 @@ void TestKeeperProtocol()
 {
     using namespace sfv::keeper;
     // Requests: a room's settings round trip; bad ones are refused.
-    const Request room = RoomRequest(7, RoomSettings{8, false, 11});
-    CHECK(FormatRequest(room) == "7:room:8:0:11");
+    const Request room = RoomRequest(7, RoomSettings{8, false, RoomTitle{3, {"Z30", "CNL"}}});
+    CHECK(FormatRequest(room) == "7:room:8:0:3,Z30,CNL");
     Request back;
     RoomSettings s;
-    CHECK(ParseRequest("7:room:8:0:11", &back) && back.seq == 7 && back.kind == "room" && back.args.size() == 3);
-    CHECK(ParseRoomSettings(back, &s) && s.tables == 8 && !s.isPublic && s.preset == 11);
+    CHECK(ParseRequest("7:room:8:0:3,Z30,CNL", &back) && back.seq == 7 && back.kind == "room" && back.args.size() == 3);
+    CHECK(ParseRoomSettings(back, &s) && s.tables == 8 && !s.isPublic && s.title == (RoomTitle{3, {"Z30", "CNL"}}));
+    CHECK(ParseRequest("2:room:4:1:10", &back) && ParseRoomSettings(back, &s) && s.title.id == 10 && s.title.chara[0].empty());
     CHECK(ParseRequest("1:peek", &back) && back.kind == "peek" && back.args.empty());
     for (const char* bad : {"", "room", "0:room", "-1:room", "x:room", "5:", "99999999999:room"}) CHECK(!ParseRequest(bad, &back));
-    for (const char* bad : {"1:room:0:1:0", "1:room:9:1:0", "1:room:4:2:0", "1:room:4:1:12", "1:room:4:1", "1:room:4:1:x", "1:peek:4:1:0"}) {
+    // Bad settings, and titles the keeper does not offer or that name the
+    // wrong characters: refused.
+    for (const char* bad : {"1:room:0:1:0", "1:room:9:1:0", "1:room:4:2:0", "1:room:4:1", "1:room:4:1:x", "1:peek:4:1:0", "1:room:4:1:1",
+                            "1:room:4:1:2", "1:room:4:1:4", "1:room:4:1:19", "1:room:4:1:-1", "1:room:4:1:3", "1:room:4:1:3,RYU",
+                            "1:room:4:1:3,RYU,XXX", "1:room:4:1:3,RYU,KEN,CNL", "1:room:4:1:5,RYU", "1:room:4:1:3,ELV,RYU", "1:room:4:1:3,ryu,KEN"}) {
         CHECK(ParseRequest(bad, &back) && !ParseRoomSettings(back, &s));
     }
-    CHECK(std::string(PresetName(0)) == "Casual sets" && std::string(PresetName(11)) == "Friends only" &&
-          std::string(PresetName(12)) == "Room");
+    // Titles: the 16 offered (0, 3, 5-18), the keeper's English text with the
+    // characters' names, the roster.
+    CHECK(TitleId(0) == 0 && TitleId(1) == 3 && TitleId(2) == 5 && TitleId(15) == 18 && TitleId(16) == 0 && TitleIndex(4) == -1);
+    CHECK(TitleText(RoomTitle{3, {"Z30", "CNL"}}) == "G user looking for Chun-Li!" && TitleText(RoomTitle{10}) == "Beginners Welcome!" &&
+          TitleText(RoomTitle{}).empty() && TitleText(RoomTitle{5}) == "Hardcore match! Main character only!");
+    CHECK(CharacterIndex("RYU") == 0 && std::string(CharacterCode(kCharacterCount - 1)) == "Z42" && std::string(CharacterName("VEG")) == "M. Bison" &&
+          std::string(CharacterName("ELV")).empty() && CharacterIndex("NDK") == -1);
+    for (int i = 0; i < kCharacterCount; i++) CHECK(CharacterIndex(CharacterCode(i)) == i && std::string(CharacterName(CharacterCode(i))).size() > 0);
     // Answers: round trip, a newline in the text cannot add a field, other
     // datagrams are not answers.
     const std::string a = FormatAnswer({12, "room", true, "ABC234"});
@@ -1440,7 +1451,8 @@ void TestKeeperProtocol()
     for (int i = 0; i < 60; i++) {
         ListedRoom r;
         r.code = "R" + std::to_string(10000 + i);
-        r.preset = i % kPresetCount;
+        r.title.id = TitleId(i % kTitleCount);
+        if (TitleCharacters(r.title.id)) r.title.chara[0] = CharacterCode(i % kCharacterCount), r.title.chara[1] = CharacterCode((i + 7) % kCharacterCount);
         r.owner = "Player\t" + std::to_string(i) + "\n,\xE3\x81\x82";
         r.members = i % 17;
         r.tables = 1 + i % 8;
@@ -1476,7 +1488,7 @@ void TestKeeperProtocol()
     CHECK(some.size() >= 48 && some.size() < many.size() && some.front().code == many.front().code &&
           some.front().owner == many.front().owner);
     for (size_t i = 0; i < read.size(); i++) {
-        CHECK(read[i].code == rooms[i].code && read[i].members == rooms[i].members && read[i].faces.size() == 6 &&
+        CHECK(read[i].code == rooms[i].code && read[i].title == rooms[i].title && read[i].members == rooms[i].members && read[i].faces.size() == 6 &&
               read[i].owner == "Player" + std::to_string(std::stoi(rooms[i].code.substr(1)) - 10000) + "\xE3\x81\x82");
     }
     CHECK(PackRoomList({}).empty());
@@ -1494,7 +1506,7 @@ void TestKeeperProtocol()
               "\"rooms\":[]}");
         ListedRoom r;
         r.code = "ABC123";
-        r.preset = 0;
+        r.title = RoomTitle{10};
         r.owner = "a\"b\\c\n\xE3\x81\x82\xFF\xC0\xAFz";
         r.members = 3;
         r.tables = 2;
@@ -1504,11 +1516,17 @@ void TestKeeperProtocol()
         // Every member with a flag and a face, or null for either.
         r.players = {{"Laptop", "DE", "RYU"}, {"Player 2", "", "KEN"}, {"Deck", "JP", ""}};
         const std::string one = FormatRoomListJson({r}, totals, 1);
-        CHECK(one.find("{\"code\":\"ABC123\",\"preset\":\"" + std::string(PresetName(0)) + "\",\"owner\":\"a\\\"b\\\\c\\u000a\xE3\x81\x82"
+        CHECK(one.find("{\"code\":\"ABC123\",\"title\":\"Beginners Welcome!\",\"title_id\":10,\"title_characters\":[],\"owner\":\"a\\\"b\\\\c\\u000a\xE3\x81\x82"
                        "\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBDz\",\"members\":3,\"capacity\":16,\"tables\":2,\"open_seats\":1,"
                        "\"rules\":\"r1 ft2 bo3 t99 ws3\",\"faces\":[\"RYU\",\"KEN\"],\"players\":["
                        "{\"name\":\"Laptop\",\"country\":\"DE\",\"face\":\"RYU\"},{\"name\":\"Player 2\",\"country\":null,\"face\":\"KEN\"},"
                        "{\"name\":\"Deck\",\"country\":\"JP\",\"face\":null}]}") != std::string::npos);
+        // A title naming characters, and none (null: a page shows the owner's).
+        r.title = RoomTitle{3, {"Z30", "CNL"}};
+        CHECK(FormatRoomListJson({r}, totals, 1).find("\"title\":\"G user looking for Chun-Li!\",\"title_id\":3,\"title_characters\":[\"Z30\",\"CNL\"]") !=
+              std::string::npos);
+        r.title = RoomTitle{};
+        CHECK(FormatRoomListJson({r}, totals, 1).find("\"title\":null,\"title_id\":0,\"title_characters\":[]") != std::string::npos);
         const std::string all = FormatRoomListJson(many, totals, 1);
         CHECK(std::count(all.begin(), all.end(), '{') == static_cast<std::ptrdiff_t>(many.size()) + 2);
     }

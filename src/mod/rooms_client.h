@@ -69,7 +69,7 @@ struct RoomsView {
     keeper::RoomDetail peek;
     // In a custom room.
     std::string room;
-    int preset = 0;
+    keeper::RoomTitle title; // its title (keeper_protocol.h); none when the data holds no valid one
     bool isPublic = true;
     int tables = 0;
     std::vector<std::string> tableRules; // t0.. (FormatRules), one per table

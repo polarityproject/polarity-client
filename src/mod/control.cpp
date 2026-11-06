@@ -427,7 +427,7 @@ void RunNetCommand(const std::string& line)
         }
     }
     else if (cmd == "rooms") {
-        // rooms open | close | status | create [tables] [public 0|1] [preset] |
+        // rooms open | close | status | create [tables] [public 0|1] [title: 5, 3,RYU,KEN] |
         // join <code> | leave | chat <text> | table <request> [args]: the hub's presence (rooms_client.h),
         // driven by hand until the hub's screens (M3).
         std::string what;
@@ -441,8 +441,13 @@ void RunNetCommand(const std::string& line)
         else if (what == "create") {
             keeper::RoomSettings s;
             int pub = 1;
-            ss >> s.tables >> pub >> s.preset;
+            std::string title = "0";
+            ss >> s.tables >> pub >> title;
             s.isPublic = pub != 0;
+            if (!keeper::ParseTitle(title, &s.title)) {
+                Log("rooms: no such title '%s' (5, or 3,RYU,KEN)", title.c_str());
+                return;
+            }
             if (!RoomsCreate(s)) Log("rooms: not open");
         }
         else if (what == "join") {
@@ -487,7 +492,7 @@ void RunNetCommand(const std::string& line)
             Log("rooms: %s", DescribeRooms(v).c_str());
             for (const keeper::ListedRoom& r : v.publicRooms)
                 Log("rooms:   public %s '%s' by %s, %d members, %d tables, %d open seats", r.code.c_str(),
-                    keeper::PresetName(r.preset), r.owner.c_str(), r.members, r.tables, r.openSeats);
+                    keeper::TitleText(r.title).c_str(), r.owner.c_str(), r.members, r.tables, r.openSeats);
             for (size_t i = v.chat.size() > 5 ? v.chat.size() - 5 : 0; i < v.chat.size(); i++)
                 Log("rooms:   chat %s: %s", v.chat[i].from ? v.chat[i].name.c_str() : "*", v.chat[i].text.c_str());
         }

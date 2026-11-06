@@ -37,6 +37,10 @@ void DrawRoomsScreen(const HubFonts& fonts, const RoomsView& view, bool takeInpu
 // Shared with the room screen: a character's face in a slanted frame, the
 // owner's crown, the player glyph.
 void DrawFace(ImDrawList* d, const std::string& chara, float x, float y, float w, float h);
+// A room's title as this game shows it: the game's own Battle Lounge comment
+// (its language; the keeper's English until the table is read) with the
+// characters' names; no title: "<owner>'s room".
+std::string RoomTitleText(const keeper::RoomTitle& title, const std::string& owner);
 void DrawCrown(ImDrawList* d, float x, float y, float scale, ImU32 col);
 void DrawPerson(ImDrawList* d, float x, float y, float size, ImU32 col);
 

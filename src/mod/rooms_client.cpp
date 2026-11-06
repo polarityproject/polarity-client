@@ -478,7 +478,7 @@ struct Client {
         }
         // While paused the room's data is whatever a player wrote: kept as it was.
         if (view.keeper) {
-            view.preset = std::atoi(data(keeper::kPreset).c_str());
+            if (!keeper::ParseTitle(data(keeper::kTitle), &view.title)) view.title = keeper::RoomTitle{};
             view.isPublic = data(keeper::kPublic) == "1";
             view.tables = std::atoi(data(keeper::kTables).c_str());
             view.owner = static_cast<uint32_t>(std::strtoul(data(keeper::kOwner).c_str(), nullptr, 10));
@@ -741,7 +741,7 @@ struct Client {
                 pendingSeq = r.seq;
                 pendingUntil = NowMs() + kAnswerWaitMs;
                 view.notice.clear();
-                Log("rooms: asking the keeper for a room (#%u: %s, %d tables, %s)", r.seq, keeper::PresetName(s.preset), s.tables,
+                Log("rooms: asking the keeper for a room (#%u: %s, %d tables, %s)", r.seq, keeper::FormatTitle(s.title).c_str(), s.tables,
                     s.isPublic ? "public" : "private");
                 Set(State::Creating);
             }
@@ -1150,7 +1150,7 @@ std::string DescribeRooms(const RoomsView& v)
                     std::to_string(v.self) + ", keeper " + (v.keeper ? "yes" : "no");
     if (!v.lobby.empty()) s += ", lobby " + v.lobby + " (" + std::to_string(v.publicRooms.size()) + " public rooms)";
     if (!v.room.empty()) {
-        s += ", room " + v.room + " '" + keeper::PresetName(v.preset) + "' " + (v.isPublic ? "public" : "private") + " " +
+        s += ", room " + v.room + " '" + keeper::FormatTitle(v.title) + "' " + (v.isPublic ? "public" : "private") + " " +
              std::to_string(v.tables) + " tables, owner " + std::to_string(v.owner) + ", members";
         for (const RoomMember& m : v.members) s += " " + m.name + "(" + std::to_string(m.id) + (m.owner ? ",owner" : "") + ")";
         s += ", " + std::to_string(v.chat.size()) + " chat lines";

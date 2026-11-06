@@ -154,6 +154,10 @@ std::map<int, CostumeSpec> CharaCostumeSpecs(int index);
 std::string StageAvailableCode(int index);
 // The character's English display name ("" if its data is not loaded).
 std::string CharaName(int index);
+// The game's Battle Lounge comment id (FixedPhraseCommentSpec) in the game's
+// language, {common1}/{common2} where its arguments go; "" until the table is
+// loaded or for an unknown Id. The rooms' titles (keeper_protocol.h RoomTitle).
+std::string LoungeCommentText(int id);
 // A stage's display name ("Training Stage"; "" if unknown). The first call
 // walks every object.
 std::string StageName(int index);

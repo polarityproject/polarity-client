@@ -8,7 +8,7 @@
 //   sfvr-bot --name Bot1 [--server 127.0.0.1:5555] [--auto] [--set-ms 3000] [--wins p1|p2|random]
 //            [--script "create 2 1 0; wait 1000; sit 0 0; ..."]
 // Commands (script, then stdin; ';' or newlines between them):
-//   create <tables> <public 0|1> <preset>   join <code>   joinpublic   leave
+//   create <tables> <public 0|1> <title: 5, 3,RYU,KEN>   join <code>   joinpublic   leave
 //   sit <table> <seat 0|1|-1>   stand   queue <table>   unqueue   ready <table>   decline <table>
 //   rules <table> <rules...>    kick <member id>   kickname <name>   chat <text>   flood <n>   status   wait <ms>   quit
 //   chara <code> (the character others see beside the name, member data "ch")
@@ -420,7 +420,14 @@ struct Bot {
         else if (cmd == "create") {
             RoomSettings s;
             int pub = 1;
-            ss >> s.tables >> pub >> s.preset;
+            std::string title = "0";
+            ss >> s.tables >> pub >> title;
+            // Sent as typed (even one the keeper refuses: what it answers is the test).
+            if (!ParseTitle(title, &s.title)) {
+                const size_t comma = title.find(',');
+                s.title.id = std::atoi(title.c_str());
+                if (comma != std::string::npos) s.title.chara[0] = title.substr(comma + 1);
+            }
             s.isPublic = pub != 0;
             Ask(RoomRequest(++seq, s));
             Log("asks for a room");
