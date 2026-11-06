@@ -140,6 +140,7 @@ add_library(sfvcore STATIC
   src/core/rules.cpp
   src/core/match_ticket.cpp
   src/core/keeper_protocol.cpp
+  src/core/country_flags.cpp
   src/keeper/sign.cpp
   src/core/replay_file.cpp
   src/core/file_open.cpp

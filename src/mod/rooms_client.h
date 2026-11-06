@@ -30,6 +30,7 @@ struct RoomMember {
     int link = 0;      // their connection: 0 unknown, 1 wired, 2 Wi-Fi (member data `net`)
     bool masked = false;
     int watching = -1; // the table they watch (member data `w`, 1-based), -1 none
+    std::string country; // ISO 3166 alpha-2, the rooms server's lookup (member data `@cc`); "" unknown or hidden
 };
 
 // A table as the room shows it (keeper_protocol.h TableState, queue, rules).

@@ -516,6 +516,10 @@ struct Client {
             r.name = r.masked ? "Player " + std::to_string(masked->second) : m.name;
             const auto ch = m.data.find("ch");
             if (ch != m.data.end()) r.chara = ch->second;
+            // The rooms server's own lookup of their address (never their
+            // claim); missing for a player who keeps it hidden.
+            const auto cc = m.data.find("@cc");
+            if (cc != m.data.end()) r.country = keeper::CleanCountry(cc->second);
             const auto netData = m.data.find("net");
             if (netData != m.data.end()) r.link = netData->second == "w" ? 1 : netData->second == "f" ? 2 : 0;
             const auto watch = m.data.find("w");

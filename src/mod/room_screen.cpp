@@ -253,6 +253,7 @@ void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
             DrawCrown(d, x, ty + 15, 0.85f, kGold);
             x += 20;
         }
+        if (const float fw = DrawFlag(d, f.strong, m.country, x, ty + 3, 13)) x += fw + 7;
         std::string who = Upper(m.name);
         const float room = 1162 - x - (m.id == v.self ? TextW(f.body, 16, "(you)") + 6 : 0);
         if (TextW(f.strong, 16, who) > room) {

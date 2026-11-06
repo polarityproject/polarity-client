@@ -991,6 +991,7 @@ struct Choices {
     bool allowSpectators = true;
     bool uploadReports = true;
     bool showFps = false;
+    bool shareCountry = true;
 };
 Choices g_choices;
 bool IsEleven(int chara);
@@ -1037,6 +1038,7 @@ void InitChoices()
     g_choices.allowSpectators = o.allowSpectators;
     g_choices.uploadReports = o.uploadReports;
     g_choices.showFps = o.showOwnFps;
+    g_choices.shareCountry = o.shareCountry;
     g_choices.initialised = true;
 }
 
@@ -1068,6 +1070,7 @@ NetplayOptions ChosenOptions()
     o.allowSpectators = c.allowSpectators;
     o.uploadReports = c.uploadReports;
     o.showOwnFps = c.showFps;
+    o.shareCountry = c.shareCountry;
     return o;
 }
 
@@ -1233,6 +1236,8 @@ void SaveChoices()
         NetOptions().uploadReports = o.uploadReports;
         SetReportUploads(o.uploadReports);
         NetOptions().showOwnFps = o.showOwnFps;
+        NetOptions().shareCountry = o.shareCountry;
+        WeyveService::SetHideCountry(!o.shareCountry);
         NetOptions().inputDelay = o.inputDelay;
         if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, o, o.stageCode);
     });
@@ -1634,6 +1639,11 @@ void DrawSettings(bool locked)
     changed |= ImGui::Checkbox("Others may watch my sessions", &c.allowSpectators);
     ImGui::EndDisabled();
     if (locked) ImGui::TextColored(kDim, "Name and spectators apply from the next session.");
+    changed |= ImGui::Checkbox("Show my country flag", &c.shareCountry);
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440 * g_uiScale);
+    ImGui::TextColored(kDim, "The SFVR server finds your country from your connection and shows its flag beside "
+                             "your name in custom rooms and on the rooms list online. Off: it keeps it to itself.");
+    ImGui::PopTextWrapPos();
     ImGui::Spacing();
     if (NetOptions().udp) ImGui::TextDisabled("Transport: UDP, for testing (sfv_rollback.ini)");
     else ImGui::TextDisabled("Server: %s (change it in the Debug tab)", NetOptions().server.c_str());
@@ -3467,6 +3477,17 @@ std::vector<SettingsRow> SettingsRows()
         r.hint = "Left and right: shown or hidden.";
     }
     {
+        SettingsRow& r = row("country", "ONLINE", "Country flag");
+        r.arrows = true;
+        r.value = g_choices.shareCountry ? "Shown" : "Hidden";
+        r.kicker = "ONLINE";
+        r.title = "Country flag";
+        r.lines = {"The SFVR server finds your country from your connection and shows its flag beside your name in custom "
+                   "rooms and on the rooms list online, so players can tell who is near.",
+                   "Hidden: the server keeps your country to itself."};
+        r.hint = "Left and right: shown or hidden.";
+    }
+    {
         SettingsRow& r = row("delay", "ONLINE", "Input delay");
         const int fixed = NetOptions().delaySetting;
         r.arrows = true;
@@ -3565,6 +3586,10 @@ void ApplySetting(const SettingsInput& in)
     }
     else if (in.row == "fps" && in.delta) {
         g_choices.showFps = !g_choices.showFps;
+        SaveChoices();
+    }
+    else if (in.row == "country" && in.delta) {
+        g_choices.shareCountry = !g_choices.shareCountry;
         SaveChoices();
     }
     else if (in.row == "reports" && in.delta) {

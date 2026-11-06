@@ -5,6 +5,7 @@
 #include "core/lobby.h"
 #include "core/look.h"
 #include "core/match_ticket.h"
+#include "core/country_flags.h"
 #include "core/keeper_protocol.h"
 #include "keeper/sign.h"
 #include "core/rules.h"
@@ -1459,6 +1460,7 @@ void TestKeeperProtocol()
         r.openSeats = i % 3 == 0 ? 0 : 2;
         r.rules = "r1 ft2 bo3 t99 ws3";
         r.faces = {"RYU", "KEN", "Z21", "Z39", "CNL", "NSH", "ZGF"};
+        r.ownerCountry = i % 4 == 0 ? "" : i % 4 == 1 ? "DE" : i % 4 == 2 ? "jp" : "USA"; // only two capitals go through
         rooms.push_back(r);
     }
     SortRoomList(&rooms);
@@ -1489,9 +1491,13 @@ void TestKeeperProtocol()
           some.front().owner == many.front().owner);
     for (size_t i = 0; i < read.size(); i++) {
         CHECK(read[i].code == rooms[i].code && read[i].title == rooms[i].title && read[i].members == rooms[i].members && read[i].faces.size() == 6 &&
-              read[i].owner == "Player" + std::to_string(std::stoi(rooms[i].code.substr(1)) - 10000) + "\xE3\x81\x82");
+              read[i].owner == "Player" + std::to_string(std::stoi(rooms[i].code.substr(1)) - 10000) + "\xE3\x81\x82" &&
+              read[i].ownerCountry == (rooms[i].ownerCountry == "DE" ? "DE" : ""));
     }
     CHECK(PackRoomList({}).empty());
+    CHECK(sfv::FlagCount() == 194 && sfv::FlagAsset("DE") == "DEU" && sfv::FlagAsset("SZ") == "SWZ" && sfv::FlagAsset("ZW") == "ZWE" &&
+          sfv::FlagAsset("HK").empty() && sfv::FlagAsset("de").empty() && sfv::FlagAsset("").empty());
+    CHECK(CleanCountry("GB") == "GB" && CleanCountry("gb").empty() && CleanCountry("G").empty() && CleanCountry("G\x1F").empty());
     data[ListKey(3)] = "not\ta room";
     CHECK(UnpackRoomList(data).size() < read.size());
     // The rooms API's JSON: the three public totals, every room (not only what
@@ -1562,6 +1568,7 @@ void TestKeeperProtocol()
     for (int t = 0; t < 8; t++) detail.tables.push_back("r1 ft2 bo3 t99 ws3");
     for (int i = 0; i < 16; i++) detail.people.push_back({std::string(96, static_cast<char>('a' + i)), i % 2 ? "RYU" : "Z41"});
     detail.people[3].name = "bad\x1Ename\x1F";
+    for (int i = 0; i < 16; i++) detail.people[i].country = i % 3 == 0 ? "" : i % 3 == 1 ? "FR" : "x\x1F";
     const std::vector<std::string> parts = PackRoomDetail(detail);
     CHECK(parts.size() >= 2);
     std::vector<std::string> bodies;
@@ -1576,13 +1583,16 @@ void TestKeeperProtocol()
     back2.code = "ABC234";
     CHECK(JoinRoomDetail(bodies, &back2) && back2.code == "ABC234" && back2.tables == detail.tables && back2.people.size() == 16);
     CHECK(back2.people[3].name == "badname" && back2.people[0] == detail.people[0] && back2.people[15].chara == "RYU");
+    CHECK(back2.people[1] == detail.people[1] && back2.people[1].country == "FR" && back2.people[2].country.empty() &&
+          back2.people[2].name == detail.people[2].name);
     RoomDetail empty;
     const std::vector<std::string> none = PackRoomDetail(empty);
     int part = 0, of = 0;
     std::string body;
     CHECK(none.size() == 1 && ReadDetailPart(none[0], &part, &of, &body) && body.empty() && JoinRoomDetail({body}, &empty));
     CHECK(!ReadDetailPart("3/2\x1Dtx", &part, &of, &body) && !ReadDetailPart("1/2tx", &part, &of, &body) &&
-          !JoinRoomDetail({"xjunk"}, &empty) && !JoinRoomDetail({"pRYU"}, &empty));
+          !JoinRoomDetail({"xjunk"}, &empty) && !JoinRoomDetail({"pRYU"}, &empty) &&
+          !JoinRoomDetail({"pRYU\x1Fname"}, &empty));
     CHECK(FormatRequest(PeekRequest(5, "ABC234")) == "5:peek:ABC234");
     // The name filter: folded (case, digits and symbols as letters, the rest
     // dropped), a word anywhere in the name.

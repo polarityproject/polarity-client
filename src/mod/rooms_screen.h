@@ -42,6 +42,13 @@ void DrawFace(ImDrawList* d, const std::string& chara, float x, float y, float w
 // characters' names; no title: "<owner>'s room".
 std::string RoomTitleText(const keeper::RoomTitle& title, const std::string& owner);
 void DrawCrown(ImDrawList* d, float x, float y, float scale, ImU32 col);
+// A player's country flag (the game's own, CommonAsset/CountryFlags), `h`
+// tall from (x, y) in design units; a country the game has no flag for shows
+// its two letters. Nothing for "" (unknown, or the player hides it). The
+// width drawn: kFlagAspect x h for a flag, a little more for the letters; 0
+// for nothing.
+constexpr float kFlagAspect = 1.5f;
+float DrawFlag(ImDrawList* d, ImFont* tagFont, const std::string& country, float x, float y, float h, float alpha = 1);
 void DrawPerson(ImDrawList* d, float x, float y, float size, ImU32 col);
 
 } // namespace sfv::mod

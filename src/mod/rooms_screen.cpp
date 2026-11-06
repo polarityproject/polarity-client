@@ -1,5 +1,6 @@
 #include "mod/rooms_screen.h"
 
+#include "core/country_flags.h"
 #include "core/rules.h"
 #include "mod/flow.h"
 #include "mod/log.h"
@@ -184,8 +185,11 @@ void RoomRow(ImDrawList* d, const HubFonts& f, float y, const keeper::ListedRoom
     const int fade = full ? 158 : 255;
     FitText(d, f.display, 21, 15, 400, g_v.P(68, y + 17), Alpha(kCream, fade), RoomTitleText(r.title, r.owner));
     DrawCrown(d, 68, y + 52, 1, Alpha(kGold, fade));
-    Text(d, f.strong, g_v.L(15), g_v.P(90, y + 47), Alpha(kSoft, fade), Upper(r.owner));
-    const float ox = 90 + TextW(f.strong, 15, Upper(r.owner));
+    // The owner's flag (the rooms server's lookup), then the name.
+    float nx = 90;
+    if (const float fw = DrawFlag(d, f.strong, r.ownerCountry, nx, y + 50, 12, fade / 255.0f)) nx += fw + 6;
+    Text(d, f.strong, g_v.L(15), g_v.P(nx, y + 47), Alpha(kSoft, fade), Upper(r.owner));
+    const float ox = nx + TextW(f.strong, 15, Upper(r.owner));
     std::string detail = " \xC2\xB7 " + Plural(r.tables, "table", "tables");
     const std::string ft = FirstTo(r.rules);
     if (!ft.empty()) detail += " \xC2\xB7 " + ft;
@@ -252,9 +256,12 @@ void RoomPanel(ImDrawList* d, const HubFonts& f, const keeper::ListedRoom& r, co
         for (int i = 0; i < count && i < 12; i++) {
             const float px = 918 + (i % 4) * 152.0f, py = y + 34 + (i / 4) * 36.0f;
             DrawFace(d, detail->people[i].chara, px, py, 20, 28);
+            // Face, flag, name: the name has what the flag leaves of the 112.
+            float nx = px + 28;
+            if (const float fw = DrawFlag(d, f.strong, detail->people[i].country, nx, py + 8, 11)) nx += fw + 5;
             std::string name = Upper(detail->people[i].name);
-            while (name.size() > 1 && TextW(f.strong, 15, name) > 112) name.pop_back();
-            Text(d, f.strong, g_v.L(15), g_v.P(px + 28, py + 5), kCream, name);
+            while (name.size() > 1 && TextW(f.strong, 15, name) > px + 140 - nx) name.pop_back();
+            Text(d, f.strong, g_v.L(15), g_v.P(nx, py + 5), kCream, name);
         }
         if (count > 12) Text(d, f.body, g_v.L(14), g_v.P(918, y + 34 + 3 * 36.0f), kMuted, "+" + std::to_string(count - 12) + " more");
         return;
@@ -410,6 +417,29 @@ std::string RoomTitleText(const keeper::RoomTitle& title, const std::string& own
         if (at != std::string::npos) s.replace(at, key.size(), keeper::CharacterName(title.chara[i]));
     }
     return s;
+}
+
+float DrawFlag(ImDrawList* d, ImFont* tagFont, const std::string& country, float x, float y, float h, float alpha)
+{
+    if (country.size() != 2) return 0;
+    const float w = h * kFlagAspect;
+    const ImU32 edge = Rgba(0, 0, 0, static_cast<int>(150 * alpha));
+    const std::string_view asset = FlagAsset(country);
+    if (asset.empty()) {
+        // No flag in the game for it: the two letters in a plate as wide as
+        // they need.
+        const float size = h * 1.05f, pw = std::max(w, TextW(tagFont, size, country) + h * 0.7f);
+        d->AddRectFilled(g_v.P(x, y), g_v.P(x + pw, y + h), Rgba(70, 74, 82, static_cast<int>(230 * alpha)), g_v.L(2));
+        Text(d, tagFont, g_v.L(size), g_v.P(x + pw / 2, y - h * 0.08f), Rgba(236, 232, 220, static_cast<int>(255 * alpha)), country, 0.5f);
+        return pw;
+    }
+    d->AddRectFilled(g_v.P(x - 1, y - 1), g_v.P(x + w + 1, y + h + 1), edge, g_v.L(1));
+    // The textures are 128 x 64 with the flag (96 x 64, 3:2) in the middle
+    // and clear margins at the sides: those are left out.
+    constexpr float kU0 = 16.0f / 128, kU1 = 112.0f / 128;
+    if (const TextureView* t = TextureSized("/Game/CommonAsset/CountryFlags/" + std::string(asset), g_v.L(w) / (kU1 - kU0)))
+        Image(d, t, g_v.P(x, y), g_v.P(x + w, y + h), ImVec2(kU0, 0), ImVec2(kU1, 1), Rgba(255, 255, 255, static_cast<int>(255 * alpha)));
+    return w;
 }
 
 void DrawCrown(ImDrawList* d, float x, float y, float scale, ImU32 col)

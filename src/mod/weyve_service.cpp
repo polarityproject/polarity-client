@@ -103,6 +103,18 @@ struct WeyveService::Impl {
     static constexpr auto kHeartbeatEvery = std::chrono::seconds(20);
     std::chrono::steady_clock::time_point lastHeartbeat = std::chrono::steady_clock::now();
     bool heartbeatAnswered = false; // logged once
+    // "nocc" sent outside a room: a rooms server without the country patch
+    // answers each with "not in a room", which is not an error of ours.
+    int noccUnanswered = 0;
+
+    // With the lock held (or before the thread shares the client).
+    void SendHideCountry(WeyveClient* c, bool hide)
+    {
+        uint32_t len = 0;
+        const bool inRoom = weyve_room_id(c, &len) && len;
+        weyve_set_member_data(c, "nocc", hide ? "1" : "");
+        if (!inRoom) noccUnanswered++;
+    }
 
     void Queue(std::function<void(WeyveClient*)> command)
     {
@@ -127,11 +139,19 @@ struct WeyveService::Impl {
         while (weyve_next(client, &raw)) {
             switch (raw.type) {
             case WEYVE_EVENT_ROOM_ID_ASSIGNED:
+                noccUnanswered = 0; // answered by now, in order, if ever
                 ev = {WeyveEvent::Type::RoomJoined, 0, Str(raw.data.room_assigned.id, raw.data.room_assigned.id_len)};
                 Log("weyve: in room %s as member %u", ev.text.c_str(), weyve_id(client));
                 events.push_back(ev);
                 break;
             case WEYVE_EVENT_ROOM_ERROR:
+                if (raw.data.room_error.code == WEYVE_ROOM_ERROR_NOT_IN_ROOM && noccUnanswered > 0) {
+                    noccUnanswered--;
+                    static bool said = false;
+                    if (!said) Log("weyve: this rooms server does not take \"nocc\" (and gives no countries)");
+                    said = true;
+                    break;
+                }
                 ev = {WeyveEvent::Type::RoomError, 0, RoomErrorName(raw.data.room_error.code)};
                 ev.error = raw.data.room_error.code == WEYVE_ROOM_ERROR_NO_SUCH_ROOM ? WeyveEvent::Error::NoSuchRoom
                            : raw.data.room_error.code == WEYVE_ROOM_ERROR_ROOM_CLOSED ? WeyveEvent::Error::Closed
@@ -283,6 +303,11 @@ struct WeyveService::Impl {
             return;
         }
         weyve_set_name(c, name.c_str());
+        // Before any room: the server never puts the country on this player.
+        if (WeyveService::HideCountry()) {
+            SendHideCountry(c, true);
+            Log("weyve: country flag hidden (nocc)");
+        }
         if (WeyveService::RelayOnly()) {
             weyve_set_relay_only(c, true);
             Log("weyve: relay only: links offer and take only relay candidates");
@@ -363,6 +388,17 @@ struct WeyveService::Impl {
 
 WeyveService::WeyveService(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 
+struct WeyveService::Live {
+    std::mutex mutex;
+    std::vector<Impl*> impls;
+};
+
+WeyveService::Live& WeyveService::Open()
+{
+    static Live live;
+    return live;
+}
+
 std::unique_ptr<WeyveService> WeyveService::Start(const std::string& server, const std::string& name, uint16_t alsoPort)
 {
     auto impl = std::make_unique<Impl>();
@@ -371,12 +407,20 @@ std::unique_ptr<WeyveService> WeyveService::Start(const std::string& server, con
     impl->name = name;
     Impl* raw = impl.get();
     std::unique_ptr<WeyveService> s(new WeyveService(std::move(impl)));
+    {
+        std::lock_guard lock(Open().mutex);
+        Open().impls.push_back(raw);
+    }
     raw->thread = std::thread([raw] { raw->Run(); });
     return s;
 }
 
 WeyveService::~WeyveService()
 {
+    {
+        std::lock_guard lock(Open().mutex);
+        std::erase(Open().impls, impl_.get());
+    }
     impl_->stop = true;
     if (impl_->thread.joinable()) impl_->thread.join();
 }
@@ -507,7 +551,18 @@ std::string WeyveService::TurnHost()
 
 namespace {
 std::atomic<bool> g_relayOnly{false};
+std::atomic<bool> g_hideCountry{false};
 }
+
+void WeyveService::SetHideCountry(bool hide)
+{
+    if (g_hideCountry.exchange(hide) == hide) return;
+    Log("weyve: country flag %s", hide ? "hidden" : "shown");
+    std::lock_guard lock(Open().mutex);
+    for (Impl* impl : Open().impls) impl->Queue([impl, hide](WeyveClient* c) { impl->SendHideCountry(c, hide); });
+}
+
+bool WeyveService::HideCountry() { return g_hideCountry; }
 
 void WeyveService::SetRelayOnly(bool on)
 {

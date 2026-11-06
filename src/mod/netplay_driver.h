@@ -87,6 +87,7 @@ struct NetplayOptions {
     bool uploadReports = true;             // desync reports go to the SFVR server (report_upload.h)
     bool autoReady = false;                // ready as soon as the lobby is reached (commands, tests)
     bool showOwnFps = false;               // the match HUD also shows this game's frame rate
+    bool shareCountry = true;              // others see this player's flag (off: WeyveService::SetHideCountry)
 };
 
 void InstallNetplay(SfvGame* game, const std::wstring& reportDir, const std::string& modVersion,

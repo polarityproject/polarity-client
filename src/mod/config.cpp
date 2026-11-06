@@ -156,6 +156,7 @@ void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPr
         }
     }
     if (has(L"show_fps")) n.showOwnFps = ReadInt(path, L"netplay", L"show_fps", 0) != 0;
+    if (has(L"share_country")) n.shareCountry = ReadInt(path, L"netplay", L"share_country", 1) != 0;
 }
 
 void Write(const std::wstring& path, const wchar_t* key, const std::string& value)
@@ -201,6 +202,7 @@ void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const
     Write(path, L"allow_spectators", n.allowSpectators ? "1" : "0");
     Write(path, L"upload_reports", n.uploadReports ? "1" : "0");
     Write(path, L"show_fps", n.showOwnFps ? "1" : "0");
+    Write(path, L"share_country", n.shareCountry ? "1" : "0");
     Write(path, L"server", n.savedServer);
     std::string recent;
     for (const std::string& s : n.recentServers) recent += (recent.empty() ? "" : ";") + s;

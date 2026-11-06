@@ -96,6 +96,12 @@ public:
     // their peers' relay candidates, so links go through TURN or not at all.
     static void SetRelayOnly(bool on);
     static bool RelayOnly();
+    // The player's "Country flag" setting: hidden, every client (open ones
+    // too) asks the rooms server to leave its country ("@cc", from its
+    // address) off this player, right after connecting and before any room
+    // (member data "nocc"; sfvr-server's weyvelength-geoip.patch).
+    static void SetHideCountry(bool hide);
+    static bool HideCountry();
 
     // ITransport. Datagrams over 1024 bytes are dropped (Weyvelength's limit).
     // While a peer's link is not up, sends are kept to one per 200 ms (enough
@@ -111,6 +117,8 @@ public:
 
 private:
     struct Impl;
+    struct Live; // the open services (SetHideCountry reaches them)
+    static Live& Open();
     explicit WeyveService(std::unique_ptr<Impl> impl);
     std::unique_ptr<Impl> impl_;
 };
