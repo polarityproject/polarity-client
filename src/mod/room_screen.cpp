@@ -858,17 +858,27 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     if (g.table > g.scroll + kTablesInView - 1) g.scroll = static_cast<float>(g.table - kTablesInView + 1);
 
     // ---- the title line ----
-    Text(d, f.display, g_v.L(40), g_v.P(48, 22), Rgba(255, 255, 255), "CUSTOM ROOM", 0, true);
-    float x = 48 + TextW(f.display, 40, "CUSTOM ROOM") + 30;
+    // The room's title (the game's lounge comment, or "<owner>'s room"),
+    // shrunk or cut to leave room for the line after it.
+    const bool hideCode = StreamerMode();
+    const std::string code = WeyveService::DisplayCode(v.room);
+    const char* access = v.isPublic ? "Public" : "Private";
+    const float codeW = hideCode ? DrawHiddenCode(nullptr, 0, 0, 17, 0) : TextW(f.strong, 17, code);
+    const float lineW = (paused ? 0 : TextW(f.strong, 17, access) + 16) + TextW(f.body, 17, "Code") + 6 + codeW + 20 + 34 +
+                        TextW(f.body, 17, "Copy code");
+    const std::string title = RoomTitleText(v.title, NameOf(v, v.owner));
+    float x = 48 + FitText(d, f.display, 40, 26, 1552 - 48 - 30 - lineW, g_v.P(48, 22), Rgba(255, 255, 255), title) + 30;
     if (!paused) {
-        Text(d, f.strong, g_v.L(17), g_v.P(x, 41), v.isPublic ? kGreen : kMuted, v.isPublic ? "Public" : "Private");
-        x += TextW(f.strong, 17, v.isPublic ? "Public" : "Private") + 16;
+        Text(d, f.strong, g_v.L(17), g_v.P(x, 41), v.isPublic ? kGreen : kMuted, access);
+        x += TextW(f.strong, 17, access) + 16;
     }
     Text(d, f.body, g_v.L(17), g_v.P(x, 41), kSoft, "Code");
     x += TextW(f.body, 17, "Code") + 6;
-    const std::string code = WeyveService::DisplayCode(v.room);
-    Text(d, f.strong, g_v.L(17), g_v.P(x, 41), kGold, code);
-    x += TextW(f.strong, 17, code) + 20;
+    if (hideCode) x += DrawHiddenCode(d, x, 41, 17, kGold) + 20;
+    else {
+        Text(d, f.strong, g_v.L(17), g_v.P(x, 41), kGold, code);
+        x += TextW(f.strong, 17, code) + 20;
+    }
     if (const TextureView* icon = Texture(PadTex("button_back"))) Image(d, icon, g_v.P(x, 36), g_v.P(x + 28, 64));
     Text(d, f.body, g_v.L(17), g_v.P(x + 34, 41), kCream, "Copy code");
     if (g.modal == Modal::None && Clicked() && MouseIn(g_v.P(x, 32), g_v.P(x + 34 + TextW(f.body, 17, "Copy code"), 68))) {
@@ -1011,7 +1021,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     }
     if (g.cardTable >= 0) Card(d, f, v, g.cardTable);
     else if (handoffTable >= 0) HandoffModal(d, f, v, handoffTable, steps, stepSeconds);
-    else if (g.modal == Modal::Leaving) Dialog(d, f, "ROOM " + WeyveService::DisplayCode(v.room), "Leave the room?", LeaveText(v));
+    else if (g.modal == Modal::Leaving) Dialog(d, f, StreamerMode() ? std::string("ROOM") : "ROOM " + WeyveService::DisplayCode(v.room), "Leave the room?", LeaveText(v));
     else if (g.modal == Modal::Remove) {
         Dialog(d, f, "OWNER", "Remove " + NameOf(v, g.removing) + "?", "They are out of the room and cannot come back on this connection.", kRed);
     }

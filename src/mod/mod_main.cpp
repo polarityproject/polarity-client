@@ -21,6 +21,7 @@
 #include "mod/updater.h"
 #include "mod/status.h"
 #include "mod/stress_driver.h"
+#include "mod/rooms_screen.h"
 #include "mod/weyve_service.h"
 
 #include <windows.h>
@@ -149,6 +150,7 @@ DWORD WINAPI ModMain(LPVOID self)
     if (config.netplay.skipLoadCallbacks) SetSkippedLoadCallbacks(DefaultSkippedLoadCallbacks());
     InstallNetplay(&game, config.reportDir, kModVersion, config.netplay);
     WeyveService::SetHideCountry(!config.netplay.shareCountry);
+    SetStreamerMode(config.netplay.streamerMode);
     InstallReportUploads(config.reportDir, Narrow(config.reportUrl), kModVersion, config.netplay.uploadReports);
 
     switch (config.mode) {

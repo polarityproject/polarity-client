@@ -77,9 +77,9 @@ std::string FirstTo(const std::string& rulesText)
 
 std::string Plural(int n, const char* one, const char* many) { return std::to_string(n) + " " + (n == 1 ? one : many); }
 
-// Text that shrinks to `maxW` (design units): its size down to `minSize`,
-// then cut with an ellipsis.
-void FitText(ImDrawList* d, ImFont* f, float size, float minSize, float maxW, ImVec2 at, ImU32 c, std::string t, float align = 0)
+} // namespace
+
+float FitText(ImDrawList* d, ImFont* f, float size, float minSize, float maxW, ImVec2 at, ImU32 c, std::string t, float align)
 {
     float s = size;
     while (s > minSize && TextW(f, s, t) > maxW) s -= 1;
@@ -94,7 +94,10 @@ void FitText(ImDrawList* d, ImFont* f, float size, float minSize, float maxW, Im
     // Kept on the baseline of the full size.
     const ImVec2 shifted(at.x, at.y + g_v.L((size - s) * 0.5f));
     Text(d, f, g_v.L(s), shifted, c, t, align);
+    return TextW(f, s, t);
 }
+
+namespace {
 
 // The form's rows: the title, its characters when it names them, then
 // visibility and tables.
@@ -338,7 +341,12 @@ void CodePanel(ImDrawList* d, const HubFonts& f, bool active, const std::string&
                                    Rgba(8, 9, 11, 242));
         const bool next = active && static_cast<int>(g.code.size()) == i;
         d->AddRectFilled(g_v.P(x, 292), g_v.P(x + slotW, 296), next ? kGold : Rgba(74, 68, 54));
-        if (i < static_cast<int>(g.code.size())) Text(d, f.display, g_v.L(52), g_v.P(x + slotW / 2, 214), Rgba(255, 255, 255), std::string(1, g.code[i]), 0.5f);
+        if (i < static_cast<int>(g.code.size())) {
+            // Streamer mode: a dot for each letter typed (a friend's code
+            // stays off the stream too).
+            if (StreamerMode()) d->AddCircleFilled(g_v.P(x + slotW / 2, 246), g_v.L(9), Rgba(255, 255, 255), 20);
+            else Text(d, f.display, g_v.L(52), g_v.P(x + slotW / 2, 214), Rgba(255, 255, 255), std::string(1, g.code[i]), 0.5f);
+        }
     }
     *clickedKey = -1;
     if (!notice.empty()) {
@@ -350,7 +358,10 @@ void CodePanel(ImDrawList* d, const HubFonts& f, bool active, const std::string&
         d->AddRectFilled(g_v.P(918, 468), b, line);
         Text(d, f.strong, g_v.L(16), g_v.P(944, 346), line, full ? "ROOM FULL" : "NO SUCH ROOM");
         const std::string code = g.lastCode.empty() ? g.code : g.lastCode;
-        Text(d, f.display, g_v.L(26), g_v.P(944, 374), kCream, full ? code + " has 16 players" : "Nothing open on " + code);
+        const bool hide = StreamerMode();
+        Text(d, f.display, g_v.L(26), g_v.P(944, 374), kCream,
+             full ? (hide ? std::string("That room has 16 players") : code + " has 16 players")
+                  : (hide ? std::string("Nothing open on that code") : "Nothing open on " + code));
         Text(d, f.body, g_v.L(17), g_v.P(944, 418), kSoft,
              full ? "That is the most a room holds. Try again once someone leaves."
                   : "Check the code with whoever sent it. A room closes once everyone has left it.");
@@ -440,6 +451,21 @@ float DrawFlag(ImDrawList* d, ImFont* tagFont, const std::string& country, float
     if (const TextureView* t = TextureSized("/Game/CommonAsset/CountryFlags/" + std::string(asset), g_v.L(w) / (kU1 - kU0)))
         Image(d, t, g_v.P(x, y), g_v.P(x + w, y + h), ImVec2(kU0, 0), ImVec2(kU1, 1), Rgba(255, 255, 255, static_cast<int>(255 * alpha)));
     return w;
+}
+
+namespace {
+std::atomic<bool> g_streamerMode{false};
+}
+
+void SetStreamerMode(bool on) { g_streamerMode = on; }
+bool StreamerMode() { return g_streamerMode; }
+
+float DrawHiddenCode(ImDrawList* d, float x, float y, float size, ImU32 col)
+{
+    // Six dots where the code's six letters would be.
+    const float r = size * 0.16f, step = size * 0.5f;
+    for (int i = 0; d && i < 6; i++) d->AddCircleFilled(g_v.P(x + r + i * step, y + size * 0.62f), g_v.L(r), col, 12);
+    return 5 * step + 2 * r;
 }
 
 void DrawCrown(ImDrawList* d, float x, float y, float scale, ImU32 col)
@@ -599,7 +625,8 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
         WaitPanel(d, f, "JOINING", "Into the room", "A moment.");
     }
     else if (v.state == S::Room) {
-        WaitPanel(d, f, "IN A ROOM", "Room " + WeyveService::DisplayCode(v.room), "The room screen opens.");
+        WaitPanel(d, f, "IN A ROOM", StreamerMode() ? std::string("Your room") : "Room " + WeyveService::DisplayCode(v.room),
+                  "The room screen opens.");
     }
     else if (g.focus == kCreate) {
         CreatePanel(d, f, g.inPanel, &formRow, &formStep);

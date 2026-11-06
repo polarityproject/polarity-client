@@ -992,6 +992,7 @@ struct Choices {
     bool uploadReports = true;
     bool showFps = false;
     bool shareCountry = true;
+    bool streamerMode = false;
 };
 Choices g_choices;
 bool IsEleven(int chara);
@@ -1039,6 +1040,7 @@ void InitChoices()
     g_choices.uploadReports = o.uploadReports;
     g_choices.showFps = o.showOwnFps;
     g_choices.shareCountry = o.shareCountry;
+    g_choices.streamerMode = o.streamerMode;
     g_choices.initialised = true;
 }
 
@@ -1071,6 +1073,7 @@ NetplayOptions ChosenOptions()
     o.uploadReports = c.uploadReports;
     o.showOwnFps = c.showFps;
     o.shareCountry = c.shareCountry;
+    o.streamerMode = c.streamerMode;
     return o;
 }
 
@@ -1238,6 +1241,8 @@ void SaveChoices()
         NetOptions().showOwnFps = o.showOwnFps;
         NetOptions().shareCountry = o.shareCountry;
         WeyveService::SetHideCountry(!o.shareCountry);
+        NetOptions().streamerMode = o.streamerMode;
+        SetStreamerMode(o.streamerMode);
         NetOptions().inputDelay = o.inputDelay;
         if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, o, o.stageCode);
     });
@@ -1643,6 +1648,11 @@ void DrawSettings(bool locked)
     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440 * g_uiScale);
     ImGui::TextColored(kDim, "The SFVR server finds your country from your connection and shows its flag beside "
                              "your name in custom rooms and on the rooms list online. Off: it keeps it to itself.");
+    ImGui::PopTextWrapPos();
+    changed |= ImGui::Checkbox("Streamer mode", &c.streamerMode);
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440 * g_uiScale);
+    ImGui::TextColored(kDim, "Room codes show as dots on the custom room screens, so a stream does not give "
+                             "them away. Copy code still copies it.");
     ImGui::PopTextWrapPos();
     ImGui::Spacing();
     if (NetOptions().udp) ImGui::TextDisabled("Transport: UDP, for testing (sfv_rollback.ini)");
@@ -3488,6 +3498,17 @@ std::vector<SettingsRow> SettingsRows()
         r.hint = "Left and right: shown or hidden.";
     }
     {
+        SettingsRow& r = row("streamer", "ONLINE", "Streamer mode");
+        r.arrows = true;
+        r.value = g_choices.streamerMode ? "On" : "Off";
+        r.kicker = "ONLINE";
+        r.title = "Streamer mode";
+        r.lines = {"On: room codes show as dots on the custom room screens, so a stream or a screenshot does not give "
+                   "them away.",
+                   "Copy code still copies it, to send to a friend."};
+        r.hint = "Left and right: on or off.";
+    }
+    {
         SettingsRow& r = row("delay", "ONLINE", "Input delay");
         const int fixed = NetOptions().delaySetting;
         r.arrows = true;
@@ -3590,6 +3611,11 @@ void ApplySetting(const SettingsInput& in)
     }
     else if (in.row == "country" && in.delta) {
         g_choices.shareCountry = !g_choices.shareCountry;
+        SaveChoices();
+    }
+    else if (in.row == "streamer" && in.delta) {
+        g_choices.streamerMode = !g_choices.streamerMode;
+        SetStreamerMode(g_choices.streamerMode); // at once, not on the game thread's turn
         SaveChoices();
     }
     else if (in.row == "reports" && in.delta) {

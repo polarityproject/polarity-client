@@ -88,6 +88,7 @@ struct NetplayOptions {
     bool autoReady = false;                // ready as soon as the lobby is reached (commands, tests)
     bool showOwnFps = false;               // the match HUD also shows this game's frame rate
     bool shareCountry = true;              // others see this player's flag (off: WeyveService::SetHideCountry)
+    bool streamerMode = false;             // room codes stay off the screen (rooms_screen.h SetStreamerMode)
 };
 
 void InstallNetplay(SfvGame* game, const std::wstring& reportDir, const std::string& modVersion,
