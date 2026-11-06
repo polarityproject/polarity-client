@@ -359,6 +359,7 @@ struct Bot {
     std::string lobby, room;
     bool inLobby = false, inRoom = false;
     uint32_t seq = 0;
+    std::string madeRoom; // the room the keeper made for this bot (answered once)
     std::mutex scriptMutex; // stdin's thread adds to the script
     std::deque<std::string> script;
     int64_t waitUntil = 0;
@@ -423,6 +424,13 @@ struct Bot {
             s.isPublic = pub != 0;
             Ask(RoomRequest(++seq, s));
             Log("asks for a room");
+        }
+        else if (cmd == "setdata") {
+            // setdata <key> <value>: any member data (testing what the server refuses, e.g. "@cc").
+            std::string key, value;
+            ss >> key >> value;
+            weyve_set_member_data(c, key.c_str(), value.c_str());
+            Log("sets member data " + key + "=" + value);
         }
         else if (cmd == "chara") {
             std::string code;
@@ -570,6 +578,10 @@ struct Bot {
             if (!ParseAnswer(data, len, &a)) continue;
             weyve_set_member_data(c, kAck, std::to_string(a.seq).c_str());
             if (a.kind == "room" && a.ok) {
+                // Once (the keeper resends until the ack lands; each join
+                // would leave and rejoin, the owner handing the room on).
+                if (a.text == madeRoom) continue;
+                madeRoom = a.text;
                 Log("the keeper made room " + a.text);
                 weyve_leave_room(c);
                 weyve_join_room(c, a.text.c_str(), nullptr);
