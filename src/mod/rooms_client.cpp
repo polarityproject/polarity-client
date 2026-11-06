@@ -15,6 +15,7 @@
 #include <array>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <atomic>
 #include <map>
 #include <memory>
@@ -79,6 +80,9 @@ struct Client {
         bool started = false, codeSent = false;
         bool begun = false; // the match itself (the jump), not only the session
         int sent[2] = {-1, -1};
+        // The score while the session was live: once this side leaves, the
+        // driver is gone and the view's score reads 0 - 0.
+        uint16_t wins[2] = {0, 0};
         bool againAsked = false; // P1: the next set asked for (again)
     } playing;
 
@@ -103,8 +107,12 @@ struct Client {
     std::string peekCode;
     int64_t peekAskedMs = -kPeekEveryMs;
     std::vector<std::string> peekParts;
-    // Ping: per member, the last round trip (smoothed) and when they were pinged.
-    std::map<uint32_t, int> pings;
+    // Ping: per member, the last few round trips (shown: the lowest; each
+    // side answers from a loop that wakes every 20 ms, which the lowest of a
+    // few mostly leaves out) and when they were pinged.
+    static constexpr size_t kPingSamples = 4;
+    std::map<uint32_t, std::deque<int>> pings;
+    std::set<uint32_t> pingLogged;
     int64_t lastPingMs = 0;
     std::string net = "u"; // this PC's connection, for member data `net`
     std::map<uint32_t, int> mask; // the room's masked names (keeper_protocol.h kMask)
@@ -282,6 +290,7 @@ struct Client {
                 lastOwner = 0;
                 joinedAt = NowMs();
                 pings.clear();
+                pingLogged.clear();
                 mask.clear();
                 tickets.clear();
                 toldMasked = false;
@@ -342,9 +351,18 @@ struct Client {
                 }
                 else {
                     const int ms = static_cast<int>((ClockUs() - static_cast<int64_t>(clock)) / 1000);
-                    if (ms >= 0 && ms < 5000) {
-                        auto it = pings.find(static_cast<uint32_t>(p.from));
-                        pings[static_cast<uint32_t>(p.from)] = it == pings.end() ? ms : (it->second * 3 + ms) / 4;
+                    // Clock 0: sent before the link was up (see Pings).
+                    if (clock != 0 && ms >= 0 && ms < 5000) {
+                        auto& samples = pings[static_cast<uint32_t>(p.from)];
+                        samples.push_back(ms);
+                        if (samples.size() > kPingSamples) samples.pop_front();
+                        // The first reading and the first full window, for the log.
+                        if (samples.size() == 1 || (samples.size() == kPingSamples && !pingLogged.count(static_cast<uint32_t>(p.from)))) {
+                            if (samples.size() == kPingSamples) pingLogged.insert(static_cast<uint32_t>(p.from));
+                            Log("rooms: ping to member %u: %d ms (%s)", static_cast<unsigned>(p.from),
+                                *std::min_element(samples.begin(), samples.end()),
+                                samples.size() == 1 ? "first reading" : "lowest of the last 4");
+                        }
                     }
                 }
                 continue;
@@ -504,8 +522,8 @@ struct Client {
             if (watch != m.data.end() && !watch->second.empty()) r.watching = std::atoi(watch->second.c_str()) - 1;
             r.owner = m.id == view.owner;
             const auto ping = pings.find(m.id);
-            if (ping != pings.end() && m.id != v.self) {
-                r.pingMs = ping->second;
+            if (ping != pings.end() && !ping->second.empty() && m.id != v.self) {
+                r.pingMs = *std::min_element(ping->second.begin(), ping->second.end());
                 r.relayed = svc->PeerPath(m.id) == WeyveService::LinkPath::Relayed;
             }
             if (r.masked && m.id == v.self && !toldMasked) {
@@ -553,10 +571,17 @@ struct Client {
     {
         if (view.state != State::Room || NowMs() - lastPingMs < kPingEveryMs) return;
         lastPingMs = NowMs();
-        uint8_t ping[keeper::kPingSize];
+        uint8_t ping[keeper::kPingSize], building[keeper::kPingSize];
         keeper::FormatPing(false, static_cast<uint64_t>(ClockUs()), ping);
+        // A send to a member with no link up yet builds one and waits in the
+        // link's queue until it is up, seconds later: timed, that read as a
+        // far ping for a while after joining. Those go without a clock, and
+        // their answers are not counted.
+        keeper::FormatPing(false, 0, building);
         for (const WeyveMember& m : v.members) {
-            if (m.id != v.self && m.id != keeperId) svc->Send(m.id, ping, sizeof(ping));
+            if (m.id == v.self || m.id == keeperId) continue;
+            const bool up = svc->PeerPath(m.id) != WeyveService::LinkPath::None;
+            svc->Send(m.id, up ? ping : building, sizeof(ping));
         }
     }
 
@@ -637,7 +662,11 @@ struct Client {
                 return;
             }
         }
-        if (live) playing.started = true;
+        if (live) {
+            playing.started = true;
+            playing.wins[0] = nv.seats[0].wins;
+            playing.wins[1] = nv.seats[1].wins;
+        }
         if (!playing.started) {
             if (NowMs() - playing.at > 30000) {
                 Log("rooms: table %d's session never started", playing.table + 1);
@@ -679,8 +708,14 @@ struct Client {
             }
             // Over: the set's result, or 0 - 0 when it did not finish (the
             // keeper calls the table again). P2 reports too; the keeper takes
-            // it only when P1 is gone.
-            const uint16_t wins[2] = {nv.seats[0].wins, nv.seats[1].wins};
+            // it only when P1 is gone. The view keeps the score when the other
+            // side ended the session; after this side's own leave (from the
+            // vote, a won set) it is empty, so the score seen last while live.
+            uint16_t wins[2] = {nv.seats[0].wins, nv.seats[1].wins};
+            if (SetWinner(playing.rules, wins) < 0) {
+                wins[0] = playing.wins[0];
+                wins[1] = playing.wins[1];
+            }
             const bool done = SetWinner(playing.rules, wins) >= 0;
             if (!done) {
                 view.tableNotice = std::string(playing.begun ? "The set did not finish" : "The match did not start") + (nv.result.empty() ? std::string(".") : ": " + nv.result + ".");
