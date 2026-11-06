@@ -1482,19 +1482,16 @@ void TestKeeperProtocol()
     CHECK(PackRoomList({}).empty());
     data[ListKey(3)] = "not\ta room";
     CHECK(UnpackRoomList(data).size() < read.size());
-    // The rooms API's JSON: totals, every room (not only what fits the lobby's
-    // keys), names escaped, broken UTF-8 replaced.
+    // The rooms API's JSON: the three public totals, every room (not only what
+    // fits the lobby's keys), names escaped, broken UTF-8 replaced.
     {
         RoomTotals totals;
-        totals.lobbyMembers = 7;
-        totals.rooms = 3;
+        totals.online = 12;
+        totals.inPublicRooms = 3;
         totals.publicRooms = 1;
-        totals.players = 9;
-        totals.tables = 4;
-        totals.tablesPlaying = 2;
         CHECK(FormatRoomListJson({}, totals, 1700000000123) ==
-              "{\"version\":1,\"updated\":1700000000123,\"totals\":{\"lobby\":7,\"rooms\":3,\"public_rooms\":1,\"players\":9,"
-              "\"tables\":4,\"tables_playing\":2},\"rooms\":[]}");
+              "{\"version\":1,\"updated\":1700000000123,\"totals\":{\"online\":12,\"in_public_rooms\":3,\"public_rooms\":1},"
+              "\"rooms\":[]}");
         ListedRoom r;
         r.code = "ABC123";
         r.preset = 0;
@@ -1504,10 +1501,14 @@ void TestKeeperProtocol()
         r.openSeats = 1;
         r.rules = "r1 ft2 bo3 t99 ws3";
         r.faces = {"RYU", "KEN"};
+        // Every member with a flag and a face, or null for either.
+        r.players = {{"Laptop", "DE", "RYU"}, {"Player 2", "", "KEN"}, {"Deck", "JP", ""}};
         const std::string one = FormatRoomListJson({r}, totals, 1);
         CHECK(one.find("{\"code\":\"ABC123\",\"preset\":\"" + std::string(PresetName(0)) + "\",\"owner\":\"a\\\"b\\\\c\\u000a\xE3\x81\x82"
                        "\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBDz\",\"members\":3,\"capacity\":16,\"tables\":2,\"open_seats\":1,"
-                       "\"rules\":\"r1 ft2 bo3 t99 ws3\",\"faces\":[\"RYU\",\"KEN\"]}") != std::string::npos);
+                       "\"rules\":\"r1 ft2 bo3 t99 ws3\",\"faces\":[\"RYU\",\"KEN\"],\"players\":["
+                       "{\"name\":\"Laptop\",\"country\":\"DE\",\"face\":\"RYU\"},{\"name\":\"Player 2\",\"country\":null,\"face\":\"KEN\"},"
+                       "{\"name\":\"Deck\",\"country\":\"JP\",\"face\":null}]}") != std::string::npos);
         const std::string all = FormatRoomListJson(many, totals, 1);
         CHECK(std::count(all.begin(), all.end(), '{') == static_cast<std::ptrdiff_t>(many.size()) + 2);
     }
