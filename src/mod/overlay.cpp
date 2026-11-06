@@ -3209,7 +3209,13 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
                     if (button("Leave", lobby::Choice::None)) Act([] { NetLeave(); });
                     ImGui::PushTextWrapPos(0.0f);
                     if (v.voteSecondsLeft >= 0 && s.choice == lobby::Choice::None) {
-                        ImGui::TextColored(kDim, v.againVote ? "No choice in %d s: the next set" : "No choice in %d s: rematch",
+                        // Playing on: no choice from either is back to the
+                        // room (both leave); the other's choice carries it.
+                        const bool neither = v.seats[1 - i].choice == lobby::Choice::None;
+                        ImGui::TextColored(kDim,
+                                           !v.againVote ? "No choice in %d s: rematch"
+                                           : neither    ? "If neither chooses in %d s: back to the room"
+                                                        : "No choice in %d s: the next set",
                                            v.voteSecondsLeft);
                     }
                     ImGui::TextColored(kDim, v.againVote ? "Leave: back to the room." : "Leave ends the set here.");

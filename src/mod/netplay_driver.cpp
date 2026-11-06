@@ -1694,6 +1694,14 @@ private:
             return;
         }
         const bool late = now - decidedAt_ >= kSetVote;
+        // Neither chose by the vote's end: both leave (back to the room with
+        // the set's result), so two players who walked away do not play set
+        // after set. One player's choice still carries the other's silence.
+        if (late && mine == Choice::None && theirs == Choice::None) {
+            Log("netplay: %s; neither chose by the vote's end: back to the room", SetOverText().c_str());
+            again_ = Again::Refused;
+            return;
+        }
         if (late) {
             if (mine == Choice::None) mine = Choice::Rematch;
             if (theirs == Choice::None) theirs = Choice::Rematch;
@@ -1703,7 +1711,7 @@ private:
         againSelect_ = select;
         againAskedAt_ = now;
         again_ = Again::Ask;
-        Log("netplay: %s won; both play on (%s)%s: asking the keeper for the next set", SetOverText().c_str(),
+        Log("netplay: %s; both play on (%s)%s: asking the keeper for the next set", SetOverText().c_str(),
             select ? "character select" : "rematch", late ? ", the vote's time up" : "");
     }
 
