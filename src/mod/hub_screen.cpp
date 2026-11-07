@@ -50,10 +50,10 @@ std::vector<Entry> Entries(const HubLive& live)
 {
     return {
         {HubAction::PlayOffline, "PLAY OFFLINE", Icon::Pad, "Story, arcade, training, versus",
-         "The game as it ships: story, arcade, training, versus and the rest. Back + Start in its menus comes back here.",
+         "Press Back + Start in the game's menus to come back here.",
          live.offlineChara, live.offlineStage},
         {HubAction::CustomRooms, "CUSTOM ROOMS", Icon::Rooms, live.roomsInfo,
-         "Up to 16 players on up to eight tables with their own rules. Public rooms are listed; private ones take a code.",
+         "Play online in rooms of up to 16 players.",
          live.roomsChara, live.roomsStage},
     };
 }
@@ -164,26 +164,25 @@ HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live
     switch (live.roomsProblem) {
     case P::Connecting:
         title = "Connecting...";
-        text = "SFVR is connecting to " + server + ". Custom Rooms opens as soon as it answers.";
+        text = "Custom Rooms opens once connected.";
         break;
     case P::Unreachable:
         title = "Can't reach the rooms server";
-        text = "SFVR could not connect to " + server + ". Check this PC's internet connection and that a firewall lets the game out. "
-               "If those are fine, the server may be down for a moment: SFVR tries again every 10 seconds.";
+        text = "Couldn't connect to " + server + ". Check your internet connection and firewall. "
+               "If they're fine, the server may be down. SFVR retries every 10 seconds.";
         primary = "Try again";
         primaryAction = HubAction::RetryRooms;
         break;
     case P::UpdateNeeded:
         title = "Update needed";
-        text = "The rooms server runs a newer SFVR" + (live.roomsBuild.empty() ? std::string() : " (protocol " + live.roomsBuild + ")") +
-               " than this one. Update from SFVR settings, Updates, then start the game again.";
+        text = "Custom Rooms need a newer SFVR" + (live.roomsBuild.empty() ? std::string() : " (protocol " + live.roomsBuild + ")") +
+               ". Update in SFVR settings, then restart the game.";
         primary = "SFVR settings";
         primaryAction = HubAction::Settings;
         break;
     default:
-        title = "Custom Rooms are offline";
-        text = "The rooms server answers, but its room keeper is not running, so no room can be made or joined right now. "
-               "Try again in a little while.";
+        title = "Custom Rooms are unavailable";
+        text = "The rooms server is up, but isn't hosting rooms right now. Try again in a little while.";
         primary = "Try again";
         primaryAction = HubAction::RetryRooms;
         break;
@@ -230,19 +229,11 @@ HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live
 void DrawTop(ImDrawList* d, const HubFonts& f, const HubLive& live)
 {
     StageText(d, f.display, 42, 800, 30, Rgba(255, 255, 255), "SFVR", 0.5f);
-    // Right to left: the version, the server, the player.
+    // Right to left: the version, the player.
     float x = 1560;
     const float y = 22;
     StageText(d, f.body, 20, x, y, look::kSoft, live.version, 1);
     x -= TextW(f.body, 20, live.version) + 24;
-    static const char* const kStates[] = {"offline", "connecting", "connected", "unreachable"};
-    const std::string server = live.server + " \xC2\xB7 " + kStates[std::clamp(live.serverState, 0, 3)];
-    StageText(d, f.body, 20, x, y, kGold, server, 1);
-    x -= TextW(f.body, 20, server) + 18;
-    static const ImU32 kDots[] = {IM_COL32(120, 116, 104, 255), IM_COL32(233, 196, 106, 255), IM_COL32(127, 216, 139, 255),
-                                  IM_COL32(224, 108, 96, 255)};
-    d->AddCircleFilled(g_v.P(x, y + 13), g_v.L(5), kDots[std::clamp(live.serverState, 0, 3)]);
-    x -= 24;
     StageText(d, f.bold ? f.bold : f.strong, 20, x, y, kCream, Upper(live.player.empty() ? "Player" : live.player), 1);
 }
 

@@ -487,7 +487,7 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
         if (picking && Clicked() && MouseIn(g_v.P(x, sy), g_v.P(x + sw, sy + sh)) && !lockedAt(i, 0)) in->stage = i;
     }
     Text(d, f.text, g_v.L(19), g_v.P(800, sy + sh + 16), Rgba(232, 228, 216),
-         picking ? "You select the stage." : "Player 1 is selecting the stage...", 0.5f);
+         picking ? "Pick the stage." : "Player 1 is picking the stage...", 0.5f);
     if (picking && Confirm() && !lockedAt(stage, setting)) in->lockStage = true;
 }
 
@@ -517,7 +517,7 @@ void MoveCursor(int dr, int dx)
 }
 
 
-constexpr const char* kLoadingText = "Both ready: loading the characters";
+constexpr const char* kLoadingText = "Both ready. Loading...";
 
 // A line of status over the bottom strip.
 void StatusPill(ImDrawList* d, const SelectFonts& f, const char* text)
@@ -543,7 +543,7 @@ void DrawLeaveDialog(ImDrawList* d, const SelectFonts& f, const SelectLive& live
     // Stay; the prompts in its footer.
     const bool watching = live.you < 0;
     const char* title = watching ? "Stop watching?" : live.set ? "Leave the set?" : "Leave the session?";
-    const char* detail = watching   ? "You go back to the main menu."
+    const char* detail = watching   ? "You'll return to the main menu."
                          : live.set ? "The set ends here for both players."
                                     : "The session ends for both players.";
     ImFont* bold = f.bold ? f.bold : f.text;
@@ -783,7 +783,7 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         // A character this profile does not own: its art shows, it cannot be
         // picked (the game's own select has it the same way).
         const SelectChara* under = !g_ui.onRandom && hover >= 0 ? Chara(hover) : nullptr;
-        if (grid && under && under->locked) StatusPill(d, f, ("Locked: this profile does not own " + under->name).c_str());
+        if (grid && under && under->locked) StatusPill(d, f, ("You don't own " + under->name).c_str());
         if (ready && live.myCharacter) {
             prompts.push_back({"button_a", "Back to the room", 0});
             prompts.push_back({"button_b", "Change again", 1});
@@ -792,11 +792,11 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             // B says not ready, until both are: then the match is locked in
             // (B leaves).
             if (live.bothReady) {
-                StatusPill(d, f, live.loading ? kLoadingText : "Both ready: the match is starting");
+                StatusPill(d, f, live.loading ? kLoadingText : "Both ready. Starting...");
                 prompts.push_back({"button_b", "Leave", 1});
             }
             else {
-                StatusPill(d, f, "Ready: the match starts once both players are");
+                StatusPill(d, f, "Ready. Waiting for your opponent...");
                 prompts.push_back({"button_b", "Not ready", 1});
             }
         }
@@ -948,11 +948,10 @@ SelectSide MockSide(int i)
         s.rows[5].value = comment == 0 ? "AUTO" : std::to_string(comment);
     }
     s.rows[6].value = std::to_string(v[6]) + (v[6] == 1 ? " frame" : " frames");
-    const char* hints[kSelectRows] = {"Pick a costume.", "Pick a color.", "A variant of this costume.", "V-Skill.", "V-Trigger.", "",
-                                      "Suggested: 2 frames for a 38 ms ping. Lower reacts sooner, with more rollbacks."};
+    const char* hints[kSelectRows] = {"", "", "", "", "", "", "Suggested for a 38 ms ping: 2 frames. Lower feels sharper but rolls back more."};
     const int comment = v[5] % (1 + static_cast<int>(c.vcomments.size()));
-    const std::string commentLine = eleven ? "A random fighter in silver, its V-Skill and V-Trigger at random."
-                                    : comment == 0 ? "Comment changes automatically based on opponent's character."
+    const std::string commentLine = eleven ? "Plays a random character in silver, with a random V-Skill and V-Trigger."
+                                    : comment == 0 ? "Changes with your opponent's character."
                                                    : "\"" + c.vcomments[comment - 1] + "\"";
     for (int r = 0; r < kSelectRows; r++) s.rows[r].hint = r == 5 || eleven ? commentLine : hints[r];
     return s;

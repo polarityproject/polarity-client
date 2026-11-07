@@ -311,12 +311,11 @@ void CreatePanel(ImDrawList* d, const HubFonts& f, bool active, int* clickedRow,
         }
     }
     const char* visibility = g.settings.isPublic
-                                 ? "Public: listed here for everyone, and anyone can join. Friends can still use the code."
-                                 : "Private: not listed. Only people you send the code to can join.";
+                                 ? "Listed for anyone to join. Friends can also use the code."
+                                 : "Not listed. Only people with the code can join.";
     const float below = 196 + n * 60.0f + 14;
     Text(d, f.body, g_v.L(17), g_v.P(918, below), kSoft, visibility);
-    Text(d, f.body, g_v.L(17), g_v.P(918, below + 35), kMuted, "Up to 16 players. Each table has its own queue and rules; the owner");
-    Text(d, f.body, g_v.L(17), g_v.P(918, below + 60), kMuted, "sets them in the room with Start.");
+    Text(d, f.body, g_v.L(17), g_v.P(918, below + 35), kMuted, "Up to 16 players. Set each table's rules from the room.");
 }
 
 void CodePanel(ImDrawList* d, const HubFonts& f, bool active, const std::string& notice, int* clickedKey)
@@ -351,8 +350,8 @@ void CodePanel(ImDrawList* d, const HubFonts& f, bool active, const std::string&
              full ? (hide ? std::string("That room has 16 players") : code + " has 16 players")
                   : (hide ? std::string("Nothing open on that code") : "Nothing open on " + code));
         Text(d, f.body, g_v.L(17), g_v.P(944, 418), kSoft,
-             full ? "That is the most a room holds. Try again once someone leaves."
-                  : "Check the code with whoever sent it. A room closes once everyone has left it.");
+             full ? "Rooms hold 16 players. Try again when someone leaves."
+                  : "Check the code. Rooms close once everyone leaves.");
         return;
     }
     const float keyW = (608 - 8 * (kKeyCols - 1)) / float(kKeyCols);
@@ -570,17 +569,17 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     StageText(d, f.display, 40, 48, 22, Rgba(255, 255, 255), "CUSTOM ROOMS");
     const std::string summary = v.keeper ? Plural(v.summary.publicRooms, "public room", "public rooms") + " \xC2\xB7 " +
                                                Plural(v.summary.players, "player", "players")
-                                         : v.state == S::Failed ? "Cannot reach the rooms server" : "Custom rooms are offline right now";
+                                         : v.state == S::Failed ? "Can't reach the rooms server" : "Custom Rooms are unavailable right now";
     StageText(d, f.body, 20, 48 + TextW(f.display, 40, "CUSTOM ROOMS") + 28, 39, kCream, summary);
     ActionRow(d, f, 80, "+", "CREATE A ROOM", "Public or private, 1 to 8 tables", g.focus == kCreate);
-    ActionRow(d, f, 160, "#", "JOIN WITH A CODE", "For a private room, or any room a friend sent you", g.focus == kCode);
+    ActionRow(d, f, 160, "#", "JOIN WITH A CODE", "For private rooms, or a code from a friend", g.focus == kCode);
     StageText(d, f.bold ? f.bold : f.strong, 16, 48, 246, kGold, "PUBLIC ROOMS \xC2\xB7 " + std::to_string(count));
     d->PushClipRect(g_v.P(30, kListTop - 2), g_v.P(886, 840), true);
     if (!count) {
         Pane(d, 48, kListTop, 868, kListTop + 160);
         Text(d, f.strong, g_v.L(20), g_v.P(72, kListTop + 52), kCream, "No public rooms right now");
         Text(d, f.body, g_v.L(16), g_v.P(72, kListTop + 84), kMuted,
-             "Create one and it shows here for everyone. Private rooms are never listed.");
+             "Create one and it shows up here.");
     }
     for (int i = 0; i < count; i++) {
         const float y = kListTop + (i - g.scroll) * kRowPitch;
@@ -596,14 +595,14 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     PanelFrame(d);
     int formRow = -1, formStep = -1, key = -1;
     if (v.state == S::Creating) {
-        WaitPanel(d, f, "NEW ROOM", "Making your room", "The keeper is opening it; you go straight in.");
+        WaitPanel(d, f, "NEW ROOM", "Creating your room", "You go straight in once it's ready.");
     }
     else if (v.state == S::Joining) {
-        WaitPanel(d, f, "JOINING", "Into the room", "A moment.");
+        WaitPanel(d, f, "JOINING", "Joining the room", "One moment.");
     }
     else if (v.state == S::Room) {
         WaitPanel(d, f, "IN A ROOM", StreamerMode() ? std::string("Your room") : "Room " + WeyveService::DisplayCode(v.room),
-                  "The room screen opens.");
+                  "Opening the room.");
     }
     else if (g.focus == kCreate) {
         CreatePanel(d, f, g.inPanel, &formRow, &formStep);
@@ -629,19 +628,19 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     std::vector<std::pair<const char*, std::string>> prompts;
     const bool roomFull = g.focus >= 0 && g.focus < count && rooms[g.focus].members >= keeper::kRoomCap;
     if (busy || v.state == S::Room) {
-        text = v.state == S::Creating ? "Making your room." : "Joining.";
+        text = v.state == S::Creating ? "Creating your room..." : "Joining the room...";
     }
     else if (!v.otherBuild.empty() && !v.keeper) {
         lead = "UPDATE NEEDED";
         leadCol = kRed;
-        text = "The rooms server runs another SFVR version. Start: SFVR settings, to check for an update.";
+        text = "Custom Rooms need a different SFVR version. Check for updates in SFVR settings.";
         prompts = {{"button_start", "SFVR settings"}, {"button_b", "Back"}};
     }
     else if (!v.keeper && (g.focus == kCreate || g.focus >= 0)) {
         lead = v.state == S::Failed ? "CANNOT CONNECT" : "OFFLINE";
         leadCol = v.state == S::Failed ? kRed : kMuted;
-        text = v.state == S::Failed ? "The rooms server cannot be reached. Start: SFVR settings (the server)."
-                                    : "Custom rooms are not running right now; try again later.";
+        text = v.state == S::Failed ? "Can't reach the rooms server. Check your connection, or the server in SFVR settings."
+                                    : "Custom Rooms are unavailable right now. Try again later.";
         prompts = {};
         if (v.state == S::Failed) prompts.push_back({"button_start", "SFVR settings"});
         prompts.push_back({"button_b", "Back"});
@@ -657,15 +656,16 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
         else if (!count && g.formRow == 0) {
             lead = "NO PUBLIC ROOMS";
             leadCol = kMuted;
-            text = "Nobody has a public room open.";
+            text = "Create one, or join with a code.";
         }
         else {
             const FormRow row = FormRows()[std::min<size_t>(g.formRow, FormRows().size() - 1)];
-            text = row == kRowTitle ? "Left and right: the room's title, one of the Battle Lounge's comments."
-                   : row == kRowChara1 ? "Left and right: the character you play."
-                   : row == kRowChara2 ? "Left and right: the character you want to play against."
-                   : row == kRowVisibility ? "Left and right: public or private."
-                                           : "Left and right: 1 to 8 tables. With 8, a full room can all play at once.";
+            text = !g.inPanel ? ""
+                   : row == kRowTitle ? "Titles come from the game's Battle Lounge comments."
+                   : row == kRowChara1 ? "The character you play."
+                   : row == kRowChara2 ? "The character you want to face."
+                   : row == kRowVisibility ? ""
+                                           : "With 8 tables, all 16 players can play at once.";
         }
         prompts = {{"button_start", "Create"}, {"button_b", "Back"}};
         if (!g.inPanel) prompts.insert(prompts.begin(), {"button_a", "Change"});
@@ -673,19 +673,18 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     else if (g.focus == kCode) {
         if (failed) prompts = {{"button_a", "Try again"}, {"button_b", "Back"}};
         else {
-            text = "Type the code you were sent.";
+            text = "Enter the room code.";
             prompts = {{"button_a", "Type"}, {"button_x", "Delete"}, {"button_y", "Paste"}, {"button_start", "Join"}, {"button_b", "Back"}};
         }
     }
     else if (roomFull) {
         lead = "ROOM FULL";
         leadCol = kRed;
-        text = "Try again once someone leaves. The list updates by itself.";
+        text = "Try again when someone leaves.";
         prompts = {{"button_b", "Back"}};
     }
     else if (g.focus >= 0) {
-        text = rooms[g.focus].openSeats ? "Open seats: you can sit down as soon as you are in."
-                                        : "Every seat is taken: you can queue or watch once you are in.";
+        text = rooms[g.focus].openSeats ? "There are open seats." : "All seats are taken. You can still queue or watch.";
         prompts = {{"button_a", "Join"}, {"button_b", "Back"}};
     }
     PromptLine(d, f.body, f.bold ? f.bold : f.strong, lead, leadCol, text, prompts, &barClick);

@@ -1410,7 +1410,7 @@ std::pair<uint32_t, uint32_t> SwatchOf(int chara, int slot, int color)
 
 std::string CommentLine(int chara, int comment)
 {
-    if (comment == 0) return "Comment changes automatically based on opponent's character.";
+    if (comment == 0) return "Changes with your opponent's character.";
     const auto& names = g_tables.vcomments[chara];
     return comment <= static_cast<int>(names.size()) ? "\"" + names[comment - 1] + "\"" : "Comment " + std::to_string(comment);
 }
@@ -1457,35 +1457,35 @@ SelectSide SelectSideFor(const NetView& v, int i)
     s.rows[6].value = FramesText(delay);
     const int fixed = NetOptions().delaySetting;
     const int suggested = v.SuggestedDelay();
-    s.rows[6].hint = fixed >= 0 ? "Your setting: " + FramesText(fixed) + " (SFVR settings). Lower reacts sooner, with more rollbacks."
-                     : suggested >= 0 ? "Suggested: " + FramesText(suggested) + " for a " + std::to_string(v.link.pingMs) + " ms ping. Lower reacts sooner, with more rollbacks."
-                                      : "Input delay: how many frames your inputs wait (fewer: sooner, with more rollbacks).";
+    s.rows[6].hint = fixed >= 0 ? FramesText(fixed) + " in SFVR settings. Lower feels sharper but rolls back more."
+                     : suggested >= 0 ? "Suggested for a " + std::to_string(v.link.pingMs) + " ms ping: " + FramesText(suggested) + ". Lower feels sharper but rolls back more."
+                                      : std::string("Lower feels sharper but rolls back more.");
     if (chara < 0) return s;
     if (IsEleven(chara)) {
         for (int r = 0; r < 6; r++) {
             s.rows[r].value = "Random";
             s.rows[r].fixed = true;
-            s.rows[r].hint = "A random fighter in silver, its V-Skill and V-Trigger at random.";
+            s.rows[r].hint = "Plays a random character in silver, with a random V-Skill and V-Trigger.";
         }
         return s;
     }
     const std::string& code = g_tables.charas[chara];
     const int slot = std::max(0, CostumeSlot(chara, pick.costume));
     s.rows[0].value = g_tables.costumeNames[chara][slot];
-    s.rows[0].hint = "Pick a costume.";
+    s.rows[0].hint = "";
     s.rows[1].value = ColorLabel(pick.color);
     const auto swatch = SwatchOf(chara, slot, pick.color);
     s.rows[1].swatch1 = swatch.first;
     s.rows[1].swatch2 = swatch.second;
-    s.rows[1].hint = "Pick a color.";
+    s.rows[1].hint = "";
     const int variants = mine ? VariantsOf(chara, pick.costume) : 1;
     s.rows[2].value = variants < 0 ? "checking..." : VariantLabel(code, pick.variation);
     s.rows[2].fixed = mine && variants <= 0;
-    s.rows[2].hint = variants == 0 ? "This costume has no variant." : "A variant of this costume (the menus' held button while loading).";
+    s.rows[2].hint = variants == 0 ? "This costume has no variants." : "";
     s.rows[3].value = SkillText(code, false, pick.vskill);
-    s.rows[3].hint = "V-Skill.";
+    s.rows[3].hint = "";
     s.rows[4].value = SkillText(code, true, pick.vtrigger);
-    s.rows[4].hint = "V-Trigger.";
+    s.rows[4].hint = "";
     s.rows[5].value = pick.comment == 0 ? "AUTO" : std::to_string(pick.comment);
     s.rows[5].hint = CommentLine(chara, pick.comment);
     return s;
@@ -1718,14 +1718,14 @@ void ToastReports()
         if (!g_panelPath.empty() && NetOptions().uploadReports &&
             !GetPrivateProfileIntW(L"report", L"notice_shown", 0, g_panelPath.c_str())) {
             WritePrivateProfileStringW(L"report", L"notice_shown", L"1", g_panelPath.c_str());
-            AddToast("Desync and crash reports are sent to the SFVR server to help fix them. SFVR settings, Reports turns this off.", kGold, 15);
+            AddToast("SFVR sends desync and crash reports to help fix bugs. You can turn this off in SFVR settings.", kGold, 15);
         }
     }
     static int toasted = 0;
     const int sent = ReportsSent();
     if (sent == toasted) return;
     toasted = sent;
-    AddToast("Report sent to the SFVR server (SFVR settings, Reports)", kDim, 6);
+    AddToast("Bug report sent", kDim, 6);
 }
 
 // Notices from what changed in the session since the last frame.
@@ -1736,7 +1736,7 @@ void ToastUpdate()
     const UpdateView u = UpdateViewNow();
     if (u.state != UpdateView::State::Available || u.latest == toasted) return;
     toasted = u.latest;
-    AddToast("SFVR " + u.latest + " is available: SFVR settings, Updates", kGold, 8);
+    AddToast("SFVR " + u.latest + " is out. Get it in SFVR settings.", kGold, 8);
 }
 
 void ToastChanges(const NetView& now)
@@ -1750,7 +1750,7 @@ void ToastChanges(const NetView& now)
     }
     using P = NetView::Phase;
     if (now.phase == P::Hosting && before.phase != P::Hosting && !g_visible && !now.setPlay) {
-        AddToast("Hosting: code " + now.code + " (copied)", kGreen, 10);
+        AddToast("Hosting. Code " + now.code + " copied", kGreen, 10);
     }
     for (int i = 0; i < kNumPlayers; i++) {
         const lobby::Seat &a = before.seats[i], &b = now.seats[i];
@@ -1979,7 +1979,7 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
                 o.status = VoteText(s.choice);
                 o.statusKind = s.choice == lobby::Choice::None ? 0 : 1;
             }
-            if (v.againVote && o.mine) o.lines.push_back("Nobody is waiting: play on into the next set.");
+            if (v.againVote && o.mine) o.lines.push_back("No one's waiting, so you can keep playing.");
             o.choosing = o.mine;
             o.chosen = s.choice == lobby::Choice::Rematch ? 0 : s.choice == lobby::Choice::CharacterSelect ? 1 : -1;
         }
@@ -1988,24 +1988,24 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
             o.delay = g_choices.delay;
             const int fixed = NetOptions().delaySetting, suggested = v.SuggestedDelay();
             if (v.spectator) {}
-            else if (fixed >= 0) std::snprintf(line, sizeof(line), "Your setting: delay %d (SFVR settings)", fixed), o.suggestion = line;
+            else if (fixed >= 0) std::snprintf(line, sizeof(line), "Delay %d, from SFVR settings", fixed), o.suggestion = line;
             else if (suggested >= 0) std::snprintf(line, sizeof(line), "Suggested delay %d (ping %u ms)", suggested, v.link.pingMs), o.suggestion = line;
             if (voting && v.voteSecondsLeft >= 0 && s.choice == lobby::Choice::None) {
                 // Playing on: no choice from either is back to the room (both
                 // leave); the other's choice carries it.
                 const bool neither = v.seats[1 - i].choice == lobby::Choice::None;
                 std::snprintf(line, sizeof(line),
-                              !v.setPlay || !v.againVote ? "No choice in %d s: rematch"
-                              : neither                  ? "Neither chooses in %d s: back to the room"
-                                                         : "No choice in %d s: the next set",
+                              !v.setPlay || !v.againVote ? "Rematch in %d s"
+                              : neither                  ? "Back to the room in %d s"
+                                                         : "Next set in %d s",
                               v.voteSecondsLeft);
                 o.hint = line;
             }
-            else o.hint = !v.setPlay ? "Leave ends the session." : v.againVote ? "Leave: back to the room." : "Leave ends the set here.";
+            else o.hint = !v.setPlay ? "Leave ends the session." : v.againVote ? "Leave returns to the room." : "Leave ends the set here.";
         }
         else {
             o.delay = s.inputDelay;
-            o.hint = "Their delay: " + std::to_string(s.inputDelay) + (s.inputDelay == 1 ? " frame" : " frames");
+            o.hint = "Input delay " + std::to_string(s.inputDelay) + (s.inputDelay == 1 ? " frame" : " frames");
         }
     }
     VoteInput in;
@@ -2132,20 +2132,20 @@ std::vector<SettingsRow> SettingsRows()
         r.title = "SFVR " + u.latest;
         if (!u.notes.empty()) r.lines.push_back((u.published.empty() ? "" : "From " + u.published + ": ") + u.notes);
         r.goldFirst = !r.lines.empty();
-        r.lines.push_back("Both players need the same version to play each other.");
+        r.lines.push_back("You can only play people on the same version.");
         if (u.state == U::Available) {
             r.value = "Download and install";
             r.action = "Install";
-            r.hint = "The update is signed. It downloads now and installs when the game restarts.";
+            r.hint = "Installs the next time the game starts.";
         }
         else if (u.state == U::Downloading) {
             const int pct = u.total ? static_cast<int>(100 * u.done / u.total) : 0;
             r.value = "Downloading " + std::to_string(pct) + "%";
-            r.hint = "Downloading. Keep playing; it installs when the game restarts.";
+            r.hint = "Keep playing. It installs the next time the game starts.";
         }
         else {
             r.value = "Restart the game to use it";
-            r.hint = "Installed. The next start runs SFVR " + u.latest + ".";
+            r.hint = "";
         }
     }
     {
@@ -2160,13 +2160,13 @@ std::vector<SettingsRow> SettingsRows()
         case U::Off: r.lines = {"Updates are off: " + u.message + "."}; break;
         case U::Idle: r.lines = {"Not checked yet."}; break;
         case U::Checking: r.lines = {"Checking for updates..."}; break;
-        case U::UpToDate: r.lines = {"This is the latest."}; break;
+        case U::UpToDate: r.lines = {"You're up to date."}; break;
         case U::Available: r.lines = {"SFVR " + u.latest + " is available."}; break;
         case U::Downloading: r.lines = {"Downloading SFVR " + u.latest + "."}; break;
-        case U::Ready: r.lines = {"SFVR " + u.latest + " is installed: restart the game to use it."}; break;
+        case U::Ready: r.lines = {"SFVR " + u.latest + " installs when you restart the game."}; break;
         case U::Failed: r.lines = {"The check failed: " + u.message + "."}; break;
         }
-        r.hint = "Asks the SFVR site for a newer version. Nothing installs without you.";
+        r.hint = "Nothing installs without asking you.";
     }
     {
         SettingsRow& r = row("checkstart", "UPDATES", "Check at start");
@@ -2174,8 +2174,7 @@ std::vector<SettingsRow> SettingsRows()
         r.value = ReadMainIni(L"update", L"check", 1) ? "On" : "Off";
         r.kicker = "UPDATES";
         r.title = "Check at start";
-        r.lines = {"Looks for a new version each time the game starts, and says so here. Nothing installs without you."};
-        r.hint = "Left and right: on or off.";
+        r.lines = {"Checks for a new version each time the game starts. Nothing installs without asking you."};
     }
     // Online.
     {
@@ -2185,9 +2184,7 @@ std::vector<SettingsRow> SettingsRows()
         r.value = g_choices.name[0] ? std::string(g_choices.name) : LocalPlayerName() + " (Steam name)";
         r.kicker = "ONLINE";
         r.title = g_choices.name[0] ? std::string(g_choices.name) : LocalPlayerName();
-        r.lines = {"What other players see in rooms, matches and chat. Empty: your Steam name.",
-                   "Typing needs a keyboard for now (on a Steam Deck, Steam + X opens one)."};
-        r.hint = "A: type a name. Enter keeps it.";
+        r.lines = {"Shown to other players. Leave it empty to use your Steam name.", "On Steam Deck, press Steam + X for the keyboard."};
     }
     {
         SettingsRow& r = row("fps", "ONLINE", "My frame rate");
@@ -2195,8 +2192,7 @@ std::vector<SettingsRow> SettingsRows()
         r.value = g_choices.showFps ? "Shown" : "Hidden";
         r.kicker = "ONLINE";
         r.title = "My frame rate";
-        r.lines = {"Shown: your own frame rate goes beside your name in a match, as the other player's always does."};
-        r.hint = "Left and right: shown or hidden.";
+        r.lines = {"Shows your own frame rate next to your name during matches."};
     }
     {
         SettingsRow& r = row("country", "ONLINE", "Country flag");
@@ -2204,11 +2200,8 @@ std::vector<SettingsRow> SettingsRows()
         r.value = g_choices.shareCountry ? "Shown" : "Hidden";
         r.kicker = "ONLINE";
         r.title = "Country flag";
-        r.lines = {"The SFVR server finds your country from your connection and shows its flag beside your name in custom "
-                   "rooms and on the rooms list online, so players can tell who is near.",
-                   "Hidden: the server keeps your country to itself.",
-                   "Countries: IP Geolocation by DB-IP (db-ip.com), CC BY 4.0."};
-        r.hint = "Left and right: shown or hidden.";
+        r.lines = {"Shows your country's flag next to your name in rooms, based on your connection.",
+                   "When hidden, your country isn't shown to anyone.", "IP Geolocation by DB-IP (db-ip.com), CC BY 4.0."};
     }
     {
         SettingsRow& r = row("wordfilter", "ONLINE", "Word filter");
@@ -2216,12 +2209,9 @@ std::vector<SettingsRow> SettingsRows()
         r.value = g_choices.wordFilter ? "On" : "Off";
         r.kicker = "ONLINE";
         r.title = "Word filter";
-        r.lines = {"On: in public rooms, names on the server's word list show as \"Player 1234\" and its words in chat are "
-                   "starred.",
-                   "Off: you see names and chat as they are. The rooms list, previews and the website stay filtered. "
-                   "Private rooms are never filtered.",
-                   "The word list: List of Dirty, Naughty, Obscene, and Otherwise Bad Words (LDNOOBW), CC BY 4.0."};
-        r.hint = "Left and right: on or off.";
+        r.lines = {"Hides offensive names and words in public rooms. Hidden names show as \"Player 1234\".",
+                   "The room list is always filtered. Private rooms never are.",
+                   "Uses the List of Dirty, Naughty, Obscene, and Otherwise Bad Words (LDNOOBW), CC BY 4.0."};
     }
     {
         SettingsRow& r = row("streamer", "ONLINE", "Streamer mode");
@@ -2229,10 +2219,7 @@ std::vector<SettingsRow> SettingsRows()
         r.value = g_choices.streamerMode ? "On" : "Off";
         r.kicker = "ONLINE";
         r.title = "Streamer mode";
-        r.lines = {"On: room codes show as dots on the custom room screens, so a stream or a screenshot does not give "
-                   "them away.",
-                   "Copy code still copies it, to send to a friend."};
-        r.hint = "Left and right: on or off.";
+        r.lines = {"Hides room codes on screen, for streams and screenshots.", "Copy code still copies the real code."};
     }
     {
         SettingsRow& r = row("delay", "ONLINE", "Input delay");
@@ -2241,14 +2228,10 @@ std::vector<SettingsRow> SettingsRows()
         r.value = fixed >= 0 ? FramesText(fixed) : "Auto";
         r.kicker = "ONLINE";
         r.title = fixed >= 0 ? "Input delay: " + FramesText(fixed) : "Input delay: Auto";
-        r.lines = {fixed == 0 ? "Every match starts with no input delay, as the game's own online played: each late input from "
-                                "the other player is a rollback."
-                   : fixed > 0 ? "Every match starts at " + FramesText(fixed) + " of input delay, whatever the connection."
-                               : "Auto: each match starts at the delay that suits its connection: none for nearby players, up to 3 "
-                                 "frames for far ones, so rollbacks stay at about 2 frames.",
-                   "Fewer frames: your inputs show sooner, with more rollbacks. You can still change it for a match on the select "
-                   "screen."};
-        r.hint = "Left and right: Auto, or 0 to 8 frames every match.";
+        r.lines = {fixed == 0  ? std::string("Every match starts with no input delay.")
+                   : fixed > 0 ? "Every match starts with " + FramesText(fixed) + " of input delay."
+                               : std::string("Picks 0 to 3 frames for each match, based on the connection."),
+                   "Lower feels sharper but rolls back more. You can still change it before each match."};
     }
     {
         SettingsRow& r = row("server", "ONLINE", "Server");
@@ -2257,9 +2240,7 @@ std::vector<SettingsRow> SettingsRows()
         r.value = ServerLabel(NetOptions().server);
         r.kicker = "ONLINE";
         r.title = ServerLabel(NetOptions().server);
-        r.lines = {"Custom rooms and Direct Match use this server. Public server: the SFVR server everyone plays on.",
-                   "Other servers show here once used (the server= line of sfv_rollback.ini)."};
-        r.hint = r.arrows ? "Left and right: the server." : "The public server. Others show here once used.";
+        r.lines = {"Custom Rooms and Direct Match use this server.", "Other servers appear here once you've used them."};
     }
     // Reports.
     {
@@ -2268,10 +2249,9 @@ std::vector<SettingsRow> SettingsRows()
         r.value = g_choices.uploadReports ? "On" : "Off";
         r.kicker = "REPORTS";
         r.title = "Send reports";
-        r.lines = {"After a match with a desync, its recording and match log (names, picks, inputs) go to the SFVR server so "
-                   "both players' halves can be compared. After a crash, the end of the log and a small crash dump go at the "
-                   "next start."};
-        r.hint = "Left and right: on or off.";
+        r.lines = {"Sends desync and crash reports to help fix bugs.",
+                   "A desync report has the match's recording and log (names, picks, inputs). A crash report has the end of the "
+                   "log and a small crash dump, sent at the next start."};
     }
     {
         SettingsRow& r = row("folder", "REPORTS", "SFVR folder");
@@ -2282,8 +2262,8 @@ std::vector<SettingsRow> SettingsRows()
         std::string path;
         for (wchar_t ch : DataDir()) path += ch < 128 ? static_cast<char>(ch) : '_';
         r.title = path;
-        r.lines = {"Event logs, match recordings and crash reports are kept here."};
-        r.hint = "Opens the folder in Explorer (the game stays open).";
+        r.lines = {"Holds logs, match recordings and crash reports."};
+        r.hint = "Opens in Explorer. The game stays open.";
     }
     {
         SettingsRow& r = row("pack", "REPORTS", "Pack logs");
@@ -2292,9 +2272,8 @@ std::vector<SettingsRow> SettingsRows()
         r.action = "Pack";
         r.kicker = "PACK LOGS";
         r.title = "Pack logs";
-        r.lines = {"Zips the logs and recent recordings into one file in the SFVR folder, to send with a report."};
+        r.lines = {"Zips logs and recent recordings into one file in the SFVR folder, to send with a bug report."};
         if (!g_packResult.empty()) r.lines.push_back(g_packResult);
-        r.hint = "Zips the logs and recent recordings into one file in the SFVR folder, to send with a report.";
     }
     return rows;
 }
@@ -2580,14 +2559,14 @@ SelectCard MyCharacterCard(const RoomsView& rooms)
     // it copies this time).
     const NetplayOptions& o = NetOptions();
     if (g_my.fromProfile || !o.hasPick) {
-        card.status = "Now: " + card.charaName + " (from your Fighter Profile)";
+        card.status = card.charaName + ", from your Fighter Profile";
         return card;
     }
     const std::string loads = eleven ? "ELEVEN" : card.charaName;
     double seconds = 0;
     switch (PreloadStatus(UnpackCode(o.pick.character), o.pick.costume, &seconds)) {
     case 2:
-        card.status = loads + " is loaded";
+        card.status = loads + " is ready";
         card.statusRight = "ready";
         card.progress = 1;
         card.done = true;
@@ -2596,12 +2575,12 @@ SelectCard MyCharacterCard(const RoomsView& rooms)
         // No progress to read from the asset queue: a bar on the time a
         // character takes (about 14 s on a test PC, CPU-bound), held short
         // of the end.
-        card.status = "Loading " + loads + " in the background";
+        card.status = "Loading " + loads + "...";
         card.statusRight = "loading";
         card.progress = static_cast<float>(std::min(0.9, seconds / 15.0));
         break;
     case 0:
-        card.status = loads + " loads in the background in a moment";
+        card.status = loads + " loads shortly";
         card.progress = 0;
         break;
     default: card.status = loads + " loads with the match"; break;
@@ -2681,11 +2660,11 @@ void DrawMyCharacter(const RoomsView& rooms, bool takeInput)
     live.keepLabel = "Keep " + g_tables.labels[std::clamp(g_my.saved.chara, 0, static_cast<int>(g_tables.labels.size()) - 1)];
     SelectRow& delay = live.sides[0].rows[6];
     delay.value = g_my.delaySetting >= 0 ? FramesText(g_my.delaySetting) : "Auto";
-    delay.hint = g_my.delaySetting >= 0 ? "Your usual input delay. The your-turn card starts from it; lower feels sharper, higher rolls back less."
-                                        : "Auto: the your-turn card suggests a delay for the ping to your opponent.";
+    delay.hint = g_my.delaySetting >= 0 ? "Each match starts with this. Lower feels sharper but rolls back more."
+                                        : "Each match suggests a delay from your ping to the opponent.";
     live.card = MyCharacterCard(rooms);
-    live.note = g_my.savedNow ? "Saved as your default. The room sees it next to your name."
-                              : "You keep your place in the room. If your turn comes first, you play with what you last confirmed.";
+    live.note = g_my.savedNow ? "Saved. The room sees your pick next to your name."
+                              : "You keep your place in the room. If you're called now, your last saved pick plays.";
     g_my.alpha = std::min(1.0f, g_my.alpha + ImGui::GetIO().DeltaTime / 0.15f);
     SelectInput in;
     DrawSelectLive(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold}, live, g_my.alpha, takeInput && ImGui::GetFrameCount() > g_my.openedFrame, &in);
@@ -2836,9 +2815,9 @@ void DrawHubScreens(bool takeInput)
     live.serverState = rooms.state == S::Off ? 0 : rooms.state == S::Connecting ? 1 : rooms.state == S::Failed ? 3 : 2;
     live.version = g_build;
     // The tile's strip: live state only (what it is for is the hint's).
-    if (rooms.state == S::Failed) live.roomsState = "Cannot reach the server";
+    if (rooms.state == S::Failed) live.roomsState = "Can't connect";
     else if (!rooms.otherBuild.empty() && !rooms.keeper) live.roomsState = "Update needed";
-    else if (rooms.state == S::NoLobby || ((rooms.state == S::Lobby || rooms.state == S::Room) && !rooms.keeper)) live.roomsState = "Offline right now";
+    else if (rooms.state == S::NoLobby || ((rooms.state == S::Lobby || rooms.state == S::Room) && !rooms.keeper)) live.roomsState = "Unavailable right now";
     else if (rooms.keeper && (rooms.state == S::Browsing || rooms.state == S::Lobby || rooms.state == S::Room)) {
         const int n = rooms.summary.publicRooms, p = rooms.summary.players;
         live.roomsState = std::to_string(n) + (n == 1 ? " public room" : " public rooms") + " \xC2\xB7 " + std::to_string(p) + (p == 1 ? " player" : " players");
@@ -2851,7 +2830,7 @@ void DrawHubScreens(bool takeInput)
     else if (!rooms.otherBuild.empty() && !rooms.keeper) live.roomsProblem = RP::UpdateNeeded, live.roomsBuild = rooms.otherBuild;
     else if (rooms.state == S::Off || rooms.state == S::Connecting || rooms.state == S::Finding) live.roomsProblem = RP::Connecting;
     else if (rooms.state == S::NoLobby || !rooms.keeper) live.roomsProblem = RP::Offline;
-    live.roomsInfo = "Browse, create, or join with a code";
+    live.roomsInfo = "Browse, create or join with a code";
     {
         std::lock_guard lock(g_favoritesMutex);
         live.offlineChara = g_favorites.chara.empty() ? "RYU" : g_favorites.chara;
@@ -2948,7 +2927,7 @@ void DrawHubScreens(bool takeInput)
         }
         if (in.clearNotice) RoomsClearNotice();
         else if (g_myCharacterOpen) DrawMyCharacter(rooms, takeInput);
-        if (!in.chat.empty() && !RoomsChat(in.chat)) AddToast("Slow down: one message a second", ImVec4(1, 0.8f, 0.4f, 1), 2);
+        if (!in.chat.empty() && !RoomsChat(in.chat)) AddToast("Slow down. One message per second.", ImVec4(1, 0.8f, 0.4f, 1), 2);
         if (in.copiedCode) AddToast("Room code copied", ImVec4(1, 1, 1, 1), 2);
         if (in.leave) RoomsLeave();
         return;
@@ -3042,7 +3021,7 @@ void DrawPreviews()
         AddToast("Player Two wants a rematch");
         AddToast("A spectator joined (1 watching)", kDim);
         AddToast("Session over: the other player left", kRed, 6);
-        AddToast("Desync and crash reports are sent to the SFVR server to help fix them. SFVR settings, Reports turns this off.", kGold, 15);
+        AddToast("SFVR sends desync and crash reports to help fix bugs. You can turn this off in SFVR settings.", kGold, 15);
     }
     const Preview& p = g_preview;
     if (!p.Any()) return;

@@ -466,7 +466,7 @@ struct Client {
             if (e.error == WeyveEvent::Error::Other && e.text == "not in a room") break; // a leave with nothing to leave
             BackToLobby(e.error == WeyveEvent::Error::NoSuchRoom ? "No room on that code"
                         : e.error == WeyveEvent::Error::Closed   ? "Room full"
-                        : e.error == WeyveEvent::Error::Banned   ? "Removed from that room: its owner took you out"
+                        : e.error == WeyveEvent::Error::Banned   ? "Removed by the room's owner"
                                                                  : "Cannot join: " + e.text,
                         false);
             break;
@@ -877,7 +877,7 @@ struct Client {
             if (!stillOn && view.keeper) {
                 Log("rooms: table %d moved on before its match began: leaving the session", playing.table + 1);
                 view.tableNotice = s.seat[0] == view.self || s.seat[1] == view.self || !seated
-                                       ? "The match did not start: your opponent left before it began."
+                                       ? "Your opponent left before the match started."
                                        : "The match did not start.";
                 abortSession = true;
                 playing = {};
@@ -892,7 +892,7 @@ struct Client {
         if (!playing.started) {
             if (NowMs() - playing.at > 30000) {
                 Log("rooms: table %d's session never started", playing.table + 1);
-                view.tableNotice = "The match did not start: the match room never opened.";
+                view.tableNotice = "Couldn't connect to your opponent, so the match didn't start.";
                 ask("result", {t, "0", "0"});
                 playing = {};
             }
@@ -960,7 +960,7 @@ struct Client {
             const keeper::RoomSettings s = *createAsk;
             createAsk.reset();
             if (view.state != State::Lobby || !view.keeper) {
-                view.notice = "Custom rooms are not available right now";
+                view.notice = "Custom Rooms are unavailable right now";
                 Log("rooms: create: not available (%s%s)", RoomsStateName(view.state), view.keeper ? "" : ", no keeper");
             }
             else {
@@ -1039,7 +1039,7 @@ struct Client {
                     Answers();
                     if (pendingSeq && NowMs() > pendingUntil) {
                         pendingSeq = 0;
-                        view.notice = "The keeper did not answer; try again";
+                        view.notice = "The rooms server didn't respond. Try again.";
                         Set(State::Lobby);
                     }
                     Listings();

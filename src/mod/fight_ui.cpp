@@ -267,7 +267,7 @@ void DrawMenuNote(const HubFonts& f)
     BeginScreen();
     ImDrawList* d = ImGui::GetForegroundDrawList();
     ImFont* bold = f.bold ? f.bold : f.strong;
-    const std::string text = "Back + Start or F1: the hub";
+    const std::string text = "Back + Start or F1 for the SFVR menu";
     const float kickW = TextW(bold, 17, "SFVR") + 10;
     const float w = 14 + 8 + 10 + kickW + TextW(f.body, 17, text) + 16, h = 36;
     const float x0 = 800 - w / 2, y0 = 12;

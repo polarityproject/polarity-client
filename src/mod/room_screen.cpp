@@ -476,12 +476,12 @@ std::string LeaveText(const RoomsView& v)
     }
     if (v.owner == v.self) {
         // The longest present after you gets it (the keeper's rule).
-        if (v.members.size() <= 1) return text + "You are the last one here: the room closes.";
+        if (v.members.size() <= 1) return text + "You're the last one here, so the room closes.";
         for (const RoomMember& m : v.members) {
             if (m.id != v.self) return text + m.name + " becomes the owner.";
         }
     }
-    return text.empty() ? "You can come back with the code while the room is open." : text;
+    return text.empty() ? "You can rejoin with the code while the room is open." : text;
 }
 
 // The your-turn card (M): the two players, the timer, the delay for this
@@ -573,7 +573,7 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
             g.cardMouseDir = on ? (MouseIn(g_v.P(rx0, ry), g_v.P(vx, ry + 50)) ? -1 : 1) : 0;
         }
     }
-    Text(d, f.body, g_v.L(17), g_v.P(x0 + w / 2, ty + 62 + 3 * 56 + 6), kSoft, "No answer in time: back of the queue.", 0.5f);
+    Text(d, f.body, g_v.L(17), g_v.P(x0 + w / 2, ty + 62 + 3 * 56 + 6), kSoft, "If time runs out, you go to the back of the queue.", 0.5f);
 }
 
 // A name cut to fit `width` (ui units) at this size, with an ellipsis.
@@ -602,15 +602,12 @@ std::vector<HandoffStep> HandoffSteps(const HubFonts& f, const RoomsView& v, con
     const bool loaded = h.jumping || (h.preloaded[0] && h.preloaded[1]);
     std::vector<HandoffStep> steps;
     steps.push_back({"Both ready", 2});
-    steps.push_back({room ? (host ? std::string("Match room open") : other + " opened the match room")
-                          : (host ? std::string("Opening the match room") : "Waiting for " + other + "'s match room"),
-                     room ? 2 : 1});
+    steps.push_back({room ? std::string("Match set up") : host ? std::string("Setting up the match") : "Waiting for " + other, room ? 2 : 1});
     std::string connected = "Connected";
     if (h.pingMs) connected += " \xC2\xB7 " + std::to_string(h.pingMs) + " ms";
-    if (h.path) connected += h.path == 2 ? ", relayed" : ", peer to peer";
     steps.push_back({linked ? connected : host ? "Waiting for " + other + " to join" : "Connecting to " + other, linked ? 2 : room ? 1 : 0});
     const bool mine = h.preloaded[host ? 0 : 1];
-    steps.push_back({loaded ? std::string("Characters loaded") : mine ? "Waiting for " + other + "'s game" : std::string("Loading the characters"),
+    steps.push_back({loaded ? std::string("Characters loaded") : mine ? "Waiting for " + other + "'s game" : std::string("Loading characters"),
                      loaded ? 2 : linked ? 1 : 0});
     steps.push_back({"Starting the match", h.jumping ? 1 : 0});
     return steps;
@@ -713,7 +710,7 @@ void RulesModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, const Prom
     ModalSpec m;
     m.x0 = x0, m.y0 = y0, m.w = w, m.h = h;
     m.kicker = "OWNER";
-    m.hint = changed ? "Changed: applies from this table's next set." : "Everyone sees these on the table.";
+    m.hint = "Changes apply from the table's next set.";
     m.hintCol = changed ? kGold : kSoft;
     m.prompts = prompts;
     ui::Modal(d, bold, f.body, m, clicked);
@@ -1096,7 +1093,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     if (g.cardTable >= 0) {
         prompts = g.cardReady ? std::vector<std::pair<const char*, std::string>>{}
                               : std::vector<std::pair<const char*, std::string>>{{"button_a", "Ready"}, {"button_b", "Leave queue"}};
-        text = g.cardReady ? "Ready. The match opens once both are." : "Up and down: V-Skill, V-Trigger, input delay. Left and right: change.";
+        text = "";
         // The last call fell through (the opponent left during the handoff):
         // say so here, since this card covers the notice.
         if (!v.tableNotice.empty() && !g.cardReady) {
@@ -1112,15 +1109,15 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         prompts = {{"button_a", "Select"}, {"button_b", "Cancel"}};
     }
     else if (g.modal == Modal::Rules) {
-        text = "LB and RB: the table. Up and down: the rule; left and right: its value.";
+        text = "";
         prompts = {{"button_a", "Done"}, {"button_b", "Cancel"}};
     }
     else if (g.typing) {
-        text = "Enter sends, Escape or B stops. On a Steam Deck, Steam + X opens the keyboard.";
+        text = "Enter to send, Escape to cancel. On Steam Deck, press Steam + X for the keyboard.";
     }
     else if (paused) {
         lead = "ROOM PAUSED";
-        text = "The keeper is away; it comes back by itself. Chat carries on.";
+        text = "Tables are on hold while the rooms server reconnects. Chat still works.";
         prompts = {{"button_b", "Leave"}};
     }
     else if (handoffTable >= 0) {
@@ -1152,7 +1149,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     }
     else if (g.onPlayers) {
         const uint32_t who = players.empty() ? 0 : players[g.player].id;
-        text = who == v.self ? "That is you." : "A: mute or unmute their chat for this session.";
+        text = who == v.self ? "That's you." : "";
         prompts = {};
         if (who != v.self) prompts.push_back({"button_a", g.muted.count(who) ? "Unmute" : "Mute"});
         if (who != v.self && v.owner == v.self) prompts.push_back({"button_x", "Remove"});
@@ -1162,18 +1159,18 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         const std::string place = RoomsPlace(v, v.self);
         if (v.members.size() <= 1) {
             lead = "ROOM OPEN";
-            text = "Friends join with the code.";
+            text = "Share the code to invite friends.";
         }
         else if (v.watching >= 0 && place.rfind("Watching", 0) == 0) {
             lead = Upper(place);
-            text = "Its sets open on their own. X on it: stop watching.";
+            text = "Its matches open automatically.";
         }
         else if (place != "Idle") {
             lead = Upper(place);
-            text = "RB: the players. Y: My character.";
+            text = "RB shows the players.";
         }
         else {
-            text = "Pick a table to sit at or queue for.";
+            text = "Pick a table to sit at or queue for. RB shows the players.";
         }
         if (fs.phase == TablePhase::Open && atFocused) prompts.push_back({"button_a", "Stand up"});
         else if (fs.phase == TablePhase::Open && (!fs.seat[0] || !fs.seat[1])) {
@@ -1198,7 +1195,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
                "Stay", prompts, &clicked, &pressed);
     }
     else if (g.modal == Modal::Remove) {
-        Dialog(d, f, "OWNER", "Remove " + NameOf(v, g.removing) + "?", "They are out of the room and cannot come back on this connection.", true,
+        Dialog(d, f, "OWNER", "Remove " + NameOf(v, g.removing) + "?", "They won't be able to rejoin.", true,
                "Remove", "Cancel", prompts, &clicked, &pressed);
     }
     else if (g.modal == Modal::Rules) RulesModal(d, f, v, prompts, &clicked);

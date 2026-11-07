@@ -246,7 +246,7 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
     }
     int clicked = -1;
     PromptLine(d, f.body, f.bold ? f.bold : f.strong, "", kGold,
-               g.typing ? "Type, then Enter to keep it or Escape to leave it as it was. Empty: your Steam name." : r.hint, prompts, &clicked);
+               g.typing ? "Enter to save, Escape to cancel." : r.hint, prompts, &clicked);
     (void)clicked; // a prompt clicked is its button, next frame
     g_inputOn = false;
     d->PopClipRect();
