@@ -54,7 +54,7 @@ check=1
 [report]
 ; Where desync and crash reports go (report_upload.h): sfvr-reports on the
 ; rooms server.
-; Empty: the build's default, http://159.69.32.141:5580. Whether they are sent
+; Empty: the build's default, http://2.29.123.240:5580. Whether they are sent
 ; at all is [netplay] upload_reports (Settings, Logs in the panel).
 url=
 
@@ -62,7 +62,7 @@ url=
 ; The Weyvelength rooms server, host[:port].
 ; The public one (sfvr-server) when empty or missing.
 ; For tests on this PC: scripts/weyve-server.ps1 runs one, server=127.0.0.1:5555.
-server=159.69.32.141:5555
+server=2.29.123.240:5555
 ; Name shown to the other player and spectators (empty: Steam persona name)
 name=
 

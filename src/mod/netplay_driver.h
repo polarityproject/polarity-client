@@ -34,10 +34,11 @@ namespace sfv::mod {
 
 class SfvGame;
 
-// The public rooms server (the sfvr-server repository): where a fresh
+// The public rooms server (the sfvr-server repository's Docker stack, the
+// rooms VPS from 0.3.0): where a fresh
 // install hosts and joins unless [weyve] server or the panel's Debug tab
 // says otherwise.
-inline constexpr const char* kDefaultServer = "159.69.32.141:5555";
+inline constexpr const char* kDefaultServer = "2.29.123.240:5555";
 // The public server answers on 443 too, for networks that block 5555: tried
 // when 5555 does not answer within a moment, for kDefaultServer.
 inline constexpr uint16_t kDefaultServerAlsoPort = 443;

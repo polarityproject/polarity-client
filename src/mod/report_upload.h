@@ -21,8 +21,9 @@
 
 namespace sfv::mod {
 
-// sfvr-reports on the public server (159.69.32.141, as kDefaultServer).
-constexpr const char* kDefaultReportUrl = "http://159.69.32.141:5580";
+// sfvr-reports on the public server (2.29.123.240, as kDefaultServer: the
+// rooms VPS from 0.3.0, the sfvr-server Docker stack's reports container).
+constexpr const char* kDefaultReportUrl = "http://2.29.123.240:5580";
 
 // From the mod's start: looks for unsent reports a little later.
 void InstallReportUploads(const std::wstring& reportDir, const std::string& url, const std::string& modVersion, bool on);
