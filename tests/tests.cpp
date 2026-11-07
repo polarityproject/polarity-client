@@ -1531,37 +1531,71 @@ void TestKeeperProtocol()
         auto group = [](const ListedRoom& r) { return r.members >= kRoomCap ? 2 : r.openSeats > 0 ? 0 : 1; };
         CHECK(group(rooms[i - 1]) < group(rooms[i]) || (group(rooms[i - 1]) == group(rooms[i]) && rooms[i - 1].members >= rooms[i].members));
     }
-    auto pack = [](const std::vector<ListedRoom>& list) {
-        std::map<std::string, std::string> d;
-        const std::vector<std::string> values = PackRoomList(list);
-        CHECK(values.size() <= kListKeys);
-        for (size_t i = 0; i < values.size(); i++) {
-            CHECK(values[i].size() <= kMaxValue);
-            d[ListKey(static_cast<int>(i))] = values[i];
-        }
-        return d;
-    };
-    std::map<std::string, std::string> data = pack(rooms);
-    const std::vector<ListedRoom> read = UnpackRoomList(data);
-    CHECK(read.size() == rooms.size());
-    // Long names: the 16 values fill, the rest is left out (48 or more fit).
-    std::vector<ListedRoom> many = rooms;
-    for (int i = 0; i < 4; i++) many.insert(many.end(), rooms.begin(), rooms.end());
-    for (ListedRoom& r : many) r.owner = std::string(96, 'n');
-    const std::vector<ListedRoom> some = UnpackRoomList(pack(many));
-    CHECK(some.size() >= 48 && some.size() < many.size() && some.front().code == many.front().code &&
-          some.front().owner == many.front().owner);
+    // The public list in the server's room listing: each room's slots fit
+    // Weyvelength's 128 bytes and read back (separators in names dropped);
+    // the keeper's signature holds for its room only.
+    std::vector<ListedRoom> read;
+    for (const ListedRoom& r : rooms) {
+        const Listing l = RoomListing(r, 16);
+        CHECK(l.size() == 3 && l.at(kListingKind) == "c16");
+        for (const auto& [k, v] : l) CHECK(v.size() <= kListingValueMax);
+        ListedRoom parsed;
+        CHECK(ParseRoomListing(r.code, l, 16, &parsed));
+        CHECK(!ParseRoomListing(r.code, l, 17, &parsed) && !ParseRoomListing("", l, 16, &parsed));
+        read.push_back(parsed);
+    }
     for (size_t i = 0; i < read.size(); i++) {
-        CHECK(read[i].code == rooms[i].code && read[i].title == rooms[i].title && read[i].members == rooms[i].members && read[i].faces.size() == 6 &&
+        CHECK(read[i].code == rooms[i].code && read[i].title == rooms[i].title && read[i].members == rooms[i].members &&
+              read[i].tables == rooms[i].tables && read[i].openSeats == rooms[i].openSeats && read[i].rules == rooms[i].rules &&
+              read[i].faces.size() == 6 &&
               read[i].owner == "Player" + std::to_string(std::stoi(rooms[i].code.substr(1)) - 10000) + "\xE3\x81\x82" &&
               read[i].ownerCountry == (rooms[i].ownerCountry == "DE" ? "DE" : ""));
     }
-    CHECK(PackRoomList({}).empty());
+    {
+        // A name with a bar and the longest one: cut at a whole character.
+        ListedRoom r = rooms[1];
+        r.owner = "a|b" + std::string(200, 'x') + "\xE3\x81\x82";
+        Listing l = RoomListing(r, 16);
+        ListedRoom parsed;
+        CHECK(l.at(kListingOwner).size() <= kListingValueMax && ParseRoomListing(r.code, l, 16, &parsed) && parsed.owner.rfind("a|b", 0) == 0);
+        // Signed by the keeper; checked against the room it was signed for.
+        KeyPair key;
+        CHECK(GenerateKey(&key));
+        const std::string message = ListingMessage(r.code, l);
+        uint8_t sig[64];
+        CHECK(Sign(key, reinterpret_cast<const uint8_t*>(message.data()), message.size(), sig));
+        l[kListingSig] = Base64Encode(sig, sizeof(sig));
+        CHECK(l.at(kListingSig).size() <= kListingValueMax);
+        auto verify = [&](std::string_view code, const Listing& listing) {
+            const std::string m = ListingMessage(code, listing);
+            std::vector<uint8_t> got;
+            return Base64Decode(listing.at(kListingSig), &got) && got.size() == 64 &&
+                   VerifySignature(reinterpret_cast<const uint8_t*>(m.data()), m.size(), got.data(), got.size(), key.pub);
+        };
+        CHECK(verify(r.code, l));
+        CHECK(!verify("OTHER1", l)); // copied onto another room
+        Listing forged = l;
+        forged[kListingRoom] = "0|1|1|2|r1 ft2|RYU"; // changed after signing
+        CHECK(!verify(r.code, forged));
+        // Junk slots.
+        Listing bad = l;
+        bad[kListingRoom] = "0|1|1|2|r1";
+        CHECK(!ParseRoomListing(r.code, bad, 16, &parsed));
+        bad = l;
+        bad[kListingOwner] = "DE no bar";
+        CHECK(!ParseRoomListing(r.code, bad, 16, &parsed));
+    }
+    // The desk's summary.
+    {
+        DeskSummary d{1234567890123ull, 40, 160}, summary;
+        CHECK(FormatDeskSummary(d) == "1234567890123|40|160" && ParseDeskSummary(FormatDeskSummary(d), &summary) && summary == d);
+        CHECK(!ParseDeskSummary("x|1|2", &summary) && !ParseDeskSummary("1|2", &summary) && !ParseDeskSummary("", &summary));
+        Listing desk{{kBuild, "16"}, {kCount, "3"}, {kDeskSummary, "7|1|2"}};
+        CHECK(DeskMessage("ABC234", desk) == "sfvr-desk 1 ABC234\n16\n3\n7|1|2");
+    }
     CHECK(sfv::FlagCount() == 194 && sfv::FlagAsset("DE") == "DEU" && sfv::FlagAsset("SZ") == "SWZ" && sfv::FlagAsset("ZW") == "ZWE" &&
           sfv::FlagAsset("HK").empty() && sfv::FlagAsset("de").empty() && sfv::FlagAsset("").empty());
     CHECK(CleanCountry("GB") == "GB" && CleanCountry("gb").empty() && CleanCountry("G").empty() && CleanCountry("G\x1F").empty());
-    data[ListKey(3)] = "not\ta room";
-    CHECK(UnpackRoomList(data).size() < read.size());
     // The rooms API's JSON: the three public totals, every room (not only what
     // fits the lobby's keys), names escaped, broken UTF-8 replaced.
     {
@@ -1595,6 +1629,8 @@ void TestKeeperProtocol()
               std::string::npos);
         r.title = RoomTitle{};
         CHECK(FormatRoomListJson({r}, totals, 1).find("\"title\":null,\"title_id\":0,\"title_characters\":[]") != std::string::npos);
+        std::vector<ListedRoom> many;
+        for (int i = 0; i < 5; i++) many.insert(many.end(), rooms.begin(), rooms.end());
         const std::string all = FormatRoomListJson(many, totals, 1);
         CHECK(std::count(all.begin(), all.end(), '{') == static_cast<std::ptrdiff_t>(many.size()) + 2);
     }

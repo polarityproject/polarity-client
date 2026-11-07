@@ -3991,8 +3991,8 @@ void DrawHubFrame(bool takeInput)
     else if (!rooms.otherBuild.empty() && !rooms.keeper) live.roomsInfo = "The rooms server runs another SFVR version";
     else if (rooms.state == S::NoLobby || ((rooms.state == S::Lobby || rooms.state == S::Room) && !rooms.keeper))
         live.roomsInfo = "Custom rooms are offline right now";
-    else if (rooms.state == S::Lobby && !rooms.publicRooms.empty())
-        live.roomsInfo = std::to_string(rooms.publicRooms.size()) + (rooms.publicRooms.size() == 1 ? " public room" : " public rooms") +
+    else if ((rooms.state == S::Browsing || rooms.state == S::Lobby) && rooms.summary.publicRooms > 0)
+        live.roomsInfo = std::to_string(rooms.summary.publicRooms) + (rooms.summary.publicRooms == 1 ? " public room" : " public rooms") +
                          " \xC2\xB7 browse, create, or join with a code";
     else live.roomsInfo = "Browse, create, or join with a code";
     {

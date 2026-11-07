@@ -47,6 +47,11 @@ struct KeeperOptions {
     // The name filter's words (FoldName'd; --words <file>, one a line): a
     // public room shows those names as "Player N".
     std::vector<std::string> words;
+    // The rooms server's counts (its --stats file, every 5 s): players
+    // browsing rooms are in no room, so the players online come from its
+    // connection count (StatusJson). Empty, missing or stale: the members of
+    // the keeper's rooms instead.
+    std::string serverStatsPath;
     std::function<void(const std::string&)> log; // one line, no newline
 };
 
@@ -147,6 +152,8 @@ private:
         std::map<uint32_t, Member> members;
         std::deque<Outgoing> outbox;
         std::map<std::string, std::string> written; // room data as we last wrote it
+        Listing listed;          // its listing slots as we last set them (the desk's, a public room's)
+        bool listedOn = false;   // a custom room: in the server's listing
         int64_t createdMs = 0;
         int64_t reconnectMs = 0;
         // Custom rooms.
@@ -242,6 +249,8 @@ private:
     void SaveState();
     std::vector<std::string> LoadState();
     int Count(const Room& room) const { return static_cast<int>(room.members.size()); }
+    // Players online from the server's connection count; -1 without a fresh one.
+    int OnlineFromServer() const;
 
     KeeperOptions o_;
     std::unique_ptr<Room> lobby_;
@@ -251,7 +260,12 @@ private:
     bool everConnected_ = false;
     int64_t now_ = 0;
     int64_t listWrittenMs_ = -1;
-    int64_t countWrittenMs_ = -1;
+    // The desk's revision: up whenever a public room's listing changes, so
+    // players list the rooms again only then. From the clock at start, so a
+    // restarted keeper never repeats one a player has seen.
+    uint64_t listRev_ = 0;
+    void WriteListings(int64_t nowMs);
+    std::string SignText(const std::string& message) const; // base64; empty if signing failed
     std::string stateWritten_;
 };
 

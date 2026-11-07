@@ -1,4 +1,6 @@
 #include "mod/control.h"
+#include "mod/hub_screen.h"
+#include "mod/rooms_screen.h"
 #include "mod/battle_driver.h"
 #include "mod/crash_report.h"
 #include "mod/files.h"
@@ -1035,6 +1037,7 @@ void RunNetCommand(const std::string& line)
     }
     else if (cmd == "overlay") {
         // overlay show|hide|toggle|preview <words>|select [stage|grid|loadout|ready] [spectate]
+        // | rooms (the hub's custom rooms screen, open) | hub (back to the hub from it)
         std::string what;
         ss >> what;
         if (what == "show") SetOverlayVisible(true);
@@ -1044,6 +1047,12 @@ void RunNetCommand(const std::string& line)
             RequestSelectPreview(phase == "grid" ? 1 : phase == "loadout" ? 2 : phase == "ready" ? 3 : 0, watching == "spectate");
         }
         else if (what == "hide") SetOverlayVisible(false);
+        else if (what == "rooms") {
+            // Tests: the pad's A on the hub goes to the tile the mouse is over.
+            OpenHub();
+            OpenRoomsScreen();
+        }
+        else if (what == "hub") CloseRoomsScreen();
         else if (what == "preview") {
             std::string rest;
             std::getline(ss, rest);

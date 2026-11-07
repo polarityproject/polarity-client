@@ -6,6 +6,7 @@
 #include "mod/lifecycle.h"
 #include "mod/log.h"
 #include "mod/netplay_driver.h"
+#include "mod/rooms_screen.h"
 #include "mod/udp_transport.h"
 #include "mod/weyve_service.h"
 
@@ -35,7 +36,15 @@ using State = RoomsView::State;
 // prints it). All zeros: none yet; [rooms] keeper_key adds one for tests.
 constexpr uint8_t kKeeperPublicKey[64] = {};
 constexpr size_t kChatKept = 100;
-constexpr int64_t kListAgainMs = 5000;   // no lobby channel yet: look again
+// The listings (docs/room-listing-plan.md): the desk's every so often (its
+// revision says when the rooms changed), the rooms when it moved. The server
+// takes one listing a second from a connection.
+constexpr int64_t kDesksScreenMs = 2000;  // the rooms screen open
+constexpr int64_t kDesksHubMs = 5000;     // the hub alone
+constexpr int64_t kDesksRoomMs = 10000;   // in a custom room
+constexpr int64_t kListGapMs = 1100;
+constexpr int64_t kListAnswerMs = 3000;   // a listing not answered by then is asked again
+constexpr int64_t kDeskJoinMs = 5000;     // a create asked while the desk is being joined waits this long
 constexpr int64_t kUnkeptLobbyMs = 30000; // a lobby channel with no keeper this long is left
 constexpr int64_t kStaleLobbyMs = 120000; // ... and passed over this long
 constexpr int64_t kAnswerWaitMs = 20000; // the keeper's answer to a request
@@ -97,7 +106,17 @@ struct Client {
     int64_t pendingUntil = 0;
     std::string target;      // the room being joined
     int64_t joinedAt = -1;   // into a room that is still to show it is a custom room
-    int64_t nextListMs = 0;
+    // The listings: the one asked for and not yet answered, and when.
+    enum class Listed { None, Desks, Rooms, AllBuilds } listed = Listed::None;
+    int64_t listedAt = -kListGapMs;
+    int64_t nextDesksMs = 0;
+    uint64_t roomsRev = 0;   // the desk revision publicRooms is from
+    bool roomsWanted = false;
+    std::map<std::string, bool> signatures; // "message signature" -> checked
+    // The desk: wanted while the rooms screen is open; being joined.
+    bool wantDesk = false;
+    bool deskJoining = false;
+    int64_t deskJoinAt = 0;
     int64_t lastHandMs = -kHandBackEveryMs;
     std::map<std::string, bool> proofs; // "room id proof" -> checked
     std::map<uint32_t, std::string> names; // the room's members, for leave lines
@@ -118,7 +137,6 @@ struct Client {
     std::map<uint32_t, int> mask; // the room's masked names (keeper_protocol.h kMask)
     bool toldMasked = false;
     uint64_t lastTicketToken = 0; // a ticket sent again is taken once
-    bool askedAll = false;        // the second listing (every build) is out
     bool saidNoLobby = false;     // logged once until a lobby shows
     int64_t lobbyUnkeptSince = -1;            // in the lobby channel with no keeper since (ms)
     std::map<std::string, int64_t> staleLobbies; // lobby channels passed over, until (ms)
@@ -167,17 +185,137 @@ struct Client {
         return 0;
     }
 
-    void JoinLobby()
+    // A listing signed by the keeper (kListingSig: base64 of `message`).
+    bool Signed(const std::string& message, const keeper::Listing& listing)
     {
-        if (view.lobby.empty()) {
-            Set(State::Finding);
-            svc->ListRooms({{keeper::kKind, keeper::kKindLobby}, {keeper::kBuild, std::to_string(lobby::kProtocol)}});
-            nextListMs = NowMs() + kListAgainMs;
+        const auto s = listing.find(keeper::kListingSig);
+        if (s == listing.end() || s->second.empty()) return false;
+        const std::string key = message + " " + s->second;
+        const auto it = signatures.find(key);
+        if (it != signatures.end()) return it->second;
+        std::vector<uint8_t> sig;
+        bool ok = false;
+        if (keeper::Base64Decode(s->second, &sig) && sig.size() == 64) {
+            for (const auto& k : keys) {
+                uint8_t key64[64];
+                std::memcpy(key64, k.data(), 64);
+                if (VerifySignature(reinterpret_cast<const uint8_t*>(message.data()), message.size(), sig.data(), sig.size(), key64)) {
+                    ok = true;
+                    break;
+                }
+            }
+        }
+        if (signatures.size() > 1024) signatures.clear();
+        signatures[key] = ok;
+        return ok;
+    }
+
+    // Out of every room (connected, or back from a room): the hub's place.
+    // The desk is joined from here while the rooms screen is open (Run).
+    void ToBrowsing()
+    {
+        deskJoining = false;
+        Set(view.keeper && !view.lobby.empty() ? State::Browsing : State::Finding);
+        nextDesksMs = 0;
+    }
+
+    // The listings, one at a time, a second apart (the server's limit).
+    void Listings()
+    {
+        const int64_t now = NowMs();
+        if (listed != Listed::None) {
+            if (now - listedAt < kListAnswerMs) return;
+            listed = Listed::None; // not answered: asked again below
+        }
+        if (now - listedAt < kListGapMs) return;
+        if (roomsWanted && wantDesk && view.keeper) {
+            roomsWanted = false;
+            listed = Listed::Rooms;
+            listedAt = now;
+            svc->ListRooms({{keeper::kListingKind, keeper::ListingKindValue(lobby::kProtocol)}});
             return;
         }
-        target = view.lobby;
-        svc->JoinRoom(view.lobby);
-        Set(State::Joining);
+        if (allListAt >= 0 && now >= allListAt) {
+            allListAt = -1;
+            if (view.state == State::NoLobby) {
+                listed = Listed::AllBuilds;
+                listedAt = now;
+                svc->ListRooms({{keeper::kKind, keeper::kKindLobby}});
+                return;
+            }
+        }
+        if (now < nextDesksMs) return;
+        listed = Listed::Desks;
+        listedAt = now;
+        nextDesksMs = now + (view.state == State::Room ? kDesksRoomMs : wantDesk ? kDesksScreenMs : kDesksHubMs);
+        svc->ListRooms({{keeper::kKind, keeper::kKindLobby}, {keeper::kBuild, std::to_string(lobby::kProtocol)}});
+    }
+
+    // The desks listed: the keeper's (signed) ones, the summary, and the
+    // desk to join (the fullest with room).
+    void OnDesks()
+    {
+        std::string best;
+        int bestCount = -1;
+        bool any = false;
+        keeper::DeskSummary top;
+        for (const WeyveListedRoom& r : svc->RoomList()) {
+            if (!Signed(keeper::DeskMessage(r.code, r.listing), r.listing)) continue;
+            const auto summary = r.listing.find(keeper::kDeskSummary);
+            keeper::DeskSummary s;
+            if (summary == r.listing.end() || !keeper::ParseDeskSummary(summary->second, &s)) continue;
+            if (!any || s.rev > top.rev) top = s;
+            any = true;
+            const auto count = r.listing.find(keeper::kCount);
+            const int n = count != r.listing.end() ? std::atoi(count->second.c_str()) : 0;
+            if (!r.joinable || n >= keeper::kLobbyCap) continue;
+            if (const auto stale = staleLobbies.find(r.code); stale != staleLobbies.end() && NowMs() < stale->second) continue;
+            if (n > bestCount) {
+                best = r.code;
+                bestCount = n;
+            }
+        }
+        const bool atDeskOrRoom = view.state == State::Lobby || view.state == State::Room || view.state == State::Creating ||
+                                  view.state == State::Joining;
+        if (!any) {
+            if (!saidNoLobby) Log("rooms: no desk for build %u listed", lobby::kProtocol);
+            saidNoLobby = true;
+            view.summary = {};
+            if (!atDeskOrRoom) {
+                view.keeper = false;
+                view.publicRooms.clear();
+                view.lobby.clear();
+                Set(State::NoLobby);
+                // Any desk at all? Asked once the server's listing cooldown is over.
+                allListAt = NowMs() + kListGapMs;
+            }
+            return;
+        }
+        if (saidNoLobby) Log("rooms: desk listed (revision %llu, %d public rooms)", static_cast<unsigned long long>(top.rev), top.publicRooms);
+        saidNoLobby = false;
+        view.otherBuild.clear();
+        view.summary = top;
+        if (!atDeskOrRoom) {
+            view.keeper = true;
+            if (!deskJoining) view.lobby = best;
+            if (view.state == State::Finding || view.state == State::NoLobby) Set(State::Browsing);
+        }
+        if (top.rev != roomsRev) roomsWanted = true;
+    }
+
+    // The public rooms listed: those the keeper signed, sorted.
+    void OnRooms()
+    {
+        std::vector<keeper::ListedRoom> list;
+        for (const WeyveListedRoom& r : svc->RoomList()) {
+            keeper::ListedRoom l;
+            if (!keeper::ParseRoomListing(r.code, r.listing, lobby::kProtocol, &l)) continue;
+            if (!Signed(keeper::ListingMessage(r.code, r.listing), r.listing)) continue;
+            list.push_back(std::move(l));
+        }
+        keeper::SortRoomList(&list);
+        view.publicRooms = std::move(list);
+        roomsRev = view.summary.rev;
     }
 
     // Out of the room: its table's set is no longer ours to report (a match
@@ -219,7 +357,7 @@ struct Client {
         view.room.clear();
         view.members.clear();
         joinedAt = -1;
-        JoinLobby();
+        ToBrowsing();
     }
 
     void Line(uint32_t from, const std::string& name, const std::string& text)
@@ -232,56 +370,26 @@ struct Client {
     {
         switch (e.type) {
         case WeyveEvent::Type::RoomList: {
-            if (view.state != State::Finding && view.state != State::NoLobby) break;
-            if (askedAll) {
-                // Lobbies of other builds: this one is out of date (or ahead).
-                askedAll = false;
+            const Listed which = listed;
+            listed = Listed::None;
+            if (which == Listed::Desks) OnDesks();
+            else if (which == Listed::Rooms) OnRooms();
+            else if (which == Listed::AllBuilds) {
+                // Desks of other builds: this one is out of date (or ahead).
                 std::string other;
                 for (const WeyveListedRoom& r : svc->RoomList()) {
                     const auto build = r.listing.find(keeper::kBuild);
                     if (build != r.listing.end() && build->second != std::to_string(lobby::kProtocol)) other = build->second;
                 }
-                if (other != view.otherBuild && !other.empty()) Log("rooms: the server has build %s's lobby, not %u's", other.c_str(), lobby::kProtocol);
+                if (other != view.otherBuild && !other.empty()) Log("rooms: the server has build %s's desk, not %u's", other.c_str(), lobby::kProtocol);
                 view.otherBuild = other;
-                break;
             }
-            std::string best;
-            int bestCount = -1;
-            for (const WeyveListedRoom& r : svc->RoomList()) {
-                const auto build = r.listing.find(keeper::kBuild);
-                if (build == r.listing.end() || build->second != std::to_string(lobby::kProtocol)) continue;
-                const auto count = r.listing.find(keeper::kCount);
-                const int n = count != r.listing.end() ? std::atoi(count->second.c_str()) : 0;
-                if (!r.joinable || n >= keeper::kLobbyCap) continue;
-                if (const auto stale = staleLobbies.find(r.code); stale != staleLobbies.end() && NowMs() < stale->second) continue;
-                if (n > bestCount) {
-                    best = r.code;
-                    bestCount = n;
-                }
-            }
-            if (best.empty()) {
-                if (!saidNoLobby) Log("rooms: no lobby channel for build %u listed", lobby::kProtocol);
-                saidNoLobby = true;
-                // Any lobby at all? Asked once the server's listing cooldown
-                // (a second) is over; sooner, it refuses.
-                allListAt = NowMs() + 1200;
-                Set(State::NoLobby);
-                nextListMs = NowMs() + kListAgainMs;
-                break;
-            }
-            view.otherBuild.clear();
-            saidNoLobby = false;
-            view.lobby = best;
-            target = best;
-            svc->JoinRoom(best);
-            Set(State::Joining);
             break;
         }
         case WeyveEvent::Type::RoomJoined:
-            if (e.text == view.lobby) {
+            if (deskJoining || e.text == view.lobby) { // the desk (a join the screen gave up on too: left again in Run)
+                deskJoining = false;
                 Set(State::Lobby);
-                if (!chara.empty()) svc->SetMemberData("ch", chara);
-                svc->SetMemberData("net", net);
             }
             else {
                 view.room = e.text;
@@ -300,17 +408,22 @@ struct Client {
             }
             break;
         case WeyveEvent::Type::RoomError:
-            // A refused listing (the server's cooldown): the next listing is
-            // the build filtered one again, not taken for the all-builds one.
-            if (e.error == WeyveEvent::Error::RateLimited) askedAll = false;
-            if (view.state != State::Joining) break;
-            if (e.error == WeyveEvent::Error::Other && e.text == "not in a room") break; // a leave with nothing to leave
-            if (target == view.lobby) {
-                Log("rooms: cannot rejoin lobby channel %s (%s); looking again", view.lobby.c_str(), e.text.c_str());
-                view.lobby.clear();
-                JoinLobby();
+            // A refused listing (the server's cooldown): asked again later.
+            if (e.error == WeyveEvent::Error::RateLimited) {
+                listed = Listed::None;
                 break;
             }
+            if (deskJoining) {
+                // Full or gone since it was listed: another one, at the next listing.
+                Log("rooms: cannot join desk %s (%s); looking again", view.lobby.c_str(), e.text.c_str());
+                deskJoining = false;
+                staleLobbies[view.lobby] = NowMs() + kStaleLobbyMs;
+                view.lobby.clear();
+                nextDesksMs = 0;
+                break;
+            }
+            if (view.state != State::Joining) break;
+            if (e.error == WeyveEvent::Error::Other && e.text == "not in a room") break; // a leave with nothing to leave
             BackToLobby(e.error == WeyveEvent::Error::NoSuchRoom ? "No room on that code"
                         : e.error == WeyveEvent::Error::Closed   ? "Room full"
                         : e.error == WeyveEvent::Error::Banned   ? "Removed from that room: its owner took you out"
@@ -441,7 +554,6 @@ struct Client {
             svc->TransferHost(keeperId);
         }
         if (view.state == State::Lobby) {
-            if (view.keeper) view.publicRooms = keeper::UnpackRoomList(v.data);
             // No keeper for kUnkeptLobbyMs: a channel an earlier keeper left
             // (the players' presence kept it alive) while the keeper hosts
             // another; the hubs chose the busiest and stayed here. Leave it
@@ -456,7 +568,8 @@ struct Client {
                 svc->LeaveRoom();
                 view.lobby.clear();
                 view.publicRooms.clear();
-                JoinLobby();
+                view.keeper = false;
+                ToBrowsing();
             }
             return;
         }
@@ -733,6 +846,8 @@ struct Client {
     void Asks(const WeyveRoomView& v)
     {
         (void)v;
+        // Asked while the desk is still being joined: waits for it.
+        if (createAsk && view.state == State::Browsing && wantDesk && NowMs() - deskJoinAt < kDeskJoinMs) return;
         if (createAsk) {
             const keeper::RoomSettings s = *createAsk;
             createAsk.reset();
@@ -753,7 +868,7 @@ struct Client {
         if (joinAsk) {
             const std::string code = *joinAsk;
             joinAsk.reset();
-            if ((view.state == State::Lobby || view.state == State::Room) && code != view.room) {
+            if ((view.state == State::Lobby || view.state == State::Browsing || view.state == State::Room) && code != view.room) {
                 view.notice.clear();
                 target = code;
                 ForgetTables();
@@ -803,7 +918,8 @@ struct Client {
                 view.server = v.serverText;
                 if (v.server == WeyveRoomView::Server::Connecting) Set(State::Connecting);
                 else if (v.server != WeyveRoomView::Server::Connected) Set(State::Failed);
-                else if (view.state == State::Connecting) JoinLobby();
+                else if (view.state == State::Connecting) ToBrowsing();
+                wantDesk = RoomsScreenOpen();
                 WeyveEvent e;
                 while (svc->NextEvent(e)) OnEvent(e, v);
                 if (view.state != State::Failed) {
@@ -813,13 +929,19 @@ struct Client {
                         view.notice = "The keeper did not answer; try again";
                         Set(State::Lobby);
                     }
-                    if ((view.state == State::Finding || view.state == State::NoLobby) && NowMs() >= nextListMs) JoinLobby();
-                    if (allListAt >= 0 && NowMs() >= allListAt) {
-                        allListAt = -1;
-                        if (view.state == State::NoLobby) {
-                            askedAll = true;
-                            svc->ListRooms({{keeper::kKind, keeper::kKindLobby}});
-                        }
+                    Listings();
+                    // Into the desk while the rooms screen is open, out of it after.
+                    if (view.state == State::Browsing && wantDesk && view.keeper && !view.lobby.empty() && !deskJoining) {
+                        deskJoining = true;
+                        deskJoinAt = NowMs();
+                        target = view.lobby;
+                        svc->JoinRoom(view.lobby);
+                        Log("rooms: into desk %s", view.lobby.c_str());
+                    }
+                    if (view.state == State::Lobby && !wantDesk && !pendingSeq) {
+                        svc->LeaveRoom();
+                        Log("rooms: out of the desk");
+                        ToBrowsing();
                     }
                     if (view.state == State::Lobby || view.state == State::Room) {
                         const WeyveRoomView now = svc->View();
@@ -855,6 +977,7 @@ const char* RoomsStateName(RoomsView::State state)
     case State::Connecting: return "connecting";
     case State::Finding: return "finding the lobby";
     case State::NoLobby: return "no lobby";
+    case State::Browsing: return "browsing";
     case State::Lobby: return "lobby";
     case State::Creating: return "creating a room";
     case State::Joining: return "joining";

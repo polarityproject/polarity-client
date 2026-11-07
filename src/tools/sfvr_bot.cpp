@@ -6,7 +6,12 @@
 // rotation by themselves.
 //
 //   sfvr-bot --name Bot1 [--server 127.0.0.1:5555] [--auto] [--set-ms 3000] [--wins p1|p2|random]
-//            [--script "create 2 1 0; wait 1000; sit 0 0; ..."]
+//            [--hub | --browse] [--script "create 2 1 0; wait 1000; sit 0 0; ..."]
+// Where it waits between rooms (docs/room-listing-plan.md): the keeper's desk
+// (the default: it can ask for rooms), or in no room at all as the game does:
+// --hub polls the desk's listing every 5 s (the hub open), --browse every
+// 2 s and lists the public rooms whenever the desk's revision moves (the
+// rooms screen open, without its desk).
 // Commands (script, then stdin; ';' or newlines between them):
 //   create <tables> <public 0|1> <title: 5, 3,RYU,KEN>   join <code>   joinpublic   leave
 //   sit <table> <seat 0|1|-1>   stand   queue <table>   unqueue   ready <table>   decline <table>
@@ -358,6 +363,16 @@ struct Bot {
     WeyveClient* c = nullptr;
     std::string lobby, room;
     bool inLobby = false, inRoom = false;
+    // --hub / --browse: in no room between rooms, polling the listings.
+    enum class Mode { Desk, Hub, Browse } mode = Mode::Desk;
+    enum class Listed { None, Desks, Rooms } listed = Listed::None;
+    int64_t listedAt = -2000, nextDesksMs = 0;
+    bool deskSeen = false, roomsWanted = false;
+    uint64_t rev = 0, roomsRev = 0;
+    std::vector<ListedRoom> publicRooms;
+    int64_t roomLists = 0, deskLists = 0;
+    Listing firstListing; // the first public room's listing as listed (forge)
+    bool forging = false;
     uint32_t seq = 0;
     std::string madeRoom; // the room the keeper made for this bot (answered once)
     std::mutex scriptMutex; // stdin's thread adds to the script
@@ -397,13 +412,61 @@ struct Bot {
             return false;
         }
         weyve_set_name(c, name.c_str());
-        WeyveRoomFilter filters[2] = {{kKind, WEYVE_FILTER_EQUALS, kKindLobby},
-                                      {kBuild, WEYVE_FILTER_EQUALS, nullptr}};
+        ListDesks();
+        return true;
+    }
+
+    void ListDesks()
+    {
         static std::string build;
         build = std::to_string(lobby::kProtocol);
-        filters[1].value = build.c_str();
+        WeyveRoomFilter filters[2] = {{kKind, WEYVE_FILTER_EQUALS, kKindLobby}, {kBuild, WEYVE_FILTER_EQUALS, build.c_str()}};
         weyve_list_rooms(c, filters, 2);
-        return true;
+        listed = Listed::Desks;
+        listedAt = NowMs();
+        deskLists++;
+    }
+
+    void ListPublicRooms()
+    {
+        static std::string kind;
+        kind = ListingKindValue(lobby::kProtocol);
+        WeyveRoomFilter filter{kListingKind, WEYVE_FILTER_EQUALS, kind.c_str()};
+        weyve_list_rooms(c, &filter, 1);
+        listed = Listed::Rooms;
+        listedAt = NowMs();
+        roomLists++;
+    }
+
+    // One listing at a time, a second apart (the server's limit).
+    void Listings()
+    {
+        const int64_t now = NowMs();
+        if (listed != Listed::None && now - listedAt < 3000) return;
+        if (now - listedAt < 1100) return;
+        listed = Listed::None;
+        if (roomsWanted) {
+            roomsWanted = false;
+            ListPublicRooms();
+            return;
+        }
+        if (mode == Mode::Desk || now < nextDesksMs) return;
+        nextDesksMs = now + (mode == Mode::Browse ? 2000 : 5000);
+        ListDesks();
+    }
+
+    Listing ListingOf(uint32_t i)
+    {
+        Listing l;
+        const uint32_t n = weyve_room_list_listing_count(c, i);
+        for (uint32_t k = 0; k < n; k++) {
+            uint32_t klen = 0, vlen = 0;
+            const char* key = weyve_room_list_listing_key_at(c, i, k, &klen);
+            const std::string ks = Str(key, klen);
+            const char* value = weyve_room_list_listing(c, i, ks.c_str(), &vlen);
+            l[ks] = Str(value, vlen);
+        }
+        return l;
     }
 
     void Run(const std::string& line)
@@ -452,19 +515,19 @@ struct Bot {
             weyve_join_room(c, code.c_str(), nullptr);
         }
         else if (cmd == "joinpublic") {
-            // The first room the lobby lists.
-            std::map<std::string, std::string> data;
-            for (int i = 0; i < kListKeys; i++) data[ListKey(i)] = Data(ListKey(i).c_str());
-            const std::vector<ListedRoom> rooms = UnpackRoomList(data);
-            if (rooms.empty()) {
+            // The first room the server's listing has (the keeper's order).
+            if (publicRooms.empty()) {
                 Log("no public room listed yet; trying again");
+                roomsWanted = true;
                 std::lock_guard lock(scriptMutex);
                 script.push_front(line);
-                waitUntil = NowMs() + 500;
+                waitUntil = NowMs() + 1500;
                 return;
             }
+            const std::string code = publicRooms[0].code;
+            publicRooms.clear(); // listed again next time
             weyve_leave_room(c);
-            weyve_join_room(c, rooms[0].code.c_str(), nullptr);
+            weyve_join_room(c, code.c_str(), nullptr);
         }
         else if (cmd == "kickname") {
             std::string who;
@@ -482,7 +545,9 @@ struct Bot {
         }
         else if (cmd == "leave") {
             weyve_leave_room(c);
-            if (!lobby.empty()) weyve_join_room(c, lobby.c_str(), nullptr);
+            inRoom = false;
+            room.clear();
+            if (mode == Mode::Desk && !lobby.empty()) weyve_join_room(c, lobby.c_str(), nullptr);
         }
         else if (cmd == "sit" || cmd == "queue" || cmd == "ready" || cmd == "decline" || cmd == "stand" || cmd == "unqueue" ||
                  cmd == "kick") {
@@ -513,6 +578,8 @@ struct Bot {
         }
         else if (cmd == "status") {
             Log("room " + (room.empty() ? std::string("-") : room) + ", self " + std::to_string(weyve_id(c)));
+            Log("listings: " + std::to_string(deskLists) + " of the desks, " + std::to_string(roomLists) + " of the rooms; " +
+                std::to_string(publicRooms.size()) + " public rooms, revision " + std::to_string(rev));
             for (int t = 0; t < kMaxTables; t++) {
                 const std::string s = Data(StateKey(t).c_str());
                 if (!s.empty()) Log("  table " + std::to_string(t) + " " + s + " queue " + Data(QueueKey(t).c_str()));
@@ -526,6 +593,21 @@ struct Bot {
             watchTable = -1;
             if (viewer) viewer->Stop();
             viewer.reset();
+        }
+        else if (cmd == "forge") {
+            // A room of its own, listed with a real room's signed listing
+            // copied on (the game must not show it: the signature names the
+            // other room). Needs a room list first (joinpublic or --browse).
+            if (firstListing.empty()) {
+                roomsWanted = true;
+                std::lock_guard lock(scriptMutex);
+                script.push_front(line);
+                waitUntil = NowMs() + 1500;
+                return;
+            }
+            forging = true;
+            weyve_leave_room(c);
+            weyve_create_room(c);
         }
         else if (cmd == "quit") {
             std::exit(0);
@@ -541,16 +623,46 @@ struct Bot {
         while (weyve_next(c, &e)) {
             switch (e.type) {
             case WEYVE_EVENT_ROOM_LIST: {
+                const Listed which = listed;
+                listed = Listed::None;
                 const uint32_t n = weyve_room_list_count(c);
+                if (which == Listed::Rooms) {
+                    publicRooms.clear();
+                    for (uint32_t i = 0; i < n; i++) {
+                        uint32_t len = 0;
+                        const char* id = weyve_room_list_id(c, i, &len);
+                        const std::string code = Str(id, len);
+                        ListedRoom r;
+                        const Listing l = ListingOf(i);
+                        if (i == 0) firstListing = l;
+                        if (ParseRoomListing(code, l, lobby::kProtocol, &r)) publicRooms.push_back(r);
+                    }
+                    SortRoomList(&publicRooms);
+                    roomsRev = rev;
+                    break;
+                }
                 if (n == 0) {
-                    Log("no lobby channel listed");
+                    Log("no desk listed");
+                    if (mode == Mode::Desk) ListDesks(); // again (one a second)
                     break;
                 }
                 uint32_t len = 0;
                 const char* id = weyve_room_list_id(c, 0, &len); // len is set by the call: read it after
-                lobby = Str(id, len);
-                Log(std::to_string(n) + " lobby channels listed; joining " + lobby);
-                weyve_join_room(c, lobby.c_str(), nullptr);
+                const std::string first = Str(id, len);
+                DeskSummary summary;
+                const Listing l = ListingOf(0);
+                const auto r = l.find(kDeskSummary);
+                if (r != l.end() && ParseDeskSummary(r->second, &summary)) rev = summary.rev;
+                if (mode == Mode::Browse && rev != roomsRev) roomsWanted = true;
+                if (!deskSeen) {
+                    deskSeen = true;
+                    lobby = first;
+                    if (mode == Mode::Desk) {
+                        Log(std::to_string(n) + " desks listed; joining " + lobby);
+                        weyve_join_room(c, lobby.c_str(), nullptr);
+                    }
+                    else Log(std::to_string(n) + " desks listed; staying out of rooms (" + (mode == Mode::Hub ? "hub" : "browse") + ")");
+                }
                 break;
             }
             case WEYVE_EVENT_ROOM_ID_ASSIGNED: {
@@ -560,6 +672,12 @@ struct Bot {
                 room = inRoom ? code : std::string();
                 shown.clear();
                 Log(inLobby ? "in the lobby " + code : "in room " + code + " as member " + std::to_string(weyve_id(c)));
+                if (forging && inRoom) {
+                    forging = false;
+                    weyve_set_room_listed(c, true);
+                    for (const auto& [k, v] : firstListing) weyve_set_room_listing(c, k.c_str(), v.c_str());
+                    Log("forged a listing on room " + code);
+                }
                 break;
             }
             case WEYVE_EVENT_ROOM_ERROR:
@@ -573,7 +691,7 @@ struct Bot {
                 Log("removed from the room");
                 inRoom = false;
                 room.clear();
-                if (!lobby.empty()) weyve_join_room(c, lobby.c_str(), nullptr);
+                if (mode == Mode::Desk && !lobby.empty()) weyve_join_room(c, lobby.c_str(), nullptr);
                 break;
             default:
                 break;
@@ -695,11 +813,12 @@ struct Bot {
                 return;
             }
             Events();
+            Listings();
             Tables();
             Watch();
             std::string line;
             bool have = false;
-            if (NowMs() >= waitUntil && (inLobby || inRoom)) {
+            if (NowMs() >= waitUntil && (inLobby || inRoom || (mode != Mode::Desk && deskSeen))) {
                 std::lock_guard lock(scriptMutex);
                 if (!script.empty()) {
                     line = script.front();
@@ -745,12 +864,14 @@ int main(int argc, char** argv)
             bot.host = s;
         }
         else if (a == "--auto") bot.autoPlay = true;
+        else if (a == "--hub") bot.mode = Bot::Mode::Hub;
+        else if (a == "--browse") bot.mode = Bot::Mode::Browse;
         else if (a == "--diff") bot.diff = true;
         else if (a == "--set-ms" && v) bot.setMs = std::atoll(argv[++i]);
         else if (a == "--wins" && v) bot.wins = argv[++i];
         else if (a == "--script" && v) Split(argv[++i], &bot.script);
         else {
-            std::fprintf(stderr, "usage: sfvr-bot --name N [--server host:port] [--auto] [--set-ms ms] [--wins p1|p2|random] [--diff] [--script \"...\"]\n");
+            std::fprintf(stderr, "usage: sfvr-bot --name N [--server host:port] [--auto] [--set-ms ms] [--wins p1|p2|random] [--diff] [--hub | --browse] [--script \"...\"]\n");
             return 2;
         }
     }

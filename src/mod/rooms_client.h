@@ -51,9 +51,10 @@ struct RoomsView {
     enum class State {
         Off,
         Connecting,  // to the rooms server
-        Finding,     // the lobby channel
-        NoLobby,     // none listed for this build (the keeper is not running): tried again shortly
-        Lobby,       // in the lobby channel
+        Finding,     // the desk (the keeper's lobby channel): its listing asked for
+        NoLobby,     // no desk listed for this build (the keeper is not running): asked again shortly
+        Browsing,    // the desk listed; in no room (the hub), or on the way into the desk
+        Lobby,       // in the desk (the rooms screen open): requests go to the keeper
         Creating,    // asked the keeper for a room
         Joining,     // into a room (or back to the lobby)
         Room,        // in a custom room
@@ -64,7 +65,8 @@ struct RoomsView {
     uint32_t self = 0;
     bool keeper = false; // the current presence room's host is the proven keeper
     std::string lobby;   // the lobby channel's code
-    std::vector<keeper::ListedRoom> publicRooms;
+    std::vector<keeper::ListedRoom> publicRooms; // from the server's room listing, signed by the keeper (rooms screen open)
+    keeper::DeskSummary summary; // the desk's: public rooms and their players (polled whenever connected)
     // The focused public room's detail (RoomsPeek), when the keeper has
     // answered for it; `peek.code` empty otherwise.
     keeper::RoomDetail peek;

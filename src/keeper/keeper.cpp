@@ -11,6 +11,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -68,6 +69,8 @@ constexpr int kConnectThreads = 4;
 
 Keeper::Keeper(KeeperOptions options) : o_(std::move(options))
 {
+    listRev_ = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
     connector_ = std::make_unique<Connector<WeyveClient>>(
         [this] { return NewClient(); },
         [](WeyveClient* c) {
@@ -473,16 +476,20 @@ void Keeper::SetUpAsHost(Room& room, int64_t nowMs)
     WeyveClient* c = room.client;
     // Anything a player wrote while host is written over.
     room.written.clear();
+    room.listed.clear();
+    room.listedOn = false;
     if (room.kind == Kind::Lobby) {
+        // The desk: its kind here, its count and summary (signed) from
+        // WriteListings.
         weyve_set_room_listed(c, true);
         weyve_set_room_listing(c, kKind, kKindLobby);
-        weyve_set_room_listing(c, kBuild, std::to_string(o_.protocol).c_str());
-        weyve_set_room_listing(c, kCount, std::to_string(Count(room)).c_str());
+        room.listed[kKind] = kKindLobby;
         WriteData(room, kKind, kKindLobby);
         WriteData(room, kBuild, std::to_string(o_.protocol));
-        listWrittenMs_ = countWrittenMs_ = -1;
+        listWrittenMs_ = -1;
     }
     else {
+        // Listed by WriteListings once it is a public room with its owner in.
         weyve_set_room_listed(c, false);
         WriteData(room, kKind, kKindCustom);
         WriteData(room, kBuild, std::to_string(o_.protocol));
@@ -714,22 +721,84 @@ void Keeper::UpdateCustom(Room& room, int64_t nowMs)
 void Keeper::UpdateLobby(Room& room, int64_t nowMs)
 {
     if (!room.inRoom || !room.host) return;
-    if (countWrittenMs_ < 0 || nowMs - countWrittenMs_ >= kListEveryMs) {
-        countWrittenMs_ = nowMs;
-        static int lastCount = -1;
-        if (Count(room) != lastCount) {
-            lastCount = Count(room);
-            weyve_set_room_listing(room.client, kCount, std::to_string(lastCount).c_str());
-            weyve_set_room_joinable(room.client, lastCount < kLobbyCap);
-        }
-    }
     if (listWrittenMs_ >= 0 && nowMs - listWrittenMs_ < kListEveryMs) return;
     listWrittenMs_ = nowMs;
-    const std::vector<std::string> values = PackRoomList(PublicList());
-    for (int i = 0; i < kListKeys; i++) {
-        if (i < static_cast<int>(values.size())) WriteData(room, ListKey(i), values[i]);
-        else DeleteData(room, ListKey(i));
+    WriteListings(nowMs);
+}
+
+std::string Keeper::SignText(const std::string& message) const
+{
+    uint8_t signature[64];
+    if (!Sign(o_.key, reinterpret_cast<const uint8_t*>(message.data()), message.size(), signature)) return {};
+    return Base64Encode(signature, sizeof(signature));
+}
+
+// The public list in the server's own room listing (docs/room-listing-plan.md):
+// each public room's slots, signed, set by the keeper as its host, and the
+// desk's count and summary. Players list them without joining a room. At most
+// every kListEveryMs (UpdateLobby).
+void Keeper::WriteListings(int64_t nowMs)
+{
+    (void)nowMs;
+    auto set = [](WeyveClient* c, Listing& had, const Listing& want) {
+        for (const auto& [key, value] : want) {
+            const auto it = had.find(key);
+            if (it == had.end() || it->second != value) weyve_set_room_listing(c, key.c_str(), value.c_str());
+        }
+        for (const auto& [key, value] : had) {
+            if (!want.count(key)) weyve_set_room_listing(c, key.c_str(), "");
+        }
+        had = want;
+    };
+    const std::vector<ListedRoom> list = PublicList();
+    std::map<std::string, const ListedRoom*> byCode;
+    for (const ListedRoom& l : list) byCode[l.code] = &l;
+    for (auto& r : rooms_) {
+        if (r->closing || !r->client || !r->inRoom || !r->host) continue;
+        const auto it = byCode.find(r->code);
+        if (it == byCode.end()) {
+            // Private, the owner not in yet, empty, or taken off the list.
+            if (r->listedOn) {
+                weyve_set_room_listed(r->client, false);
+                r->listedOn = false;
+                listRev_++;
+            }
+            continue;
+        }
+        Listing want = RoomListing(*it->second, o_.protocol);
+        Listing had = r->listed;
+        had.erase(kListingSig);
+        if (r->listedOn && had == want) continue;
+        const std::string sig = SignText(ListingMessage(r->code, want));
+        if (sig.empty()) {
+            Log("keeper: room %s: cannot sign its listing", r->code.c_str());
+            continue;
+        }
+        want[kListingSig] = sig;
+        set(r->client, r->listed, want);
+        if (!r->listedOn) weyve_set_room_listed(r->client, true);
+        r->listedOn = true;
+        listRev_++;
     }
+    // The desk: who is in it, and the summary players poll.
+    Room& desk = *lobby_;
+    if (!desk.client || !desk.inRoom || !desk.host) return;
+    DeskSummary summary;
+    summary.rev = listRev_;
+    summary.publicRooms = static_cast<int>(list.size());
+    for (const ListedRoom& l : list) summary.players += l.members;
+    Listing want{{kKind, kKindLobby},
+                 {kBuild, std::to_string(o_.protocol)},
+                 {kCount, std::to_string(Count(desk))},
+                 {kDeskSummary, FormatDeskSummary(summary)}};
+    Listing had = desk.listed;
+    had.erase(kListingSig);
+    if (had == want) return;
+    const std::string sig = SignText(DeskMessage(desk.code, want));
+    if (sig.empty()) return;
+    want[kListingSig] = sig;
+    set(desk.client, desk.listed, want);
+    weyve_set_room_joinable(desk.client, Count(desk) < kLobbyCap);
 }
 
 std::vector<ListedRoom> Keeper::PublicList() const
@@ -764,14 +833,50 @@ std::vector<ListedRoom> Keeper::PublicList() const
     return list;
 }
 
+int Keeper::OnlineFromServer() const
+{
+    if (o_.serverStatsPath.empty()) return -1;
+    std::error_code ec;
+    const auto written = std::filesystem::last_write_time(o_.serverStatsPath, ec);
+    if (ec || std::filesystem::file_time_type::clock::now() - written > std::chrono::seconds(30)) return -1;
+    std::ifstream in(o_.serverStatsPath);
+    std::stringstream text;
+    text << in.rdbuf();
+    const std::string s = text.str();
+    const size_t at = s.find("\"connections\":");
+    if (at == std::string::npos) return -1;
+    const long connections = std::strtol(s.c_str() + at + 14, nullptr, 10);
+    // Connections that are not one player each: the keeper's own (a room,
+    // relay rooms), and the second ones players open for a match (both
+    // players of a table set) or to watch one through a relay.
+    long others = 0;
+    if (lobby_ && lobby_->client) others++;
+    for (const auto& r : rooms_) {
+        if (r->client) others++;
+        for (const auto& relay : r->relays) {
+            others += (relay->up ? 1 : 0) + (relay->down ? 1 : 0);
+            if (relay->core && !relay->ended) others += static_cast<long>(relay->core->Stats().viewers);
+        }
+        for (const Table& t : r->tables) {
+            if (t.s.phase == TablePhase::Connecting || t.s.phase == TablePhase::Playing) others += 2;
+        }
+    }
+    return static_cast<int>(std::max(0L, connections - others));
+}
+
 std::string Keeper::StatusJson(int64_t unixMs) const
 {
-    // A hub is in one room at a time (the lobby channel or a custom room), so
-    // the members add up to the players online without counting anyone twice.
+    // From the server when it says (browsing players are in no room); else a
+    // hub is in one room at a time (the lobby channel or a custom room), so
+    // the members add up without counting anyone twice.
     RoomTotals totals;
-    if (lobby_ && lobby_->inRoom) totals.online = Count(*lobby_);
-    for (const auto& r : rooms_) {
-        if (!r->closing && r->inRoom) totals.online += Count(*r);
+    totals.online = OnlineFromServer();
+    if (totals.online < 0) {
+        totals.online = 0;
+        if (lobby_ && lobby_->inRoom) totals.online = Count(*lobby_);
+        for (const auto& r : rooms_) {
+            if (!r->closing && r->inRoom) totals.online += Count(*r);
+        }
     }
     const std::vector<ListedRoom> list = PublicList();
     totals.publicRooms = static_cast<int>(list.size());
@@ -1363,6 +1468,8 @@ void Keeper::Close(Room& room, const char* why)
     }
     connector_->Cancel(room.connecting);
     room.connecting = 0;
+    if (room.listedOn) listRev_++; // its listing goes with the room
+    room.listedOn = false;
     if (room.client) Retire(room.client);
 }
 

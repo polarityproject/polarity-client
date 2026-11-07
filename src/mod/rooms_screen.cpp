@@ -585,10 +585,10 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     g.scroll = std::clamp(g.scroll, 0.0f, static_cast<float>(std::max(0, count - kRowsInView)));
 
     // ---- the list ----
-    int players = 0;
-    for (const auto& r : rooms) players += r.members;
+    // The desk's summary (it comes before the list itself).
     Text(d, f.display, g_v.L(40), g_v.P(48, 22), Rgba(255, 255, 255), "CUSTOM ROOMS", 0, true);
-    const std::string summary = v.keeper ? Plural(count, "public room", "public rooms") + " \xC2\xB7 " + Plural(players, "player", "players")
+    const std::string summary = v.keeper ? Plural(v.summary.publicRooms, "public room", "public rooms") + " \xC2\xB7 " +
+                                               Plural(v.summary.players, "player", "players")
                                          : v.state == S::Failed ? "Cannot reach the rooms server" : "Custom rooms are offline right now";
     Text(d, f.body, g_v.L(16), g_v.P(48 + TextW(f.display, 40, "CUSTOM ROOMS") + 28, 42), kSoft, summary);
     ActionRow(d, f, 80, "+", "CREATE A ROOM", "Public or private, 1 to 8 tables", g.focus == kCreate);
