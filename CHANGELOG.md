@@ -9,21 +9,29 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 Custom rooms: up to 16 players on up to eight tables with their own rules,
 in public rooms anyone can find or private ones by code, with chat, a queue
-at each table and watching any table. SFVR moved to a new server, which
-0.3.0 finds by itself; it plays only 0.3.0.
+at each table and watching any table. SFVR has a new look, starting from a
+hub at launch, and moved to a new server, which 0.3.0 finds by itself; it
+plays only 0.3.0.
 
 ### Added
 
-- **The SFVR hub** after the title: Play offline (the game as it ships;
-  hold Start in its menus to come back), Custom rooms, and SFVR settings
-  (Start). A lost rooms server is tried again every 10 seconds.
+- **The SFVR hub** at launch, in place of the F1 panel: Play offline (the
+  game as it ships; Back + Start or F1 in its menus comes back), Custom
+  rooms, and SFVR settings (Start). When the rooms server can't be reached,
+  Custom rooms says why instead of opening; it is tried again every 10
+  seconds.
+- **A new look** for every SFVR screen: blurred stage art behind glass
+  panels, the game's own button glyphs (each one clickable), and larger text
+  sized for the Steam Deck's screen.
 - **Custom rooms.** Create one with a title from the game's own Battle
   Lounge comments (two of them name characters you pick), public or private,
   with 1 to 8 tables. Public rooms are listed with their title, owner,
   players, faces and open seats, and the focused room shows its tables and
   players before you join. Any room joins by its code (Copy code beside the
   room's title; Y pastes a copied one).
-- **Tables:** sit or queue, ready when called, and play a set; the winner
+- **Tables:** sit or queue, ready when called (with your V-Skill,
+  V-Trigger and input delay for the match, and your opponent's choices shown
+  as they change), and play a set; the winner
   stays (as the table's rules say) and the queue rotates. Each table has its
   own rules: first to 1-20, best of 1, 3 or 5 rounds, a 99, 60 or 30 second
   timer; the owner changes them between sets. After a set: play on, or
@@ -37,7 +45,7 @@ at each table and watching any table. SFVR moved to a new server, which
   V-Trigger, input delay and preferred stage, kept for the next set.
 - **Country flags** beside names in rooms and the room list, from the
   server's look-up of each player's connection (IP Geolocation by DB-IP).
-  SFVR settings, Country flag: Hidden keeps yours to the server.
+  SFVR settings, Country flag: Hidden shows yours to no one.
 - **Word filter** in public rooms: names on the server's word list show as
   "Player 1234" and its words in chat are starred. SFVR settings, Word
   filter: Off shows them to you as they are. Private rooms are never
@@ -45,11 +53,17 @@ at each table and watching any table. SFVR moved to a new server, which
 - **Streamer mode** (SFVR settings): room codes show as dots on the rooms
   screens; Copy code still copies them.
 - **SFVR settings** in one list: updates, name, frame rate, country flag,
-  word filter, streamer mode, input delay, server, the server login at
-  start, and reports.
+  word filter, streamer mode, input delay, server, and reports, with
+  third-party acknowledgements at the end.
 
 ### Changed
 
+- **The game never logs in to Capcom's servers** with SFVR installed: the
+  title goes straight to the main menu, and the setting that allowed the
+  login is gone.
+- **The keyboard follows the game's own key settings** in SFVR's screens
+  (Button Settings in the game's options), so the keys that confirm and go
+  back match the game's menus.
 - **SFVR's server moved** (rooms, Direct Match and desync and crash
   reports). A server chosen in settings before 0.3.0 that was the old public
   one becomes the new one by itself. 0.3.0 plays only 0.3.0.
@@ -81,6 +95,15 @@ at each table and watching any table. SFVR moved to a new server, which
 
 ### Fixed
 
+- The window's close button did nothing while an SFVR screen was up, and a
+  second mouse cursor trailed the real one (and stayed behind when it left
+  the window).
+- A room created or joined right after leaving another could wait 20
+  seconds and fail.
+- Leaving a public room as its only player could leave it listed with you
+  in it for a few seconds.
+- A room showed the fighter Eleven had rolled before the match; it shows
+  Eleven now, with V-Skill and V-Trigger left random.
 - A malformed message from a rooms server could make the game set aside
   gigabytes of memory; messages are now held to a size cap (the same fix
   keeps the rooms server itself from being crashed this way).
