@@ -14,6 +14,7 @@
 
 #include "core/keeper_protocol.h"
 #include "core/spectate_relay.h"
+#include "keeper/connector.h"
 #include "keeper/sign.h"
 
 #include <cstdint>
@@ -53,9 +54,9 @@ class Keeper {
 public:
     explicit Keeper(KeeperOptions options);
     ~Keeper();
-    // Connects and joins (or creates) the lobby channel, and rejoins the
-    // custom rooms kept in the state file. False if the server cannot be
-    // reached (Step retries).
+    // Starts connecting: Step then joins (or creates) the lobby channel and
+    // rejoins the custom rooms kept in the state file as the connects come
+    // through, and retries a failed one. True (kept for callers).
     bool Start(int64_t nowMs);
     void Step(int64_t nowMs);
 
@@ -106,6 +107,8 @@ private:
         std::string relayCode;
         WeyveClient* up = nullptr;
         WeyveClient* down = nullptr;
+        uint64_t upConnecting = 0, downConnecting = 0; // connects asked for (Connector tickets)
+        int64_t upAskedMs = 0, downAskedMs = 0;
         bool upIn = false, downIn = false;
         uint32_t hostId = 0;
         bool hostSet = false;
@@ -132,6 +135,8 @@ private:
     struct Room {
         Kind kind = Kind::Custom;
         WeyveClient* client = nullptr;
+        uint64_t connecting = 0; // a connect asked for (Connector ticket); the room waits for it
+        int64_t connectAskedMs = 0;
         std::string code;      // known once in the room (or kept from before a restart)
         bool inRoom = false;
         bool host = false;
@@ -160,8 +165,15 @@ private:
     };
 
     void Log(const char* format, ...) const;
-    bool Connect(Room& room);
-    WeyveClient* NewClient();
+    // Connects run on the Connector's workers: Ask starts one, Arrived
+    // gives the client once it is over (null: failed or too slow), Retire
+    // hands a client back to be left and destroyed.
+    WeyveClient* NewClient() const; // on a worker: no keeper state
+    void Ask(uint64_t& ticket, int64_t& askedMs, int64_t nowMs);
+    bool Arrived(uint64_t& ticket, int64_t askedMs, int64_t nowMs, WeyveClient** client);
+    void Retire(WeyveClient*& client);
+    void ConnectedLobby(int64_t nowMs);
+    void ConnectedRoom(Room& room, int64_t nowMs);
     // Relays.
     void StartRelay(Room& room, int table, int64_t nowMs);
     void PumpRelays(Room& room, int64_t nowMs);
@@ -234,6 +246,9 @@ private:
     KeeperOptions o_;
     std::unique_ptr<Room> lobby_;
     std::vector<std::unique_ptr<Room>> rooms_;
+    // Connects and teardowns off the loop (connector.h); reset first in ~Keeper.
+    std::unique_ptr<Connector<WeyveClient>> connector_;
+    bool everConnected_ = false;
     int64_t now_ = 0;
     int64_t listWrittenMs_ = -1;
     int64_t countWrittenMs_ = -1;

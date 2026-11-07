@@ -7,6 +7,7 @@
 #include "core/match_ticket.h"
 #include "core/country_flags.h"
 #include "core/keeper_protocol.h"
+#include "keeper/connector.h"
 #include "keeper/sign.h"
 #include "core/rules.h"
 #include "core/match_code.h"
@@ -24,6 +25,7 @@
 #include "testbed/match_runner.h"
 
 #include <cctype>
+#include <atomic>
 #include <chrono>
 #include <thread>
 #include <cstdio>
@@ -1398,6 +1400,66 @@ void TestPng()
     CHECK(last && rows);
 }
 
+// The keeper's connects off its loop (keeper/connector.h), with fake clients:
+// each request comes back once (a client or a failure), a cancelled one never
+// does and its client is freed, retired clients are freed, and whatever is
+// left at the end is freed too.
+void TestKeeperConnector()
+{
+    struct Fake {
+        int n = 0;
+    };
+    std::atomic<int> made{0}, freed{0}, calls{0};
+    auto make = [&]() -> Fake* {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        if (++calls % 3 == 0) return nullptr; // every third connect fails
+        made++;
+        return new Fake{made};
+    };
+    auto destroy = [&](Fake* f) {
+        freed++;
+        delete f;
+    };
+    {
+        sfv::keeper::Connector<Fake> c(make, destroy, 2);
+        std::vector<uint64_t> tickets;
+        for (int i = 0; i < 6; i++) tickets.push_back(c.Request());
+        CHECK(tickets[0] != 0 && tickets[1] != tickets[0]);
+        c.Cancel(tickets[5]); // still queued behind the others: never runs
+        std::vector<Fake*> got;
+        int over = 0;
+        for (int wait = 0; wait < 300 && over < 5; wait++) {
+            for (int i = 0; i < 5; i++) {
+                Fake* f = nullptr;
+                if (tickets[i] && c.Take(tickets[i], &f)) {
+                    tickets[i] = 0;
+                    over++;
+                    if (f) got.push_back(f);
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        Fake* none = nullptr;
+        CHECK(over == 5 && !c.Take(tickets[5], &none) && c.Pending() == 0);
+        CHECK(static_cast<int>(got.size()) == made.load() && calls.load() == 5);
+        for (Fake* f : got) c.Retire(f);
+        for (int wait = 0; wait < 200 && freed.load() < made.load(); wait++) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        CHECK(freed.load() == made.load());
+        // Cancelled while it runs: its client is freed when it comes.
+        const uint64_t late = c.Request();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        c.Cancel(late);
+        for (int wait = 0; wait < 200 && calls.load() < 6; wait++) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        std::this_thread::sleep_for(std::chrono::milliseconds(40));
+        CHECK(freed.load() == made.load() && c.Pending() == 0);
+        // Left for the end: done and never taken.
+        c.Request();
+        c.Request();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    CHECK(freed.load() == made.load());
+}
+
 void TestKeeperProtocol()
 {
     using namespace sfv::keeper;
@@ -1845,6 +1907,7 @@ int main()
         {"shown setup", TestShownSetup},
         {"rules format", TestRulesFormat},
         {"match ticket", TestMatchTicket},
+        {"keeper connector", TestKeeperConnector},
         {"keeper protocol", TestKeeperProtocol},
         {"spectate relay", TestSpectateRelay},
         {"png", TestPng},
