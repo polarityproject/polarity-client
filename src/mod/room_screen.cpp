@@ -302,20 +302,24 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
     for (int i = static_cast<int>(v.chat.size()) - 1; i >= 0 && bottom > kChatTop + 32; i--) {
         const ChatLine& line = v.chat[i];
         if (line.from && g.muted.count(line.from)) continue;
+        // The word filter (public rooms): the masked name and the starred
+        // text, unless the player turned it off.
+        const std::string& name = v.wordFilter ? line.name : line.realName;
+        const std::string& text = v.wordFilter ? line.censored : line.text;
         // A player's line: the name in bold, the message after it, its first
         // line indented by the name (spaces as wide), the rest wrapping under.
-        std::string all = line.text;
+        std::string all = text;
         if (line.from) {
-            const float nameW = TextW(f.strong, size, Upper(line.name)) + 8;
+            const float nameW = TextW(f.strong, size, Upper(name)) + 8;
             std::string pad;
             while (TextW(f.body, size, pad) < nameW) pad += ' ';
-            all = pad + line.text;
+            all = pad + text;
         }
         const float h = f.body->CalcTextSizeA(g_v.L(size), FLT_MAX, g_v.L(wrap), all.c_str()).y / g_v.s;
         const float y = bottom - h;
         if (line.from) {
             d->AddText(f.body, g_v.L(size), g_v.P(910, y), kCream, all.c_str(), nullptr, g_v.L(wrap));
-            d->AddText(f.strong, g_v.L(size), g_v.P(910, y), kCream, Upper(line.name).c_str());
+            d->AddText(f.strong, g_v.L(size), g_v.P(910, y), kCream, Upper(name).c_str());
         }
         else {
             d->AddText(f.body, g_v.L(size), g_v.P(910, y), kGold, all.c_str(), nullptr, g_v.L(wrap));

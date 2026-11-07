@@ -89,6 +89,7 @@ struct NetplayOptions {
     bool showOwnFps = false;               // the match HUD also shows this game's frame rate
     bool shareCountry = true;              // others see this player's flag (off: WeyveService::SetHideCountry)
     bool streamerMode = false;             // room codes stay off the screen (rooms_screen.h SetStreamerMode)
+    bool wordFilter = true;                // public rooms: masked names, starred chat (rooms_client.h SetRoomsWordFilter)
 };
 
 void InstallNetplay(SfvGame* game, const std::wstring& reportDir, const std::string& modVersion,

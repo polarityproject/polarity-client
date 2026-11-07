@@ -63,6 +63,8 @@ int64_t ClockUs()
 
 int64_t NowMs() { return static_cast<int64_t>(GetTickCount64()); }
 
+std::atomic<bool> g_wordFilter{true};
+
 struct Client {
     std::mutex mutex; // guards view and the asks below
     RoomsView view;
@@ -135,6 +137,10 @@ struct Client {
     int64_t lastPingMs = 0;
     std::string net = "u"; // this PC's connection, for member data `net`
     std::map<uint32_t, int> mask; // the room's masked names (keeper_protocol.h kMask)
+    // The keeper's word list (a public room's wl0.., by its hash wlv): kept
+    // across rooms, read again when the hash changes.
+    std::string wordsHash;
+    std::vector<std::string> words;
     bool toldMasked = false;
     uint64_t lastTicketToken = 0; // a ticket sent again is taken once
     bool saidNoLobby = false;     // logged once until a lobby shows
@@ -360,10 +366,20 @@ struct Client {
         ToBrowsing();
     }
 
-    void Line(uint32_t from, const std::string& name, const std::string& text)
+    void Line(uint32_t from, const std::string& name, const std::string& text, const std::string& realName = {})
     {
-        view.chat.push_back({from, name, text});
+        // Starred once, as it comes: the setting picks which is shown.
+        const std::string censored = from && view.isPublic && !words.empty() ? keeper::CensorChat(text, words) : text;
+        view.chat.push_back({from, name, text, realName.empty() ? name : realName, censored});
         if (view.chat.size() > kChatKept) view.chat.erase(view.chat.begin());
+    }
+
+    // A member's name as the keeper's mask shows it ("Player 1234"), whatever
+    // the setting.
+    std::string MaskedName(uint32_t id, const std::string& name) const
+    {
+        const auto it = mask.find(id);
+        return it != mask.end() ? "Player " + std::to_string(it->second) : name;
     }
 
     void OnEvent(const WeyveEvent& e, const WeyveRoomView& v)
@@ -441,8 +457,8 @@ struct Client {
             if (view.state == State::Room) {
                 // The name as the room shows it (masked or not).
                 const WeyveMember* m = v.Member(e.peer);
-                const auto shown = names.find(e.peer);
-                Line(e.peer, shown != names.end() ? shown->second : m ? m->name : "?", e.text);
+                const std::string real = m ? m->name : "?";
+                Line(e.peer, MaskedName(e.peer, real), e.text, real);
             }
             break;
         default:
@@ -619,14 +635,27 @@ struct Client {
         std::vector<RoomMember> members;
         std::map<uint32_t, std::string> now;
         if (view.keeper) mask = keeper::ParseMask(data(keeper::kMask)); // while paused, the last one stands
+        // The word list for chat (public rooms only carry it).
+        if (const std::string hash = data(keeper::kWordListHash); view.isPublic && !hash.empty() && hash != wordsHash) {
+            std::vector<std::string> values;
+            for (int i = 0; i < keeper::kWordListKeys; i++) {
+                const std::string value = data(keeper::WordListKey(i).c_str());
+                if (!value.empty()) values.push_back(value);
+            }
+            words = keeper::UnpackWordList(values);
+            wordsHash = hash;
+            Log("rooms: word list %s: %zu entries", hash.c_str(), words.size());
+        }
         for (const WeyveMember& m : v.members) {
             if (m.id == keeperId) continue;
             RoomMember r;
             r.id = m.id;
             const auto masked = mask.find(m.id);
             r.masked = masked != mask.end();
-            // "Player N", N as the keeper counts it.
-            r.name = r.masked ? "Player " + std::to_string(masked->second) : m.name;
+            // "Player 1234", the keeper's number (every viewer the same),
+            // unless this player turned the word filter off.
+            const std::string maskedName = MaskedName(m.id, m.name);
+            r.name = g_wordFilter ? maskedName : m.name;
             const auto ch = m.data.find("ch");
             if (ch != m.data.end()) r.chara = ch->second;
             // The rooms server's own lookup of their address (never their
@@ -645,7 +674,7 @@ struct Client {
             }
             if (r.masked && m.id == v.self && !toldMasked) {
                 toldMasked = true;
-                Line(0, "", "Your name shows as " + r.name + " in public rooms.");
+                Line(0, "", "Your name shows as " + maskedName + " in public rooms.");
             }
             members.push_back(r);
             now[m.id] = r.name;
@@ -920,6 +949,7 @@ struct Client {
                 else if (v.server != WeyveRoomView::Server::Connected) Set(State::Failed);
                 else if (view.state == State::Connecting) ToBrowsing();
                 wantDesk = RoomsScreenOpen();
+                view.wordFilter = g_wordFilter;
                 WeyveEvent e;
                 while (svc->NextEvent(e)) OnEvent(e, v);
                 if (view.state != State::Failed) {
@@ -969,6 +999,13 @@ std::unique_ptr<Client> g_client;
 std::recursive_mutex g_openMutex;
 
 } // namespace
+
+void SetRoomsWordFilter(bool on)
+{
+    if (g_wordFilter.exchange(on) != on) Log("rooms: word filter %s", on ? "on" : "off");
+}
+
+bool RoomsWordFilter() { return g_wordFilter; }
 
 const char* RoomsStateName(RoomsView::State state)
 {

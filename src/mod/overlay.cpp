@@ -993,6 +993,7 @@ struct Choices {
     bool showFps = false;
     bool shareCountry = true;
     bool streamerMode = false;
+    bool wordFilter = true;
 };
 Choices g_choices;
 bool IsEleven(int chara);
@@ -1041,6 +1042,7 @@ void InitChoices()
     g_choices.showFps = o.showOwnFps;
     g_choices.shareCountry = o.shareCountry;
     g_choices.streamerMode = o.streamerMode;
+    g_choices.wordFilter = o.wordFilter;
     g_choices.initialised = true;
 }
 
@@ -1074,6 +1076,7 @@ NetplayOptions ChosenOptions()
     o.showOwnFps = c.showFps;
     o.shareCountry = c.shareCountry;
     o.streamerMode = c.streamerMode;
+    o.wordFilter = c.wordFilter;
     return o;
 }
 
@@ -1243,6 +1246,8 @@ void SaveChoices()
         WeyveService::SetHideCountry(!o.shareCountry);
         NetOptions().streamerMode = o.streamerMode;
         SetStreamerMode(o.streamerMode);
+        NetOptions().wordFilter = o.wordFilter;
+        SetRoomsWordFilter(o.wordFilter);
         NetOptions().inputDelay = o.inputDelay;
         if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, o, o.stageCode);
     });
@@ -1648,6 +1653,11 @@ void DrawSettings(bool locked)
     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440 * g_uiScale);
     ImGui::TextColored(kDim, "The SFVR server finds your country from your connection and shows its flag beside "
                              "your name in custom rooms and on the rooms list online. Off: it keeps it to itself.");
+    ImGui::PopTextWrapPos();
+    changed |= ImGui::Checkbox("Word filter", &c.wordFilter);
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440 * g_uiScale);
+    ImGui::TextColored(kDim, "Public rooms: names on the server's word list show as \"Player 1234\" and its words in chat "
+                             "are starred. Off: you see them as they are (the rooms list stays filtered).");
     ImGui::PopTextWrapPos();
     changed |= ImGui::Checkbox("Streamer mode", &c.streamerMode);
     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440 * g_uiScale);
@@ -3498,6 +3508,18 @@ std::vector<SettingsRow> SettingsRows()
         r.hint = "Left and right: shown or hidden.";
     }
     {
+        SettingsRow& r = row("wordfilter", "ONLINE", "Word filter");
+        r.arrows = true;
+        r.value = g_choices.wordFilter ? "On" : "Off";
+        r.kicker = "ONLINE";
+        r.title = "Word filter";
+        r.lines = {"On: in public rooms, names on the server's word list show as \"Player 1234\" and its words in chat are "
+                   "starred.",
+                   "Off: you see names and chat as they are. The rooms list, previews and the website stay filtered. "
+                   "Private rooms are never filtered."};
+        r.hint = "Left and right: on or off.";
+    }
+    {
         SettingsRow& r = row("streamer", "ONLINE", "Streamer mode");
         r.arrows = true;
         r.value = g_choices.streamerMode ? "On" : "Off";
@@ -3611,6 +3633,11 @@ void ApplySetting(const SettingsInput& in)
     }
     else if (in.row == "country" && in.delta) {
         g_choices.shareCountry = !g_choices.shareCountry;
+        SaveChoices();
+    }
+    else if (in.row == "wordfilter" && in.delta) {
+        g_choices.wordFilter = !g_choices.wordFilter;
+        SetRoomsWordFilter(g_choices.wordFilter); // at once
         SaveChoices();
     }
     else if (in.row == "streamer" && in.delta) {

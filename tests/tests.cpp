@@ -1698,6 +1698,34 @@ void TestKeeperProtocol()
     CHECK(FoldName("B4.dw0rd-$!") == "badwords" && FoldName("\xE3\x81\x82") == "");
     CHECK(NameRejected("xX_B4D w0rd_Xx", words) && NameRejected("BADWORD", words) && !NameRejected("Bad Wolf", words) &&
           !NameRejected("", words));
+    // The word file: comments and blanks skipped, folded, prefixes kept,
+    // phrases run together, duplicates and entries of nothing dropped.
+    const std::vector<std::string> list = ParseWordFile("# a comment\n\nBadWord\n  bad \r\nDirty*\nrotten egg\nmud*\n\xE3\x81\x82\nbad\n");
+    CHECK((list == std::vector<std::string>{"badword", "bad", "dirty*", "rotten_egg", "mud*"}));
+    CHECK(WordEntry("Gr8*") == "gr*" && WordEntry(" * ").empty());
+    // Names: 5 letters or more anywhere, shorter entries as a whole word.
+    CHECK(!NameRejected("Sinbad", list) && NameRejected("the_bad_one", list) && NameRejected("B4D", list) &&
+          !NameRejected("Baddie", list) && NameRejected("xxDIRTYxx", list) && NameRejected("Mudkip", list) &&
+          !NameRejected("Kmud", list) && NameRejected("RottenEgg99", list) && !NameRejected("\xE3\x81\x82", list));
+    // Chat: whole words, starred character for character; phrases; prefixes.
+    CHECK(CensorChat("that is BAD, really b4d!", list) == "that is ***, really ***!");
+    CHECK(CensorChat("Sinbad badword", list) == "Sinbad *******");
+    CHECK(CensorChat("so dirtyyy", list) == "so *******" && CensorChat("so undirty", list) == "so undirty");
+    CHECK(CensorChat("a rotten egg here", list) == "a ****** *** here" && CensorChat("rotten apples", list) == "rotten apples");
+    CHECK(CensorChat("so bad\xE2\x80\x94", list) == "so ****"); // a dash that is part of the word: one star
+    CHECK(CensorChat("b.a.d and b a d pass", list) == "b.a.d and b a d pass");
+    CHECK(CensorChat("an al pass", ParseWordFile("anal")) == "an al pass"); // words never run together but a phrase's
+    CHECK(CensorChat("all fine", {}) == "all fine" && CensorChat("", list).empty());
+    // In room data: values of at most 512 bytes, round trip, the hash.
+    std::vector<std::string> many;
+    for (int i = 0; i < 400; i++) many.push_back("word" + std::string(1, static_cast<char>('a' + i % 26)) + std::to_string(i));
+    const std::vector<std::string> packed = PackWordList(many);
+    CHECK(packed.size() > 1 && static_cast<int>(packed.size()) <= kWordListKeys);
+    for (const std::string& v : packed) CHECK(v.size() <= 512);
+    CHECK(UnpackWordList(packed) == many && PackWordList({}).empty() && UnpackWordList({}).empty());
+    CHECK(WordListHash(many) != WordListHash(list) && WordListHash(list) == WordListHash(ParseWordFile("badword\nbad\ndirty*\nrotten egg\nmud*")) &&
+          WordListHash(list).size() == 16 && WordListKey(3) == "wl3");
+    CHECK(FormatMask({{12, 4821}}) == "12=4821" && ParseMask("12=4821").at(12) == 4821);
     using Numbers = std::map<uint32_t, int>;
     const Numbers numbers{{12, 1}, {34, 3}}, onlyFive{{5, 2}};
     CHECK(FormatMask(numbers) == "12=1,34=3" && ParseMask("12=1,34=3") == numbers && ParseMask("").empty() &&
@@ -1919,6 +1947,8 @@ void TestUpdateSignature()
 
 int main()
 {
+    // Unbuffered: a crash keeps what was printed before it (a pipe buffers).
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
     const Test tests[] = {
         {"hashes", TestHashes},
         {"input delay suggestion", TestInputDelaySuggestion},

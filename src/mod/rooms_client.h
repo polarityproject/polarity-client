@@ -43,8 +43,10 @@ struct TableView {
 
 struct ChatLine {
     uint32_t from = 0;  // 0: the room's own line (joins, leaves, owner changes)
-    std::string name;
-    std::string text;
+    std::string name;     // as the word filter shows it ("Player 1234" for a masked name)
+    std::string text;     // as typed
+    std::string realName; // the player's own name
+    std::string censored; // the text with the word filter's words starred (public rooms; else as typed)
 };
 
 struct RoomsView {
@@ -74,6 +76,7 @@ struct RoomsView {
     std::string room;
     keeper::RoomTitle title; // its title (keeper_protocol.h); none when the data holds no valid one
     bool isPublic = true;
+    bool wordFilter = true; // the player's Word filter setting: masked names and starred chat (public rooms)
     int tables = 0;
     std::vector<std::string> tableRules; // t0.. (FormatRules), one per table
     std::vector<TableView> tableViews;   // s0.., q0.. with the rules, one per table
@@ -100,6 +103,11 @@ struct WatchTicket {
     std::string rules; // FormatRules
 };
 const char* RoomsStateName(RoomsView::State state);
+// The Word filter setting (SFVR settings, F1 Settings): in public rooms,
+// names the keeper masks show as "Player 1234" and chat has the keeper's
+// words starred. Off: names and chat as they are. Any thread.
+void SetRoomsWordFilter(bool on);
+bool RoomsWordFilter();
 
 // Opens the hub's connection (`server` "host[:port]", `alsoPort` as
 // WeyveService::Start). `keeperKey`: an extra trusted keeper key, 128 hex
