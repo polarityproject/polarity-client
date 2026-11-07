@@ -3504,7 +3504,8 @@ std::vector<SettingsRow> SettingsRows()
         r.title = "Country flag";
         r.lines = {"The SFVR server finds your country from your connection and shows its flag beside your name in custom "
                    "rooms and on the rooms list online, so players can tell who is near.",
-                   "Hidden: the server keeps your country to itself."};
+                   "Hidden: the server keeps your country to itself.",
+                   "Countries: IP Geolocation by DB-IP (db-ip.com), CC BY 4.0."};
         r.hint = "Left and right: shown or hidden.";
     }
     {
@@ -3516,7 +3517,8 @@ std::vector<SettingsRow> SettingsRows()
         r.lines = {"On: in public rooms, names on the server's word list show as \"Player 1234\" and its words in chat are "
                    "starred.",
                    "Off: you see names and chat as they are. The rooms list, previews and the website stay filtered. "
-                   "Private rooms are never filtered."};
+                   "Private rooms are never filtered.",
+                   "The word list: List of Dirty, Naughty, Obscene, and Otherwise Bad Words (LDNOOBW), CC BY 4.0."};
         r.hint = "Left and right: on or off.";
     }
     {
@@ -4008,6 +4010,21 @@ void DrawHubFrame(bool takeInput)
         RoomsOpen(o.server, LocalPlayerName(), o.server == kDefaultServer ? kDefaultServerAlsoPort : o.serverAlsoPort, o.keeperKey);
     }
     const RoomsView rooms = RoomsSnapshot();
+    // A lost or unreachable server (a restart or an update on the VPS, the
+    // network gone a moment): tried again every 10 s while the hub is up, as
+    // a fresh start would. The hub is closed during matches, so a match that
+    // goes on over its link is left alone.
+    static uint64_t failedSince = 0;
+    if (rooms.state == RoomsView::State::Failed) {
+        const uint64_t now = GetTickCount64();
+        if (!failedSince) failedSince = now;
+        else if (now - failedSince >= 10000) {
+            failedSince = 0;
+            Log("hub: the rooms server again (%s)", o.server.c_str());
+            RoomsOpen(o.server, LocalPlayerName(), o.server == kDefaultServer ? kDefaultServerAlsoPort : o.serverAlsoPort, o.keeperKey);
+        }
+    }
+    else failedSince = 0;
     HubLive live;
     live.player = LocalPlayerName();
     live.server = o.server == kDefaultServer ? "Public server" : o.server;

@@ -436,6 +436,9 @@ void RunNetCommand(const std::string& line)
         ss >> what;
         if (what == "open") {
             RoomsOpen(o.server, TestName(), o.server == kDefaultServer ? kDefaultServerAlsoPort : o.serverAlsoPort, o.keeperKey);
+            // As from the rooms screen: in the keeper's desk, so requests
+            // (create, peek) go through (the hub alone stays in no room).
+            OpenRoomsScreen();
         }
         else if (what == "close") {
             RoomsClose();
@@ -450,6 +453,9 @@ void RunNetCommand(const std::string& line)
                 Log("rooms: no such title '%s' (5, or 3,RYU,KEN)", title.c_str());
                 return;
             }
+            // As the rooms screen's Create: from the desk (joined first if
+            // this game was on the hub or in a room just now).
+            OpenRoomsScreen();
             if (!RoomsCreate(s)) Log("rooms: not open");
         }
         else if (what == "join") {
@@ -998,6 +1004,12 @@ void RunNetCommand(const std::string& line)
         ss >> what;
         if (what == "on" || what == "off") SetVsync(what == "on");
         Log("overlay: %s", VsyncInfo().c_str());
+    }
+    else if (cmd == "countryflag") {
+        // countryflag on|off: the Country flag setting for this run (testing; not saved).
+        std::string what;
+        ss >> what;
+        WeyveService::SetHideCountry(what == "off");
     }
     else if (cmd == "wordfilter") {
         // wordfilter on|off: the Word filter setting for this run (testing; not saved).
@@ -1626,7 +1638,7 @@ bool Parse(const std::string& line, Step& step)
         return !ss.fail();
     }
     if (cmd == "host" || cmd == "join" || cmd == "matchchat" || cmd == "shot" || cmd == "warmupsleep" || cmd == "warmupextra" || cmd == "watchcamera" || cmd == "emptystage" || cmd == "spectate" || cmd == "ticket" || cmd == "presence" || cmd == "rooms" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "crash" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
-        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "wordfilter" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "startprobe" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
+        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "wordfilter" || cmd == "countryflag" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "startprobe" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
         step.kind = Step::Net;
         step.line = line;
         return true;

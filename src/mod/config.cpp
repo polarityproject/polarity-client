@@ -143,7 +143,11 @@ void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPr
     // The Debug tab's server switch, and the servers used before.
     if (onlyPresent && has(L"server")) {
         const std::string server = Ascii(ReadString(path, L"netplay", L"server", L""));
-        if (!server.empty()) n.server = n.savedServer = server;
+        // The public server before 0.3.0 (159.69.32.141, kept up for 0.2.x
+        // only): a choice of it saved then means the public one, which is
+        // the rooms VPS now (kDefaultServer).
+        const bool oldPublic = server == "159.69.32.141:5555" || server == "159.69.32.141";
+        if (!server.empty() && !oldPublic) n.server = n.savedServer = server;
     }
     if (onlyPresent && has(L"recent_servers")) {
         n.recentServers.clear();
@@ -151,7 +155,8 @@ void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPr
         for (size_t at = 0; at < list.size();) {
             size_t end = list.find(';', at);
             if (end == std::string::npos) end = list.size();
-            if (end > at) n.recentServers.push_back(list.substr(at, end - at));
+            const std::string one = list.substr(at, end - at);
+            if (end > at && one.rfind("159.69.32.141", 0) != 0) n.recentServers.push_back(one); // the old public server: gone
             at = end + 1;
         }
     }

@@ -75,6 +75,7 @@ struct Client {
     std::mutex mutex; // guards view and the asks below
     RoomsView view;
     std::optional<keeper::RoomSettings> createAsk;
+    int64_t createAskAt = 0;
     std::optional<std::string> joinAsk;
     bool leaveAsk = false;
     std::vector<std::string> chatOut;
@@ -881,13 +882,17 @@ struct Client {
     void Asks(const WeyveRoomView& v)
     {
         (void)v;
-        // Asked while the desk is still being joined: waits for it.
-        if (createAsk && view.state == State::Browsing && wantDesk && NowMs() - deskJoinAt < kDeskJoinMs) return;
+        // Asked while the desk is still being joined (or before this loop
+        // saw the rooms screen open, which joins it), or joined but its
+        // keeper not seen yet: waits for it.
+        const bool deskNotReady = view.state == State::Browsing || (view.state == State::Lobby && !view.keeper);
+        if (createAsk && deskNotReady && NowMs() - std::max(createAskAt, deskJoinAt) < kDeskJoinMs) return;
         if (createAsk) {
             const keeper::RoomSettings s = *createAsk;
             createAsk.reset();
             if (view.state != State::Lobby || !view.keeper) {
                 view.notice = "Custom rooms are not available right now";
+                Log("rooms: create: not available (%s%s)", RoomsStateName(view.state), view.keeper ? "" : ", no keeper");
             }
             else {
                 const keeper::Request r = keeper::RoomRequest(++seq, s);
@@ -1096,6 +1101,7 @@ bool RoomsCreate(const keeper::RoomSettings& settings)
 {
     return WithClient([&](Client& c) {
         c.createAsk = settings;
+        c.createAskAt = NowMs();
         return true;
     });
 }
