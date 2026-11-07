@@ -592,7 +592,9 @@ bool SetUp(IDXGISwapChain* swapChain)
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr; // nothing written next to the game
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
+    // NoMouseCursorChange: the backend would set the system cursor from the
+    // render thread, which does not own the game's window.
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NoMouseCursorChange;
     ImGui_ImplWin32_Init(g_window);
     io.BackendFlags |= ImGuiBackendFlags_HasGamepad; // fed by FeedPads
     ImGui_ImplDX11_Init(g_device, g_context);
@@ -3168,7 +3170,22 @@ void Draw(IDXGISwapChain* swapChain)
     if (g_visible && !leaveUp) SetOverlayVisible(false);
     const bool visible = g_visible;
     const bool session = phase != NetView::Phase::Idle;
-    io.MouseDrawCursor = visible || g_voting || g_selectLive || SelectPreviewOpen() || HubOpen(); // the game hides the system cursor
+    // Our own cursor where the game hides the system's, and only there: not
+    // when Windows shows its own (a second arrow trailing it), nor with the
+    // real cursor off the game's window (it stayed where it left). The
+    // messages know no leave (OverlayWndProc), so the real cursor decides.
+    {
+        POINT pt{};
+        RECT client{};
+        CURSORINFO cursor{sizeof(cursor)};
+        const bool known = GetCursorPos(&pt) && GetClientRect(g_window, &client);
+        POINT local = pt;
+        const bool inside = known && WindowFromPoint(pt) == g_window && ScreenToClient(g_window, &local) && PtInRect(&client, local);
+        const bool systemShown = GetCursorInfo(&cursor) && (cursor.flags & CURSOR_SHOWING);
+        const bool wanted = visible || g_voting || g_selectLive || SelectPreviewOpen() || HubOpen();
+        io.MouseDrawCursor = wanted && inside && !systemShown;
+        if (!inside) io.AddMousePosEvent(-FLT_MAX, -FLT_MAX); // nothing hovered while it is away
+    }
     // Fonts for the game's resolution (1.0 at 720 lines): again when it
     // changed (last frame's size; the backend makes the new atlas). Glyphs a
     // name needs are made as it is drawn (ImGui 1.92).

@@ -1892,7 +1892,18 @@ LRESULT CALLBACK ActiveWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     HookGuard guard;
     // The overlay first; what it takes, the game does not see (raw input
     // still needs DefWindowProc to be released).
-    if (OverlayWndProc(w, msg, wp, lp)) return msg == WM_INPUT ? DefWindowProcW(w, msg, wp, lp) : 0;
+    if (OverlayWndProc(w, msg, wp, lp)) {
+        // The game takes the mouse (SetCapture) at start and lets it go when
+        // it sees the mouse move; with the overlay up it sees none, so it
+        // kept it: a click on the title bar (the close button) came as a
+        // click in the window. The overlay's mouse lets it go.
+        if (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST && GetCapture() == w) {
+            ReleaseCapture();
+            static bool told = false;
+            if (!std::exchange(told, true)) Log("overlay: released the game's mouse capture (the title bar works again)");
+        }
+        return msg == WM_INPUT ? DefWindowProcW(w, msg, wp, lp) : 0;
+    }
     const bool active = g_alwaysActive;
     switch (msg) {
     case WM_ACTIVATEAPP:
