@@ -41,6 +41,8 @@ enum class State { Queued, Loading, Upload, Ready, Failed };
 struct Entry {
     std::string path;
     uint32_t maxSide = 0;
+    TexLook look;
+    bool noise = false; // made, not read: NoiseTexture
     State state = State::Queued;
     TextureView view;
     TexImage image; // read, waiting for the render thread (single-threaded device)
@@ -67,7 +69,16 @@ int g_batchFrames = 0, g_batchLongFrames = 0;
 double g_batchWorstFrameMs = 0;
 Clock::time_point g_lastPresent;
 
-std::string Key(const std::string& path, uint32_t maxSide) { return path + "@" + std::to_string(maxSide); }
+std::string Key(const std::string& path, uint32_t maxSide, const TexLook& look = {})
+{
+    std::string key = path + "@" + std::to_string(maxSide);
+    if (look.Any()) {
+        char extra[80];
+        std::snprintf(extra, sizeof(extra), "#b%.2fs%.2f%s+%u", look.blur, look.saturate, look.shadow ? "k" : "", look.pad);
+        key += extra;
+    }
+    return key;
+}
 
 // The pak platform file, checked; null when this build's differs.
 void* PakFile()
@@ -218,6 +229,8 @@ void Work()
         e.state = State::Loading;
         const std::string path = e.path;
         const uint32_t maxSide = e.maxSide;
+        const TexLook look = e.look;
+        const bool noise = e.noise;
         ID3D11Device* device = g_device;
         if (device) device->AddRef();
         const bool freeThreaded = g_freeThreaded;
@@ -230,15 +243,24 @@ void Work()
         TexImage image;
         TextureView view;
         void* file = nullptr;
-        {
-            std::lock_guard look(g_mutex);
-            file = PakFile();
+        bool ok = true;
+        if (noise) {
+            image.format = TexFormat::Bgra8;
+            image.width = image.height = maxSide;
+            image.bytes = NoiseBgra(maxSide, 0x5F3759DFu);
         }
-        bool ok = file && ReadPackage(file, path, &bytes, &error);
-        if (!file) error = "no pak file";
-        if (ok) ok = ParseTexturePackage(bytes.data(), bytes.size(), &package, &error);
-        const TexMip* mip = ok ? PickMip(package, maxSide) : nullptr;
-        if (ok) ok = mip && MipImage(bytes.data(), bytes.size(), package, *mip, maxSide, &image, &error);
+        else {
+            {
+                std::lock_guard held(g_mutex);
+                file = PakFile();
+            }
+            ok = file && ReadPackage(file, path, &bytes, &error);
+            if (!file) error = "no pak file";
+            if (ok) ok = ParseTexturePackage(bytes.data(), bytes.size(), &package, &error);
+            // A look is worked out from the largest mip (BC ones are not shrunk otherwise).
+            const TexMip* mip = ok ? PickMip(package, look.Any() ? 0 : maxSide) : nullptr;
+            if (ok) ok = mip && MipImage(bytes.data(), bytes.size(), package, *mip, maxSide, &image, &error, look);
+        }
         const bool now = ok && device && freeThreaded;
         if (now) ok = Upload(device, image, &view, &error);
         if (device) device->Release();
@@ -293,14 +315,11 @@ void SetPakTextureDevice(void* device)
     }
 }
 
-const TextureView* PakTexture(const std::string& path, uint32_t maxSide, bool urgent, bool* failed)
+namespace {
+
+const TextureView* Ask(const std::string& key, const std::string& path, uint32_t maxSide, bool urgent, bool* failed, const TexLook& look,
+                       bool noise)
 {
-    *failed = false;
-    if (!g_enabled) {
-        *failed = true;
-        return nullptr;
-    }
-    const std::string key = Key(path, maxSide);
     std::lock_guard lock(g_mutex);
     if (!g_device) return nullptr;
     auto it = g_entries.find(key);
@@ -308,6 +327,8 @@ const TextureView* PakTexture(const std::string& path, uint32_t maxSide, bool ur
         Entry& e = g_entries[key];
         e.path = path;
         e.maxSide = maxSide;
+        e.look = look;
+        e.noise = noise;
         if (g_queue.empty()) g_batchStart = Clock::now();
         if (urgent) g_queue.push_front(key);
         else g_queue.push_back(key);
@@ -329,6 +350,24 @@ const TextureView* PakTexture(const std::string& path, uint32_t maxSide, bool ur
         }
     }
     return nullptr;
+}
+
+} // namespace
+
+const TextureView* PakTexture(const std::string& path, uint32_t maxSide, bool urgent, bool* failed, const TexLook& look)
+{
+    *failed = false;
+    if (!g_enabled) {
+        *failed = true;
+        return nullptr;
+    }
+    return Ask(Key(path, maxSide, look), path, maxSide, urgent, failed, look, false);
+}
+
+const TextureView* NoiseTexture(uint32_t side)
+{
+    bool failed = false;
+    return Ask("(noise)@" + std::to_string(side), "(noise)", side, true, &failed, {}, true);
 }
 
 void WarmPakTextures(const std::vector<std::pair<std::string, uint32_t>>& textures)

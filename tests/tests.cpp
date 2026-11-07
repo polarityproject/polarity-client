@@ -1921,6 +1921,43 @@ void TestTexturePackage()
     CHECK(ParseTexturePackage(pkg.data(), pkg.size(), &p, &error) && p.format == TexFormat::Bc3 && p.mips.size() == 3);
     CHECK(MipImage(pkg.data(), pkg.size(), p, *PickMip(p, 0), 4, &image, &error) && image.format == TexFormat::Bc3 &&
           image.width == 8 && image.bytes.size() == 64 && image.bytes[0] == 8);
+    // BC1: one block, white and black ends; indices 0,1,2,3 across the first row.
+    const uint8_t bc1[8] = {0xFF, 0xFF, 0x00, 0x00, 0xE4, 0, 0, 0};
+    std::vector<uint8_t> px;
+    CHECK(DecodeBc(TexFormat::Bc1, bc1, 8, 4, 4, &px) && px.size() == 64);
+    CHECK(px.size() == 64 && px[0] == 255 && px[3] == 255 && px[4] == 0 && px[8] == 170 && px[12] == 85 && px[16] == 255);
+    // c0 <= c1: three colours and a clear one (index 3).
+    const uint8_t bc1clear[8] = {0x00, 0x00, 0xFF, 0xFF, 0xC0, 0, 0, 0};
+    CHECK(DecodeBc(TexFormat::Bc1, bc1clear, 8, 4, 4, &px) && px[12 + 3] == 0 && px[3] == 255);
+    // BC3: alpha ends 255 and 0, the first pixel index 1 (0), the rest 0 (255).
+    uint8_t bc3[16] = {255, 0, 1, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0};
+    CHECK(DecodeBc(TexFormat::Bc3, bc3, 16, 4, 4, &px) && px[3] == 0 && px[7] == 255 && px[0] == 255);
+    CHECK(!DecodeBc(TexFormat::Bc5, bc3, 16, 4, 4, &px) && !DecodeBc(TexFormat::Bc1, bc1, 7, 4, 4, &px));
+    // A look decodes BC: the 8x8 BC3 above, blurred, comes back BGRA8.
+    TexLook look;
+    look.blur = 1;
+    CHECK(MipImage(pkg.data(), pkg.size(), p, *PickMip(p, 0), 0, &image, &error, look) && image.format == TexFormat::Bgra8 &&
+          image.width == 8 && image.bytes.size() == 256);
+    // Blur: a lone opaque pixel spreads, keeps its colour (premultiplied), and its total alpha.
+    std::vector<uint8_t> dot(9 * 9 * 4, 0);
+    dot[(4 * 9 + 4) * 4 + 2] = 200;
+    dot[(4 * 9 + 4) * 4 + 3] = 255;
+    BlurBgra(dot, 9, 9, 1);
+    int total = 0;
+    for (size_t i = 3; i < dot.size(); i += 4) total += dot[i];
+    CHECK(dot[(4 * 9 + 4) * 4 + 3] < 255 && dot[(4 * 9 + 5) * 4 + 3] > 0 && dot[(4 * 9 + 5) * 4 + 2] == 200);
+    CHECK(total > 240 && total < 270);
+    // Saturate 0: grey; pad: clear round it; shadow: black, alpha kept.
+    std::vector<uint8_t> red = {0, 0, 255, 255};
+    SaturateBgra(red, 0);
+    CHECK(red[0] == red[1] && red[1] == red[2] && red[2] == 54);
+    const std::vector<uint8_t> padded = PadBgra({1, 2, 3, 4}, 1, 1, 1);
+    CHECK(padded.size() == 36 && padded[3] == 0 && padded[16] == 1 && padded[19] == 4);
+    // Noise: the same for a seed, white or black, about as much of each.
+    const std::vector<uint8_t> n1 = NoiseBgra(64, 7), n2 = NoiseBgra(64, 7);
+    int white = 0, black = 0;
+    for (size_t i = 0; i < n1.size(); i += 4) (n1[i] ? white : black)++;
+    CHECK(n1 == n2 && n1.size() == 64 * 64 * 4 && white > 1700 && black > 1700);
 }
 
 void TestUpdateSignature()

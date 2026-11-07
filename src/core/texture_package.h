@@ -56,11 +56,34 @@ struct TexImage {
     std::vector<uint8_t> bytes;
 };
 
+// What is done to an image after it is read (the UI's glass and shadows):
+// it is then always BGRA8, BC mips decoded first.
+struct TexLook {
+    float blur = 0;      // a gaussian's sigma, in the result's pixels (after the shrink)
+    float saturate = 1;  // CSS saturate(): 1 as it is
+    bool shadow = false; // black, keeping only the alpha: a shadow with the image's own outline
+    uint32_t pad = 0;    // clear pixels added on every side (room for a shadow's blur)
+    bool Any() const { return blur > 0 || saturate != 1 || shadow || pad > 0; }
+};
+
 // The mip as an uploadable image, `maxSide` at most for the uncompressed
 // formats (BGRA8; RGB10A2 becomes BGRA8): scaled down by averaging, with the
-// colours weighted by alpha so cut-out edges stay clean. BC mips as they are.
+// colours weighted by alpha so cut-out edges stay clean. BC mips as they are,
+// unless `look` asks for something (then decoded, shrunk and done).
 bool MipImage(const uint8_t* data, size_t size, const TexPackage& package, const TexMip& mip, uint32_t maxSide,
-              TexImage* out, std::string* error);
+              TexImage* out, std::string* error, const TexLook& look = {});
+
+// BC1 or BC3 blocks to BGRA8 rows (width x height; blocks cover whole 4x4s).
+// False for another format or too few bytes.
+bool DecodeBc(TexFormat format, const uint8_t* blocks, size_t size, uint32_t width, uint32_t height, std::vector<uint8_t>* bgra);
+// BGRA8 in place: a gaussian blur (premultiplied, edges clamped); CSS saturate().
+void BlurBgra(std::vector<uint8_t>& bgra, uint32_t width, uint32_t height, float sigma);
+void SaturateBgra(std::vector<uint8_t>& bgra, float amount);
+// BGRA8 with `pad` clear pixels added on every side.
+std::vector<uint8_t> PadBgra(const std::vector<uint8_t>& bgra, uint32_t width, uint32_t height, uint32_t pad);
+// Monochrome noise, side x side BGRA8: each pixel white or black, its alpha
+// how far from the middle; a tile of film grain (the same for a seed).
+std::vector<uint8_t> NoiseBgra(uint32_t side, uint32_t seed);
 
 // BGRA8 scaled down to fit maxSide (alpha-weighted box filter). Exposed for tests.
 std::vector<uint8_t> ShrinkBgra(const uint8_t* bgra, uint32_t width, uint32_t height, uint32_t outWidth, uint32_t outHeight);

@@ -11,6 +11,7 @@
 // The game-thread path (textures.h, FindOrLoadTexture) stays as the
 // fallback: a texture this cannot read says so once (*failed).
 
+#include "core/texture_package.h"
 #include "mod/textures.h"
 
 #include <cstdint>
@@ -28,8 +29,12 @@ void SetPakTextureDevice(void* device);
 // to `maxSide` pixels on its longer side (0: as stored). Null while it
 // loads; `urgent` (it is being drawn) moves it to the queue's front. Null
 // for good, with *failed set, when the paks cannot give it: the caller
-// uses the game's loader. Any thread.
-const TextureView* PakTexture(const std::string& path, uint32_t maxSide, bool urgent, bool* failed);
+// uses the game's loader. Any thread. `look`: blurred, a shadow, ... (made
+// on the workers, once; BC textures decoded for it).
+const TextureView* PakTexture(const std::string& path, uint32_t maxSide, bool urgent, bool* failed, const TexLook& look = {});
+
+// A tile of grey noise, side x side (made on a worker, once); null until then.
+const TextureView* NoiseTexture(uint32_t side);
 
 // Asks for these ahead of time, behind everything asked for by drawing
 // (the warm up at the title, M1).

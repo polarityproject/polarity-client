@@ -27,7 +27,6 @@ const ImU32 kSoft = IM_COL32(217, 212, 198, 255);
 const ImU32 kMuted = IM_COL32(168, 162, 147, 255);
 const ImU32 kGreen = IM_COL32(127, 216, 139, 255);
 const ImU32 kRed = IM_COL32(255, 107, 94, 255);
-const ImU32 kLine = IM_COL32(201, 168, 92, 190);
 
 constexpr const char kCodeChars[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // a room code's alphabet
 constexpr int kKeyCols = 9;
@@ -135,29 +134,6 @@ void StepRow(FormRow row, int dir)
     else g.settings.tables = std::clamp(g.settings.tables + dir, 1, keeper::kMaxTables);
     SyncTitle();
     g.formRow = std::min(g.formRow, static_cast<int>(FormRows().size()) - 1);
-}
-
-void Bar(ImDrawList* d, const HubFonts& f, const std::string& lead, ImU32 leadCol, const std::string& text,
-         const std::vector<std::pair<const char*, std::string>>& prompts, int* clicked)
-{
-    d->AddRectFilled(g_v.P(0, 844), g_v.P(1600, 900), Rgba(8, 9, 11, 245));
-    d->AddLine(g_v.P(0, 844), g_v.P(1600, 844), kLine, g_v.L(1));
-    float x = 48;
-    if (!lead.empty()) {
-        Text(d, f.strong, g_v.L(15), g_v.P(x, 863), leadCol, lead);
-        x += TextW(f.strong, 15, lead) + 14;
-    }
-    Text(d, f.body, g_v.L(16), g_v.P(x, 862), kSoft, text);
-    float right = 1564;
-    *clicked = -1;
-    for (int i = static_cast<int>(prompts.size()) - 1; i >= 0; i--) {
-        const float w = 32 + 8 + TextW(f.body, 17, prompts[i].second);
-        const float px = right - w;
-        if (const TextureView* icon = Texture(PadTex(prompts[i].first))) Image(d, icon, g_v.P(px, 856), g_v.P(px + 32, 888));
-        Text(d, f.body, g_v.L(17), g_v.P(px + 40, 861), kCream, prompts[i].second);
-        if (Clicked() && MouseIn(g_v.P(px, 850), g_v.P(right, 894))) *clicked = i;
-        right = px - 26;
-    }
 }
 
 // An action row (Create a room, Join with a code): its glyph and its name,
@@ -593,10 +569,10 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     const std::string summary = v.keeper ? Plural(v.summary.publicRooms, "public room", "public rooms") + " \xC2\xB7 " +
                                                Plural(v.summary.players, "player", "players")
                                          : v.state == S::Failed ? "Cannot reach the rooms server" : "Custom rooms are offline right now";
-    StageText(d, f.body, 16, 48 + TextW(f.display, 40, "CUSTOM ROOMS") + 28, 42, kSoft, summary);
+    StageText(d, f.body, 20, 48 + TextW(f.display, 40, "CUSTOM ROOMS") + 28, 39, kCream, summary);
     ActionRow(d, f, 80, "+", "CREATE A ROOM", "Public or private, 1 to 8 tables", g.focus == kCreate);
     ActionRow(d, f, 160, "#", "JOIN WITH A CODE", "For a private room, or any room a friend sent you", g.focus == kCode);
-    StageText(d, f.bold ? f.bold : f.strong, 14, 48, 248, kGold, "PUBLIC ROOMS \xC2\xB7 " + std::to_string(count));
+    StageText(d, f.bold ? f.bold : f.strong, 16, 48, 246, kGold, "PUBLIC ROOMS \xC2\xB7 " + std::to_string(count));
     d->PushClipRect(g_v.P(30, kListTop - 2), g_v.P(886, 840), true);
     if (!count) {
         Pane(d, 48, kListTop, 868, kListTop + 160);

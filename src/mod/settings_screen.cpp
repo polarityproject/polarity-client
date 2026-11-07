@@ -37,8 +37,8 @@ struct State {
 
 void Wrapped(ImDrawList* d, ImFont* f, float size, float x, float y, float width, ImU32 col, const std::string& t, float* bottom)
 {
-    d->AddText(f, g_v.L(size), g_v.P(x, y), col, t.c_str(), nullptr, g_v.L(width));
-    *bottom = y + f->CalcTextSizeA(g_v.L(size), FLT_MAX, g_v.L(width), t.c_str()).y / g_v.s;
+    d->AddText(f, TextPx(size), g_v.P(x, y), col, t.c_str(), nullptr, g_v.L(width));
+    *bottom = y + f->CalcTextSizeA(TextPx(size), FLT_MAX, g_v.L(width), t.c_str()).y / g_v.s;
 }
 
 } // namespace
@@ -137,7 +137,7 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
 
     // ---- the list ----
     StageText(d, f.display, 40, 48, 22, Rgba(255, 255, 255), "SFVR SETTINGS");
-    StageText(d, f.body, 16, 48 + TextW(f.display, 40, "SFVR SETTINGS") + 28, 42, kSoft, "Version " + version);
+    StageText(d, f.body, 20, 48 + TextW(f.display, 40, "SFVR SETTINGS") + 28, 39, kCream, "Version " + version);
     // Layout: where each row and header sits (design y, before scrolling).
     std::vector<float> ys(count);
     float y = 0;
@@ -217,7 +217,7 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
         // Measured first, so the frame fits what it holds.
         float bottom = py + 30 + 46;
         for (size_t k = 0; k < r.lines.size(); k++) {
-            bottom += f.body->CalcTextSizeA(g_v.L(16), FLT_MAX, g_v.L(width), r.lines[k].c_str()).y / g_v.s + 12;
+            bottom += f.body->CalcTextSizeA(TextPx(17), FLT_MAX, g_v.L(width), r.lines[k].c_str()).y / g_v.s + 12;
         }
         Pane(d, 1000, 96, 1552, bottom + 12);
         Strip(d, 1002, 98, 1550, 140, false);
@@ -229,7 +229,7 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
         py += 66;
         for (size_t k = 0; k < r.lines.size(); k++) {
             float end = py;
-            Wrapped(d, f.body, 16, x, py, width, k == 0 ? (r.goldFirst ? kGold : kSoft) : kMuted, r.lines[k], &end);
+            Wrapped(d, f.body, 17, x, py, width, k == 0 ? (r.goldFirst ? kGold : kCream) : kSoft, r.lines[k], &end);
             py = end + 12;
         }
     }

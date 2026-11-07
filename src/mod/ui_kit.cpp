@@ -149,6 +149,32 @@ std::string StageTex(const std::string& code, const char* name) { return "/Game/
 std::string MenuTex(const char* name) { return std::string("/Game/MenuAsset/CharaSelectGFx/") + name; }
 std::string PadTex(const char* name) { return std::string("/Game/CommonAsset/PlatformAsset/Windows/padkey/") + name; }
 
+void Glyph(ImDrawList* d, const char* name, ImVec2 a, ImVec2 b, ImU32 tint, bool shadow)
+{
+    const std::string path = PadTex(name);
+    const TextureView* t = Texture(path);
+    if (!t) return;
+    if (shadow) {
+        // shadow-text's 0 2px 4px at .8, for a 32 px glyph: a 64 px copy,
+        // blurred 4 px (2 design), with 12 px of room round it.
+        constexpr uint32_t kSide = 64, kPad = 12;
+        TexLook look;
+        look.shadow = true;
+        look.blur = 4;
+        look.pad = kPad;
+        bool failed = false;
+        if (const TextureView* s = PakTexture(path, kSide, g_drawing, &failed, look)) {
+            const float inner = static_cast<float>(std::max(s->width, s->height) - 2 * kPad);
+            const float px = (b.x - a.x) * kPad / inner, py = (b.y - a.y) * kPad / inner;
+            const float drop = (b.y - a.y) / 16;
+            const uint32_t alpha = (tint >> IM_COL32_A_SHIFT & 0xFF) * 204 / 255;
+            d->AddImage(Id(s), ImVec2(a.x - px, a.y - py + drop), ImVec2(b.x + px, b.y + py + drop), ImVec2(0, 0), ImVec2(1, 1),
+                        FadeIn(s, IM_COL32(255, 255, 255, alpha)));
+        }
+    }
+    Image(d, t, a, b, ImVec2(0, 0), ImVec2(1, 1), tint);
+}
+
 View g_v;
 
 void BeginScreen()
@@ -236,10 +262,11 @@ std::string Upper(std::string v)
     return v;
 }
 
-float TextW(ImFont* f, float size, const std::string& t) { return f->CalcTextSizeA(g_v.L(size), FLT_MAX, 0, t.c_str()).x / g_v.s; }
+float TextW(ImFont* f, float size, const std::string& t) { return f->CalcTextSizeA(TextPx(size), FLT_MAX, 0, t.c_str()).x / g_v.s; }
 
 void Text(ImDrawList* d, ImFont* f, float size, ImVec2 at, ImU32 c, const std::string& t, float align, bool shadow)
 {
+    size = std::max(size, kMinTextPx);
     const ImVec2 w = f->CalcTextSizeA(size, FLT_MAX, 0, t.c_str());
     const ImVec2 p(at.x - w.x * align, at.y);
     if (shadow) d->AddText(f, size, ImVec2(p.x, p.y + size * 0.05f), Rgba(0, 0, 0, 220), t.c_str());
@@ -405,11 +432,11 @@ void DrawPrompts(ImDrawList* d, ImFont* text, const std::vector<Prompt>& prompts
 {
     for (int i = static_cast<int>(prompts.size()) - 1; i >= 0; i--) {
         const Prompt& p = prompts[i];
-        const float w = TextW(text, 17, p.label) + 50;
+        const float w = TextW(text, 19, p.label) + 52;
         const ImVec2 a = g_v.P(right - w, top), b = g_v.P(right, top + 42);
         d->AddRectFilled(a, b, Rgba(0, 0, 0, 150), g_v.L(21));
-        if (const TextureView* icon = Texture(PadTex(p.icon))) Image(d, icon, g_v.P(right - w + 5, top + 5), g_v.P(right - w + 37, top + 37));
-        Text(d, text, g_v.L(17), g_v.P(right - w + 42, top + 10), Rgba(244, 241, 232), p.label);
+        Glyph(d, p.icon, g_v.P(right - w + 5, top + 5), g_v.P(right - w + 37, top + 37), IM_COL32_WHITE, false);
+        Text(d, text, g_v.L(19), g_v.P(right - w + 42, top + 9), Rgba(244, 241, 232), p.label);
         if (Clicked() && MouseIn(a, b)) {
             if (p.action == 0) g_clickConfirm = true;
             else if (p.action == 1) g_clickBack = true;
@@ -440,6 +467,7 @@ constexpr ImU32 kStrip = IM_COL32(0, 0, 0, 82);
 // then the flat scrim (6,8,11 at 15%).
 constexpr ImU32 kStageTint = IM_COL32(224, 224, 224, 255);
 constexpr ImU32 kScrim = IM_COL32(6, 8, 11, 38);
+constexpr ImU32 kGrain = IM_COL32(255, 255, 255, 22); // the noise over the backdrop
 
 ImU32 WithAlpha(ImU32 c, float k)
 {
@@ -466,10 +494,18 @@ void Quad(ImDrawList* d, ImVec2 p0, ImVec2 p1, ImVec2 p2, ImVec2 p3, ImU32 c01, 
 }
 
 // The stage's picture between design x0..x1, y0..y1 at its own place: the
-// backdrop, or a pane's blurred copy (`pixels`: the copy's width).
-void StageAt(ImDrawList* d, float x0, float y0, float x1, float y1, float pixels, ImU32 tint)
+// backdrop (blur-stage 4 px, saturate 1.1) or a pane's copy (blur-glass
+// 18 px, saturate 1.25). `pixels`: the copy's width; the blur is in design
+// units, so the same whatever the window's size. Until the blurred one is
+// made: nothing (the ground), or the plain one if it cannot be.
+void StageAt(ImDrawList* d, float x0, float y0, float x1, float y1, uint32_t pixels, float blur, float saturate, ImU32 tint)
 {
-    const TextureView* t = TextureSized(kStage, pixels);
+    TexLook look;
+    look.blur = blur * pixels / kStageW;
+    look.saturate = saturate;
+    bool failed = false;
+    const TextureView* t = PakTexture(kStage, pixels, g_drawing, &failed, look);
+    if (failed) t = TextureSized(kStage, static_cast<float>(pixels));
     if (!t) return;
     const ImVec2 uv0((x0 - kStageX0) / kStageW, y0 / 900), uv1((x1 - kStageX0) / kStageW, y1 / 900);
     d->AddImage(Id(t), g_v.P(x0, y0), g_v.P(x1, y1), uv0, uv1, FadeIn(t, tint));
@@ -485,9 +521,33 @@ void Backdrop(ImDrawList* d, float alpha)
     d->AddRectFilled(ImVec2(0, 0), screen, WithAlpha(kGround, alpha));
     // Softened a little: a copy about a quarter of the drawn width, stretched.
     const float left = std::max(kStageX0, -g_v.ox / g_v.s), right = std::min(kStageX0 + kStageW, (screen.x - g_v.ox) / g_v.s);
-    StageAt(d, left, 0, right, 900, std::max(256.0f, g_v.L(kStageW) / 4), WithAlpha(kStageTint, alpha));
+    StageAt(d, left, 0, right, 900, 1024, 4, 1.1f, WithAlpha(kStageTint, alpha));
     d->AddRectFilled(ImVec2(0, 0), screen, WithAlpha(kScrim, alpha));
+    Grain(d, alpha);
     g_backdropEnd = d->VtxBuffer.Size;
+}
+
+void Grain(ImDrawList* d, float alpha)
+{
+    // A 256 px tile of noise at about a screen pixel each (two on a big
+    // screen), laid over lightly.
+    const TextureView* n = NoiseTexture(256);
+    if (!n) return;
+    const ImVec2 screen = ImGui::GetIO().DisplaySize;
+    const float tile = 256 * std::max(1.0f, std::round(g_v.s));
+    const ImU32 tint = FadeIn(n, WithAlpha(kGrain, alpha));
+    for (float y = 0; y < screen.y; y += tile) {
+        for (float x = 0; x < screen.x; x += tile) d->AddImage(Id(n), ImVec2(x, y), ImVec2(x + tile, y + tile), ImVec2(0, 0), ImVec2(1, 1), tint);
+    }
+}
+
+const TextureView* BlurredStage(const std::string& path, float blur, float saturate, bool* failed)
+{
+    // 1024 px across the stage's 3600 design units (it is 4:1 at 900 high).
+    TexLook look;
+    look.blur = blur * 1024 / kStageW;
+    look.saturate = saturate;
+    return PakTexture(path, 1024, g_drawing, failed, look);
 }
 
 void DropShadow(ImDrawList* d, float x0, float y0, float x1, float y1, float offset, float blur, float alpha, bool core)
@@ -540,7 +600,7 @@ void Pane(ImDrawList* d, float x0, float y0, float x1, float y1, Glass kind, ImU
         // The glass: the stage behind it, blurred (a 256 px copy stretched),
         // under the tint. Until the copy is there: the ground.
         d->AddRectFilled(a, b, kGround);
-        StageAt(d, x0, y0, x1, y1, 256, kStageTint);
+        StageAt(d, x0, y0, x1, y1, 512, 18, 1.25f, kStageTint);
         d->AddRectFilled(a, b, kScrim);
     }
     d->AddRectFilled(a, b, kind == Glass::Modal ? kGlassModal : kind == Glass::Fight ? kGlassFight : kGlassPanel);
@@ -576,7 +636,7 @@ void StageText(ImDrawList* d, ImFont* f, float size, float x, float y, ImU32 c, 
 {
     // shadow-text: 0 2px 4px rgba(0,0,0,.8), 0 0 12px rgba(0,0,0,.5): a
     // copy 2 px down, and a soft halo of four copies round it.
-    const float px = g_v.L(size);
+    const float px = TextPx(size);
     const ImVec2 w = f->CalcTextSizeA(px, FLT_MAX, 0, t.c_str());
     const ImVec2 p(g_v.P(x, y).x - w.x * align, g_v.P(x, y).y);
     const float k = static_cast<float>((c >> IM_COL32_A_SHIFT) & 0xFF) / 255.0f;
@@ -607,33 +667,71 @@ void ScrollBar(ImDrawList* d, float x, float y0, float y1, float first, float in
     d->AddRectFilled(g_v.P(x, std::min(top, y1 - len)), g_v.P(x + 5, std::min(top + len, y1)), IM_COL32(236, 228, 206, 153));
 }
 
-void PromptRow(ImDrawList* d, ImFont* f, float size, const PromptList& prompts, float right, float y, float glyph, bool stage, int* clicked)
+float PromptRow(ImDrawList* d, ImFont* f, float size, const PromptList& prompts, float right, float y, float glyph, bool stage, int* clicked)
 {
     const float gap = glyph > 28 ? 26.0f : 22.0f;
     for (int i = static_cast<int>(prompts.size()) - 1; i >= 0; i--) {
         const float w = glyph + 8 + TextW(f, size, prompts[i].second);
         const float px = right - w;
-        if (stage) DropShadow(d, px + 3, y + 3, px + glyph - 3, y + glyph - 3, 1, 5, 0.35f, false);
-        if (const TextureView* icon = Texture(PadTex(prompts[i].first))) Image(d, icon, g_v.P(px, y), g_v.P(px + glyph, y + glyph));
+        Glyph(d, prompts[i].first, g_v.P(px, y), g_v.P(px + glyph, y + glyph), IM_COL32_WHITE, stage);
         const float ty = y + (glyph - size * 1.25f) / 2;
         if (stage) StageText(d, f, size, px + glyph + 8, ty, kCream, prompts[i].second);
         else Text(d, f, g_v.L(size), g_v.P(px + glyph + 8, ty), kCream, prompts[i].second);
         if (clicked && Clicked() && MouseIn(g_v.P(px, y - 6), g_v.P(right, y + glyph + 6))) *clicked = i;
         right = px - gap;
     }
+    return right + gap;
+}
+
+int StageTextFit(ImDrawList* d, ImFont* f, float size, float smallest, float x, float y, float room, ImU32 c, const std::string& t, int lines)
+{
+    if (t.empty() || room <= 0) return 0;
+    float s = size;
+    while (s > smallest && TextW(f, s, t) > room) s -= 1;
+    if (TextW(f, s, t) <= room) {
+        StageText(d, f, s, x, y, c, t);
+        return 1;
+    }
+    // Two lines (by words) a little above and below, the second cut to fit.
+    std::string first, rest = t;
+    if (lines > 1) {
+        size_t cut = std::string::npos;
+        for (size_t at = t.find(' '); at != std::string::npos; at = t.find(' ', at + 1)) {
+            if (TextW(f, s, t.substr(0, at)) > room) break;
+            cut = at;
+        }
+        if (cut != std::string::npos) {
+            first = t.substr(0, cut);
+            rest = t.substr(cut + 1);
+        }
+    }
+    auto cutToFit = [&](std::string v) {
+        if (TextW(f, s, v) <= room) return v;
+        while (v.size() > 1 && TextW(f, s, v + "...") > room) v.pop_back();
+        return v + "...";
+    };
+    if (first.empty()) {
+        StageText(d, f, s, x, y, c, cutToFit(rest));
+        return 1;
+    }
+    const float step = s * 1.2f;
+    StageText(d, f, s, x, y - step / 2, c, first);
+    StageText(d, f, s, x, y + step / 2, c, cutToFit(rest));
+    return 2;
 }
 
 void PromptLine(ImDrawList* d, ImFont* body, ImFont* bold, const std::string& lead, ImU32 leadCol, const std::string& text,
                 const PromptList& prompts, int* clicked)
 {
+    // The prompts first (right to left), then the hint in the room left.
+    *clicked = -1;
+    const float left = PromptRow(d, bold, 20, prompts, 1564, 849, 36, true, clicked);
     float x = 48;
     if (!lead.empty()) {
-        StageText(d, bold, 15, x, 863, leadCol, lead);
-        x += TextW(bold, 15, lead) + 14;
+        StageText(d, bold, 20, x, 855, leadCol, lead);
+        x += TextW(bold, 20, lead) + 14;
     }
-    StageText(d, body, 16, x, 862, kSoft, text);
-    *clicked = -1;
-    PromptRow(d, body, 17, prompts, 1564, 856, 32, true, clicked);
+    StageTextFit(d, body, 20, 17, x, 855, left - 36 - x, kCream, text);
 }
 
 float Modal(ImDrawList* d, ImFont* bold, ImFont* body, const ModalSpec& m, int* clicked)
@@ -643,13 +741,20 @@ float Modal(ImDrawList* d, ImFont* bold, ImFont* body, const ModalSpec& m, int* 
     const float x1 = m.x0 + m.w, y1 = m.y0 + m.h;
     Pane(d, m.x0, m.y0, x1, y1, m.glass, m.danger ? kDanger : 0);
     Strip(d, m.x0 + 2, m.y0 + 2, x1 - 2, m.y0 + 44, false);
-    Text(d, bold, g_v.L(14), g_v.P(m.x0 + 28, m.y0 + 14), m.danger ? kDanger : kGold, m.kicker);
-    if (!m.aside.empty()) Text(d, body, g_v.L(15), g_v.P(x1 - 28, m.y0 + 13), m.asideCol, m.aside, 1);
+    Text(d, bold, g_v.L(16), g_v.P(m.x0 + 28, m.y0 + 12), m.danger ? kDanger : kGold, m.kicker);
+    if (!m.aside.empty()) Text(d, body, g_v.L(17), g_v.P(x1 - 28, m.y0 + 11), m.asideCol, m.aside, 1);
     // The footer: the hint, then this modal's own prompts.
     Strip(d, m.x0 + 2, y1 - 48, x1 - 2, y1 - 2, false);
-    if (!m.hint.empty()) Text(d, body, g_v.L(15), g_v.P(m.x0 + 28, y1 - 35), m.hintCol, m.hint);
     if (clicked) *clicked = -1;
-    PromptRow(d, body, 16, m.prompts, x1 - 22, y1 - 38, 26, false, clicked);
+    const float left = PromptRow(d, bold, 17, m.prompts, x1 - 22, y1 - 39, 28, false, clicked);
+    if (!m.hint.empty()) {
+        // Cut to the room the prompts leave.
+        std::string hint = m.hint;
+        const float room = left - 24 - (m.x0 + 28);
+        while (hint.size() > 1 && TextW(body, 17, hint) > room) hint.pop_back();
+        if (hint.size() < m.hint.size()) hint += "...";
+        Text(d, body, g_v.L(17), g_v.P(m.x0 + 28, y1 - 36), m.hintCol, hint);
+    }
     return m.y0 + 44;
 }
 

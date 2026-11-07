@@ -349,16 +349,16 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
             while (TextW(f.body, size, pad) < nameW) pad += ' ';
             all = pad + text;
         }
-        const float h = f.body->CalcTextSizeA(g_v.L(size), FLT_MAX, g_v.L(wrap), all.c_str()).y / g_v.s;
+        const float h = f.body->CalcTextSizeA(TextPx(size), FLT_MAX, g_v.L(wrap), all.c_str()).y / g_v.s;
         const float y = bottom - h;
         height += h + 4;
         if (y < viewBottom && y + h > top) {
             if (line.from) {
-                d->AddText(f.body, g_v.L(size), g_v.P(910, y), kSoft, all.c_str(), nullptr, g_v.L(wrap));
-                d->AddText(f.strong, g_v.L(size), g_v.P(910, y), kCream, Upper(name).c_str());
+                d->AddText(f.body, TextPx(size), g_v.P(910, y), kSoft, all.c_str(), nullptr, g_v.L(wrap));
+                d->AddText(f.strong, TextPx(size), g_v.P(910, y), kCream, Upper(name).c_str());
             }
             else {
-                d->AddText(f.body, g_v.L(size), g_v.P(910, y), kGold, all.c_str(), nullptr, g_v.L(wrap));
+                d->AddText(f.body, TextPx(size), g_v.P(910, y), kGold, all.c_str(), nullptr, g_v.L(wrap));
             }
         }
         bottom = y - 4;
@@ -407,7 +407,7 @@ void Dialog(ImDrawList* d, const HubFonts& f, const std::string& kicker, const s
 {
     ImFont* bold = f.bold ? f.bold : f.strong;
     const float wrap = 544;
-    const float textH = f.body->CalcTextSizeA(g_v.L(17), FLT_MAX, g_v.L(wrap), text.c_str()).y / g_v.s;
+    const float textH = f.body->CalcTextSizeA(TextPx(19), FLT_MAX, g_v.L(wrap), text.c_str()).y / g_v.s;
     ModalSpec m;
     m.w = 600;
     m.h = 44 + 22 + 34 + 12 + textH + 24 + 48 + 26 + 48;
@@ -419,7 +419,7 @@ void Dialog(ImDrawList* d, const HubFonts& f, const std::string& kicker, const s
     float y = ui::Modal(d, bold, f.body, m, clicked) + 22;
     Text(d, f.display, g_v.L(28), g_v.P(528, y), kCream, title);
     y += 46;
-    d->AddText(f.body, g_v.L(17), g_v.P(528, y), kSoft, text.c_str(), nullptr, g_v.L(wrap));
+    d->AddText(f.body, TextPx(19), g_v.P(528, y), kCream, text.c_str(), nullptr, g_v.L(wrap));
     y += textH + 24;
     if (Button(d, bold, 528, y, 806, y + 48, yes, g.choice == 0, danger)) *pressed = 0;
     if (Button(d, bold, 822, y, 1072, y + 48, no, g.choice == 1)) *pressed = 1;
@@ -632,7 +632,7 @@ void RulesModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, const Prom
     m.x0 = x0, m.y0 = y0, m.w = w, m.h = h;
     m.kicker = "OWNER";
     m.hint = changed ? "Changed: applies from this table's next set." : "Everyone sees these on the table.";
-    m.hintCol = changed ? kGold : kMuted;
+    m.hintCol = changed ? kGold : kSoft;
     m.prompts = prompts;
     ui::Modal(d, bold, f.body, m, clicked);
     Text(d, f.display, g_v.L(28), g_v.P(x0 + 28, y0 + 64), kCream, "Table rules");
@@ -641,7 +641,7 @@ void RulesModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, const Prom
     float tw = 0;
     for (int t = 0; t < tables; t++) tw += TextW(bold, 15, "Table " + std::to_string(t + 1)) + 28 + 8;
     float tx = x1 - 28 - 30 - 8 - tw - 30;
-    if (const TextureView* icon = Texture(PadTex("button_lb"))) Image(d, icon, g_v.P(tx, y0 + 66), g_v.P(tx + 30, y0 + 96));
+    Glyph(d, "button_lb", g_v.P(tx, y0 + 66), g_v.P(tx + 30, y0 + 96), IM_COL32_WHITE, false);
     tx += 38;
     for (int t = 0; t < tables; t++) {
         const std::string label = "Table " + std::to_string(t + 1);
@@ -651,7 +651,7 @@ void RulesModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, const Prom
         Text(d, bold, g_v.L(15), g_v.P(tx + 14, y0 + 71), on ? look::kInk : kCream, label);
         tx += lw + 8;
     }
-    if (const TextureView* icon = Texture(PadTex("button_rb"))) Image(d, icon, g_v.P(tx, y0 + 66), g_v.P(tx + 30, y0 + 96));
+    Glyph(d, "button_rb", g_v.P(tx, y0 + 66), g_v.P(tx + 30, y0 + 96), IM_COL32_WHITE, false);
     for (int row = 0; row < 5; row++) {
         const float y = y0 + 120 + row * 58.0f;
         const bool on = row == g.rulesRow;
@@ -908,25 +908,25 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     const bool hideCode = StreamerMode();
     const std::string code = WeyveService::DisplayCode(v.room);
     const char* access = v.isPublic ? "Public" : "Private";
-    const float codeW = hideCode ? DrawHiddenCode(nullptr, 0, 0, 17, 0) : TextW(f.strong, 17, code);
-    const float lineW = (paused ? 0 : TextW(f.strong, 17, access) + 16) + TextW(f.body, 17, "Code") + 6 + codeW + 20 + 34 +
-                        TextW(f.body, 17, "Copy code");
+    const float codeW = hideCode ? DrawHiddenCode(nullptr, 0, 0, 20, 0) : TextW(f.strong, 20, code);
+    const float lineW = (paused ? 0 : TextW(f.strong, 20, access) + 16) + TextW(f.body, 20, "Code") + 6 + codeW + 20 + 38 +
+                        TextW(f.body, 20, "Copy code");
     const std::string title = RoomTitleText(v.title, NameOf(v, v.owner));
     float x = 48 + FitText(d, f.display, 40, 26, 1552 - 48 - 30 - lineW, g_v.P(48, 22), Rgba(255, 255, 255), title, 0, true) + 30;
     if (!paused) {
-        StageText(d, f.strong, 17, x, 41, v.isPublic ? kGreen : kMuted, access);
-        x += TextW(f.strong, 17, access) + 16;
+        StageText(d, f.strong, 20, x, 39, v.isPublic ? kGreen : kSoft, access);
+        x += TextW(f.strong, 20, access) + 16;
     }
-    StageText(d, f.body, 17, x, 41, kSoft, "Code");
-    x += TextW(f.body, 17, "Code") + 6;
-    if (hideCode) x += DrawHiddenCode(d, x, 41, 17, kGold) + 20;
+    StageText(d, f.body, 20, x, 39, kCream, "Code");
+    x += TextW(f.body, 20, "Code") + 6;
+    if (hideCode) x += DrawHiddenCode(d, x, 39, 20, kGold) + 20;
     else {
-        StageText(d, f.strong, 17, x, 41, kGold, code);
-        x += TextW(f.strong, 17, code) + 20;
+        StageText(d, f.strong, 20, x, 39, kGold, code);
+        x += TextW(f.strong, 20, code) + 20;
     }
-    if (const TextureView* icon = Texture(PadTex("button_back"))) Image(d, icon, g_v.P(x, 36), g_v.P(x + 28, 64));
-    StageText(d, f.body, 17, x + 34, 41, kCream, "Copy code");
-    if (g.modal == Modal::None && Clicked() && MouseIn(g_v.P(x, 32), g_v.P(x + 34 + TextW(f.body, 17, "Copy code"), 68))) {
+    Glyph(d, "button_back", g_v.P(x, 33), g_v.P(x + 32, 65));
+    StageText(d, f.body, 20, x + 38, 39, kCream, "Copy code");
+    if (g.modal == Modal::None && Clicked() && MouseIn(g_v.P(x, 32), g_v.P(x + 38 + TextW(f.body, 20, "Copy code"), 68))) {
         ImGui::SetClipboardText(v.room.c_str());
         in->copiedCode = true;
     }
@@ -1070,7 +1070,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     PromptLine(d, f.body, f.bold ? f.bold : f.strong, modal ? std::string() : lead, leadCol, modal ? std::string() : text, modal ? PromptList{} : prompts,
                &clicked);
     int pressed = -1;
-    if (g.cardTable >= 0) Card(d, f, v, g.cardTable, prompts, lead.empty() ? text : lead + "  " + text, lead.empty() ? kMuted : leadCol, &clicked);
+    if (g.cardTable >= 0) Card(d, f, v, g.cardTable, prompts, lead.empty() ? text : lead + "  " + text, lead.empty() ? kSoft : leadCol, &clicked);
     else if (handoffTable >= 0) HandoffModal(d, f, v, handoffTable, steps, stepSeconds, prompts, &clicked);
     else if (g.modal == Modal::Leaving) {
         Dialog(d, f, StreamerMode() ? std::string("ROOM") : "ROOM \xC2\xB7 " + WeyveService::DisplayCode(v.room), "Leave the room?", LeaveText(v), false, "Leave",

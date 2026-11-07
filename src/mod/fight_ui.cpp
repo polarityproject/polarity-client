@@ -27,12 +27,12 @@ void Diamond(ImDrawList* d, float x, float y, float size, ImU32 col)
 
 float WrappedH(ImFont* f, float size, float width, const std::string& t)
 {
-    return f->CalcTextSizeA(g_v.L(size), FLT_MAX, g_v.L(width), t.c_str()).y / g_v.s;
+    return f->CalcTextSizeA(TextPx(size), FLT_MAX, g_v.L(width), t.c_str()).y / g_v.s;
 }
 
 void Wrapped(ImDrawList* d, ImFont* f, float size, float x, float y, float width, ImU32 col, const std::string& t)
 {
-    d->AddText(f, g_v.L(size), g_v.P(x, y), col, t.c_str(), nullptr, g_v.L(width));
+    d->AddText(f, TextPx(size), g_v.P(x, y), col, t.c_str(), nullptr, g_v.L(width));
 }
 
 } // namespace
@@ -62,7 +62,7 @@ void DrawLeaveModal(const HubFonts& f, bool set, bool takeInput, bool* leave, bo
     float y = Modal(d, bold, f.body, m, &prompt) + 22;
     Text(d, f.display, g_v.L(28), g_v.P(528, y), look::kCream, set ? "Leave the set?" : "Leave the match?");
     y += 46;
-    Text(d, f.body, g_v.L(17), g_v.P(528, y), look::kSoft, set ? "The set ends here for both players." : "The session ends for both players.");
+    Text(d, f.body, g_v.L(19), g_v.P(528, y), look::kCream, set ? "The set ends here for both players." : "The session ends for both players.");
     y += 48;
     int pressed = -1;
     if (Button(d, bold, 528, y, 806, y + 48, "Leave", g_leaveChoice == 0, true)) pressed = 0;
@@ -269,15 +269,15 @@ void DrawMenuNote(const HubFonts& f)
     ImDrawList* d = ImGui::GetForegroundDrawList();
     ImFont* bold = f.bold ? f.bold : f.strong;
     const std::string text = "Back + Start or F1: the hub";
-    const float kickW = TextW(bold, 14, "SFVR") + 10;
-    const float w = 14 + 8 + 10 + kickW + TextW(f.body, 14, text) + 14, h = 30;
+    const float kickW = TextW(bold, 17, "SFVR") + 10;
+    const float w = 14 + 8 + 10 + kickW + TextW(f.body, 17, text) + 16, h = 36;
     const float x0 = 800 - w / 2, y0 = 12;
     DropShadow(d, x0, y0, x0 + w, y0 + h, 4, 12, 0.35f, true);
     d->AddRectFilled(g_v.P(x0, y0), g_v.P(x0 + w, y0 + h), Rgba(10, 12, 16, 184));
     d->AddRect(g_v.P(x0, y0), g_v.P(x0 + w, y0 + h), Rgba(236, 228, 206, 89), 0.0f, 0, std::max(1.0f, g_v.L(1)));
     Diamond(d, x0 + 14 + 4, y0 + h / 2, 8, look::kGold);
-    Text(d, bold, g_v.L(14), g_v.P(x0 + 32, y0 + 6), look::kGold, "SFVR");
-    Text(d, f.body, g_v.L(14), g_v.P(x0 + 32 + kickW, y0 + 6), look::kSoft, text);
+    Text(d, bold, g_v.L(17), g_v.P(x0 + 32, y0 + 7), look::kGold, "SFVR");
+    Text(d, f.body, g_v.L(17), g_v.P(x0 + 32 + kickW, y0 + 7), look::kCream, text);
 }
 
 } // namespace sfv::mod

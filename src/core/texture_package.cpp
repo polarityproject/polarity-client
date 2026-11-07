@@ -1,6 +1,7 @@
 #include "core/texture_package.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <utility>
 
@@ -257,8 +258,173 @@ std::vector<uint8_t> ShrinkBgra(const uint8_t* bgra, uint32_t width, uint32_t he
     return out;
 }
 
+namespace {
+
+// A 565 colour as B, G, R.
+void Color565(uint16_t c, int* bgr)
+{
+    const int r = c >> 11 & 31, g = c >> 5 & 63, b = c & 31;
+    bgr[0] = b << 3 | b >> 2;
+    bgr[1] = g << 2 | g >> 4;
+    bgr[2] = r << 3 | r >> 2;
+}
+
+// One BC1 colour block into a 4x4 of BGRA; `fourAlways`: BC3's colour
+// half (always four colours, no clear one).
+void ColorBlock(const uint8_t* b, bool fourAlways, uint8_t (*px)[4])
+{
+    uint16_t c0, c1;
+    std::memcpy(&c0, b, 2);
+    std::memcpy(&c1, b + 2, 2);
+    const bool four = c0 > c1 || fourAlways;
+    int p[4][4];
+    Color565(c0, p[0]);
+    Color565(c1, p[1]);
+    p[0][3] = p[1][3] = p[2][3] = p[3][3] = 255;
+    for (int k = 0; k < 3; k++) {
+        if (four) {
+            p[2][k] = (2 * p[0][k] + p[1][k] + 1) / 3;
+            p[3][k] = (p[0][k] + 2 * p[1][k] + 1) / 3;
+        }
+        else {
+            p[2][k] = (p[0][k] + p[1][k]) / 2;
+            p[3][k] = 0;
+        }
+    }
+    if (!four) p[3][3] = 0;
+    uint32_t bits;
+    std::memcpy(&bits, b + 4, 4);
+    for (int i = 0; i < 16; i++) {
+        const int* c = p[bits >> (2 * i) & 3];
+        for (int k = 0; k < 4; k++) px[i][k] = static_cast<uint8_t>(c[k]);
+    }
+}
+
+} // namespace
+
+bool DecodeBc(TexFormat format, const uint8_t* blocks, size_t size, uint32_t width, uint32_t height, std::vector<uint8_t>* bgra)
+{
+    if (format != TexFormat::Bc1 && format != TexFormat::Bc3) return false;
+    if (size < TexBytes(format, width, height)) return false;
+    const size_t step = format == TexFormat::Bc1 ? 8 : 16;
+    const uint32_t bw = (width + 3) / 4, bh = (height + 3) / 4;
+    bgra->assign(size_t(width) * height * 4, 0);
+    uint8_t px[16][4];
+    for (uint32_t by = 0; by < bh; by++) {
+        for (uint32_t bx = 0; bx < bw; bx++) {
+            const uint8_t* b = blocks + (size_t(by) * bw + bx) * step;
+            if (format == TexFormat::Bc1) {
+                ColorBlock(b, false, px);
+            }
+            else {
+                ColorBlock(b + 8, true, px);
+                // The alpha half: two ends, then 3-bit indices for the 16 pixels.
+                const int a0 = b[0], a1 = b[1];
+                int a[8] = {a0, a1};
+                if (a0 > a1) {
+                    for (int i = 1; i < 7; i++) a[i + 1] = ((7 - i) * a0 + i * a1 + 3) / 7;
+                }
+                else {
+                    for (int i = 1; i < 5; i++) a[i + 1] = ((5 - i) * a0 + i * a1 + 2) / 5;
+                    a[6] = 0;
+                    a[7] = 255;
+                }
+                uint64_t bits = 0;
+                for (int i = 0; i < 6; i++) bits |= uint64_t(b[2 + i]) << (8 * i);
+                for (int i = 0; i < 16; i++) px[i][3] = static_cast<uint8_t>(a[bits >> (3 * i) & 7]);
+            }
+            for (int i = 0; i < 16; i++) {
+                const uint32_t x = bx * 4 + i % 4, y = by * 4 + i / 4;
+                if (x < width && y < height) std::memcpy(bgra->data() + (size_t(y) * width + x) * 4, px[i], 4);
+            }
+        }
+    }
+    return true;
+}
+
+void BlurBgra(std::vector<uint8_t>& bgra, uint32_t width, uint32_t height, float sigma)
+{
+    if (sigma <= 0 || width == 0 || height == 0) return;
+    const int r = std::max(1, static_cast<int>(std::ceil(sigma * 3)));
+    std::vector<float> kernel(size_t(2 * r + 1));
+    float sum = 0;
+    for (int i = -r; i <= r; i++) sum += kernel[size_t(i + r)] = std::exp(-0.5f * i * i / (sigma * sigma));
+    for (float& k : kernel) k /= sum;
+    // Premultiplied, so clear pixels do not darken what they touch.
+    const size_t n = size_t(width) * height;
+    std::vector<float> a(n * 4), b(n * 4);
+    for (size_t i = 0; i < n; i++) {
+        const float alpha = bgra[i * 4 + 3] / 255.0f;
+        for (int k = 0; k < 3; k++) a[i * 4 + k] = bgra[i * 4 + k] * alpha;
+        a[i * 4 + 3] = bgra[i * 4 + 3];
+    }
+    const int w = static_cast<int>(width), h = static_cast<int>(height);
+    auto pass = [&](const std::vector<float>& from, std::vector<float>& to, bool across) {
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                float acc[4] = {0, 0, 0, 0};
+                for (int i = -r; i <= r; i++) {
+                    const int sx = across ? std::clamp(x + i, 0, w - 1) : x, sy = across ? y : std::clamp(y + i, 0, h - 1);
+                    const float* p = &from[(size_t(sy) * w + sx) * 4];
+                    const float k = kernel[size_t(i + r)];
+                    for (int c = 0; c < 4; c++) acc[c] += p[c] * k;
+                }
+                std::memcpy(&to[(size_t(y) * w + x) * 4], acc, sizeof(acc));
+            }
+        }
+    };
+    pass(a, b, true);
+    pass(b, a, false);
+    for (size_t i = 0; i < n; i++) {
+        const float alpha = a[i * 4 + 3];
+        for (int k = 0; k < 3; k++) {
+            const float v = alpha > 0.5f ? a[i * 4 + k] * 255.0f / alpha : 0;
+            bgra[i * 4 + k] = static_cast<uint8_t>(std::clamp(v + 0.5f, 0.0f, 255.0f));
+        }
+        bgra[i * 4 + 3] = static_cast<uint8_t>(std::clamp(alpha + 0.5f, 0.0f, 255.0f));
+    }
+}
+
+void SaturateBgra(std::vector<uint8_t>& bgra, float amount)
+{
+    if (amount == 1) return;
+    for (size_t i = 0; i + 4 <= bgra.size(); i += 4) {
+        const float v[3] = {float(bgra[i]), float(bgra[i + 1]), float(bgra[i + 2])}; // B, G, R
+        const float lum = 0.2126f * v[2] + 0.7152f * v[1] + 0.0722f * v[0];
+        for (int k = 0; k < 3; k++) bgra[i + k] = static_cast<uint8_t>(std::clamp(lum + (v[k] - lum) * amount + 0.5f, 0.0f, 255.0f));
+    }
+}
+
+std::vector<uint8_t> PadBgra(const std::vector<uint8_t>& bgra, uint32_t width, uint32_t height, uint32_t pad)
+{
+    const uint32_t w = width + 2 * pad, h = height + 2 * pad;
+    std::vector<uint8_t> out(size_t(w) * h * 4, 0);
+    for (uint32_t y = 0; y < height; y++) {
+        std::memcpy(out.data() + (size_t(y + pad) * w + pad) * 4, bgra.data() + size_t(y) * width * 4, size_t(width) * 4);
+    }
+    return out;
+}
+
+std::vector<uint8_t> NoiseBgra(uint32_t side, uint32_t seed)
+{
+    std::vector<uint8_t> out(size_t(side) * side * 4);
+    uint32_t s = seed ? seed : 0x9E3779B9u;
+    for (size_t i = 0; i < size_t(side) * side; i++) {
+        // xorshift32; two bytes averaged, so the grain is softer than flat.
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
+        // Lighter or darker than what is under it, never greyer: white or
+        // black, as clear as the draw is near the middle.
+        const int v = static_cast<int>(((s & 0xFF) + (s >> 8 & 0xFF) + 1) / 2) - 128;
+        out[i * 4 + 0] = out[i * 4 + 1] = out[i * 4 + 2] = v >= 0 ? 255 : 0;
+        out[i * 4 + 3] = static_cast<uint8_t>(std::min(255, std::abs(v) * 2));
+    }
+    return out;
+}
+
 bool MipImage(const uint8_t* data, size_t size, const TexPackage& package, const TexMip& mip, uint32_t maxSide,
-              TexImage* out, std::string* error)
+              TexImage* out, std::string* error, const TexLook& look)
 {
     if (mip.offset + mip.size > size) {
         if (error) *error = "the mip is not in the data";
@@ -268,14 +434,25 @@ bool MipImage(const uint8_t* data, size_t size, const TexPackage& package, const
     TexImage image;
     image.width = mip.width;
     image.height = mip.height;
-    if (package.format != TexFormat::Bgra8 && package.format != TexFormat::Rgb10A2) {
+    std::vector<uint8_t> bgra;
+    if (look.Any() && (package.format == TexFormat::Bc1 || package.format == TexFormat::Bc3)) {
+        if (!DecodeBc(package.format, bytes, mip.size, mip.width, mip.height, &bgra)) {
+            if (error) *error = "the blocks could not be decoded";
+            return false;
+        }
+        bytes = bgra.data();
+    }
+    else if (package.format != TexFormat::Bgra8 && package.format != TexFormat::Rgb10A2) {
+        if (look.Any()) {
+            if (error) *error = "this format cannot be blurred";
+            return false;
+        }
         image.format = package.format;
         image.bytes.assign(bytes, bytes + mip.size);
         *out = std::move(image);
         return true;
     }
     image.format = TexFormat::Bgra8;
-    std::vector<uint8_t> bgra;
     if (package.format == TexFormat::Rgb10A2) {
         bgra.resize(mip.size);
         for (size_t i = 0; i + 4 <= mip.size; i += 4) {
@@ -297,8 +474,18 @@ bool MipImage(const uint8_t* data, size_t size, const TexPackage& package, const
         image.height = h;
     }
     else {
-        image.bytes.assign(bytes, bytes + mip.size);
+        image.bytes.assign(bytes, bytes + size_t(mip.width) * mip.height * 4);
     }
+    if (look.shadow) {
+        for (size_t i = 0; i + 4 <= image.bytes.size(); i += 4) image.bytes[i] = image.bytes[i + 1] = image.bytes[i + 2] = 0;
+    }
+    if (look.pad) {
+        image.bytes = PadBgra(image.bytes, image.width, image.height, look.pad);
+        image.width += 2 * look.pad;
+        image.height += 2 * look.pad;
+    }
+    SaturateBgra(image.bytes, look.saturate);
+    BlurBgra(image.bytes, image.width, image.height, look.blur);
     *out = std::move(image);
     return true;
 }

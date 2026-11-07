@@ -175,17 +175,42 @@ const SelectStage* Shown(int stage, int setting)
 }
 
 // The stage's picture over the whole screen (cropped at the sides: it is 4:1),
-// darkened; the screen draws over it.
+// blurred and darkened, the grain over it; the screen draws over it. A
+// stage just moved to shows once its blurred copy is made (a frame or
+// two): the last one stays till then.
 void DrawBackdrop(ImDrawList* d, int stage, int setting, ImU32 tint)
 {
     if (const SelectStage* s = Shown(stage, setting)) g_ui.lastStage = s->code;
     if (g_ui.lastStage.empty() && !g_draw->stages.empty()) g_ui.lastStage = g_draw->stages[0].code;
     if (g_ui.lastStage.empty()) return;
-    const TextureView* bg = Texture(StageTex(g_ui.lastStage, "StageSelectBG"));
-    if (!bg) return;
-    const float aspect = bg->height ? static_cast<float>(bg->width) / bg->height : 4.0f;
-    const float visible = (1600.0f / 900.0f) / aspect; // the share of the width that fits
-    Image(d, bg, g_v.P(0, 0), g_v.P(1600, 900), ImVec2(0.5f - visible / 2, 0), ImVec2(0.5f + visible / 2, 1), tint);
+    // shown: the newest drawn; under: the one before (drawn under its fade-in).
+    static std::string shown, under;
+    auto get = [](const std::string& path) {
+        bool failed = false;
+        const TextureView* t = BlurredStage(path, 6, 1.1f, &failed);
+        return failed ? Texture(path) : t;
+    };
+    const std::string path = StageTex(g_ui.lastStage, "StageSelectBG");
+    if (path != shown && get(path)) {
+        under = shown;
+        shown = path;
+    }
+    auto draw = [&](const TextureView* bg) {
+        const float aspect = bg->height ? static_cast<float>(bg->width) / bg->height : 4.0f;
+        const float visible = (1600.0f / 900.0f) / aspect; // the share of the width that fits
+        Image(d, bg, g_v.P(0, 0), g_v.P(1600, 900), ImVec2(0.5f - visible / 2, 0), ImVec2(0.5f + visible / 2, 1), tint);
+    };
+    const TextureView* top = shown.empty() ? nullptr : get(shown);
+    if (!top) return;
+    if (FadeIn(top) != IM_COL32_WHITE && !under.empty()) {
+        if (const TextureView* below = get(under)) {
+            const float aspect = below->height ? static_cast<float>(below->width) / below->height : 4.0f;
+            const float visible = (1600.0f / 900.0f) / aspect;
+            d->AddImage(ui::Id(below), g_v.P(0, 0), g_v.P(1600, 900), ImVec2(0.5f - visible / 2, 0), ImVec2(0.5f + visible / 2, 1), tint);
+        }
+    }
+    draw(top);
+    Grain(d);
 }
 
 // `highlight`: the row lit up (this player's, or the row the other is on), -1 none.
@@ -461,7 +486,7 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
         }
         if (picking && Clicked() && MouseIn(g_v.P(x, sy), g_v.P(x + sw, sy + sh)) && !lockedAt(i, 0)) in->stage = i;
     }
-    Text(d, f.text, g_v.L(16), g_v.P(800, sy + sh + 18), Rgba(189, 184, 170),
+    Text(d, f.text, g_v.L(19), g_v.P(800, sy + sh + 16), Rgba(232, 228, 216),
          picking ? "You select the stage." : "Player 1 is selecting the stage...", 0.5f);
     if (picking && Confirm() && !lockedAt(stage, setting)) in->lockStage = true;
 }
@@ -497,9 +522,9 @@ constexpr const char* kLoadingText = "Both ready: loading the characters";
 // A line of status over the bottom strip.
 void StatusPill(ImDrawList* d, const SelectFonts& f, const char* text)
 {
-    const float w = TextW(f.text, 16, text) + 40;
-    Pill(d, g_v.P(800 - w / 2, 860), g_v.P(800 + w / 2, 890));
-    Text(d, f.text, g_v.L(16), g_v.P(800, 866), Rgba(233, 196, 106), text, 0.5f);
+    const float w = TextW(f.text, 19, text) + 44;
+    Pill(d, g_v.P(800 - w / 2, 856), g_v.P(800 + w / 2, 892));
+    Text(d, f.text, g_v.L(19), g_v.P(800, 862), Rgba(233, 196, 106), text, 0.5f);
 }
 
 
@@ -534,7 +559,7 @@ void DrawLeaveDialog(ImDrawList* d, const SelectFonts& f, const SelectLive& live
     float y = ui::Modal(d, bold, f.text, m, &prompt) + 22;
     Text(d, f.name, g_v.L(28), g_v.P(528, y), Rgba(244, 241, 232), title);
     y += 46;
-    Text(d, f.text, g_v.L(17), g_v.P(528, y), look::kSoft, detail);
+    Text(d, f.text, g_v.L(19), g_v.P(528, y), look::kCream, detail);
     y += 24 + 24;
     int pressed = -1; // 1 Leave, 0 Stay
     if (ui::Button(d, bold, 528, y, 806, y + 48, watching ? "Stop watching" : "Leave", g_ui.leaveChosen, !watching)) pressed = 1;
@@ -712,7 +737,7 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         if (live.myCharacter) {
             DrawCard(d, f, live.card);
             const std::string& note = loadout ? me->rows[g_ui.row].hint : live.note;
-            Text(d, f.text, g_v.L(15), g_v.P(48, 864), Rgba(217, 212, 198), note);
+            Text(d, f.text, g_v.L(19), g_v.P(48, 860), Rgba(236, 232, 220), note);
         }
         else Infinity(d, g_v.P(800, 578), g_v.L(56), Rgba(242, 201, 76));
         // The grid: each side's tag on what it shows; on the random tile while
@@ -816,15 +841,15 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         char detail[64];
         if (live.pingMs) std::snprintf(detail, sizeof(detail), "%u ms to the host  \xC2\xB7  %d watching", live.pingMs, std::max(1, live.spectators));
         else std::snprintf(detail, sizeof(detail), "%d watching", std::max(1, live.spectators));
-        const float tw = TextW(f.text, 16, text), dw = TextW(f.text, 15, detail);
+        const float tw = TextW(f.text, 19, text), dw = TextW(f.text, 18, detail);
         const float w = 24 + tw + 18 + 30 + dw + 24;
         const float bx = 800 - w / 2;
-        Pill(d, g_v.P(bx, 18), g_v.P(bx + w, 50));
-        Text(d, f.text, g_v.L(16), g_v.P(bx + 24, 25), Rgba(242, 201, 76), text);
+        Pill(d, g_v.P(bx, 16), g_v.P(bx + w, 52));
+        Text(d, f.text, g_v.L(19), g_v.P(bx + 24, 22), Rgba(242, 201, 76), text);
         const float ix = bx + 24 + tw + 18;
         if (live.relayed) IconCloud(d, g_v.P(ix + 10, 34), g_v.s, Rgba(233, 196, 106));
         else IconLink(d, g_v.P(ix + 10, 34), g_v.s, Rgba(217, 212, 198));
-        Text(d, f.text, g_v.L(15), g_v.P(ix + 28, 26), Rgba(217, 212, 198), detail);
+        Text(d, f.text, g_v.L(18), g_v.P(ix + 28, 23), Rgba(236, 232, 220), detail);
     }
     if (watching && live.loading) StatusPill(d, f, kLoadingText);
     g_inputOn = inputOn;

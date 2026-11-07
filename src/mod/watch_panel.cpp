@@ -87,9 +87,7 @@ void DrawWatchPanel(const HubFonts& f, const WatchPanelLive& live, float alpha, 
         const ImU32 col = on ? look::kInk : can[i] ? look::kCream : Rgba(244, 241, 232, 80);
         const float lw = TextW(bold, 18, kLabels[i]);
         const float gw = 30, gx = bx + (bw - gw - 10 - lw) / 2;
-        if (const TextureView* t = Texture(PadTex(kGlyphs[i]))) {
-            Image(d, t, g_v.P(gx, y + 11), g_v.P(gx + gw, y + 41), ImVec2(0, 0), ImVec2(1, 1), Rgba(255, 255, 255, can[i] ? 255 : 80));
-        }
+        Glyph(d, kGlyphs[i], g_v.P(gx, y + 11), g_v.P(gx + gw, y + 41), Rgba(255, 255, 255, can[i] ? 255 : 80), false);
         Text(d, bold, g_v.L(18), g_v.P(gx + gw + 10, y + 14), col, kLabels[i]);
         if (takeInput && can[i] && Clicked() && MouseIn(g_v.P(bx, y), g_v.P(bx + bw, y + 52))) pressed = i;
     }

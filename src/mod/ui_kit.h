@@ -31,6 +31,10 @@ std::string CharaTex(const std::string& code, const char* name); // "/Game/Chara
 std::string StageTex(const std::string& code, const char* name); // "/Game/Stage/<code>/UI/<name>"
 std::string MenuTex(const char* name);                            // the character select's own pictures
 std::string PadTex(const char* name);                             // "button_a" ... the pad glyphs
+// A pad glyph between a and b (screen), its soft shadow under it first: the
+// glyph's own outline, blurred (made once on the texture threads), so a
+// round glyph casts a round shadow. `tint` for both (its alpha dims them).
+void Glyph(ImDrawList* d, const char* name, ImVec2 a, ImVec2 b, ImU32 tint = IM_COL32_WHITE, bool shadow = true);
 
 // ----- the design space ---------------------------------------------------------
 // Design coordinates: 1600x900, fitted to the screen.
@@ -41,6 +45,12 @@ struct View {
 };
 extern View g_v;
 void BeginScreen(); // fits g_v to this frame's display
+// The smallest text drawn, in pixels: at 1280 x 720 or a Steam Deck's
+// 1280 x 800 the design's 14 would be 11 px. Text, StageText and TextW
+// draw and measure smaller sizes at this; TextPx is a design size's pixels
+// with it (for ImGui's own calls: wrapped text).
+constexpr float kMinTextPx = 13.5f;
+inline float TextPx(float size) { return g_v.L(size) > kMinTextPx ? g_v.L(size) : kMinTextPx; }
 // Every vertex drawn since `from` at `alpha` (a screen's fade).
 void FadeFrom(ImDrawList* d, int from, float alpha);
 
@@ -123,9 +133,16 @@ constexpr ImU32 kHairline = IM_COL32(236, 228, 206, 36);
 constexpr ImU32 kSelfRow = IM_COL32(233, 196, 106, 41);
 } // namespace look
 
-// The stage behind every full screen (the Capcom Pro Tour arena), softened a
-// little and dimmed flat. Over the whole display; `alpha` fades it.
+// The stage behind every full screen (the Capcom Pro Tour arena), blurred
+// (made once on the texture threads), dimmed flat, a fine grey grain over
+// it. Over the whole display; `alpha` fades it.
 void Backdrop(ImDrawList* d, float alpha = 1);
+// The fine grey grain the backdrop has, over the whole display (a screen
+// with a backdrop of its own: the select screen's stage).
+void Grain(ImDrawList* d, float alpha = 1);
+// A stage's picture blurred `blur` design units (at 900 high), made once on
+// the texture threads; null until then, or *failed when it cannot be.
+const TextureView* BlurredStage(const std::string& path, float blur, float saturate, bool* failed);
 // The vertex index right after this frame's backdrop (-1: none drawn yet):
 // a screen change fades what is drawn over it in (the stage stays).
 extern int g_backdropEnd;
@@ -155,10 +172,15 @@ void StageText(ImDrawList* d, ImFont* f, float size, float x, float y, ImU32 c, 
 void ScrollBar(ImDrawList* d, float x, float y0, float y1, float first, float inView, float total, bool stage);
 // Pad prompts in a row ending at `right` (design units), glyph `glyph` high,
 // labels at `size`; `stage`: with the text shadow. A click acts as the
-// prompt: its index in *clicked (else unchanged).
+// prompt: its index in *clicked (else unchanged). Returns the row's left edge.
 using PromptList = std::vector<std::pair<const char*, std::string>>;
-void PromptRow(ImDrawList* d, ImFont* f, float size, const PromptList& prompts, float right, float y, float glyph, bool stage, int* clicked);
-// The screen's hint and prompts at the bottom, on the stage (no bar).
+float PromptRow(ImDrawList* d, ImFont* f, float size, const PromptList& prompts, float right, float y, float glyph, bool stage, int* clicked);
+// Text on the stage in the room it has (design units): at `size`, smaller
+// down to `smallest`, then on two lines (`lines` 2), then cut. Returns the
+// lines drawn.
+int StageTextFit(ImDrawList* d, ImFont* f, float size, float smallest, float x, float y, float room, ImU32 c, const std::string& t, int lines = 2);
+// The screen's hint and prompts at the bottom, on the stage (no bar): big
+// enough to read on a Deck (16 px there), in cream.
 void PromptLine(ImDrawList* d, ImFont* body, ImFont* bold, const std::string& lead, ImU32 leadCol, const std::string& text,
                 const PromptList& prompts, int* clicked);
 // A modal: the screen dimmed, a glass pane with a header strip (a kicker in
@@ -172,7 +194,7 @@ struct ModalSpec {
     bool danger = false;
     Glass glass = Glass::Modal; // Fight over a fight (no stage behind to blur)
     std::string hint;
-    ImU32 hintCol = look::kMuted;
+    ImU32 hintCol = look::kSoft;
     PromptList prompts;
 };
 float Modal(ImDrawList* d, ImFont* bold, ImFont* body, const ModalSpec& m, int* clicked);
