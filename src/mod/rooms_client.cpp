@@ -151,6 +151,7 @@ struct Client {
     std::map<uint32_t, std::deque<int>> pings;
     std::set<uint32_t> pingLogged;
     int64_t lastPingMs = 0;
+    int64_t deskDialAt = 0, deskDialFrom = 0; // DeskLink: the last dial, the first of this wait (0: linked)
     std::string net = "u"; // this PC's connection, for member data `net`
     std::string skills;    // member data `vs`: V-Skill and V-Trigger, "r" random
     std::map<uint32_t, int> mask; // the room's masked names (keeper_protocol.h kMask)
@@ -761,6 +762,33 @@ struct Client {
         svc->SetMemberData(keeper::kRequest, keeper::FormatRequest(keeper::PeekRequest(peekSeq, peekCode)));
     }
 
+    // In the desk: a link of ours to the keeper. Its answers come over one;
+    // ours goes when this game leaves the desk (into a room), but the
+    // keeper's side stays up as far as it knows (the departed-links patch
+    // keeps a member's link when it leaves), so back in the desk its answers
+    // went into a dead link until that timed out: 13 s and more, and a room
+    // made just after leaving one never heard back (2026-11-07). Dialing it
+    // (a ping without a clock) makes the keeper take the new link at once
+    // (the library's "peer redialing with a fresh agent").
+    void DeskLink(uint32_t keeperId)
+    {
+        if (view.state != State::Lobby || !keeperId) {
+            deskDialFrom = 0;
+            return;
+        }
+        if (svc->PeerPath(keeperId) != WeyveService::LinkPath::None) {
+            if (deskDialFrom) Log("rooms: link to the desk's keeper up after %lld ms", static_cast<long long>(NowMs() - deskDialFrom));
+            deskDialFrom = 0;
+            return;
+        }
+        if (NowMs() - deskDialAt < 1000) return;
+        if (!deskDialFrom) deskDialFrom = NowMs();
+        deskDialAt = NowMs();
+        uint8_t dial[keeper::kPingSize];
+        keeper::FormatPing(false, 0, dial);
+        svc->Send(keeperId, dial, sizeof(dial));
+    }
+
     void Pings(const WeyveRoomView& v, uint32_t keeperId)
     {
         if (view.state != State::Room || NowMs() - lastPingMs < kPingEveryMs) return;
@@ -1032,6 +1060,7 @@ struct Client {
                         const WeyveRoomView now = svc->View();
                         Mirror(now);
                         Pings(now, KeeperOf(now));
+                        DeskLink(KeeperOf(now));
                     }
                     Peeks();
                     TableAsks();
