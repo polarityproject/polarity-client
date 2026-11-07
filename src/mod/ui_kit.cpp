@@ -419,4 +419,242 @@ void DrawPrompts(ImDrawList* d, ImFont* text, const std::vector<Prompt>& prompts
     }
 }
 
+// ----- the 1d look ------------------------------------------------------------
+
+using namespace look;
+
+namespace {
+
+const char* const kStage = "/Game/Stage/S21/UI/StageSelectBG"; // the Capcom Pro Tour arena, 2048 x 512
+// The stage covers the design space's full height, 4:1: x -1000 to 2600.
+constexpr float kStageX0 = -1000, kStageW = 3600;
+constexpr ImU32 kGlassPanel = IM_COL32(10, 12, 16, 140);
+constexpr ImU32 kGlassModal = IM_COL32(10, 12, 16, 214);
+constexpr ImU32 kGlassFight = IM_COL32(10, 12, 16, 184);
+constexpr ImU32 kEdge = IM_COL32(236, 228, 206, 102);
+constexpr ImU32 kEdgeModal = IM_COL32(236, 228, 206, 115);
+constexpr ImU32 kHighlight = IM_COL32(255, 255, 255, 77);
+constexpr ImU32 kOutline = IM_COL32(0, 0, 0, 140);
+constexpr ImU32 kStrip = IM_COL32(0, 0, 0, 82);
+// The stage art drawn behind a whole screen, as the CSS: brightness 0.88,
+// then the flat scrim (6,8,11 at 15%).
+constexpr ImU32 kStageTint = IM_COL32(224, 224, 224, 255);
+constexpr ImU32 kScrim = IM_COL32(6, 8, 11, 38);
+
+ImU32 WithAlpha(ImU32 c, float k)
+{
+    const ImU32 a = static_cast<ImU32>(((c >> IM_COL32_A_SHIFT) & 0xFF) * std::clamp(k, 0.0f, 1.0f));
+    return (c & ~IM_COL32_A_MASK) | (a << IM_COL32_A_SHIFT);
+}
+
+// A quad with one color at its first two corners and another at the last two.
+void Quad(ImDrawList* d, ImVec2 p0, ImVec2 p1, ImVec2 p2, ImVec2 p3, ImU32 c01, ImU32 c23)
+{
+    const ImVec2 uv = d->_Data->TexUvWhitePixel;
+    d->PrimReserve(6, 4);
+    const ImDrawIdx i = static_cast<ImDrawIdx>(d->_VtxCurrentIdx);
+    d->PrimWriteIdx(i);
+    d->PrimWriteIdx(static_cast<ImDrawIdx>(i + 1));
+    d->PrimWriteIdx(static_cast<ImDrawIdx>(i + 2));
+    d->PrimWriteIdx(i);
+    d->PrimWriteIdx(static_cast<ImDrawIdx>(i + 2));
+    d->PrimWriteIdx(static_cast<ImDrawIdx>(i + 3));
+    d->PrimWriteVtx(p0, uv, c01);
+    d->PrimWriteVtx(p1, uv, c01);
+    d->PrimWriteVtx(p2, uv, c23);
+    d->PrimWriteVtx(p3, uv, c23);
+}
+
+// The stage's picture between design x0..x1, y0..y1 at its own place: the
+// backdrop, or a pane's blurred copy (`pixels`: the copy's width).
+void StageAt(ImDrawList* d, float x0, float y0, float x1, float y1, float pixels, ImU32 tint)
+{
+    const TextureView* t = TextureSized(kStage, pixels);
+    if (!t) return;
+    const ImVec2 uv0((x0 - kStageX0) / kStageW, y0 / 900), uv1((x1 - kStageX0) / kStageW, y1 / 900);
+    d->AddImage(Id(t), g_v.P(x0, y0), g_v.P(x1, y1), uv0, uv1, FadeIn(t, tint));
+}
+
+} // namespace
+
+void Backdrop(ImDrawList* d, float alpha)
+{
+    const ImVec2 screen = ImGui::GetIO().DisplaySize;
+    d->AddRectFilled(ImVec2(0, 0), screen, WithAlpha(kGround, alpha));
+    // Softened a little: a copy about a quarter of the drawn width, stretched.
+    const float left = std::max(kStageX0, -g_v.ox / g_v.s), right = std::min(kStageX0 + kStageW, (screen.x - g_v.ox) / g_v.s);
+    StageAt(d, left, 0, right, 900, std::max(256.0f, g_v.L(kStageW) / 4), WithAlpha(kStageTint, alpha));
+    d->AddRectFilled(ImVec2(0, 0), screen, WithAlpha(kScrim, alpha));
+}
+
+void DropShadow(ImDrawList* d, float x0, float y0, float x1, float y1, float offset, float blur, float alpha, bool core)
+{
+    // A solid core under the box (hidden by an opaque pane), and a feather
+    // from its edge out to `blur`, falling to nothing.
+    const ImU32 in = IM_COL32(0, 0, 0, static_cast<int>(255 * alpha)), out = IM_COL32(0, 0, 0, 0);
+    const ImVec2 a = g_v.P(x0, y0 + offset), b = g_v.P(x1, y1 + offset);
+    const float r = g_v.L(blur);
+    if (core) d->AddRectFilled(a, b, in);
+    const ImVec2 A(a.x - r, a.y - r), B(b.x + r, b.y + r);
+    Quad(d, ImVec2(a.x, a.y), ImVec2(b.x, a.y), ImVec2(b.x, A.y), ImVec2(a.x, A.y), in, out); // top
+    Quad(d, ImVec2(b.x, b.y), ImVec2(a.x, b.y), ImVec2(a.x, B.y), ImVec2(b.x, B.y), in, out); // bottom
+    Quad(d, ImVec2(a.x, b.y), ImVec2(a.x, a.y), ImVec2(A.x, a.y), ImVec2(A.x, b.y), in, out); // left
+    Quad(d, ImVec2(b.x, a.y), ImVec2(b.x, b.y), ImVec2(B.x, b.y), ImVec2(B.x, a.y), in, out); // right
+    // The corners: a fan from the box's corner to the feather's.
+    const ImVec2 corners[4][3] = {{a, ImVec2(a.x, A.y), ImVec2(A.x, a.y)},
+                                  {ImVec2(b.x, a.y), ImVec2(B.x, a.y), ImVec2(b.x, A.y)},
+                                  {b, ImVec2(b.x, B.y), ImVec2(B.x, b.y)},
+                                  {ImVec2(a.x, b.y), ImVec2(A.x, b.y), ImVec2(a.x, B.y)}};
+    const ImVec2 uv = d->_Data->TexUvWhitePixel;
+    for (const auto& c : corners) {
+        constexpr int kSteps = 6;
+        d->PrimReserve(kSteps * 3, kSteps + 2);
+        const ImDrawIdx base = static_cast<ImDrawIdx>(d->_VtxCurrentIdx);
+        d->PrimWriteVtx(c[0], uv, in);
+        const float a0 = std::atan2(c[1].y - c[0].y, c[1].x - c[0].x);
+        float a1 = std::atan2(c[2].y - c[0].y, c[2].x - c[0].x);
+        if (a1 - a0 > IM_PI) a1 -= 2 * IM_PI;
+        if (a0 - a1 > IM_PI) a1 += 2 * IM_PI;
+        for (int i = 0; i <= kSteps; i++) {
+            const float t = a0 + (a1 - a0) * i / kSteps;
+            d->PrimWriteVtx(ImVec2(c[0].x + std::cos(t) * r, c[0].y + std::sin(t) * r), uv, out);
+        }
+        for (int i = 0; i < kSteps; i++) {
+            d->PrimWriteIdx(base);
+            d->PrimWriteIdx(static_cast<ImDrawIdx>(base + 1 + i));
+            d->PrimWriteIdx(static_cast<ImDrawIdx>(base + 2 + i));
+        }
+    }
+}
+
+void Pane(ImDrawList* d, float x0, float y0, float x1, float y1, Glass kind, ImU32 edge)
+{
+    // shadow-pane: 0 6px 20px rgba(0,0,0,.35) (a fight's pane has nothing
+    // opaque inside, so no core under it).
+    DropShadow(d, x0, y0, x1, y1, 6, 18, 0.32f, kind != Glass::Fight);
+    const ImVec2 a = g_v.P(x0, y0), b = g_v.P(x1, y1);
+    if (kind != Glass::Fight) {
+        // The glass: the stage behind it, blurred (a 256 px copy stretched),
+        // under the tint. Until the copy is there: the ground.
+        d->AddRectFilled(a, b, kGround);
+        StageAt(d, x0, y0, x1, y1, 256, kStageTint);
+        d->AddRectFilled(a, b, kScrim);
+    }
+    d->AddRectFilled(a, b, kind == Glass::Modal ? kGlassModal : kind == Glass::Fight ? kGlassFight : kGlassPanel);
+    const float e = g_v.L(2);
+    d->AddRect(ImVec2(a.x - 1, a.y - 1), ImVec2(b.x + 1, b.y + 1), kOutline, 0.0f, 0, 1.0f);
+    d->AddRect(ImVec2(a.x + e / 2, a.y + e / 2), ImVec2(b.x - e / 2, b.y - e / 2), edge ? edge : kind == Glass::Modal ? kEdgeModal : kEdge, 0, 0, e);
+    d->AddLine(ImVec2(a.x + e, a.y + e + 0.5f), ImVec2(b.x - e, a.y + e + 0.5f), kHighlight, std::max(1.0f, g_v.L(1)));
+}
+
+void Strip(ImDrawList* d, float x0, float y0, float x1, float y1, bool lit)
+{
+    d->AddRectFilled(g_v.P(x0, y0), g_v.P(x1, y1), lit ? kGold : kStrip);
+}
+
+void Ring(ImDrawList* d, float x0, float y0, float x1, float y1)
+{
+    const float w = g_v.L(2);
+    d->AddRect(ImVec2(g_v.P(x0, y0).x - w / 2, g_v.P(x0, y0).y - w / 2), ImVec2(g_v.P(x1, y1).x + w / 2, g_v.P(x1, y1).y + w / 2), kRing, 0, 0, w);
+}
+
+void Control(ImDrawList* d, float x0, float y0, float x1, float y1, bool focused, ImU32 focusFill)
+{
+    const ImVec2 a = g_v.P(x0, y0), b = g_v.P(x1, y1);
+    if (focused) {
+        d->AddRectFilled(a, b, focusFill);
+        return;
+    }
+    d->AddRectFilled(a, b, kControl);
+    d->AddRect(a, b, kEdgeControl, 0, 0, std::max(1.0f, g_v.L(1)));
+}
+
+void StageText(ImDrawList* d, ImFont* f, float size, float x, float y, ImU32 c, const std::string& t, float align)
+{
+    // shadow-text: 0 2px 4px rgba(0,0,0,.8), 0 0 12px rgba(0,0,0,.5): a
+    // copy 2 px down, and a soft halo of four copies round it.
+    const float px = g_v.L(size);
+    const ImVec2 w = f->CalcTextSizeA(px, FLT_MAX, 0, t.c_str());
+    const ImVec2 p(g_v.P(x, y).x - w.x * align, g_v.P(x, y).y);
+    const float k = static_cast<float>((c >> IM_COL32_A_SHIFT) & 0xFF) / 255.0f;
+    const float h = std::max(1.0f, g_v.L(1.5f));
+    const ImU32 halo = IM_COL32(0, 0, 0, static_cast<int>(70 * k));
+    d->AddText(f, px, ImVec2(p.x - h, p.y), halo, t.c_str());
+    d->AddText(f, px, ImVec2(p.x + h, p.y), halo, t.c_str());
+    d->AddText(f, px, ImVec2(p.x, p.y - h), halo, t.c_str());
+    d->AddText(f, px, ImVec2(p.x, p.y + h * 2), halo, t.c_str());
+    d->AddText(f, px, ImVec2(p.x, p.y + g_v.L(2)), IM_COL32(0, 0, 0, static_cast<int>(200 * k)), t.c_str());
+    d->AddText(f, px, p, c, t.c_str());
+}
+
+void ScrollBar(ImDrawList* d, float x, float y0, float y1, float first, float inView, float total, bool stage)
+{
+    if (total <= inView || total <= 0) return;
+    const float h = y1 - y0;
+    const float top = y0 + h * std::clamp(first / total, 0.0f, 1.0f), len = std::max(h * inView / total, 12.0f);
+    if (stage) {
+        // On the stage: a dark track framed, a gold thumb.
+        DropShadow(d, x - 1, y0, x + 6, y1, 2, 6, 0.3f, false);
+        d->AddRectFilled(g_v.P(x - 1, y0), g_v.P(x + 6, y1), IM_COL32(6, 8, 11, 199));
+        d->AddRect(g_v.P(x - 1, y0), g_v.P(x + 6, y1), kEdgeControl, 0, 0, std::max(1.0f, g_v.L(1)));
+        d->AddRectFilled(g_v.P(x, std::min(top, y1 - len) + 1), g_v.P(x + 5, std::min(top + len, y1) - 1), kGold);
+        return;
+    }
+    d->AddRectFilled(g_v.P(x, y0), g_v.P(x + 5, y1), IM_COL32(236, 228, 206, 31));
+    d->AddRectFilled(g_v.P(x, std::min(top, y1 - len)), g_v.P(x + 5, std::min(top + len, y1)), IM_COL32(236, 228, 206, 153));
+}
+
+void PromptRow(ImDrawList* d, ImFont* f, float size, const PromptList& prompts, float right, float y, float glyph, bool stage, int* clicked)
+{
+    const float gap = glyph > 28 ? 26.0f : 22.0f;
+    for (int i = static_cast<int>(prompts.size()) - 1; i >= 0; i--) {
+        const float w = glyph + 8 + TextW(f, size, prompts[i].second);
+        const float px = right - w;
+        if (stage) DropShadow(d, px + 3, y + 3, px + glyph - 3, y + glyph - 3, 1, 5, 0.35f, false);
+        if (const TextureView* icon = Texture(PadTex(prompts[i].first))) Image(d, icon, g_v.P(px, y), g_v.P(px + glyph, y + glyph));
+        const float ty = y + (glyph - size * 1.25f) / 2;
+        if (stage) StageText(d, f, size, px + glyph + 8, ty, kCream, prompts[i].second);
+        else Text(d, f, g_v.L(size), g_v.P(px + glyph + 8, ty), kCream, prompts[i].second);
+        if (clicked && Clicked() && MouseIn(g_v.P(px, y - 6), g_v.P(right, y + glyph + 6))) *clicked = i;
+        right = px - gap;
+    }
+}
+
+void PromptLine(ImDrawList* d, ImFont* body, ImFont* bold, const std::string& lead, ImU32 leadCol, const std::string& text,
+                const PromptList& prompts, int* clicked)
+{
+    float x = 48;
+    if (!lead.empty()) {
+        StageText(d, bold, 15, x, 863, leadCol, lead);
+        x += TextW(bold, 15, lead) + 14;
+    }
+    StageText(d, body, 16, x, 862, kSoft, text);
+    *clicked = -1;
+    PromptRow(d, body, 17, prompts, 1564, 856, 32, true, clicked);
+}
+
+float Modal(ImDrawList* d, ImFont* bold, ImFont* body, const ModalSpec& m, int* clicked)
+{
+    const ImVec2 screen = ImGui::GetIO().DisplaySize;
+    d->AddRectFilled(ImVec2(0, 0), screen, IM_COL32(4, 5, 7, 153));
+    const float x1 = m.x0 + m.w, y1 = m.y0 + m.h;
+    Pane(d, m.x0, m.y0, x1, y1, Glass::Modal, m.danger ? kDanger : 0);
+    Strip(d, m.x0 + 2, m.y0 + 2, x1 - 2, m.y0 + 44, false);
+    Text(d, bold, g_v.L(14), g_v.P(m.x0 + 28, m.y0 + 14), m.danger ? kDanger : kGold, m.kicker);
+    if (!m.aside.empty()) Text(d, body, g_v.L(15), g_v.P(x1 - 28, m.y0 + 13), m.asideCol, m.aside, 1);
+    // The footer: the hint, then this modal's own prompts.
+    Strip(d, m.x0 + 2, y1 - 48, x1 - 2, y1 - 2, false);
+    if (!m.hint.empty()) Text(d, body, g_v.L(15), g_v.P(m.x0 + 28, y1 - 35), m.hintCol, m.hint);
+    if (clicked) *clicked = -1;
+    PromptRow(d, body, 16, m.prompts, x1 - 22, y1 - 38, 26, false, clicked);
+    return m.y0 + 44;
+}
+
+bool Button(ImDrawList* d, ImFont* bold, float x0, float y0, float x1, float y1, const std::string& label, bool focused, bool danger)
+{
+    Control(d, x0, y0, x1, y1, focused, danger ? kDanger : kGold);
+    Text(d, bold, g_v.L(18), g_v.P((x0 + x1) / 2, (y0 + y1) / 2 - 12), focused ? kInk : kCream, label, 0.5f);
+    return Clicked() && MouseIn(g_v.P(x0, y0), g_v.P(x1, y1));
+}
+
 } // namespace sfv::mod::ui

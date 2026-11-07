@@ -21,6 +21,7 @@ struct HubFonts {
     ImFont* display = nullptr; // Archivo Black: titles
     ImFont* strong = nullptr;  // Barlow SemiBold: info lines, the player's name
     ImFont* body = nullptr;    // Barlow: the description, prompts
+    ImFont* bold = nullptr;    // Barlow Bold: names, buttons, focused rows (the 1d look)
 };
 
 // What the hub shows that changes.
@@ -30,6 +31,7 @@ struct HubLive {
     int serverState = 0;    // 0 not connected, 1 connecting, 2 connected, 3 failed
     std::string version;    // "SFVR 0.3.0-rooms.1"
     std::string roomsInfo;  // Custom Rooms' live line ("3 public rooms")
+    std::string roomsState; // on the Custom Rooms tile's strip: "9 public rooms · 31 players", or what is wrong
     // The pictures: Play Offline shows the player's favorite (Fighter
     // Profile), Custom Rooms its own.
     std::string offlineChara, offlineStage, roomsChara, roomsStage;

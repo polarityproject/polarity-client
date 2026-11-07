@@ -101,4 +101,78 @@ struct Prompt {
 // `right` and `top` (design units) place the row elsewhere (a panel's own).
 void DrawPrompts(ImDrawList* d, ImFont* text, const std::vector<Prompt>& prompts, float right = 1572, float top = 14);
 
+// ----- the 1d look (the SFVR design system) -------------------------------------
+// Glass panes over the game's stage art, one gold for the focus, square
+// everything, light drop shadows. Positions are design units (1600 x 900).
+namespace look {
+constexpr ImU32 kGold = IM_COL32(233, 196, 106, 255);    // the focus; kickers, rules, actions as text
+constexpr ImU32 kRing = IM_COL32(240, 194, 74, 255);     // the 2 px ring round a focused pane
+constexpr ImU32 kCream = IM_COL32(244, 241, 232, 255);   // names, titles, values
+constexpr ImU32 kSoft = IM_COL32(217, 212, 198, 255);    // body text, rules, labels
+constexpr ImU32 kMuted = IM_COL32(168, 162, 147, 255);   // hints, footers
+constexpr ImU32 kInk = IM_COL32(11, 11, 11, 255);        // text on gold
+constexpr ImU32 kInkSoft = IM_COL32(58, 47, 18, 255);    // a second line on gold
+constexpr ImU32 kOk = IM_COL32(127, 216, 139, 255);
+constexpr ImU32 kWarn = IM_COL32(233, 196, 106, 255);
+constexpr ImU32 kDanger = IM_COL32(255, 107, 94, 255);
+constexpr ImU32 kInfo = IM_COL32(111, 195, 255, 255);
+constexpr ImU32 kGround = IM_COL32(6, 8, 11, 255);
+constexpr ImU32 kControl = IM_COL32(255, 255, 255, 15);      // unfocused buttons, rows, seats
+constexpr ImU32 kEdgeControl = IM_COL32(236, 228, 206, 77);  // their 1 px frame
+constexpr ImU32 kHairline = IM_COL32(236, 228, 206, 36);
+constexpr ImU32 kSelfRow = IM_COL32(233, 196, 106, 41);
+} // namespace look
+
+// The stage behind every full screen (the Capcom Pro Tour arena), softened a
+// little and dimmed flat. Over the whole display; `alpha` fades it.
+void Backdrop(ImDrawList* d, float alpha = 1);
+enum class Glass {
+    Panel, // a screen's panes: 55% glass over the blurred stage
+    Modal, // modals and toasts: 84%
+    Fight, // over a fight (nothing to blur): 72% glass, no stage copy
+};
+// A glass pane: its light drop shadow, the stage's blurred copy inside it,
+// the tint, the 2 px warm edge, the lit top line, a dark hairline outside.
+// `edge` 0: the kind's own.
+void Pane(ImDrawList* d, float x0, float y0, float x1, float y1, Glass kind = Glass::Panel, ImU32 edge = 0);
+// Just the drop shadow under a box (for things that are not panes: notes).
+void DropShadow(ImDrawList* d, float x0, float y0, float x1, float y1, float offset, float blur, float alpha, bool core);
+// A dark title strip inside a pane, or a gold one when the pane has the focus.
+void Strip(ImDrawList* d, float x0, float y0, float x1, float y1, bool lit);
+// The 2 px gold ring round a focused pane (drawn just outside it).
+void Ring(ImDrawList* d, float x0, float y0, float x1, float y1);
+// A control (button, row, tab, key, seat): glass with a 1 px frame, or
+// solid `focusFill` when it has the focus.
+void Control(ImDrawList* d, float x0, float y0, float x1, float y1, bool focused, ImU32 focusFill = look::kGold);
+// Text with nothing behind it: the light drop shadow under it. `size` and
+// the position in design units.
+void StageText(ImDrawList* d, ImFont* f, float size, float x, float y, ImU32 c, const std::string& t, float align = 0);
+// A scroll bar: `first` and `inView` of `total` rows. On the stage (in the
+// gutter between columns): a dark track and a gold thumb; in a pane: light.
+void ScrollBar(ImDrawList* d, float x, float y0, float y1, float first, float inView, float total, bool stage);
+// Pad prompts in a row ending at `right` (design units), glyph `glyph` high,
+// labels at `size`; `stage`: with the text shadow. A click acts as the
+// prompt: its index in *clicked (else unchanged).
+using PromptList = std::vector<std::pair<const char*, std::string>>;
+void PromptRow(ImDrawList* d, ImFont* f, float size, const PromptList& prompts, float right, float y, float glyph, bool stage, int* clicked);
+// The screen's hint and prompts at the bottom, on the stage (no bar).
+void PromptLine(ImDrawList* d, ImFont* body, ImFont* bold, const std::string& lead, ImU32 leadCol, const std::string& text,
+                const PromptList& prompts, int* clicked);
+// A modal: the screen dimmed, a glass pane with a header strip (a kicker in
+// gold, or red when `danger`; `aside` on the right) and a footer strip (a
+// hint, then the modal's own prompts). Returns the y where the body starts;
+// *clicked: the footer prompt clicked.
+struct ModalSpec {
+    float x0 = 500, y0 = 300, w = 600, h = 300;
+    std::string kicker, aside;
+    ImU32 asideCol = look::kSoft;
+    bool danger = false;
+    std::string hint;
+    ImU32 hintCol = look::kMuted;
+    PromptList prompts;
+};
+float Modal(ImDrawList* d, ImFont* bold, ImFont* body, const ModalSpec& m, int* clicked);
+// A modal's button: focused gold (or red when `danger`); true when clicked.
+bool Button(ImDrawList* d, ImFont* bold, float x0, float y0, float x1, float y1, const std::string& label, bool focused, bool danger = false);
+
 } // namespace sfv::mod::ui

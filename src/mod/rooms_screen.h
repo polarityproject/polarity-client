@@ -44,7 +44,9 @@ std::string RoomTitleText(const keeper::RoomTitle& title, const std::string& own
 void DrawCrown(ImDrawList* d, float x, float y, float scale, ImU32 col);
 // Text that shrinks to `maxW` (design units): its size down to `minSize`,
 // then cut with an ellipsis. The width drawn.
-float FitText(ImDrawList* d, ImFont* f, float size, float minSize, float maxW, ImVec2 at, ImU32 c, std::string t, float align = 0);
+// `stage`: text with nothing behind it (the light drop shadow under it).
+float FitText(ImDrawList* d, ImFont* f, float size, float minSize, float maxW, ImVec2 at, ImU32 c, std::string t, float align = 0,
+              bool stage = false);
 // Streamer mode (SFVR settings): room codes are not shown on the rooms
 // screens (Copy code still copies it). Any thread.
 void SetStreamerMode(bool on);

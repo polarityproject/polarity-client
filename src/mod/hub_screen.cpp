@@ -101,107 +101,63 @@ void DrawIcon(ImDrawList* d, Icon icon, float cx, float cy, float size, ImU32 co
     }
 }
 
+// The panel over the Custom Rooms tile: the focused entry's stage and
+// character inside a glass pane, its name and one tagline on them.
 void DrawPanel(ImDrawList* d, const HubFonts& f, const Entry& e)
 {
     const Frame p = kPanel;
-    d->AddRectFilled(g_v.P(p.x, p.y), g_v.P(p.x + p.w, p.y + p.h), Rgba(11, 14, 18));
+    DropShadow(d, p.x, p.y, p.x + p.w, p.y + p.h, 6, 18, 0.32f, true);
+    d->AddRectFilled(g_v.P(p.x, p.y), g_v.P(p.x + p.w, p.y + p.h), look::kGround);
     d->PushClipRect(g_v.P(p.x, p.y), g_v.P(p.x + p.w, p.y + p.h), true);
-    if (!e.stage.empty()) Cover(d, Texture(StageTex(e.stage, "StageSelectBG")), p.x, p.y, p.w, p.h, Rgba(158, 158, 158));
-    // Dark on the left for the title, clear on the right for the art.
-    const float x46 = p.x + p.w * 0.46f, x72 = p.x + p.w * 0.72f;
-    d->AddRectFilledMultiColor(g_v.P(p.x, p.y), g_v.P(x46, p.y + p.h), Rgba(8, 9, 11, 235), Rgba(8, 9, 11, 140), Rgba(8, 9, 11, 140),
-                               Rgba(8, 9, 11, 235));
-    d->AddRectFilledMultiColor(g_v.P(x46, p.y), g_v.P(x72, p.y + p.h), Rgba(8, 9, 11, 140), Rgba(8, 9, 11, 0), Rgba(8, 9, 11, 0),
-                               Rgba(8, 9, 11, 140));
+    if (!e.stage.empty()) Cover(d, TextureSized(StageTex(e.stage, "StageSelectBG"), g_v.L(p.w)), p.x, p.y, p.w, p.h, Rgba(230, 230, 230));
+    d->AddRectFilled(g_v.P(p.x, p.y), g_v.P(p.x + p.w, p.y + p.h), Rgba(10, 12, 16, 97));
     if (!e.chara.empty()) {
-        if (const TextureView* art = Texture(CharaTex(e.chara, "PartCharacter"))) {
-            const float size = 520, x = p.x + p.w - 20 - size, y = p.y - 40;
+        if (const TextureView* art = TextureSized(CharaTex(e.chara, "PartCharacter"), g_v.L(460))) {
+            const float size = 460, x = p.x + p.w - 30 - size, y = p.y - 40;
             Image(d, art, g_v.P(x, y), g_v.P(x + size, y + size));
         }
     }
-    d->AddRectFilledMultiColor(g_v.P(p.x, p.y + p.h - 120), g_v.P(p.x + p.w, p.y + p.h), Rgba(8, 9, 11, 0), Rgba(8, 9, 11, 0),
-                               Rgba(8, 9, 11, 217), Rgba(8, 9, 11, 217));
-    Text(d, f.display, g_v.L(64), g_v.P(p.x + 40, p.y + p.h - 34 - 24 - 12 - 64), Rgba(255, 255, 255), e.title, 0, true);
-    Text(d, f.strong, g_v.L(19), g_v.P(p.x + 40, p.y + p.h - 34 - 24), kGold, e.info);
+    StageText(d, f.display, 64, p.x + 40, p.y + 150, Rgba(255, 255, 255), e.title);
+    StageText(d, f.bold ? f.bold : f.strong, 19, p.x + 40, p.y + 232, look::kGold, e.info);
     d->PopClipRect();
-    d->AddRect(g_v.P(p.x, p.y), g_v.P(p.x + p.w, p.y + p.h), Rgba(201, 168, 92, 190), 0, 0, g_v.L(2));
+    const float edge = g_v.L(2);
+    const ImVec2 a = g_v.P(p.x, p.y), b = g_v.P(p.x + p.w, p.y + p.h);
+    d->AddRect(ImVec2(a.x - 1, a.y - 1), ImVec2(b.x + 1, b.y + 1), Rgba(0, 0, 0, 140), 0.0f, 0, 1.0f);
+    d->AddRect(ImVec2(a.x + edge / 2, a.y + edge / 2), ImVec2(b.x - edge / 2, b.y - edge / 2), Rgba(236, 228, 206, 102), 0.0f, 0, edge);
+    d->AddLine(ImVec2(a.x + edge, a.y + edge + 0.5f), ImVec2(b.x - edge, a.y + edge + 0.5f), Rgba(255, 255, 255, 77), std::max(1.0f, g_v.L(1)));
 }
 
-void DrawTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame& r, bool on)
+// A tile: a glass pane with its name in a strip (gold with the focus) and
+// its icon; no description inside it (the hint at the bottom says it).
+// `state`: live state on the strip's right (the rooms' counts).
+void DrawTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame& r, bool on, const std::string& state)
 {
-    const ImVec2 a = g_v.P(r.x, r.y), b = g_v.P(r.x + r.w, r.y + r.h);
-    if (on) {
-        // The glow around the focused tile.
-        for (int i = 1; i <= 6; i++) {
-            const float g = g_v.L(4.0f * i);
-            d->AddRect(ImVec2(a.x - g, a.y - g), ImVec2(b.x + g, b.y + g), IM_COL32(240, 194, 74, 34 - i * 5), 0, 0, g_v.L(4));
-        }
-        d->AddRectFilledMultiColor(a, b, Rgba(42, 38, 24), Rgba(42, 38, 24), Rgba(21, 19, 13), Rgba(21, 19, 13));
-    }
-    else {
-        d->AddRectFilledMultiColor(a, b, Rgba(26, 31, 38, 235), Rgba(26, 31, 38, 235), Rgba(11, 14, 18, 235), Rgba(11, 14, 18, 235));
-    }
-    d->AddRect(ImVec2(a.x + g_v.L(1.5f), a.y + g_v.L(1.5f)), ImVec2(b.x - g_v.L(1.5f), b.y - g_v.L(1.5f)),
-               on ? kRing : Rgba(157, 153, 143, 90), 0, 0, g_v.L(3));
-    const ImU32 iconCol = on ? kRing : kMuted, titleCol = on ? Rgba(255, 255, 255) : Rgba(217, 212, 198), infoCol = on ? kGold : kMuted;
-    const float cx = r.x + r.w / 2;
-    if (r.h > 300) {
-        // A big tile stacks its icon over the title, as the game's tall CFN tile.
-        const float icon = 96, top = r.y + (r.h - (icon + 22 + 30 + 8 + 22)) / 2;
-        DrawIcon(d, e.icon, cx, top + icon / 2, icon, iconCol);
-        Text(d, f.display, g_v.L(30), g_v.P(cx, top + icon + 22), titleCol, e.title, 0.5f);
-        Text(d, f.strong, g_v.L(17), g_v.P(cx, top + icon + 22 + 30 + 8), infoCol, e.info, 0.5f);
-    }
-    else {
-        const float icon = 60, cy = r.y + r.h / 2;
-        DrawIcon(d, e.icon, r.x + 32 + icon / 2, cy, icon, iconCol);
-        Text(d, f.display, g_v.L(30), g_v.P(r.x + 32 + icon + 26, cy - 30), titleCol, e.title);
-        Text(d, f.strong, g_v.L(17), g_v.P(r.x + 32 + icon + 26, cy + 8), infoCol, e.info);
-    }
+    Pane(d, r.x, r.y, r.x + r.w, r.y + r.h);
+    Strip(d, r.x + 2, r.y + 2, r.x + r.w - 2, r.y + 46, on);
+    Text(d, f.display, g_v.L(22), g_v.P(r.x + 24, r.y + 11), on ? look::kInk : kCream, e.title);
+    if (!state.empty()) Text(d, f.bold ? f.bold : f.strong, g_v.L(15), g_v.P(r.x + r.w - 24, r.y + 14), on ? look::kInkSoft : look::kSoft, state, 1);
+    const float icon = r.h > 400 ? 96.0f : 80.0f;
+    DrawIcon(d, e.icon, r.x + r.w / 2, r.y + 46 + (r.h - 46) / 2, icon, on ? kGold : look::kSoft);
+    if (on) Ring(d, r.x, r.y, r.x + r.w, r.y + r.h);
 }
 
 void DrawTop(ImDrawList* d, const HubFonts& f, const HubLive& live)
 {
-    Text(d, f.display, g_v.L(42), g_v.P(800, 52), Rgba(255, 255, 255), "SFVR", 0.5f, true);
+    StageText(d, f.display, 42, 800, 30, Rgba(255, 255, 255), "SFVR", 0.5f);
     // Right to left: the version, the server, the player.
     float x = 1560;
     const float y = 24;
-    Text(d, f.body, g_v.L(16), g_v.P(x, y), kMuted, live.version, 1);
+    StageText(d, f.body, 16, x, y, kMuted, live.version, 1);
     x -= TextW(f.body, 16, live.version) + 22;
     static const char* const kStates[] = {"offline", "connecting", "connected", "unreachable"};
     const std::string server = live.server + " \xC2\xB7 " + kStates[std::clamp(live.serverState, 0, 3)];
-    Text(d, f.body, g_v.L(16), g_v.P(x, y), kGold, server, 1);
+    StageText(d, f.body, 16, x, y, kGold, server, 1);
     x -= TextW(f.body, 16, server) + 16;
     static const ImU32 kDots[] = {IM_COL32(120, 116, 104, 255), IM_COL32(233, 196, 106, 255), IM_COL32(127, 216, 139, 255),
                                   IM_COL32(224, 108, 96, 255)};
     d->AddCircleFilled(g_v.P(x, y + 11), g_v.L(4), kDots[std::clamp(live.serverState, 0, 3)]);
     x -= 22;
-    Text(d, f.strong, g_v.L(16), g_v.P(x, y), kCream, Upper(live.player.empty() ? "Player" : live.player), 1);
-}
-
-// The bottom stripe: the focused entry's description, and the prompts.
-// Returns which prompt was clicked: 0 A, 1 Start, -1 none.
-int DrawBottom(ImDrawList* d, const HubFonts& f, const std::string& text)
-{
-    d->AddRectFilled(g_v.P(0, 844), g_v.P(1600, 900), Rgba(8, 9, 11, 245));
-    d->AddLine(g_v.P(0, 844), g_v.P(1600, 844), Rgba(201, 168, 92, 190), g_v.L(1));
-    Text(d, f.body, g_v.L(16), g_v.P(48, 862), Rgba(217, 212, 198), text);
-    struct P {
-        const char* icon;
-        const char* label;
-    };
-    const P prompts[] = {{"button_a", "Select"}, {"button_start", "SFVR settings"}};
-    float right = 1564;
-    int clicked = -1;
-    for (int i = 1; i >= 0; i--) {
-        const float w = 32 + 8 + TextW(f.body, 17, prompts[i].label);
-        const float x = right - w;
-        if (const TextureView* icon = Texture(PadTex(prompts[i].icon))) Image(d, icon, g_v.P(x, 856), g_v.P(x + 32, 888));
-        Text(d, f.body, g_v.L(17), g_v.P(x + 40, 861), kCream, prompts[i].label);
-        if (Clicked() && MouseIn(g_v.P(x, 850), g_v.P(right, 894))) clicked = i;
-        right = x - 26;
-    }
-    return clicked;
+    StageText(d, f.bold ? f.bold : f.strong, 16, x, y, kCream, Upper(live.player.empty() ? "Player" : live.player), 1);
 }
 
 } // namespace
@@ -243,22 +199,12 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     const float alpha = static_cast<float>(std::clamp((now - g_openedAt) / 0.25, 0.0, 1.0));
     ImDrawList* d = ImGui::GetBackgroundDrawList();
     const int from = d->VtxBuffer.Size;
-    d->AddRectFilled(ImVec2(0, 0), ImGui::GetIO().DisplaySize, Rgba(6, 8, 11));
+    Backdrop(d);
     d->PushClipRect(g_v.P(0, 0), g_v.P(1600, 900), true);
     g_inputOn = takeInput;
     const std::vector<Entry> entries = Entries(live);
     const int count = static_cast<int>(entries.size());
     g_focus = std::clamp(g_focus, 0, count - 1);
-
-    // Behind everything: the focused entry's stage, dark, fading to black.
-    const Entry& focused = entries[g_focus];
-    if (!focused.stage.empty()) Cover(d, Texture(StageTex(focused.stage, "StageSelectBG")), -500, -40, 2600, 700, Rgba(82, 82, 82));
-    d->AddRectFilledMultiColor(g_v.P(0, 0), g_v.P(1600, 270), Rgba(6, 8, 11, 115), Rgba(6, 8, 11, 115), Rgba(6, 8, 11, 51),
-                               Rgba(6, 8, 11, 51));
-    d->AddRectFilledMultiColor(g_v.P(0, 270), g_v.P(1600, 560), Rgba(6, 8, 11, 51), Rgba(6, 8, 11, 51), Rgba(6, 8, 11, 180),
-                               Rgba(6, 8, 11, 180));
-    d->AddRectFilledMultiColor(g_v.P(0, 560), g_v.P(1600, 900), Rgba(6, 8, 11, 180), Rgba(6, 8, 11, 180), Rgba(6, 8, 11),
-                               Rgba(6, 8, 11));
 
     // Input: left and right between the column and the online tiles; the
     // mouse focuses what it is over and a click selects it.
@@ -277,8 +223,10 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     }
     DrawTop(d, f, live);
     DrawPanel(d, f, entries[g_focus]);
-    for (int i = 0; i < count; i++) DrawTile(d, f, entries[i], kFrames[i], i == g_focus);
-    const int prompt = DrawBottom(d, f, entries[g_focus].text);
+    for (int i = 0; i < count; i++) DrawTile(d, f, entries[i], kFrames[i], i == g_focus, entries[i].action == HubAction::CustomRooms ? live.roomsState : "");
+    int prompt = -1;
+    PromptLine(d, f.body, f.bold ? f.bold : f.strong, "", kGold, entries[g_focus].text,
+               {{"button_a", "Select"}, {"button_start", "SFVR settings"}}, &prompt);
     if (Confirm() || std::exchange(g_clickedTile, false) || prompt == 0) action = entries[g_focus].action;
     if (Pressed({ImGuiKey_GamepadStart}, false) || prompt == 1) action = HubAction::Settings;
     g_inputOn = false;

@@ -46,6 +46,10 @@ struct State {
     Modal modal = Modal::None;
     bool typing = false;
     std::string text;
+    float chatScroll = 0;      // design px up from the newest line
+    uint32_t chatSeenFrom = 0; // the newest line seen at the bottom (unseen ones count after it)
+    std::string chatSeenText;
+    int choice = 0;            // a confirm's focused button (0 the first)
     int seatSide = 0;          // the seat A takes when both are open (left/right)
     bool onPlayers = false;    // RB: the cursor in the player list
     int player = 0;
@@ -92,22 +96,35 @@ std::string Ordinal(int n)
     return n >= 1 && n <= 3 ? k[n - 1] : std::to_string(n) + "th";
 }
 
-void Panel(ImDrawList* d, float x0, float y0, float x1, float y1)
+void Panel(ImDrawList* d, float x0, float y0, float x1, float y1) { Pane(d, x0, y0, x1, y1); }
+
+// A name cut to fit `width` (ui units) at this size, with an ellipsis.
+std::string FitName(ImFont* font, float size, std::string text, float width)
 {
-    d->AddRectFilledMultiColor(g_v.P(x0, y0), g_v.P(x1, y1), Rgba(8, 9, 11, 214), Rgba(8, 9, 11, 240), Rgba(8, 9, 11, 240), Rgba(8, 9, 11, 214));
-    d->AddLine(g_v.P(x0, y0), g_v.P(x1, y0), kLine, g_v.L(1));
-    d->AddLine(g_v.P(x0, y1), g_v.P(x1, y1), kLine, g_v.L(1));
+    if (TextW(font, size, text) <= width) return text;
+    while (!text.empty() && TextW(font, size, text + "...") > width) {
+        text.pop_back();
+        while (!text.empty() && (static_cast<unsigned char>(text.back()) & 0xC0) == 0x80) text.pop_back(); // whole characters
+    }
+    return text + "...";
 }
 
 // A seat: the player's character and name, or "Open seat" ("Sit here as P1"
 // when it is the one A would take). The art faces right: P1's sits at the
 // card's left as drawn and P2's at its right mirrored, so both look at the
 // score, each fading out toward it; the text is on the side toward the score
-// (mock-up Room2, 2026-11-04).
+// (mock-up Room2, 2026-11-04). The 1d look: a control's glass with a 1 px
+// frame, the name after the player's flag.
 void Seat(ImDrawList* d, const HubFonts& f, float x, float y, const RoomMember* m, bool ready, bool sitHere, int seat, bool dim)
 {
     const ImVec2 a = g_v.P(x, y), b = g_v.P(x + 330, y + 120);
-    d->AddRectFilledMultiColor(a, b, Rgba(26, 31, 38, 230), Rgba(26, 31, 38, 230), Rgba(14, 17, 21, 230), Rgba(14, 17, 21, 230));
+    if (sitHere) {
+        d->AddRectFilled(a, b, Rgba(233, 196, 106, 36));
+        d->AddRect(ImVec2(a.x + g_v.L(1), a.y + g_v.L(1)), ImVec2(b.x - g_v.L(1), b.y - g_v.L(1)), look::kRing, 0, 0, g_v.L(2));
+        Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(x + 165, y + 49), kGold, seat ? "Sit here as P2" : "Sit here as P1", 0.5f);
+        return;
+    }
+    d->AddRectFilled(a, b, look::kControl);
     if (m) {
         const bool p2 = seat == 1;
         if (const TextureView* art = m->chara.empty() ? nullptr : TextureSized(CharaTex(m->chara, "PartCharacter"), g_v.L(250))) {
@@ -123,43 +140,36 @@ void Seat(ImDrawList* d, const HubFonts& f, float x, float y, const RoomMember* 
         }
         const float tx = p2 ? x + 16 : x + 314, align = p2 ? 0.0f : 1.0f;
         const auto name = g_names.find(m->chara);
-        if (name != g_names.end()) Text(d, f.body, g_v.L(14), g_v.P(tx, y + 64), Dim(kSoft, dim), name->second, align, true);
-        std::string who = Upper(m->name);
-        if (TextW(f.strong, 21, who) > 164) {
-            while (who.size() > 1 && TextW(f.strong, 21, who + "...") > 164) {
-                who.pop_back();
-                while (!who.empty() && (static_cast<unsigned char>(who.back()) & 0xC0) == 0x80) who.pop_back(); // whole characters
-            }
-            who += "...";
-        }
-        Text(d, f.strong, g_v.L(21), g_v.P(tx, y + 84), Dim(kCream, dim), who, align, true);
-        if (ready) Text(d, f.strong, g_v.L(13), g_v.P(tx, y + 12), Dim(kGreen, dim), "READY", align, true);
-        d->AddRect(a, b, Rgba(93, 90, 82, 160), 0, 0, g_v.L(1));
-        return;
+        if (name != g_names.end()) StageText(d, f.body, 14, tx, y + 62, Dim(kSoft, dim), name->second, align);
+        ImFont* bold = f.bold ? f.bold : f.strong;
+        const bool flag = m->country.size() == 2;
+        const float flagW = flag ? 28.0f : 0.0f;
+        const std::string who = FitName(bold, 21, Upper(m->name), 164 - flagW);
+        const float nameW = TextW(bold, 21, who);
+        const float left = p2 ? tx : tx - nameW - flagW;
+        if (flag) DrawFlag(d, f.strong, m->country, left, y + 89, 13, dim ? 0.45f : 1.0f);
+        StageText(d, bold, 21, left + flagW, y + 82, Dim(kCream, dim), who);
+        if (ready) StageText(d, bold, 13, tx, y + 12, Dim(kGreen, dim), "READY", align);
     }
-    if (sitHere) {
-        d->AddRect(a, b, kRing, 0, 0, g_v.L(2));
-        Text(d, f.strong, g_v.L(16), g_v.P(x + 165, y + 50), kGold, seat ? "Sit here as P2" : "Sit here as P1", 0.5f);
-        return;
-    }
-    d->AddRect(a, b, Rgba(93, 90, 82, 160), 0, 0, g_v.L(1));
-    Text(d, f.body, g_v.L(16), g_v.P(x + 165, y + 50), Dim(kMuted, dim), "Open seat", 0.5f);
+    d->AddRect(a, b, Dim(look::kEdgeControl, dim), 0, 0, std::max(1.0f, g_v.L(1)));
+    if (!m) Text(d, f.body, g_v.L(16), g_v.P(x + 165, y + 50), Dim(kMuted, dim), "Open seat", 0.5f);
 }
 
 void Table(ImDrawList* d, const HubFonts& f, const RoomsView& v, float y, int index, bool on, bool dim)
 {
     const TableView* tv = index < static_cast<int>(v.tableViews.size()) ? &v.tableViews[index] : nullptr;
     const keeper::TableState s = tv ? tv->s : keeper::TableState{};
-    const ImVec2 a = g_v.P(48, y), b = g_v.P(868, y + kTableH);
-    d->AddRectFilledMultiColor(a, b, Rgba(20, 24, 30, 235), Rgba(8, 9, 11, 240), Rgba(8, 9, 11, 240), Rgba(20, 24, 30, 235));
-    d->AddLine(a, g_v.P(868, y), Rgba(201, 168, 92, 128), g_v.L(1));
-    Text(d, f.display, g_v.L(21), g_v.P(64, y + 13), Dim(kCream, dim), "TABLE " + std::to_string(index + 1));
+    Pane(d, 48, y, 868, y + kTableH);
+    // The strip: gold when this table has the focus.
+    const bool lit = on && !dim;
+    Strip(d, 50, y + 2, 866, y + 40, lit);
+    Text(d, f.display, g_v.L(21), g_v.P(64, y + 9), lit ? look::kInk : Dim(kCream, dim), "TABLE " + std::to_string(index + 1));
     Rules rules;
     const std::string line = tv && ParseRules(tv->rules, &rules) ? DescribeRules(rules) : std::string();
     // How many wait in the queue (user, 2026-11-04: not the watchers).
     const std::string queue = std::to_string(tv ? tv->queue.size() : 0) + " in queue";
-    Text(d, f.body, g_v.L(16), g_v.P(852, y + 16), Dim(kSoft, dim), queue, 1);
-    Text(d, f.body, g_v.L(16), g_v.P(852 - TextW(f.body, 16, queue) - 18, y + 16), Dim(kGold, dim), line, 1);
+    Text(d, f.body, g_v.L(16), g_v.P(852, y + 11), lit ? look::kInkSoft : Dim(kSoft, dim), queue, 1);
+    Text(d, f.body, g_v.L(16), g_v.P(852 - TextW(f.body, 16, queue) - 18, y + 11), lit ? look::kInkSoft : Dim(kGold, dim), line, 1);
     // The seat A would take: on the focused open table, for a player not at it.
     const bool mine = s.seat[0] == v.self || s.seat[1] == v.self;
     int sitHere = -1;
@@ -174,13 +184,13 @@ void Table(ImDrawList* d, const HubFonts& f, const RoomsView& v, float y, int in
     }
     // The middle: the set's score, or VS; what the table is doing under it.
     const bool live = s.phase == TablePhase::Playing || s.phase == TablePhase::Connecting;
-    if (live) Text(d, f.display, g_v.L(40), g_v.P(458, y + 78), Dim(Rgba(255, 255, 255), dim), std::to_string(s.wins[0]) + " - " + std::to_string(s.wins[1]), 0.5f);
-    else Text(d, f.display, g_v.L(30), g_v.P(458, y + 88), Dim(Rgba(74, 68, 54), dim), "VS", 0.5f);
+    if (live) StageText(d, f.display, 40, 458, y + 78, Dim(Rgba(255, 255, 255), dim), std::to_string(s.wins[0]) + " - " + std::to_string(s.wins[1]), 0.5f);
+    else Text(d, f.display, g_v.L(30), g_v.P(458, y + 88), Dim(Rgba(138, 129, 112), dim), "VS", 0.5f);
     const char* doing = s.phase == TablePhase::Call ? "Your turn" : s.phase == TablePhase::Connecting ? "Connecting"
                         : s.phase == TablePhase::Playing ? "Playing" : s.phase == TablePhase::After ? "Set over" : "";
     if (s.phase == TablePhase::Call && !mine) doing = "Getting ready";
     if (*doing) Text(d, f.body, g_v.L(14), g_v.P(458, y + 132), Dim(kSoft, dim), doing, 0.5f);
-    if (on) d->AddRect(ImVec2(a.x + g_v.L(1.5f), a.y + g_v.L(1.5f)), ImVec2(b.x - g_v.L(1.5f), b.y - g_v.L(1.5f)), Dim(kRing, dim), 0, 0, g_v.L(3));
+    if (lit) Ring(d, 48, y, 868, y + kTableH);
 }
 
 std::vector<RoomMember> PlayerOrder(const RoomsView& v)
@@ -227,13 +237,14 @@ constexpr float kRowsTop = 112, kRowH = 50, kPlayersBottom = 526, kChatTop = 538
 void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
 {
     Panel(d, 892, 80, 1552, kPlayersBottom);
-    Text(d, f.body, g_v.L(14), g_v.P(910, 94), kMuted, "PLAYERS \xC2\xB7 " + std::to_string(v.members.size()) + " / 16");
+    Strip(d, 894, 82, 1550, 110, false);
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(14), g_v.P(910, 87), kGold, "PLAYERS \xC2\xB7 " + std::to_string(v.members.size()) + " / 16");
     const std::vector<RoomMember> list = PlayerOrder(v);
     const int first = std::clamp(g.player - kPlayersInView + 1, 0, std::max(0, static_cast<int>(list.size()) - kPlayersInView));
     for (int i = first; i < static_cast<int>(list.size()) && i < first + kPlayersInView; i++) {
         const RoomMember& m = list[i];
         const float y = kRowsTop + (i - first) * kRowH, ty = y + 15;
-        if (m.id == v.self) d->AddRectFilled(g_v.P(908, y), g_v.P(1534, y + kRowH - 1), Rgba(42, 38, 24, 160));
+        if (m.id == v.self) d->AddRectFilled(g_v.P(894, y), g_v.P(1550, y + kRowH - 1), look::kSelfRow);
         // The character: head and shoulders, from the panel's edge, fading in
         // and then out under the name.
         if (const TextureView* art = m.chara.empty() ? nullptr : TextureSized(CharaTex(m.chara, "PartCharacter"), g_v.L(200))) {
@@ -246,8 +257,8 @@ void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
                        kRow, 7, false, IM_COL32_WHITE, g_v.P(892, 0).x, g_v.P(1082, 0).x);
             d->PopClipRect();
         }
-        if (g.onPlayers && i == g.player) d->AddRect(g_v.P(908, y), g_v.P(1534, y + kRowH - 1), kRing, 0, 0, g_v.L(2));
-        d->AddLine(g_v.P(908, y + kRowH - 1), g_v.P(1534, y + kRowH - 1), Rgba(255, 255, 255, 14), g_v.L(1));
+        d->AddLine(g_v.P(894, y + kRowH - 1), g_v.P(1550, y + kRowH - 1), look::kHairline, g_v.L(1));
+        if (g.onPlayers && i == g.player) Ring(d, 896, y + 1, 1536, y + kRowH - 2);
         float x = 994;
         if (m.owner) {
             DrawCrown(d, x, ty + 15, 0.85f, kGold);
@@ -263,8 +274,8 @@ void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
             }
             who += "...";
         }
-        Text(d, f.strong, g_v.L(16), g_v.P(x, ty), kCream, who, 0, true);
-        x += TextW(f.strong, 16, who) + 6;
+        StageText(d, f.bold ? f.bold : f.strong, 16, x, ty, kCream, who);
+        x += TextW(f.bold ? f.bold : f.strong, 16, who) + 6;
         if (m.id == v.self) Text(d, f.body, g_v.L(16), g_v.P(x, ty), kMuted, "(you)", 0, true);
         if (g.muted.count(m.id)) Text(d, f.body, g_v.L(14), g_v.P(x, ty + 1), kMuted, "muted", 0, true);
         const std::string place = RoomsPlace(v, m.id);
@@ -283,23 +294,46 @@ void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
             IconLinkType(d, g_v.P(1512 - TextW(f.body, 15, what) - 14, ty + 10), g_v.L(1.4f), m.link, kSoft);
         }
     }
-    if (static_cast<int>(list.size()) > kPlayersInView) {
-        // A thin scrollbar (the rest: RB, then up and down).
-        const float top = kRowsTop + 4, h = kPlayersInView * kRowH - 8, n = static_cast<float>(list.size());
-        d->AddRectFilled(g_v.P(1541, top), g_v.P(1546, top + h), Rgba(255, 255, 255, 20), g_v.L(3));
-        d->AddRectFilled(g_v.P(1541, top + h * first / n), g_v.P(1546, top + h * (first + kPlayersInView) / n), Rgba(233, 196, 106, 190), g_v.L(3));
-    }
+    // More than eight: the bar inside the list's right edge (RB, then up and down).
+    ScrollBar(d, 1541, kRowsTop + 4, kRowsTop + kPlayersInView * kRowH - 4, static_cast<float>(first), kPlayersInView,
+              static_cast<float>(list.size()), false);
 }
 
 void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox, bool* clickedSend)
 {
     Panel(d, 892, kChatTop, 1552, 832);
-    Text(d, f.body, g_v.L(14), g_v.P(910, kChatTop + 11), kMuted, "ROOM CHAT");
-    // The newest at the bottom, above the box; older lines go up and out.
-    const float wrap = 620, size = 16;
-    float bottom = 773;
-    d->PushClipRect(g_v.P(900, kChatTop + 32), g_v.P(1544, 775), true);
-    for (int i = static_cast<int>(v.chat.size()) - 1; i >= 0 && bottom > kChatTop + 32; i--) {
+    Strip(d, 894, kChatTop + 2, 1550, kChatTop + 30, false);
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(14), g_v.P(910, kChatTop + 7), kGold, "ROOM CHAT");
+    // The newest at the bottom, above the box; older lines above it. Scrolled
+    // up (the wheel over it, or up and down while typing), new lines do not
+    // move the view: a chip says how many wait below.
+    const float wrap = 610, size = 16, top = kChatTop + 36, viewBottom = 773;
+    const ImVec2 ca = g_v.P(894, top), cb = g_v.P(1550, viewBottom);
+    if (g_inputOn && MouseIn(ca, cb) && ImGui::GetIO().MouseWheel != 0) g.chatScroll += ImGui::GetIO().MouseWheel * 40;
+    if (g.typing) {
+        if (Pressed({ImGuiKey_UpArrow, ImGuiKey_GamepadDpadUp})) g.chatScroll += 40;
+        if (Pressed({ImGuiKey_DownArrow, ImGuiKey_GamepadDpadDown})) g.chatScroll -= 40;
+        if (Pressed({ImGuiKey_PageUp})) g.chatScroll += 160;
+        if (Pressed({ImGuiKey_PageDown})) g.chatScroll -= 160;
+    }
+    // How many lines arrived since the view last sat at the bottom.
+    int unseen = 0;
+    if (!v.chat.empty()) {
+        const ChatLine& last = v.chat.back();
+        if (g.chatScroll <= 0) {
+            g.chatSeenFrom = last.from;
+            g.chatSeenText = last.text;
+        }
+        else {
+            for (int i = static_cast<int>(v.chat.size()) - 1; i >= 0; i--) {
+                if (v.chat[i].from == g.chatSeenFrom && v.chat[i].text == g.chatSeenText) break;
+                unseen++;
+            }
+        }
+    }
+    float bottom = viewBottom + std::max(0.0f, g.chatScroll), height = 0;
+    d->PushClipRect(ca, cb, true);
+    for (int i = static_cast<int>(v.chat.size()) - 1; i >= 0; i--) {
         const ChatLine& line = v.chat[i];
         if (line.from && g.muted.count(line.from)) continue;
         // The word filter (public rooms): the masked name and the starred
@@ -317,20 +351,38 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
         }
         const float h = f.body->CalcTextSizeA(g_v.L(size), FLT_MAX, g_v.L(wrap), all.c_str()).y / g_v.s;
         const float y = bottom - h;
-        if (line.from) {
-            d->AddText(f.body, g_v.L(size), g_v.P(910, y), kCream, all.c_str(), nullptr, g_v.L(wrap));
-            d->AddText(f.strong, g_v.L(size), g_v.P(910, y), kCream, Upper(name).c_str());
-        }
-        else {
-            d->AddText(f.body, g_v.L(size), g_v.P(910, y), kGold, all.c_str(), nullptr, g_v.L(wrap));
+        height += h + 4;
+        if (y < viewBottom && y + h > top) {
+            if (line.from) {
+                d->AddText(f.body, g_v.L(size), g_v.P(910, y), kSoft, all.c_str(), nullptr, g_v.L(wrap));
+                d->AddText(f.strong, g_v.L(size), g_v.P(910, y), kCream, Upper(name).c_str());
+            }
+            else {
+                d->AddText(f.body, g_v.L(size), g_v.P(910, y), kGold, all.c_str(), nullptr, g_v.L(wrap));
+            }
         }
         bottom = y - 4;
     }
     d->PopClipRect();
+    const float view = viewBottom - top;
+    g.chatScroll = std::clamp(g.chatScroll, 0.0f, std::max(0.0f, height - view));
+    if (height > view) ScrollBar(d, 1536, top, viewBottom, height - view - g.chatScroll, view, height, false);
+    if (g.chatScroll > 0 && unseen > 0) {
+        // "n new messages", above the box at the right: a click goes down.
+        const std::string label = std::to_string(unseen) + (unseen == 1 ? " new message" : " new messages");
+        ImFont* bold = f.bold ? f.bold : f.strong;
+        const float w = TextW(bold, 14, label) + 34, x1 = 1530, x0 = x1 - w, y0 = 748, y1 = 772;
+        DropShadow(d, x0, y0, x1, y1, 4, 10, 0.35f, false);
+        d->AddRectFilled(g_v.P(x0, y0), g_v.P(x1, y1), Rgba(10, 12, 16, 214));
+        d->AddRect(g_v.P(x0, y0), g_v.P(x1, y1), Rgba(236, 228, 206, 115), 0, 0, std::max(1.0f, g_v.L(1)));
+        Text(d, bold, g_v.L(14), g_v.P(x0 + 10, y0 + 4), kCream, label);
+        d->AddTriangleFilled(g_v.P(x1 - 18, y0 + 9), g_v.P(x1 - 8, y0 + 9), g_v.P(x1 - 13, y0 + 16), kCream);
+        if (Clicked() && MouseIn(g_v.P(x0, y0), g_v.P(x1, y1))) g.chatScroll = 0;
+    }
     // The box and Send.
     const ImVec2 a = g_v.P(910, 781), b = g_v.P(1460, 819);
-    d->AddRectFilled(a, b, Rgba(6, 8, 11, 230));
-    d->AddRect(a, b, g.typing ? kRing : Rgba(93, 90, 82, 160), 0, 0, g_v.L(g.typing ? 2.0f : 1.0f));
+    d->AddRectFilled(a, b, Rgba(0, 0, 0, 115));
+    d->AddRect(a, b, g.typing ? look::kRing : look::kEdgeControl, 0, 0, g_v.L(g.typing ? 2.0f : 1.0f));
     if (g.typing) {
         const std::string shown = g.text + ((static_cast<int>(ImGui::GetTime() * 2) & 1) ? "|" : " ");
         // Long text shows its end.
@@ -341,22 +393,36 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
     else {
         Text(d, f.body, g_v.L(16), g_v.P(924, 790), kMuted, "Say something (Enter, or Back + Y on a pad)");
     }
-    d->AddRectFilled(g_v.P(1468, 781), g_v.P(1534, 819), kGold, g_v.L(19));
-    Text(d, f.strong, g_v.L(16), g_v.P(1501, 790), Rgba(21, 19, 13), "Send", 0.5f);
+    d->AddRectFilled(g_v.P(1468, 781), g_v.P(1534, 819), kGold);
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(1501, 790), look::kInk, "Send", 0.5f);
     *clickedBox = Clicked() && MouseIn(a, b);
     *clickedSend = Clicked() && MouseIn(g_v.P(1468, 781), g_v.P(1534, 819));
 }
 
-void Dialog(ImDrawList* d, const HubFonts& f, const std::string& kicker, const std::string& title, const std::string& text, ImU32 line = kLine)
+// A confirm (S): the question, what happens next, two buttons (the
+// focused one gold, red when it cannot be undone); its prompts in its footer.
+// *pressed: the button clicked (0 the first, 1 the second).
+void Dialog(ImDrawList* d, const HubFonts& f, const std::string& kicker, const std::string& title, const std::string& text, bool danger,
+            const char* yes, const char* no, const PromptList& prompts, int* clicked, int* pressed)
 {
-    d->AddRectFilled(g_v.P(0, 0), g_v.P(1600, 844), Rgba(0, 0, 0, 150));
-    const ImVec2 a = g_v.P(470, 330), b = g_v.P(1130, 500);
-    d->AddRectFilledMultiColor(a, b, Rgba(26, 31, 38, 250), Rgba(26, 31, 38, 250), Rgba(11, 14, 18, 250), Rgba(11, 14, 18, 250));
-    d->AddLine(a, g_v.P(1130, 330), line, g_v.L(2));
-    d->AddLine(g_v.P(470, 500), b, line, g_v.L(2));
-    Text(d, f.strong, g_v.L(16), g_v.P(504, 362), kGold, kicker);
-    Text(d, f.display, g_v.L(28), g_v.P(504, 396), kCream, title);
-    d->AddText(f.body, g_v.L(17), g_v.P(504, 452), kSoft, text.c_str(), nullptr, g_v.L(590));
+    ImFont* bold = f.bold ? f.bold : f.strong;
+    const float wrap = 544;
+    const float textH = f.body->CalcTextSizeA(g_v.L(17), FLT_MAX, g_v.L(wrap), text.c_str()).y / g_v.s;
+    ModalSpec m;
+    m.w = 600;
+    m.h = 44 + 22 + 34 + 12 + textH + 24 + 48 + 26 + 48;
+    m.x0 = 500;
+    m.y0 = std::max(60.0f, (844 - m.h) / 2);
+    m.kicker = kicker;
+    m.danger = danger;
+    m.prompts = prompts;
+    float y = ui::Modal(d, bold, f.body, m, clicked) + 22;
+    Text(d, f.display, g_v.L(28), g_v.P(528, y), kCream, title);
+    y += 46;
+    d->AddText(f.body, g_v.L(17), g_v.P(528, y), kSoft, text.c_str(), nullptr, g_v.L(wrap));
+    y += textH + 24;
+    if (Button(d, bold, 528, y, 806, y + 48, yes, g.choice == 0, danger)) *pressed = 0;
+    if (Button(d, bold, 822, y, 1072, y + 48, no, g.choice == 1)) *pressed = 1;
 }
 
 std::string LeaveText(const RoomsView& v)
@@ -378,56 +444,54 @@ std::string LeaveText(const RoomsView& v)
     return text.empty() ? "You can come back with the code while the room is open." : text;
 }
 
-// The your-turn card: the two players, the timer, the delay for this match.
-void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t)
+// The your-turn card (M): the two players, the timer, the delay for this
+// match; its prompts and hint in its footer.
+void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const PromptList& prompts, const std::string& hint, ImU32 hintCol,
+          int* clicked)
 {
     const keeper::TableState& s = v.tableViews[t].s;
-    d->AddRectFilled(g_v.P(0, 0), g_v.P(1600, 844), Rgba(0, 0, 0, 160));
-    const float x0 = 380, y0 = 210, w = 840, h = 430;
-    const ImVec2 a = g_v.P(x0, y0), b = g_v.P(x0 + w, y0 + h);
-    d->AddRectFilled(a, b, Rgba(11, 14, 18, 250));
-    d->PushClipRect(a, b, true);
-    if (const TextureView* bg = Texture(StageTex("CHN", "StageSelectBG"))) {
-        Image(d, bg, g_v.P(x0 - 200, y0), g_v.P(x0 + w + 200, y0 + 310), ImVec2(0, 0), ImVec2(1, 1), Rgba(120, 120, 120));
-    }
-    d->AddRectFilledMultiColor(g_v.P(x0, y0 + 150), g_v.P(x0 + w, y0 + h), Rgba(11, 14, 18, 0), Rgba(11, 14, 18, 0), Rgba(11, 14, 18, 250),
-                               Rgba(11, 14, 18, 250));
-    d->PopClipRect();
-    d->AddLine(a, g_v.P(x0 + w, y0), kRing, g_v.L(2));
-    d->AddLine(g_v.P(x0, y0 + h), b, kRing, g_v.L(2));
-    Text(d, f.strong, g_v.L(16), g_v.P(x0 + 30, y0 + 22), kGold, "YOUR TURN \xC2\xB7 TABLE " + std::to_string(t + 1));
+    ImFont* bold = f.bold ? f.bold : f.strong;
+    const float x0 = 380, w = 840, h = 414, y0 = 214, x1 = x0 + w;
+    ModalSpec m;
+    m.x0 = x0, m.y0 = y0, m.w = w, m.h = h;
+    m.kicker = "YOUR TURN \xC2\xB7 TABLE " + std::to_string(t + 1);
     Rules rules;
-    if (ParseRules(v.tableViews[t].rules, &rules)) Text(d, f.body, g_v.L(15), g_v.P(x0 + w - 30, y0 + 23), kSoft, DescribeRules(rules), 1);
+    if (ParseRules(v.tableViews[t].rules, &rules)) m.aside = DescribeRules(rules), m.asideCol = kGold;
+    m.hint = hint, m.hintCol = hintCol;
+    m.prompts = prompts;
+    ui::Modal(d, bold, f.body, m, clicked);
     for (int i = 0; i < 2; i++) {
-        const RoomMember* m = Member(v, s.seat[i]);
-        Seat(d, f, i ? x0 + w - 30 - 330 : x0 + 30, y0 + 60, m, s.ready[i], false, i, false);
-        Text(d, f.strong, g_v.L(14), g_v.P(i ? x0 + w - 30 - 330 : x0 + 30, y0 + 186), kMuted, i ? "P2" : "P1 \xC2\xB7 hosts the match");
+        const RoomMember* mm = Member(v, s.seat[i]);
+        const float sx = i ? x1 - 28 - 330 : x0 + 28;
+        Seat(d, f, sx, y0 + 66, mm, s.ready[i], false, i, false);
+        Text(d, bold, g_v.L(13), i ? g_v.P(sx + 330, y0 + 192) : g_v.P(sx, y0 + 192), kMuted, i ? "P2" : "P1 \xC2\xB7 HOSTS THE MATCH", i ? 1.0f : 0.0f);
     }
-    Text(d, f.display, g_v.L(36), g_v.P(x0 + w / 2, y0 + 98), Rgba(255, 255, 255), "VS", 0.5f);
+    StageText(d, f.display, 36, x0 + w / 2, y0 + 104, Rgba(255, 255, 255), "VS", 0.5f);
     // The time left: the keeper's call, from when it showed here (also while
     // this game was still coming back from a battle), less a little for the
     // trip to the keeper.
     const double total = std::max(1.0, (s.callSeconds ? s.callSeconds : 10) - kCardMarginSeconds);
     const double left = std::clamp(total - (RoomsClockMs() - v.tableViews[t].callSeenMs) / 1000.0, 0.0, total);
-    d->AddRectFilled(g_v.P(x0 + 30, y0 + 218), g_v.P(x0 + w - 30, y0 + 222), Rgba(74, 68, 54));
-    d->AddRectFilled(g_v.P(x0 + 30, y0 + 218), g_v.P(x0 + 30 + (w - 60) * static_cast<float>(left / total), y0 + 222), kGold);
     const int mySeat = s.seat[0] == v.self ? 0 : 1;
     if (g.cardReady || s.ready[mySeat]) {
-        Text(d, f.display, g_v.L(26), g_v.P(x0 + w / 2, y0 + 262), kGreen, "READY", 0.5f);
-        Text(d, f.body, g_v.L(17), g_v.P(x0 + w / 2, y0 + 304), kSoft, "Waiting for " + NameOf(v, s.seat[1 - mySeat]) + ".", 0.5f);
+        Text(d, f.display, g_v.L(26), g_v.P(x0 + w / 2, y0 + 228), kGreen, "READY", 0.5f);
+        Text(d, f.body, g_v.L(17), g_v.P(x0 + w / 2, y0 + 270), kSoft, "Waiting for " + NameOf(v, s.seat[1 - mySeat]) + ".", 0.5f);
         return;
     }
-    Text(d, f.display, g_v.L(26), g_v.P(x0 + w / 2, y0 + 246), Rgba(255, 255, 255),
+    Text(d, f.display, g_v.L(26), g_v.P(x0 + w / 2, y0 + 216), Rgba(255, 255, 255),
          left > 0 ? "Ready in " + std::to_string(static_cast<int>(left + 0.99)) : std::string("Out of time"), 0.5f);
-    // The delay for this match.
-    const float ry = y0 + 300;
-    d->AddRectFilled(g_v.P(x0 + 220, ry), g_v.P(x0 + w - 220, ry + 48), Rgba(20, 24, 30, 230));
-    Text(d, f.strong, g_v.L(18), g_v.P(x0 + 240, ry + 13), kCream, "Input delay");
+    d->AddRectFilled(g_v.P(x0 + 28, y0 + 256), g_v.P(x1 - 28, y0 + 260), Rgba(255, 255, 255, 31));
+    d->AddRectFilled(g_v.P(x0 + 28, y0 + 256), g_v.P(x0 + 28 + (w - 56) * static_cast<float>(left / total), y0 + 260), kGold);
+    // The delay for this match: a focused stepper row.
+    const float ry = y0 + 278;
+    Control(d, x0 + 160, ry, x1 - 160, ry + 50, true);
+    Text(d, bold, g_v.L(18), g_v.P(x0 + 182, ry + 13), look::kInk, "Input delay");
     const std::string frames = std::to_string(g.cardDelay) + (g.cardDelay == 1 ? " frame" : " frames");
-    Text(d, f.body, g_v.L(18), g_v.P(x0 + w - 300, ry + 13), kCream, frames, 0.5f);
-    d->AddTriangleFilled(g_v.P(x0 + w - 368, ry + 18), g_v.P(x0 + w - 368, ry + 30), g_v.P(x0 + w - 378, ry + 24), kGold);
-    d->AddTriangleFilled(g_v.P(x0 + w - 232, ry + 18), g_v.P(x0 + w - 222, ry + 24), g_v.P(x0 + w - 232, ry + 30), kGold);
-    Text(d, f.body, g_v.L(15), g_v.P(x0 + w / 2, ry + 62), kMuted, "No answer in time: back of the queue.", 0.5f);
+    const float vx = x1 - 160 - 120;
+    Text(d, bold, g_v.L(18), g_v.P(vx, ry + 13), look::kInk, frames, 0.5f);
+    d->AddTriangleFilled(g_v.P(vx - 72, ry + 19), g_v.P(vx - 72, ry + 31), g_v.P(vx - 82, ry + 25), look::kInk);
+    d->AddTriangleFilled(g_v.P(vx + 72, ry + 19), g_v.P(vx + 82, ry + 25), g_v.P(vx + 72, ry + 31), look::kInk);
+    Text(d, f.body, g_v.L(15), g_v.P(x0 + w / 2, ry + 60), kMuted, "No answer in time: back of the queue.", 0.5f);
 }
 
 // A name cut to fit `width` (ui units) at this size, with an ellipsis.
@@ -470,52 +534,55 @@ std::vector<HandoffStep> HandoffSteps(const HubFonts& f, const RoomsView& v, con
     return steps;
 }
 
-// Over the room from both players' Ready to the match loading (mock-up board
-// 6): who against whom, each step of the way in, the set's rules.
-void HandoffModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const std::vector<HandoffStep>& steps, double stepSeconds)
+// Over the room from both players' Ready to the match loading (M): who
+// against whom, each step of the way in, the set's rules in its footer.
+void HandoffModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const std::vector<HandoffStep>& steps, double stepSeconds,
+                  const PromptList& prompts, int* clicked)
 {
     const keeper::TableState& s = v.tableViews[t].s;
     const uint32_t otherId = s.seat[s.seat[0] == v.self ? 1 : 0];
-    d->AddRectFilled(g_v.P(0, 0), g_v.P(1600, 844), Rgba(0, 0, 0, 160));
-    const float x0 = 520, y0 = 250, w = 560, h = 350;
-    const ImVec2 a = g_v.P(x0, y0), b = g_v.P(x0 + w, y0 + h);
-    d->AddRectFilledMultiColor(a, b, Rgba(26, 31, 38, 250), Rgba(26, 31, 38, 250), Rgba(11, 14, 18, 250), Rgba(11, 14, 18, 250));
-    d->AddLine(a, g_v.P(x0 + w, y0), kRing, g_v.L(2));
-    d->AddLine(g_v.P(x0, y0 + h), b, kRing, g_v.L(2));
-    // The opponent's character, head and shoulders.
+    ImFont* bold = f.bold ? f.bold : f.strong;
+    const float x0 = 480, w = 640, h = 404, y0 = 220, x1 = x0 + w;
+    ModalSpec m;
+    m.x0 = x0, m.y0 = y0, m.w = w, m.h = h;
+    m.kicker = "TABLE " + std::to_string(t + 1) + " \xC2\xB7 " + (g_handoff.played > 0 ? "GAME " + std::to_string(g_handoff.played + 1) : std::string("YOUR TURN"));
+    Rules rules;
+    if (ParseRules(v.tableViews[t].rules, &rules)) m.hint = DescribeRules(rules);
+    m.prompts = prompts;
+    ui::Modal(d, bold, f.body, m, clicked);
+    // The opponent's character, head and shoulders, then "vs" and their name.
     float tx = x0 + 28;
     const RoomMember* other = Member(v, otherId);
     // The portrait shows 0.24 of the art's width in 48 px: the art at 200 px.
     if (const TextureView* art = other && !other->chara.empty() ? TextureSized(CharaTex(other->chara, "PartCharacter"), g_v.L(200)) : nullptr) {
-        Image(d, art, g_v.P(x0 + 26, y0 + 26), g_v.P(x0 + 74, y0 + 98), ImVec2(0.38f, 0.06f), ImVec2(0.62f, 0.42f), Rgba(255, 255, 255));
-        d->AddRect(g_v.P(x0 + 26, y0 + 26), g_v.P(x0 + 74, y0 + 98), Rgba(93, 90, 82, 160), 0, 0, g_v.L(1));
-        tx = x0 + 92;
+        Image(d, art, g_v.P(x0 + 28, y0 + 64), g_v.P(x0 + 80, y0 + 138), ImVec2(0.38f, 0.06f), ImVec2(0.62f, 0.42f), Rgba(255, 255, 255));
+        d->AddRect(g_v.P(x0 + 28, y0 + 64), g_v.P(x0 + 80, y0 + 138), look::kEdgeControl, 0, 0, std::max(1.0f, g_v.L(1)));
+        tx = x0 + 98;
     }
-    const std::string kicker = "TABLE " + std::to_string(t + 1) + " \xC2\xB7 " +
-                               (g_handoff.played > 0 ? "GAME " + std::to_string(g_handoff.played + 1) : std::string("YOUR TURN"));
-    Text(d, f.strong, g_v.L(16), g_v.P(tx, y0 + 34), kGold, kicker);
-    Text(d, f.display, g_v.L(28), g_v.P(tx, y0 + 58), kCream, Fit(f.display, 28, "vs " + Upper(NameOf(v, otherId)), x0 + w - 28 - tx));
-    float y = y0 + 132;
+    if (other && g_names.count(other->chara)) Text(d, f.body, g_v.L(14), g_v.P(tx, y0 + 70), kSoft, g_names[other->chara]);
+    Text(d, f.display, g_v.L(28), g_v.P(tx, y0 + 92), kCream, "vs");
+    float nx = tx + TextW(f.display, 28, "vs") + 12;
+    if (other && other->country.size() == 2) nx += DrawFlag(d, f.strong, other->country, nx, y0 + 103, 13) + 10;
+    Text(d, f.display, g_v.L(28), g_v.P(nx, y0 + 92), kCream, Fit(f.display, 28, Upper(NameOf(v, otherId)), x1 - 28 - nx));
+    float y = y0 + 158;
     for (const HandoffStep& st : steps) {
-        const ImVec2 c = g_v.P(x0 + 42, y + 11);
-        const ImU32 ring = st.state == 2 ? kGreen : st.state == 1 ? kRing : Rgba(93, 90, 82, 200);
+        const ImVec2 c = g_v.P(x0 + 40, y + 11);
+        const ImU32 ring = st.state == 2 ? kGreen : st.state == 1 ? kRing : look::kEdgeControl;
         d->AddCircle(c, g_v.L(12), ring, 24, g_v.L(2));
         if (st.state == 2) {
-            const ImVec2 tick[] = {g_v.P(x0 + 36, y + 11), g_v.P(x0 + 40.5f, y + 16), g_v.P(x0 + 48.5f, y + 6)};
+            const ImVec2 tick[] = {g_v.P(x0 + 34, y + 11), g_v.P(x0 + 38.5f, y + 16), g_v.P(x0 + 46.5f, y + 6)};
             d->AddPolyline(tick, 3, kGreen, 0, g_v.L(2.2f));
         }
         else if (st.state == 1) {
             // A dot going round: still working.
             const float turn = static_cast<float>(ImGui::GetTime() * 4.0);
-            d->AddCircleFilled(g_v.P(x0 + 42 + 7 * std::cos(turn), y + 11 + 7 * std::sin(turn)), g_v.L(2.6f), kRing);
+            d->AddCircleFilled(g_v.P(x0 + 40 + 7 * std::cos(turn), y + 11 + 7 * std::sin(turn)), g_v.L(2.6f), kRing);
         }
         std::string text = st.text;
         if (st.state == 1 && stepSeconds >= 3) text += " \xC2\xB7 " + std::to_string(static_cast<int>(stepSeconds)) + " s";
-        Text(d, f.body, g_v.L(17), g_v.P(x0 + 68, y), st.state == 0 ? kMuted : st.state == 1 ? kCream : kSoft, text);
+        Text(d, f.body, g_v.L(17), g_v.P(x0 + 66, y), st.state == 0 ? kMuted : kCream, text);
         y += 36;
     }
-    Rules rules;
-    if (ParseRules(v.tableViews[t].rules, &rules)) Text(d, f.body, g_v.L(15), g_v.P(x0 + 28, y0 + h - 36), kMuted, DescribeRules(rules));
 }
 
 const char* const kRuleRows[] = {"First to", "Rounds per game", "Round timer", "Rotation", "Stays up to"};
@@ -551,67 +618,50 @@ void StepRule(Rules* r, int row, int dir)
     }
 }
 
-void RulesModal(ImDrawList* d, const HubFonts& f, const RoomsView& v)
+// The table rules (L): a tab per table (LB and RB), the five rules as
+// stepper rows; its prompts in its footer.
+void RulesModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, const PromptList& prompts, int* clicked)
 {
-    d->AddRectFilled(g_v.P(0, 0), g_v.P(1600, 844), Rgba(0, 0, 0, 160));
-    const float x0 = 400, y0 = 150, w = 800, h = 560;
-    d->AddRectFilledMultiColor(g_v.P(x0, y0), g_v.P(x0 + w, y0 + h), Rgba(26, 31, 38, 250), Rgba(26, 31, 38, 250), Rgba(11, 14, 18, 250),
-                               Rgba(11, 14, 18, 250));
-    d->AddLine(g_v.P(x0, y0), g_v.P(x0 + w, y0), kLine, g_v.L(2));
-    d->AddLine(g_v.P(x0, y0 + h), g_v.P(x0 + w, y0 + h), kLine, g_v.L(2));
-    Text(d, f.display, g_v.L(30), g_v.P(x0 + 30, y0 + 22), kCream, "TABLE RULES");
-    // A tab per table (LB and RB).
-    float tx = x0 + 30;
-    const int tables = static_cast<int>(g.rulesEdit.size());
-    for (int t = 0; t < tables; t++) {
-        const std::string label = "Table " + std::to_string(t + 1);
-        const float tw = TextW(f.strong, 16, label) + 24;
-        const bool on = t == g.rulesTable;
-        d->AddRectFilled(g_v.P(tx, y0 + 74), g_v.P(tx + tw, y0 + 104), on ? kGold : Rgba(20, 24, 30), g_v.L(15));
-        Text(d, f.strong, g_v.L(16), g_v.P(tx + 12, y0 + 79), on ? Rgba(21, 19, 13) : kSoft, label);
-        tx += tw + 8;
-    }
+    ImFont* bold = f.bold ? f.bold : f.strong;
+    const float x0 = 350, w = 900, h = 470, y0 = 187, x1 = x0 + w;
     const Rules& r = g.rulesEdit[g.rulesTable];
-    for (int row = 0; row < 5; row++) {
-        const float y = y0 + 130 + row * 62.0f;
-        const bool on = row == g.rulesRow;
-        if (on) d->AddRectFilledMultiColor(g_v.P(x0 + 30, y), g_v.P(x0 + w - 30, y + 54), Rgba(240, 200, 90, 110), Rgba(8, 9, 11, 150),
-                                           Rgba(8, 9, 11, 150), Rgba(240, 200, 90, 110));
-        else d->AddRectFilled(g_v.P(x0 + 30, y), g_v.P(x0 + w - 30, y + 54), Rgba(20, 24, 30, 179));
-        Text(d, f.strong, g_v.L(19), g_v.P(x0 + 52, y + 15), kCream, kRuleRows[row]);
-        Text(d, f.body, g_v.L(19), g_v.P(x0 + 560, y + 15), kCream, RuleValue(r, row), 0.5f);
-        if (on) {
-            d->AddTriangleFilled(g_v.P(x0 + 400, y + 21), g_v.P(x0 + 400, y + 33), g_v.P(x0 + 390, y + 27), kGold);
-            d->AddTriangleFilled(g_v.P(x0 + 720, y + 21), g_v.P(x0 + 730, y + 27), g_v.P(x0 + 720, y + 33), kGold);
-        }
-    }
     Rules now;
     const std::string current = g.rulesTable < static_cast<int>(v.tableRules.size()) ? v.tableRules[g.rulesTable] : "";
     const bool changed = !(ParseRules(current, &now) && now == r);
-    Text(d, f.body, g_v.L(16), g_v.P(x0 + 30, y0 + h - 44), changed ? kGold : kMuted,
-         changed ? "Changed: applies from this table's next set." : "Everyone sees these on the table.");
-}
-
-void Bar(ImDrawList* d, const HubFonts& f, const std::string& lead, ImU32 leadCol, const std::string& text,
-         const std::vector<std::pair<const char*, std::string>>& prompts, int* clicked)
-{
-    d->AddRectFilled(g_v.P(0, 844), g_v.P(1600, 900), Rgba(8, 9, 11, 245));
-    d->AddLine(g_v.P(0, 844), g_v.P(1600, 844), kLine, g_v.L(1));
-    float x = 48;
-    if (!lead.empty()) {
-        Text(d, f.strong, g_v.L(15), g_v.P(x, 863), leadCol, lead);
-        x += TextW(f.strong, 15, lead) + 14;
+    ModalSpec m;
+    m.x0 = x0, m.y0 = y0, m.w = w, m.h = h;
+    m.kicker = "OWNER";
+    m.hint = changed ? "Changed: applies from this table's next set." : "Everyone sees these on the table.";
+    m.hintCol = changed ? kGold : kMuted;
+    m.prompts = prompts;
+    ui::Modal(d, bold, f.body, m, clicked);
+    Text(d, f.display, g_v.L(28), g_v.P(x0 + 28, y0 + 64), kCream, "Table rules");
+    // The tabs, right-aligned, between the LB and RB glyphs.
+    const int tables = static_cast<int>(g.rulesEdit.size());
+    float tw = 0;
+    for (int t = 0; t < tables; t++) tw += TextW(bold, 15, "Table " + std::to_string(t + 1)) + 28 + 8;
+    float tx = x1 - 28 - 30 - 8 - tw - 30;
+    if (const TextureView* icon = Texture(PadTex("button_lb"))) Image(d, icon, g_v.P(tx, y0 + 66), g_v.P(tx + 30, y0 + 96));
+    tx += 38;
+    for (int t = 0; t < tables; t++) {
+        const std::string label = "Table " + std::to_string(t + 1);
+        const float lw = TextW(bold, 15, label) + 28;
+        const bool on = t == g.rulesTable;
+        Control(d, tx, y0 + 65, tx + lw, y0 + 97, on);
+        Text(d, bold, g_v.L(15), g_v.P(tx + 14, y0 + 71), on ? look::kInk : kCream, label);
+        tx += lw + 8;
     }
-    Text(d, f.body, g_v.L(16), g_v.P(x, 862), kSoft, text);
-    float right = 1564;
-    *clicked = -1;
-    for (int i = static_cast<int>(prompts.size()) - 1; i >= 0; i--) {
-        const float w = 32 + 8 + TextW(f.body, 17, prompts[i].second);
-        const float px = right - w;
-        if (const TextureView* icon = Texture(PadTex(prompts[i].first))) Image(d, icon, g_v.P(px, 856), g_v.P(px + 32, 888));
-        Text(d, f.body, g_v.L(17), g_v.P(px + 40, 861), kCream, prompts[i].second);
-        if (Clicked() && MouseIn(g_v.P(px, 850), g_v.P(right, 894))) *clicked = i;
-        right = px - 26;
+    if (const TextureView* icon = Texture(PadTex("button_rb"))) Image(d, icon, g_v.P(tx, y0 + 66), g_v.P(tx + 30, y0 + 96));
+    for (int row = 0; row < 5; row++) {
+        const float y = y0 + 120 + row * 58.0f;
+        const bool on = row == g.rulesRow;
+        Control(d, x0 + 28, y, x1 - 28, y + 50, on);
+        Text(d, on ? bold : f.body, g_v.L(18), g_v.P(x0 + 50, y + 13), on ? look::kInk : kCream, kRuleRows[row]);
+        Text(d, on ? bold : f.body, g_v.L(18), g_v.P(x0 + 600, y + 13), on ? look::kInk : kCream, RuleValue(r, row), 0.5f);
+        if (on) {
+            d->AddTriangleFilled(g_v.P(x0 + 440, y + 19), g_v.P(x0 + 440, y + 31), g_v.P(x0 + 430, y + 25), look::kInk);
+            d->AddTriangleFilled(g_v.P(x0 + 760, y + 19), g_v.P(x0 + 770, y + 25), g_v.P(x0 + 760, y + 31), look::kInk);
+        }
     }
 }
 
@@ -641,7 +691,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     if (!f.display || !f.strong || !f.body) return;
     BeginScreen();
     ImDrawList* d = ImGui::GetBackgroundDrawList();
-    d->AddRectFilled(ImVec2(0, 0), ImGui::GetIO().DisplaySize, Rgba(6, 8, 11));
+    Backdrop(d);
     d->PushClipRect(g_v.P(0, 0), g_v.P(1600, 900), true);
     g_inputOn = takeInput;
     const bool paused = !v.keeper;
@@ -699,12 +749,6 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         if (callTable >= 0) g.typing = false;
     }
 
-    if (const TextureView* bg = Texture(StageTex("CHN", "StageSelectBG"))) {
-        Image(d, bg, g_v.P(-500, -40), g_v.P(2100, 720), ImVec2(0, 0), ImVec2(1, 1), Rgba(80, 80, 80));
-    }
-    d->AddRectFilledMultiColor(g_v.P(0, 315), g_v.P(1600, 630), Rgba(6, 8, 11, 64), Rgba(6, 8, 11, 64), Rgba(6, 8, 11, 210), Rgba(6, 8, 11, 210));
-    d->AddRectFilledMultiColor(g_v.P(0, 630), g_v.P(1600, 900), Rgba(6, 8, 11, 210), Rgba(6, 8, 11, 210), Rgba(6, 8, 11), Rgba(6, 8, 11));
-
     const TableView* focused = g.table < static_cast<int>(v.tableViews.size()) ? &v.tableViews[g.table] : nullptr;
     const keeper::TableState fs = focused ? focused->s : keeper::TableState{};
     const bool atFocused = fs.seat[0] == v.self || fs.seat[1] == v.self;
@@ -731,16 +775,12 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     else if (handoffTable >= 0) {
         if (canCancel && Back()) in->cancelHandoff = true;
     }
-    else if (g.modal == Modal::Leaving) {
+    else if (g.modal == Modal::Leaving || g.modal == Modal::Remove) {
+        if (Left()) g.choice = 0;
+        if (Right()) g.choice = 1;
         if (Confirm()) {
-            in->leave = true;
-            g.modal = Modal::None;
-        }
-        else if (Back()) g.modal = Modal::None;
-    }
-    else if (g.modal == Modal::Remove) {
-        if (Confirm()) {
-            Request(in, "kick", {std::to_string(g.removing)});
+            if (g.choice == 0 && g.modal == Modal::Leaving) in->leave = true;
+            else if (g.choice == 0) Request(in, "kick", {std::to_string(g.removing)});
             g.modal = Modal::None;
         }
         else if (Back()) g.modal = Modal::None;
@@ -808,6 +848,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
             if (Pressed({ImGuiKey_GamepadFaceLeft}, false) && who && who != v.self && v.owner == v.self && !paused) {
                 g.removing = who;
                 g.modal = Modal::Remove;
+                g.choice = 0;
             }
             if (Back()) g.onPlayers = false;
         }
@@ -846,7 +887,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
                 for (int t = 0; t < tables && t < static_cast<int>(v.tableRules.size()); t++) ParseRules(v.tableRules[t], &g.rulesEdit[t]);
             }
             if (enter) g.typing = true;
-            else if (Back()) g.modal = Modal::Leaving;
+            else if (Back()) g.modal = Modal::Leaving, g.choice = 0;
         }
         if (ImGui::GetIO().KeyCtrl && Pressed({ImGuiKey_C}, false)) {
             ImGui::SetClipboardText(v.room.c_str());
@@ -871,27 +912,27 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     const float lineW = (paused ? 0 : TextW(f.strong, 17, access) + 16) + TextW(f.body, 17, "Code") + 6 + codeW + 20 + 34 +
                         TextW(f.body, 17, "Copy code");
     const std::string title = RoomTitleText(v.title, NameOf(v, v.owner));
-    float x = 48 + FitText(d, f.display, 40, 26, 1552 - 48 - 30 - lineW, g_v.P(48, 22), Rgba(255, 255, 255), title) + 30;
+    float x = 48 + FitText(d, f.display, 40, 26, 1552 - 48 - 30 - lineW, g_v.P(48, 22), Rgba(255, 255, 255), title, 0, true) + 30;
     if (!paused) {
-        Text(d, f.strong, g_v.L(17), g_v.P(x, 41), v.isPublic ? kGreen : kMuted, access);
+        StageText(d, f.strong, 17, x, 41, v.isPublic ? kGreen : kMuted, access);
         x += TextW(f.strong, 17, access) + 16;
     }
-    Text(d, f.body, g_v.L(17), g_v.P(x, 41), kSoft, "Code");
+    StageText(d, f.body, 17, x, 41, kSoft, "Code");
     x += TextW(f.body, 17, "Code") + 6;
     if (hideCode) x += DrawHiddenCode(d, x, 41, 17, kGold) + 20;
     else {
-        Text(d, f.strong, g_v.L(17), g_v.P(x, 41), kGold, code);
+        StageText(d, f.strong, 17, x, 41, kGold, code);
         x += TextW(f.strong, 17, code) + 20;
     }
     if (const TextureView* icon = Texture(PadTex("button_back"))) Image(d, icon, g_v.P(x, 36), g_v.P(x + 28, 64));
-    Text(d, f.body, g_v.L(17), g_v.P(x + 34, 41), kCream, "Copy code");
+    StageText(d, f.body, 17, x + 34, 41, kCream, "Copy code");
     if (g.modal == Modal::None && Clicked() && MouseIn(g_v.P(x, 32), g_v.P(x + 34 + TextW(f.body, 17, "Copy code"), 68))) {
         ImGui::SetClipboardText(v.room.c_str());
         in->copiedCode = true;
     }
 
     // ---- the tables ----
-    d->PushClipRect(g_v.P(48, 80), g_v.P(880, 832), true);
+    d->PushClipRect(g_v.P(30, 72), g_v.P(886, 840), true);
     for (int t = 0; t < tables; t++) {
         const float ty = 80 + (t - g.scroll) * kTablePitch;
         if (ty > 832 || ty + kTableH < 80) continue;
@@ -902,6 +943,8 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         }
     }
     d->PopClipRect();
+    // More than four tables: the bar in the gutter (dark track, gold thumb).
+    ScrollBar(d, 874, 84, 830, g.scroll, kTablesInView, static_cast<float>(tables), true);
 
     // ---- players and chat ----
     Players(d, f, v);
@@ -942,10 +985,10 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         }
     }
     else if (g.modal == Modal::Leaving) {
-        prompts = {{"button_a", "Leave"}, {"button_b", "Stay"}};
+        prompts = {{"button_a", "Select"}, {"button_b", "Stay"}};
     }
     else if (g.modal == Modal::Remove) {
-        prompts = {{"button_a", "Remove"}, {"button_b", "Cancel"}};
+        prompts = {{"button_a", "Select"}, {"button_b", "Cancel"}};
     }
     else if (g.modal == Modal::Rules) {
         text = "LB and RB: the table. Up and down: the rule; left and right: its value.";
@@ -1023,20 +1066,36 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         if (v.owner == v.self) prompts.push_back({"button_start", "Table rules"});
         prompts.push_back({"button_b", "Leave"});
     }
-    if (g.cardTable >= 0) Card(d, f, v, g.cardTable);
-    else if (handoffTable >= 0) HandoffModal(d, f, v, handoffTable, steps, stepSeconds);
-    else if (g.modal == Modal::Leaving) Dialog(d, f, StreamerMode() ? std::string("ROOM") : "ROOM " + WeyveService::DisplayCode(v.room), "Leave the room?", LeaveText(v));
-    else if (g.modal == Modal::Remove) {
-        Dialog(d, f, "OWNER", "Remove " + NameOf(v, g.removing) + "?", "They are out of the room and cannot come back on this connection.", kRed);
+    const bool modal = g.cardTable >= 0 || handoffTable >= 0 || g.modal != Modal::None;
+    PromptLine(d, f.body, f.bold ? f.bold : f.strong, modal ? std::string() : lead, leadCol, modal ? std::string() : text, modal ? PromptList{} : prompts,
+               &clicked);
+    int pressed = -1;
+    if (g.cardTable >= 0) Card(d, f, v, g.cardTable, prompts, lead.empty() ? text : lead + "  " + text, lead.empty() ? kMuted : leadCol, &clicked);
+    else if (handoffTable >= 0) HandoffModal(d, f, v, handoffTable, steps, stepSeconds, prompts, &clicked);
+    else if (g.modal == Modal::Leaving) {
+        Dialog(d, f, StreamerMode() ? std::string("ROOM") : "ROOM \xC2\xB7 " + WeyveService::DisplayCode(v.room), "Leave the room?", LeaveText(v), false, "Leave",
+               "Stay", prompts, &clicked, &pressed);
     }
-    else if (g.modal == Modal::Rules) RulesModal(d, f, v);
-    Bar(d, f, lead, leadCol, text, prompts, &clicked);
+    else if (g.modal == Modal::Remove) {
+        Dialog(d, f, "OWNER", "Remove " + NameOf(v, g.removing) + "?", "They are out of the room and cannot come back on this connection.", true,
+               "Remove", "Cancel", prompts, &clicked, &pressed);
+    }
+    else if (g.modal == Modal::Rules) RulesModal(d, f, v, prompts, &clicked);
+    if (pressed >= 0 && g_inputOn) {
+        if (pressed == 0 && g.modal == Modal::Leaving) in->leave = true;
+        else if (pressed == 0) Request(in, "kick", {std::to_string(g.removing)});
+        g.modal = Modal::None;
+    }
     if (clicked >= 0) {
         const std::string what = prompts[clicked].second;
         const char* icon = prompts[clicked].first;
-        if (g.modal == Modal::Leaving && what == "Leave") in->leave = true, g.modal = Modal::None;
+        if ((g.modal == Modal::Leaving || g.modal == Modal::Remove) && what == "Select") {
+            if (g.choice == 0 && g.modal == Modal::Leaving) in->leave = true;
+            else if (g.choice == 0) Request(in, "kick", {std::to_string(g.removing)});
+            g.modal = Modal::None;
+        }
         else if (std::strcmp(icon, "button_b") == 0 && g.modal != Modal::None) g.modal = Modal::None;
-        else if (what == "Leave") g.modal = Modal::Leaving;
+        else if (what == "Leave") g.modal = Modal::Leaving, g.choice = 0;
         else if (what == "Ready") {
             g.cardReady = true;
             if (!v.tableNotice.empty()) in->clearNotice = true;

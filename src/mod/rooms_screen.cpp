@@ -79,7 +79,7 @@ std::string Plural(int n, const char* one, const char* many) { return std::to_st
 
 } // namespace
 
-float FitText(ImDrawList* d, ImFont* f, float size, float minSize, float maxW, ImVec2 at, ImU32 c, std::string t, float align)
+float FitText(ImDrawList* d, ImFont* f, float size, float minSize, float maxW, ImVec2 at, ImU32 c, std::string t, float align, bool stage)
 {
     float s = size;
     while (s > minSize && TextW(f, s, t) > maxW) s -= 1;
@@ -93,7 +93,8 @@ float FitText(ImDrawList* d, ImFont* f, float size, float minSize, float maxW, I
     }
     // Kept on the baseline of the full size.
     const ImVec2 shifted(at.x, at.y + g_v.L((size - s) * 0.5f));
-    Text(d, f, g_v.L(s), shifted, c, t, align);
+    if (stage) StageText(d, f, s, (shifted.x - g_v.ox) / g_v.s, (shifted.y - g_v.oy) / g_v.s, c, t, align);
+    else Text(d, f, g_v.L(s), shifted, c, t, align);
     return TextW(f, s, t);
 }
 
@@ -159,84 +160,92 @@ void Bar(ImDrawList* d, const HubFonts& f, const std::string& lead, ImU32 leadCo
     }
 }
 
+// An action row (Create a room, Join with a code): its glyph and its name,
+// nothing under it (the hint at the bottom says what it does). A glass pane,
+// solid gold with the focus.
 void ActionRow(ImDrawList* d, const HubFonts& f, float y, const char* glyph, const char* title, const char* text, bool on)
 {
-    const ImVec2 a = g_v.P(48, y), b = g_v.P(868, y + 72);
+    (void)text;
     if (on) {
-        d->AddRectFilledMultiColor(a, g_v.P(48 + 820 * 0.45f, y + 72), Rgba(240, 200, 90, 82), Rgba(20, 24, 30, 235), Rgba(20, 24, 30, 235),
-                                   Rgba(240, 200, 90, 82));
-        d->AddRectFilledMultiColor(g_v.P(48 + 820 * 0.45f, y), b, Rgba(20, 24, 30, 235), Rgba(8, 9, 11, 240), Rgba(8, 9, 11, 240),
-                                   Rgba(20, 24, 30, 235));
+        DropShadow(d, 48, y, 868, y + 72, 6, 18, 0.32f, true);
+        Control(d, 48, y, 868, y + 72, true);
     }
-    else {
-        d->AddRectFilledMultiColor(a, b, Rgba(20, 24, 30, 235), Rgba(8, 9, 11, 240), Rgba(8, 9, 11, 240), Rgba(20, 24, 30, 235));
-    }
-    d->AddLine(a, g_v.P(868, y), kLine, g_v.L(1));
-    if (on) d->AddRect(ImVec2(a.x + g_v.L(1.5f), a.y + g_v.L(1.5f)), ImVec2(b.x - g_v.L(1.5f), b.y - g_v.L(1.5f)), kRing, 0, 0, g_v.L(3));
-    d->AddCircle(g_v.P(88, y + 36), g_v.L(20), kGold, 32, g_v.L(2));
-    Text(d, f.strong, g_v.L(26), g_v.P(88, y + 20), kGold, glyph, 0.5f);
-    Text(d, f.display, g_v.L(21), g_v.P(130, y + 15), kCream, title);
-    Text(d, f.body, g_v.L(15), g_v.P(130, y + 42), kMuted, text);
+    else Pane(d, 48, y, 868, y + 72);
+    const ImU32 ink = on ? look::kInk : kGold;
+    d->AddCircle(g_v.P(90, y + 36), g_v.L(20), ink, 32, g_v.L(2));
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(24), g_v.P(90, y + 21), ink, glyph, 0.5f);
+    Text(d, f.display, g_v.L(21), g_v.P(130, y + 24), on ? look::kInk : kCream, title);
 }
 
+// A public room: a glass pane, solid gold with the focus (its text in ink).
 void RoomRow(ImDrawList* d, const HubFonts& f, float y, const keeper::ListedRoom& r, bool on)
 {
     const bool full = r.members >= keeper::kRoomCap;
-    const ImVec2 a = g_v.P(48, y), b = g_v.P(868, y + kRowH);
-    d->AddRectFilledMultiColor(a, b, Rgba(20, 24, 30, 235), Rgba(8, 9, 11, 240), Rgba(8, 9, 11, 240), Rgba(20, 24, 30, 235));
-    d->AddLine(a, g_v.P(868, y), Rgba(201, 168, 92, 128), g_v.L(1));
-    const int fade = full ? 158 : 255;
-    FitText(d, f.display, 21, 15, 400, g_v.P(68, y + 17), Alpha(kCream, fade), RoomTitleText(r.title, r.owner));
-    DrawCrown(d, 68, y + 52, 1, Alpha(kGold, fade));
+    if (on) {
+        DropShadow(d, 48, y, 868, y + kRowH, 6, 18, 0.32f, true);
+        Control(d, 48, y, 868, y + kRowH, true);
+    }
+    else Pane(d, 48, y, 868, y + kRowH);
+    const int fade = full && !on ? 158 : 255;
+    const ImU32 title = on ? look::kInk : Alpha(kCream, fade), sub = on ? look::kInkSoft : Alpha(kMuted, fade);
+    FitText(d, f.display, 21, 15, 400, g_v.P(68, y + 15), title, RoomTitleText(r.title, r.owner));
+    DrawCrown(d, 68, y + 52, 1, on ? look::kInk : Alpha(kGold, fade));
     // The owner's flag (the rooms server's lookup), then the name.
     float nx = 90;
     if (const float fw = DrawFlag(d, f.strong, r.ownerCountry, nx, y + 50, 12, fade / 255.0f)) nx += fw + 6;
-    Text(d, f.strong, g_v.L(15), g_v.P(nx, y + 47), Alpha(kSoft, fade), Upper(r.owner));
-    const float ox = nx + TextW(f.strong, 15, Upper(r.owner));
+    ImFont* bold = f.bold ? f.bold : f.strong;
+    Text(d, bold, g_v.L(15), g_v.P(nx, y + 46), on ? look::kInk : Alpha(kSoft, fade), Upper(r.owner));
+    const float ox = nx + TextW(bold, 15, Upper(r.owner));
     std::string detail = " \xC2\xB7 " + Plural(r.tables, "table", "tables");
     const std::string ft = FirstTo(r.rules);
     if (!ft.empty()) detail += " \xC2\xB7 " + ft;
-    Text(d, f.body, g_v.L(15), g_v.P(ox, y + 47), Alpha(kMuted, fade), detail);
+    Text(d, f.body, g_v.L(15), g_v.P(ox, y + 46), sub, detail);
     float fx = 484;
     for (size_t i = 0; i < r.faces.size() && i < 6; i++) {
         DrawFace(d, r.faces[i], fx, y + 22, 30, 40);
         fx += 32;
     }
     const std::string count = std::to_string(r.members) + " / " + std::to_string(keeper::kRoomCap);
-    const float cw = TextW(f.strong, 20, count);
-    Text(d, f.strong, g_v.L(20), g_v.P(848, y + 18), Alpha(kCream, fade), count, 1);
-    DrawPerson(d, 848 - cw - 24, y + 30, 16, Alpha(kSoft, fade));
+    const float cw = TextW(bold, 20, count);
+    Text(d, bold, g_v.L(20), g_v.P(848, y + 14), title, count, 1);
+    DrawPerson(d, 848 - cw - 24, y + 26, 16, on ? look::kInk : Alpha(kSoft, fade));
     ImU32 col = kGreen;
     const std::string seats = OpenSeatsText(r, &col);
-    Text(d, f.strong, g_v.L(15), g_v.P(848, y + 50), col, seats, 1);
-    if (on) d->AddRect(ImVec2(a.x + g_v.L(1.5f), a.y + g_v.L(1.5f)), ImVec2(b.x - g_v.L(1.5f), b.y - g_v.L(1.5f)), kRing, 0, 0, g_v.L(3));
+    if (on) col = col == kGreen ? Rgba(31, 74, 39) : look::kInkSoft;
+    Text(d, bold, g_v.L(15), g_v.P(848, y + 48), col, seats, 1);
 }
 
+// The right column: a glass pane with a dark strip for its kicker.
 void PanelFrame(ImDrawList* d)
 {
-    const ImVec2 a = g_v.P(892, 80), b = g_v.P(1552, 832);
-    d->AddRectFilledMultiColor(a, b, Rgba(8, 9, 11, 214), Rgba(8, 9, 11, 240), Rgba(8, 9, 11, 240), Rgba(8, 9, 11, 214));
-    d->AddLine(a, g_v.P(1552, 80), kLine, g_v.L(1));
-    d->AddLine(g_v.P(892, 832), b, kLine, g_v.L(1));
+    Pane(d, 892, 80, 1552, 832);
+    Strip(d, 894, 82, 1550, 124, false);
+}
+
+// The panel's kicker, in its strip.
+void Kicker(ImDrawList* d, const HubFonts& f, const char* kicker, ImU32 col = kGold)
+{
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(14), g_v.P(918, 94), col, kicker);
 }
 
 void RoomPanel(ImDrawList* d, const HubFonts& f, const keeper::ListedRoom& r, const keeper::RoomDetail* detail)
 {
     const bool full = r.members >= keeper::kRoomCap;
-    Text(d, f.strong, g_v.L(16), g_v.P(918, 104), full ? kRed : kGold, full ? "FULL \xC2\xB7 16 OF 16" : "PUBLIC ROOM");
-    FitText(d, f.display, 30, 20, 608, g_v.P(918, 132), kCream, RoomTitleText(r.title, r.owner));
+    Kicker(d, f, full ? "FULL \xC2\xB7 16 OF 16" : "PUBLIC ROOM", full ? kRed : kGold);
+    FitText(d, f.display, 28, 20, 608, g_v.P(918, 138), kCream, RoomTitleText(r.title, r.owner));
     DrawCrown(d, 918, 196, 1, kGold);
-    Text(d, f.strong, g_v.L(16), g_v.P(940, 186), kSoft, Upper(r.owner));
-    Text(d, f.body, g_v.L(16), g_v.P(940 + TextW(f.strong, 16, Upper(r.owner)), 186), kMuted,
+    float ox = 940;
+    if (const float fw = DrawFlag(d, f.strong, r.ownerCountry, ox, 189, 13)) ox += fw + 8;
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(ox, 186), kCream, Upper(r.owner));
+    Text(d, f.body, g_v.L(16), g_v.P(ox + TextW(f.bold ? f.bold : f.strong, 16, Upper(r.owner)), 186), kSoft,
          " \xC2\xB7 " + std::to_string(r.members) + " / 16 players \xC2\xB7 " + Plural(r.tables, "table", "tables"));
-    Text(d, f.body, g_v.L(13), g_v.P(918, 226), kMuted, "TABLES");
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(14), g_v.P(918, 224), kGold, "TABLES");
     // Each table's rules from the keeper's detail; before it comes, the
     // first table's from the list.
     const int shown = std::min(r.tables, 5);
     float y = 248;
     for (int t = 0; t < shown; t++) {
-        d->AddRectFilled(g_v.P(918, y), g_v.P(1526, y + 52), Rgba(20, 24, 30, 217));
-        d->AddRectFilled(g_v.P(918, y), g_v.P(921, y + 52), kGreen);
+        Control(d, 918, y, 1526, y + 52, false);
         Text(d, f.display, g_v.L(15), g_v.P(935, y + 16), kCream, "TABLE " + std::to_string(t + 1));
         const std::string text = detail && t < static_cast<int>(detail->tables.size()) ? detail->tables[t] : t == 0 ? r.rules : "";
         Rules rules;
@@ -252,7 +261,7 @@ void RoomPanel(ImDrawList* d, const HubFonts& f, const keeper::ListedRoom& r, co
         Text(d, f.body, g_v.L(14), g_v.P(918, y), kMuted, "+" + Plural(r.tables - shown, "more table", "more tables"));
         y += 26;
     }
-    Text(d, f.body, g_v.L(13), g_v.P(918, y + 10), kMuted, "PLAYERS \xC2\xB7 " + std::to_string(r.members) + " / 16");
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(14), g_v.P(918, y + 10), kGold, "PLAYERS \xC2\xB7 " + std::to_string(r.members) + " / 16");
     if (detail) {
         // Four to a row, up to twelve: face and name.
         const int count = static_cast<int>(detail->people.size());
@@ -278,8 +287,8 @@ void RoomPanel(ImDrawList* d, const HubFonts& f, const keeper::ListedRoom& r, co
 
 void CreatePanel(ImDrawList* d, const HubFonts& f, bool active, int* clickedRow, int* clickedStep)
 {
-    Text(d, f.strong, g_v.L(16), g_v.P(918, 104), kGold, "NEW ROOM");
-    Text(d, f.display, g_v.L(30), g_v.P(918, 132), kCream, "Create a room");
+    Kicker(d, f, "NEW ROOM");
+    Text(d, f.display, g_v.L(28), g_v.P(918, 138), kCream, "Create a room");
     const std::vector<FormRow> rows = FormRows();
     auto label = [](FormRow row) {
         return row == kRowTitle ? "Title" : row == kRowChara1 ? "Character 1" : row == kRowChara2 ? "Character 2" : row == kRowVisibility ? "Visibility" : "Tables";
@@ -296,24 +305,19 @@ void CreatePanel(ImDrawList* d, const HubFonts& f, bool active, int* clickedRow,
         const float y = 196 + i * 60.0f;
         const bool on = g.formRow == i;
         const ImVec2 a = g_v.P(918, y), b = g_v.P(1526, y + 54);
-        if (on) {
-            d->AddRectFilledMultiColor(a, g_v.P(918 + 608 * 0.3f, y + 54), Rgba(240, 200, 90, active ? 128 : 70), Rgba(240, 200, 90, 26),
-                                       Rgba(240, 200, 90, 26), Rgba(240, 200, 90, active ? 128 : 70));
-            d->AddRectFilledMultiColor(g_v.P(918 + 608 * 0.3f, y), b, Rgba(240, 200, 90, 26), Rgba(8, 9, 11, 153), Rgba(8, 9, 11, 153),
-                                       Rgba(240, 200, 90, 26));
-            d->AddLine(a, g_v.P(1526, y), kLine, g_v.L(1));
-            d->AddLine(g_v.P(918, y + 54), b, kLine, g_v.L(1));
-        }
-        else {
-            d->AddRectFilled(a, b, Rgba(20, 24, 30, 179));
-        }
-        Text(d, f.strong, g_v.L(19), g_v.P(940, y + 15), kCream, label(rows[i]));
+        // Focused while the form has the pad: gold; the row the list's left
+        // and right change: gold at half strength.
+        const bool lit = on && active;
+        Control(d, 918, y, 1526, y + 54, lit);
+        if (on && !active) d->AddRect(a, b, look::kRing, 0, 0, g_v.L(2));
+        ImFont* bold = f.bold ? f.bold : f.strong;
+        Text(d, lit ? bold : f.strong, g_v.L(19), g_v.P(940, y + 15), lit ? look::kInk : kCream, label(rows[i]));
         // Between the arrows (1146 to 1500), shrunk to fit.
-        FitText(d, f.body, 19, 13, 330, g_v.P(1323, y + 15), kCream, value(rows[i]), 0.5f);
+        FitText(d, lit ? bold : f.body, 19, 13, 330, g_v.P(1323, y + 15), lit ? look::kInk : kCream, value(rows[i]), 0.5f);
         if (on) {
             // ◀ and ▶ around the value.
-            d->AddTriangleFilled(g_v.P(1146, y + 21), g_v.P(1146, y + 33), g_v.P(1136, y + 27), kGold);
-            d->AddTriangleFilled(g_v.P(1500, y + 21), g_v.P(1510, y + 27), g_v.P(1500, y + 33), kGold);
+            d->AddTriangleFilled(g_v.P(1146, y + 21), g_v.P(1146, y + 33), g_v.P(1136, y + 27), lit ? look::kInk : kGold);
+            d->AddTriangleFilled(g_v.P(1500, y + 21), g_v.P(1510, y + 27), g_v.P(1500, y + 33), lit ? look::kInk : kGold);
         }
         if (Clicked() && MouseIn(a, b)) {
             *clickedRow = i;
@@ -332,15 +336,15 @@ void CreatePanel(ImDrawList* d, const HubFonts& f, bool active, int* clickedRow,
 
 void CodePanel(ImDrawList* d, const HubFonts& f, bool active, const std::string& notice, int* clickedKey)
 {
-    Text(d, f.strong, g_v.L(16), g_v.P(918, 104), kGold, "ROOM CODE");
-    Text(d, f.display, g_v.L(30), g_v.P(918, 132), kCream, "Join with a code");
+    Kicker(d, f, "ROOM CODE");
+    Text(d, f.display, g_v.L(28), g_v.P(918, 138), kCream, "Join with a code");
     const float slotW = (608 - 50) / 6.0f;
     for (int i = 0; i < 6; i++) {
         const float x = 918 + i * (slotW + 10);
-        d->AddRectFilledMultiColor(g_v.P(x, 200), g_v.P(x + slotW, 292), Rgba(20, 24, 30, 242), Rgba(20, 24, 30, 242), Rgba(8, 9, 11, 242),
-                                   Rgba(8, 9, 11, 242));
+        d->AddRectFilled(g_v.P(x, 200), g_v.P(x + slotW, 296), Rgba(0, 0, 0, 90));
+        d->AddRect(g_v.P(x, 200), g_v.P(x + slotW, 296), look::kEdgeControl, 0, 0, std::max(1.0f, g_v.L(1)));
         const bool next = active && static_cast<int>(g.code.size()) == i;
-        d->AddRectFilled(g_v.P(x, 292), g_v.P(x + slotW, 296), next ? kGold : Rgba(74, 68, 54));
+        d->AddRectFilled(g_v.P(x, 292), g_v.P(x + slotW, 296), next ? kGold : look::kEdgeControl);
         if (i < static_cast<int>(g.code.size())) {
             // Streamer mode: a dot for each letter typed (a friend's code
             // stays off the stream too).
@@ -353,9 +357,8 @@ void CodePanel(ImDrawList* d, const HubFonts& f, bool active, const std::string&
         const bool full = notice == "Room full";
         const ImU32 line = full ? kGold : kRed;
         const ImVec2 a = g_v.P(918, 324), b = g_v.P(1526, 470);
-        d->AddRectFilledMultiColor(a, b, Rgba(20, 24, 30), Rgba(20, 24, 30), Rgba(8, 9, 11), Rgba(8, 9, 11));
-        d->AddRectFilled(a, g_v.P(1526, 326), line);
-        d->AddRectFilled(g_v.P(918, 468), b, line);
+        d->AddRectFilled(a, b, look::kControl);
+        d->AddRect(a, b, line, 0, 0, g_v.L(2));
         Text(d, f.strong, g_v.L(16), g_v.P(944, 346), line, full ? "ROOM FULL" : "NO SUCH ROOM");
         const std::string code = g.lastCode.empty() ? g.code : g.lastCode;
         const bool hide = StreamerMode();
@@ -371,18 +374,17 @@ void CodePanel(ImDrawList* d, const HubFonts& f, bool active, const std::string&
     for (int k = 0; k < kKeys; k++) {
         const float x = 918 + (k % kKeyCols) * (keyW + 8), y = 324 + (k / kKeyCols) * 62.0f;
         const ImVec2 a = g_v.P(x, y), b = g_v.P(x + keyW, y + 54);
-        d->AddRectFilled(a, b, Rgba(20, 24, 30, 235));
         const bool on = active && g.key == k;
-        d->AddRect(a, b, on ? kRing : Rgba(20, 24, 30), 0, 0, g_v.L(2));
-        Text(d, f.strong, g_v.L(22), g_v.P(x + keyW / 2, y + 13), kCream, std::string(1, kCodeChars[k]), 0.5f);
+        Control(d, x, y, x + keyW, y + 54, on);
+        Text(d, f.bold ? f.bold : f.strong, g_v.L(22), g_v.P(x + keyW / 2, y + 13), on ? look::kInk : kCream, std::string(1, kCodeChars[k]), 0.5f);
         if (Clicked() && MouseIn(a, b)) *clickedKey = k;
     }
 }
 
 void WaitPanel(ImDrawList* d, const HubFonts& f, const char* kicker, const std::string& title, const std::string& text)
 {
-    Text(d, f.strong, g_v.L(16), g_v.P(918, 104), kGold, kicker);
-    Text(d, f.display, g_v.L(30), g_v.P(918, 132), kCream, title);
+    Kicker(d, f, kicker);
+    Text(d, f.display, g_v.L(28), g_v.P(918, 138), kCream, title);
     Text(d, f.body, g_v.L(17), g_v.P(918, 190), kSoft, text);
     // A turning arc.
     const float t = static_cast<float>(ImGui::GetTime()) * 5.0f;
@@ -506,7 +508,7 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     if (!g_open || !f.display || !f.strong || !f.body) return;
     BeginScreen();
     ImDrawList* d = ImGui::GetBackgroundDrawList();
-    d->AddRectFilled(ImVec2(0, 0), ImGui::GetIO().DisplaySize, Rgba(6, 8, 11));
+    Backdrop(d);
     d->PushClipRect(g_v.P(0, 0), g_v.P(1600, 900), true);
     g_inputOn = takeInput;
     using S = RoomsView::State;
@@ -515,14 +517,6 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     if (g.focus >= count) g.focus = count ? count - 1 : kCode;
     const bool busy = v.state == S::Creating || v.state == S::Joining;
     const bool failed = !v.notice.empty() && (v.notice == "No room on that code" || v.notice == "Room full") && g.focus == kCode;
-
-    // Background: a dark stage across the top.
-    if (const TextureView* bg = Texture(StageTex("CHN", "StageSelectBG"))) {
-        Image(d, bg, g_v.P(-500, -40), g_v.P(2100, 720), ImVec2(0, 0), ImVec2(1, 1), Rgba(97, 97, 97));
-    }
-    d->AddRectFilledMultiColor(g_v.P(0, 0), g_v.P(1600, 315), Rgba(6, 8, 11, 140), Rgba(6, 8, 11, 140), Rgba(6, 8, 11, 64), Rgba(6, 8, 11, 64));
-    d->AddRectFilledMultiColor(g_v.P(0, 315), g_v.P(1600, 630), Rgba(6, 8, 11, 64), Rgba(6, 8, 11, 64), Rgba(6, 8, 11, 204), Rgba(6, 8, 11, 204));
-    d->AddRectFilledMultiColor(g_v.P(0, 630), g_v.P(1600, 900), Rgba(6, 8, 11, 204), Rgba(6, 8, 11, 204), Rgba(6, 8, 11), Rgba(6, 8, 11));
 
     // ---- input ----
     int barClick = -1;
@@ -586,18 +580,17 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
 
     // ---- the list ----
     // The desk's summary (it comes before the list itself).
-    Text(d, f.display, g_v.L(40), g_v.P(48, 22), Rgba(255, 255, 255), "CUSTOM ROOMS", 0, true);
+    StageText(d, f.display, 40, 48, 22, Rgba(255, 255, 255), "CUSTOM ROOMS");
     const std::string summary = v.keeper ? Plural(v.summary.publicRooms, "public room", "public rooms") + " \xC2\xB7 " +
                                                Plural(v.summary.players, "player", "players")
                                          : v.state == S::Failed ? "Cannot reach the rooms server" : "Custom rooms are offline right now";
-    Text(d, f.body, g_v.L(16), g_v.P(48 + TextW(f.display, 40, "CUSTOM ROOMS") + 28, 42), kSoft, summary);
+    StageText(d, f.body, 16, 48 + TextW(f.display, 40, "CUSTOM ROOMS") + 28, 42, kSoft, summary);
     ActionRow(d, f, 80, "+", "CREATE A ROOM", "Public or private, 1 to 8 tables", g.focus == kCreate);
     ActionRow(d, f, 160, "#", "JOIN WITH A CODE", "For a private room, or any room a friend sent you", g.focus == kCode);
-    Text(d, f.body, g_v.L(13), g_v.P(48, 250), kMuted, "PUBLIC ROOMS \xC2\xB7 " + std::to_string(count));
-    d->PushClipRect(g_v.P(48, kListTop - 2), g_v.P(880, 832), true);
+    StageText(d, f.bold ? f.bold : f.strong, 14, 48, 248, kGold, "PUBLIC ROOMS \xC2\xB7 " + std::to_string(count));
+    d->PushClipRect(g_v.P(30, kListTop - 2), g_v.P(886, 840), true);
     if (!count) {
-        d->AddRectFilled(g_v.P(48, kListTop), g_v.P(868, kListTop + 160), Rgba(8, 9, 11, 179));
-        d->AddLine(g_v.P(48, kListTop), g_v.P(868, kListTop), Rgba(201, 168, 92, 90), g_v.L(1));
+        Pane(d, 48, kListTop, 868, kListTop + 160);
         Text(d, f.strong, g_v.L(20), g_v.P(72, kListTop + 52), kCream, "No public rooms right now");
         Text(d, f.body, g_v.L(16), g_v.P(72, kListTop + 84), kMuted,
              "Create one and it shows here for everyone. Private rooms are never listed.");
@@ -607,13 +600,10 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
         if (y > 832 || y + kRowH < kListTop) continue;
         RoomRow(d, f, y, rooms[i], g.focus == i);
     }
-    if (count > kRowsInView) {
-        const float trackTop = kListTop, trackH = 832 - kListTop;
-        d->AddRectFilled(g_v.P(874, trackTop), g_v.P(879, trackTop + trackH), Rgba(255, 255, 255, 20), g_v.L(3));
-        const float thumb = trackH * kRowsInView / count, top = trackTop + (trackH - thumb) * g.scroll / (count - kRowsInView);
-        d->AddRectFilled(g_v.P(874, top), g_v.P(879, top + thumb), Rgba(233, 196, 106, 190), g_v.L(3));
-    }
     d->PopClipRect();
+
+    // More rooms than fit: the bar in the gutter (dark track, gold thumb).
+    ScrollBar(d, 874, kListTop, 832, g.scroll, kRowsInView, static_cast<float>(count), true);
 
     // ---- the panel ----
     PanelFrame(d);
@@ -711,7 +701,7 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
                                         : "Every seat is taken: you can queue or watch once you are in.";
         prompts = {{"button_a", "Join"}, {"button_b", "Back"}};
     }
-    Bar(d, f, lead, leadCol, text, prompts, &barClick);
+    PromptLine(d, f.body, f.bold ? f.bold : f.strong, lead, leadCol, text, prompts, &barClick);
     const char* clicked = barClick >= 0 && barClick < static_cast<int>(prompts.size()) ? prompts[barClick].first : "";
     auto is = [&](const char* icon) { return std::strcmp(clicked, icon) == 0; };
 

@@ -312,6 +312,7 @@ ImFont* g_fontHeading = nullptr; // bold italic, as the menus' entries
 ImFont* g_fontBig = nullptr;     // match codes
 ImFont* g_fontSmall = nullptr;   // the player bars' details
 ImFont* g_fontTiny = nullptr;    // ... their frame rate and rollback numbers
+ImFont* g_fontBold = nullptr;    // Barlow Bold: the screens' names, buttons, focused rows
 ImFont* g_fontHuge = nullptr;    // the select screen's character names
 ImFont* g_fontBody = nullptr;    // the default font
 std::atomic<int> g_selectRequest{-1}; // RequestSelectPreview: the phase to open at (+4: watching)
@@ -476,6 +477,8 @@ void BuildFonts(float scale)
     if (!g_fontTiny) g_fontTiny = g_fontSmall;
     g_fontHuge = add(SFV_FONT_ARCHIVO_BLACK, 64);
     if (!g_fontHuge) g_fontHuge = g_fontBig;
+    g_fontBold = add(SFV_FONT_BARLOW_BOLD, 21);
+    if (!g_fontBold) g_fontBold = g_fontBig;
     g_fontBody = body;
     io.FontDefault = body;
     ApplyTheme(scale);
@@ -4039,6 +4042,15 @@ void DrawHubFrame(bool takeInput)
         live.roomsInfo = std::to_string(rooms.summary.publicRooms) + (rooms.summary.publicRooms == 1 ? " public room" : " public rooms") +
                          " \xC2\xB7 browse, create, or join with a code";
     else live.roomsInfo = "Browse, create, or join with a code";
+    // The tile's strip: live state only (what it is for is the hint's).
+    if (rooms.state == S::Failed) live.roomsState = "Cannot reach the server";
+    else if (!rooms.otherBuild.empty() && !rooms.keeper) live.roomsState = "Update needed";
+    else if (rooms.state == S::NoLobby || ((rooms.state == S::Lobby || rooms.state == S::Room) && !rooms.keeper)) live.roomsState = "Offline right now";
+    else if (rooms.keeper && (rooms.state == S::Browsing || rooms.state == S::Lobby || rooms.state == S::Room)) {
+        const int n = rooms.summary.publicRooms, p = rooms.summary.players;
+        live.roomsState = std::to_string(n) + (n == 1 ? " public room" : " public rooms") + " \xC2\xB7 " + std::to_string(p) + (p == 1 ? " player" : " players");
+    }
+    live.roomsInfo = "Browse, create, or join with a code";
     {
         std::lock_guard lock(g_favoritesMutex);
         live.offlineChara = g_favorites.chara.empty() ? "RYU" : g_favorites.chara;
@@ -4055,7 +4067,7 @@ void DrawHubFrame(bool takeInput)
         warmed = true;
         WarmHubTextures(live);
     }
-    const HubFonts fonts{g_fontHuge, g_fontBig, g_fontBody};
+    const HubFonts fonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold};
     if (SettingsScreenOpen()) {
         SettingsInput in;
         DrawSettingsScreen(fonts, g_build.rfind("SFVR ", 0) == 0 ? g_build.substr(5) : g_build, SettingsRows(), takeInput, &in);
@@ -4518,7 +4530,7 @@ void Draw(IDXGISwapChain* swapChain)
             wl.players[0] = view.seats[0].name;
             wl.players[1] = view.seats[1].name;
             WatchPanelInput wi;
-            DrawWatchPanel(HubFonts{g_fontHuge, g_fontBig, g_fontBody}, wl, watchAlpha, watchPanel && !g_visible, &wi);
+            DrawWatchPanel(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, wl, watchAlpha, watchPanel && !g_visible, &wi);
             if (wi.resume) watchPanel = false;
             if (wi.stop) {
                 watchPanel = false;
