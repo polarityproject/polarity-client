@@ -82,6 +82,7 @@ if ($Channel -eq 'rooms' -and $version -eq '0.3.0') {
     product = $main.product; version = $main.version; published = $main.published; notes = $main.notes
     download = "/$($main.download)"
     files = @($main.files | ForEach-Object { [ordered]@{ path = $_.path; size = $_.size; sha256 = $_.sha256; url = "/$($_.url)" } })
+    more_files = @($main.more_files | Where-Object { $_ } | ForEach-Object { [ordered]@{ path = $_.path; size = $_.size; sha256 = $_.sha256; url = "/$($_.url)" } })
   }
   $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($info | ConvertTo-Json -Depth 4) + "`n")
   New-Item -ItemType Directory -Force $infoDir | Out-Null
@@ -117,18 +118,23 @@ New-Item -ItemType Directory -Force $release | Out-Null
 $license = Join-Path $build 'sfvr_fonts_license.txt'
 & (Join-Path $PSScriptRoot 'fonts-license.ps1') $license
 # Where each file goes (SafeUpdatePath: a plain name, or SFVR/fonts/<name>.ttc),
-# from where; on the site each is under its own name.
+# from where; on the site each is under its own name. The font goes in
+# "more_files": updaters before 0.3.0 refuse update info whose "files" has a
+# folder in a path, and read nothing else (0.3.0 fetches a missing one).
 $sources = [ordered]@{
   'xinput1_3.dll'                      = Join-Path $build 'xinput1_3.dll'
   'sfv_rollback.dll'                   = Join-Path $build 'sfv_rollback.dll'
   'SFVR/fonts/NotoSansCJK-Medium.ttc'  = Join-Path $build 'fonts\NotoSansCJK-Medium.ttc'
   'sfvr_fonts_license.txt'             = $license
 }
-$files = foreach ($path in $sources.Keys) {
+$files = [Collections.Generic.List[object]]::new()
+$moreFiles = [Collections.Generic.List[object]]::new()
+foreach ($path in $sources.Keys) {
   $name = Split-Path $path -Leaf
   Copy-Item $sources[$path] (Join-Path $release $name) -Force
   $item = Get-Item (Join-Path $release $name)
-  [ordered]@{ path = $path; size = $item.Length; sha256 = (Get-FileHash $item -Algorithm SHA256).Hash.ToLower(); url = "${prefix}releases/$version/$name" }
+  $entry = [ordered]@{ path = $path; size = $item.Length; sha256 = (Get-FileHash $item -Algorithm SHA256).Hash.ToLower(); url = "${prefix}releases/$version/$name" }
+  if ($path.Contains('/')) { $moreFiles.Add($entry) } else { $files.Add($entry) }
 }
 & (Join-Path $PSScriptRoot 'package.ps1') -Public | Out-Null
 Copy-Item (Join-Path $root "dist\sfvr-$version.zip") $release -Force
@@ -143,12 +149,13 @@ $info = [ordered]@{
   notes     = $Notes
   download  = "${prefix}releases/$version/sfvr-$version.zip"
   files     = @($files)
+  more_files = @($moreFiles)
 }
 $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($info | ConvertTo-Json -Depth 4) + "`n")
 $signature = $ecdsa.SignData($bytes, [Security.Cryptography.HashAlgorithmName]::SHA256)
 New-Item -ItemType Directory -Force $infoDir | Out-Null
 [IO.File]::WriteAllBytes((Join-Path $infoDir 'update.json'), $bytes)
 [IO.File]::WriteAllText((Join-Path $infoDir 'update.json.sig'), [Convert]::ToBase64String($signature))
-"SFVR $version published to $infoDir on the $Channel channel ($($files.Count) files, signed)"
+"SFVR $version published to $infoDir on the $Channel channel ($($files.Count) files + $($moreFiles.Count) more, signed)"
 "notes: $Notes"
 "next: commit here and in sfvr-site, git tag v$version, then sfvr-site\build.ps1 for the upload"

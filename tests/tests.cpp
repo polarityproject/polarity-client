@@ -884,6 +884,16 @@ void TestUpdateInfo()
     std::string bad = doc;
     bad.replace(bad.find("sfv_rollback.dll"), 16, "..\\\\evil.dll");
     CHECK(!ParseUpdateInfo(bad, &info, &error));
+    // "more_files": after "files", marked; updaters before 0.3.0 read only
+    // "files" (and refuse a font path there).
+    std::string more = doc;
+    more.insert(more.rfind('}'), R"(, "more_files": [{"path": "SFVR/fonts/x.ttc", "size": 3, "url": "releases/0.2.0/x.ttc",
+        "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}])");
+    CHECK(ParseUpdateInfo(more, &info, &error));
+    CHECK(info.files.size() == 2 && !info.files[0].more && info.files[1].more && info.files[1].path == "SFVR/fonts/x.ttc");
+    std::string moreBad = more;
+    moreBad.replace(moreBad.find("SFVR/fonts/x.ttc"), 16, "SFVR/fonts/x.exe");
+    CHECK(!ParseUpdateInfo(moreBad, &info, &error));
 
     CHECK(SafeUpdatePath("sfv_rollback.dll") && SafeUpdatePath("sfv_noise.txt") && SafeUpdatePath("xinput1_3.dll"));
     CHECK(!SafeUpdatePath("sfv_rollback.ini") && !SafeUpdatePath("../x.dll") && !SafeUpdatePath("a\\b.dll") &&

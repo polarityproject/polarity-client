@@ -133,6 +133,14 @@ std::string SiteUrl()
     return g_view.url;
 }
 
+std::wstring OnDisk(const UpdateFile& f);
+void Install();
+
+bool MissingData(const UpdateFile& f)
+{
+    return f.more && GetFileAttributesW((g_gameDir + L"\\" + OnDisk(f)).c_str()) == INVALID_FILE_ATTRIBUTES;
+}
+
 void Check()
 {
     ThreadGuard running;
@@ -160,16 +168,33 @@ void Check()
         Set(UpdateView::State::Failed, "cannot read the update info: " + error);
         return;
     }
+    bool finish = false;
+    {
     std::lock_guard lock(g_mutex);
     g_view.latest = info.version;
     g_view.published = info.published;
     g_view.notes = info.notes;
     g_view.message.clear();
     const bool newer = CompareVersions(info.version, g_view.current) > 0;
-    g_view.state = newer ? UpdateView::State::Available : UpdateView::State::UpToDate;
+    // This version, with a data file missing from the game folder (an
+    // updater before 0.3.0 installed it without "more_files"): that file
+    // only, now. Files that are there are left alone, so a build being
+    // worked on keeps its own.
+    if (!newer && CompareVersions(info.version, g_view.current) == 0) {
+        info.files.erase(std::remove_if(info.files.begin(), info.files.end(), [](const UpdateFile& f) { return !MissingData(f); }),
+                         info.files.end());
+        finish = !info.files.empty();
+    }
+    g_view.state = newer || finish ? UpdateView::State::Available : UpdateView::State::UpToDate;
+    Log("update: the site has SFVR %s (this build %s): %s", info.version.c_str(), g_view.current.c_str(),
+        newer ? "an update" : finish ? "up to date; fetching its data files missing here" : "up to date");
     g_info = std::move(info);
-    Log("update: the site has SFVR %s (this build %s): %s", g_view.latest.c_str(), g_view.current.c_str(),
-        newer ? "an update" : "up to date");
+    }
+    if (finish) {
+        Install();
+        // Nothing to run anew: the font is read at the next start anyway.
+        if (UpdateViewNow().state == UpdateView::State::Ready) Set(UpdateView::State::UpToDate);
+    }
 }
 
 // An update file's place under the game folder (SFVR/fonts/x.ttc ->

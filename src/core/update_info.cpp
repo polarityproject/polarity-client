@@ -69,8 +69,16 @@ bool ParseUpdateInfo(std::string_view json, UpdateInfo* out, std::string* error)
     if (info.version.empty()) return fail("no version");
     const JsonValue* files = doc.Find("files");
     if (!files || files->type != JsonValue::Type::Array || files->array.empty()) return fail("no files");
-    for (const JsonValue& f : files->array) {
+    const JsonValue* more = doc.Find("more_files");
+    if (more && more->type != JsonValue::Type::Array) return fail("more_files is not a list");
+    std::vector<std::pair<const JsonValue*, bool>> all;
+    for (const JsonValue& f : files->array) all.push_back({&f, false});
+    if (more)
+        for (const JsonValue& f : more->array) all.push_back({&f, true});
+    for (const auto& [one, isMore] : all) {
+        const JsonValue& f = *one;
         UpdateFile file;
+        file.more = isMore;
         file.path = f.Str("path");
         file.url = f.Str("url");
         file.sha256 = f.Str("sha256");

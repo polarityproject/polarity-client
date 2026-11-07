@@ -26,6 +26,11 @@ struct UpdateFile {
     uint64_t size = 0;
     std::string sha256; // lowercase hex
     std::string url;
+    // From "more_files": data (the bundled font) that updaters before 0.3.0
+    // cannot place and skip, as they read only "files". One missing from
+    // the game folder is fetched even when the version is current: the
+    // rest of an install an older updater made.
+    bool more = false;
 };
 
 struct UpdateInfo {
