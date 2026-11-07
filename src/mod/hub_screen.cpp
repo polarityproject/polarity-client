@@ -33,6 +33,7 @@ struct Frame {
 std::atomic<bool> g_open{false};
 int g_focus = 1;        // the last entry used keeps focus (0 Play Offline, 1 Custom Rooms)
 double g_openedAt = 0;  // ImGui time, for the fade in
+bool g_fromBlack = false; // ... from black (at launch)
 bool g_clickedTile = false;
 
 // 0.3.0's grid (mock-up "Rooms only"): Play Offline the full height of the
@@ -49,7 +50,7 @@ std::vector<Entry> Entries(const HubLive& live)
 {
     return {
         {HubAction::PlayOffline, "PLAY OFFLINE", Icon::Pad, "Story, arcade, training, versus",
-         "The game as it ships: story, arcade, training, versus and the rest. Hold Start in its menus to come back here.",
+         "The game as it ships: story, arcade, training, versus and the rest. Back + Start in its menus comes back here.",
          live.offlineChara, live.offlineStage},
         {HubAction::CustomRooms, "CUSTOM ROOMS", Icon::Rooms, live.roomsInfo,
          "Up to 16 players on up to eight tables with their own rules. Public rooms are listed; private ones take a code.",
@@ -162,11 +163,12 @@ void DrawTop(ImDrawList* d, const HubFonts& f, const HubLive& live)
 
 } // namespace
 
-void OpenHub()
+void OpenHub(bool fromBlack)
 {
     if (!g_open.exchange(true)) {
         g_openedAt = -1;
-        Log("hub: open");
+        g_fromBlack = fromBlack;
+        Log("hub: open%s", fromBlack ? " (at launch)" : "");
     }
 }
 
@@ -196,8 +198,13 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     BeginScreen();
     const double now = ImGui::GetTime();
     if (g_openedAt < 0) g_openedAt = now;
-    const float alpha = static_cast<float>(std::clamp((now - g_openedAt) / 0.25, 0.0, 1.0));
+    const float alpha = static_cast<float>(std::clamp((now - g_openedAt) / (g_fromBlack ? 0.4 : 0.25), 0.0, 1.0));
     ImDrawList* d = ImGui::GetBackgroundDrawList();
+    if (g_fromBlack) {
+        // At launch the game's main menu is behind: black under the fade.
+        if (alpha < 1) d->AddRectFilled(ImVec2(0, 0), ImGui::GetIO().DisplaySize, IM_COL32(0, 0, 0, 255));
+        else g_fromBlack = false;
+    }
     const int from = d->VtxBuffer.Size;
     Backdrop(d);
     d->PushClipRect(g_v.P(0, 0), g_v.P(1600, 900), true);

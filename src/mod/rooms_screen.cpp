@@ -189,7 +189,7 @@ void RoomRow(ImDrawList* d, const HubFonts& f, float y, const keeper::ListedRoom
     const int fade = full && !on ? 158 : 255;
     const ImU32 title = on ? look::kInk : Alpha(kCream, fade), sub = on ? look::kInkSoft : Alpha(kMuted, fade);
     FitText(d, f.display, 21, 15, 400, g_v.P(68, y + 15), title, RoomTitleText(r.title, r.owner));
-    DrawCrown(d, 68, y + 52, 1, on ? look::kInk : Alpha(kGold, fade));
+    DrawCrown(d, 68, y + 61, 1, on ? look::kInk : Alpha(kGold, fade)); // centred on the flag
     // The owner's flag (the rooms server's lookup), then the name.
     float nx = 90;
     if (const float fw = DrawFlag(d, f.strong, r.ownerCountry, nx, y + 50, 12, fade / 255.0f)) nx += fw + 6;
@@ -232,8 +232,9 @@ void RoomPanel(ImDrawList* d, const HubFonts& f, const keeper::ListedRoom& r, co
 {
     const bool full = r.members >= keeper::kRoomCap;
     Kicker(d, f, full ? "FULL \xC2\xB7 16 OF 16" : "PUBLIC ROOM", full ? kRed : kGold);
+    Text(d, f.body, g_v.L(15), g_v.P(1526, 95), kSoft, r.code, 1);
     FitText(d, f.display, 28, 20, 608, g_v.P(918, 138), kCream, RoomTitleText(r.title, r.owner));
-    DrawCrown(d, 918, 196, 1, kGold);
+    DrawCrown(d, 918, 202, 1, kGold);
     float ox = 940;
     if (const float fw = DrawFlag(d, f.strong, r.ownerCountry, ox, 189, 13)) ox += fw + 8;
     Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(ox, 186), kCream, Upper(r.owner));
@@ -263,19 +264,27 @@ void RoomPanel(ImDrawList* d, const HubFonts& f, const keeper::ListedRoom& r, co
     }
     Text(d, f.bold ? f.bold : f.strong, g_v.L(14), g_v.P(918, y + 10), kGold, "PLAYERS \xC2\xB7 " + std::to_string(r.members) + " / 16");
     if (detail) {
-        // Four to a row, up to twelve: face and name.
+        // Two to a row, as many rows as the panel has room for: a cell with
+        // the face, the flag and the name.
+        ImFont* bold = f.bold ? f.bold : f.strong;
         const int count = static_cast<int>(detail->people.size());
-        for (int i = 0; i < count && i < 12; i++) {
-            const float px = 918 + (i % 4) * 152.0f, py = y + 34 + (i / 4) * 36.0f;
-            DrawFace(d, detail->people[i].chara, px, py, 20, 28);
-            // Face, flag, name: the name has what the flag leaves of the 112.
-            float nx = px + 28;
-            if (const float fw = DrawFlag(d, f.strong, detail->people[i].country, nx, py + 8, 11)) nx += fw + 5;
+        const float top = y + 36;
+        const int rows = std::max(1, static_cast<int>((812 - top) / 48));
+        const int shownPeople = count > rows * 2 ? rows * 2 - 1 : count; // the last cell says how many more
+        for (int i = 0; i < shownPeople; i++) {
+            const float px = 918 + (i % 2) * 308.0f, py = top + (i / 2) * 48.0f;
+            Control(d, px, py, px + 300, py + 40, false);
+            DrawFace(d, detail->people[i].chara, px + 6, py + 4, 26, 32);
+            float nx = px + 44;
+            if (const float fw = DrawFlag(d, f.strong, detail->people[i].country, nx, py + 14, 13)) nx += fw + 8;
             std::string name = Upper(detail->people[i].name);
-            while (name.size() > 1 && TextW(f.strong, 15, name) > px + 140 - nx) name.pop_back();
-            Text(d, f.strong, g_v.L(15), g_v.P(nx, py + 5), kCream, name);
+            while (name.size() > 1 && TextW(bold, 15, name) > px + 288 - nx) name.pop_back();
+            Text(d, bold, g_v.L(15), g_v.P(nx, py + 11), kCream, name);
         }
-        if (count > 12) Text(d, f.body, g_v.L(14), g_v.P(918, y + 34 + 3 * 36.0f), kMuted, "+" + std::to_string(count - 12) + " more");
+        if (shownPeople < count) {
+            const float px = 918 + (shownPeople % 2) * 308.0f, py = top + (shownPeople / 2) * 48.0f;
+            Text(d, f.body, g_v.L(15), g_v.P(px + 14, py + 11), kMuted, "+" + std::to_string(count - shownPeople) + " more");
+        }
         return;
     }
     float fx = 918;

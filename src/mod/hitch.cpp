@@ -3,6 +3,7 @@
 #include "mod/log.h"
 
 #include <atomic>
+#include <cstring>
 #include <cstdio>
 #include <string>
 #include <windows.h>
@@ -60,7 +61,7 @@ void AddTick(bool replayed)
     if (replayed) g_replayed.fetch_add(1, std::memory_order_relaxed);
 }
 
-void FramePresented(int64_t frameMicros, bool inMatch)
+void FramePresented(int64_t frameMicros, const char* where)
 {
     Frame f;
     f.micros = frameMicros;
@@ -68,9 +69,10 @@ void FramePresented(int64_t frameMicros, bool inMatch)
     f.ticks = g_ticks.exchange(0, std::memory_order_relaxed);
     f.replayed = g_replayed.exchange(0, std::memory_order_relaxed);
     const ULONGLONG now = GetTickCount64();
-    if (!inMatch || frameMicros > 2'000'000) return; // a pause (loading, a breakpoint), not a drop
+    if (!where || frameMicros > 2'000'000) return; // a pause (loading, a breakpoint), not a drop
+    const bool menus = std::strcmp(where, "menus") == 0;
     const double ms = frameMicros / 1000.0;
-    if (ms >= kHitchMs) Log("hitch: one frame took %s", Describe(f).c_str());
+    if (ms >= kHitchMs) Log("hitch%s: one frame took %s", menus ? " (menus)" : "", Describe(f).c_str());
     if (ms >= kSlowMs) {
         g_slow++;
         g_slowExtraMicros += frameMicros - 16667;
@@ -78,8 +80,8 @@ void FramePresented(int64_t frameMicros, bool inMatch)
     }
     if (now - g_windowStart >= 1000) {
         if (g_slow > 0) {
-            Log("hitch: %d slow frames in the last second (%.0f ms lost), the slowest %s", g_slow, g_slowExtraMicros / 1000.0,
-                Describe(g_slowest).c_str());
+            Log("hitch%s: %d slow frames in the last second (%.0f ms lost), the slowest %s", menus ? " (menus)" : "", g_slow,
+                g_slowExtraMicros / 1000.0, Describe(g_slowest).c_str());
         }
         g_windowStart = now;
         g_slow = 0;

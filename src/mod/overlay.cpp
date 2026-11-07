@@ -15,7 +15,9 @@
 #include "mod/log.h"
 #include "mod/netplay_driver.h"
 #include "mod/select_screen.h"
+#include "mod/fight_ui.h"
 #include "mod/hub_screen.h"
+#include "mod/ui_kit.h" // the screens' fade
 #include "mod/rooms_screen.h"
 #include "mod/room_screen.h"
 #include "mod/watch_panel.h"
@@ -33,7 +35,6 @@
 #include <d3d11.h>
 #include <dxgi.h>
 #include <imgui.h>
-#include <imgui_internal.h> // key ownership (Stepper)
 #include <imgui_impl_dx11.h>
 #include <imgui_impl_win32.h>
 #include <xinput.h>
@@ -91,14 +92,14 @@ ID3D11RenderTargetView* g_rtv = nullptr;
 HWND g_window = nullptr;
 bool g_imgui = false;
 
+// In a match: the leave modal is up (Back + Start). The old F1 panel is gone:
+// the hub, the rooms and SFVR settings do its jobs.
 std::atomic<bool> g_visible{false};
-std::atomic<bool> g_hubAllowed{false}; // at the game's menus with no session: hold Start opens the hub
-std::atomic<bool> g_startCloses{false};  // the panel was opened with Start (held in a match): Start closes it
-std::atomic<float> g_startHold{0};       // in a match: how far Start is held towards opening the panel (0..1)
+std::atomic<bool> g_hubAllowed{false}; // at the game's menus with no session: Back + Start opens the hub
+std::atomic<bool> g_chordKey{false};   // F1, the keyboard's Back + Start (window thread -> FeedPads)
 std::atomic<bool> g_reloadChoices{false}; // ReloadOverlayChoices: read the choices again
 std::atomic<bool> g_spectating{false};   // a spectator's session: a Start tap opens the watch panel (M5)
 std::atomic<bool> g_watchPanelTap{false}; // ... tapped (the frame toggles the panel)
-std::atomic<bool> g_selectMatchTab{true}; // the panel opens on its Match tab next time
 std::atomic<ULONGLONG> g_xinputAt{0};    // when the XInput hook last saw a pad (OverlayPad)
 std::atomic<bool> g_voting{false};        // the post-match vote is up and takes input
 // A spectator over a watched match's results screen: the game gets no input
@@ -125,9 +126,7 @@ struct Message {
 std::mutex g_inputMutex;
 std::vector<Message> g_input;
 
-uint16_t g_lastButtons[XUSER_MAX_COUNT] = {};
 std::wstring g_panelPath;
-std::atomic<bool> g_focusPanel{false}; // just opened: give it the keyboard/pad focus
 
 // The pads' latest real state, for ImGui's gamepad navigation.
 struct PadState {
@@ -176,70 +175,41 @@ void FeedPads(ImGuiIO& io)
         if (keys & k.key) game |= k.button;
     }
     buttons |= game;
-    // Back + Start from those keys, where no pad goes through XInput (with
-    // one, OverlayPad sees the same press: it would toggle twice).
+    // Back + Start (or F1): at the game's menus the hub; in a match the
+    // leave modal (again: it closes); watching, the watch panel.
     constexpr uint16_t kChord = XINPUT_GAMEPAD_BACK | XINPUT_GAMEPAD_START;
-    static bool chordWas = false;
-    const bool chord = (game & kChord) == kChord && GetTickCount64() - g_xinputAt > 2000;
-    if (chord && !chordWas && (g_visible || !g_inMatch)) ToggleOverlay(); // in a match it opens by Start held
-    chordWas = chord;
-    // A menu opened with Start closes with Start, on its release (on its
-    // press, the same Start would open it once more).
-    static bool startWas = false, closeOnRelease = false;
-    const bool start = buttons & XINPUT_GAMEPAD_START;
-    if (!g_visible) g_startCloses = closeOnRelease = false;
-    if (start && !startWas && g_visible && g_startCloses) closeOnRelease = true;
-    if (!start && startWas && closeOnRelease) {
-        closeOnRelease = false;
-        SetOverlayVisible(false);
-    }
-    // Watching: a tap (pressed and let go within kTapMs) opens or closes the
-    // watch panel (the players' tap skips intros; a spectator's does nothing
-    // else). Held, it still opens the SFVR panel.
-    constexpr ULONGLONG kTapMs = 450;
-    static ULONGLONG startDownAt = 0;
-    if (start && !startWas) startDownAt = GetTickCount64();
-    if (!start && startWas && g_spectating && !g_visible && GetTickCount64() - startDownAt < kTapMs) g_watchPanelTap = true;
-    startWas = start;
-    // In a match the panel opens with Start held kHoldToOpenMs (a tap is the
-    // match's: it skips intros and win poses); the stripe at the bottom
-    // (DrawStartHold) fills meanwhile. Once open, a new press of Start closes
-    // it.
-    constexpr ULONGLONG kHoldToOpenMs = 2000;
-    static ULONGLONG heldSince = 0;
-    static bool opened = false; // by this hold: nothing more until Start is let go
-    if (!start || !g_inMatch || g_visible) {
-        heldSince = 0;
-        if (!start) opened = false;
-        g_startHold = 0;
-    }
-    else if (!opened) {
-        const ULONGLONG now = GetTickCount64();
-        if (!heldSince) heldSince = now;
-        g_startHold = static_cast<float>(now - heldSince) / kHoldToOpenMs;
-        if (now - heldSince >= kHoldToOpenMs) {
-            opened = true;
-            g_startHold = 0;
-            g_selectMatchTab = true;
-            SetOverlayVisible(true);
-            g_startCloses = true;
-        }
-    }
-    // At the game's menus (no session), Start held kHoldForHubMs brings the
-    // SFVR hub back (a tap stays the menus').
-    constexpr ULONGLONG kHoldForHubMs = 1000;
-    static ULONGLONG hubHeldSince = 0;
-    if (!start || !g_hubAllowed || g_visible || HubOpen()) {
-        hubHeldSince = 0;
-    }
-    else {
-        const ULONGLONG now = GetTickCount64();
-        if (!hubHeldSince) hubHeldSince = now;
-        if (now - hubHeldSince >= kHoldForHubMs) {
-            hubHeldSince = 0;
+    static bool chordWas = false, chordInPress = false;
+    static ULONGLONG chordAt = 0;
+    const bool chord = (buttons & kChord) == kChord;
+    // Once per press: not again until both are let go, nor within 300 ms
+    // (a pad read that drops a frame of the press would toggle it back).
+    const bool fresh = chord && !chordWas && !chordInPress && GetTickCount64() - chordAt > 300;
+    if (fresh || g_chordKey.exchange(false)) {
+        chordAt = GetTickCount64();
+        chordInPress = chord;
+        if (g_visible) SetOverlayVisible(false);
+        else if (g_hubAllowed && !HubOpen()) {
+            Log("overlay: Back + Start: the hub");
             OpenHub();
         }
+        else if (g_spectating) g_watchPanelTap = true;
+        else if (g_inMatch) SetOverlayVisible(true);
     }
+    chordWas = chord;
+    // Watching: a tap of Start alone (pressed and let go within kTapMs)
+    // opens or closes the watch panel (the players' tap skips intros; a
+    // spectator's does nothing else).
+    constexpr ULONGLONG kTapMs = 450;
+    static bool startWas = false;
+    static ULONGLONG startDownAt = 0;
+    const bool start = buttons & XINPUT_GAMEPAD_START;
+    if (start && !startWas) startDownAt = GetTickCount64();
+    if (!start && startWas && !chordInPress && g_spectating && !g_visible && GetTickCount64() - startDownAt < kTapMs) g_watchPanelTap = true;
+    if (!start && !(buttons & XINPUT_GAMEPAD_BACK)) chordInPress = false;
+    startWas = start;
+    // The screen the chord opened does not see its Start (the hub's Start
+    // is SFVR settings) until both are let go.
+    if (chordInPress) buttons &= static_cast<uint16_t>(~kChord);
     for (const Map& m : kButtons) io.AddKeyEvent(m.key, (buttons & m.button) != 0);
     constexpr float kDead = 7849.0f; // XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE
     auto axis = [&](ImGuiKey key, float v) {
@@ -297,8 +267,6 @@ void ReleaseImGui()
 const ImVec4 kGold(1.00f, 0.89f, 0.55f, 1.0f);     // #FFE38C, focused text and titles
 const ImVec4 kGoldLine(0.85f, 0.72f, 0.36f, 1.0f); // #D8B85B, rules
 const ImVec4 kCream(0.99f, 0.98f, 0.91f, 1.0f);    // #FCFBE7, tile outlines
-const ImVec4 kTile(0.82f, 0.82f, 0.78f, 1.0f);     // #D0D1C7
-const ImVec4 kTileText(0.27f, 0.27f, 0.27f, 1.0f); // #454545
 const ImVec4 kOlive(0.22f, 0.22f, 0.17f, 1.0f);    // #39392B, the focused tile
 const ImVec4 kP1(0.36f, 0.62f, 1.0f, 1.0f);
 const ImVec4 kP2(1.0f, 0.36f, 0.30f, 1.0f);
@@ -491,66 +459,6 @@ std::string Upper(std::string text)
     return text;
 }
 
-// A gold rule across the window that fades out to the right, as under the
-// menus' focused entry.
-void Rule()
-{
-    ImDrawList* d = ImGui::GetWindowDrawList();
-    const ImVec2 p = ImGui::GetCursorScreenPos();
-    const float w = ImGui::GetContentRegionAvail().x;
-    const float h = std::max(1.0f, 1.5f * g_uiScale);
-    const ImU32 solid = ImGui::GetColorU32(kGoldLine);
-    const ImU32 clear = ImGui::GetColorU32(ImVec4(kGoldLine.x, kGoldLine.y, kGoldLine.z, 0.0f));
-    d->AddRectFilledMultiColor(p, ImVec2(p.x + w, p.y + h), solid, clear, clear, solid);
-    ImGui::Dummy(ImVec2(0, h));
-}
-
-// A section title: bold italic capitals in gold over a rule.
-void Heading(const char* text)
-{
-    ImGui::PushFont(g_fontHeading);
-    ImGui::TextColored(kGold, "%s", Upper(text).c_str());
-    ImGui::PopFont();
-    Rule();
-}
-
-// A main action as the menus draw their entries: a light tile with dark
-// text, dark olive with gold text over a gold rule when focused, hovered or
-// chosen. Width 0 fits the label, -1 fills the row.
-bool TileButton(const char* label, float width = 0, bool chosen = false)
-{
-    std::string text = label;
-    if (const size_t hash = text.find("##"); hash != std::string::npos) text.resize(hash);
-    text = Upper(text);
-    ImGui::PushFont(g_fontHeading);
-    const ImGuiStyle& st = ImGui::GetStyle();
-    const ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
-    const float pad = st.FramePadding.x * 1.6f;
-    if (width < 0) width = ImGui::GetContentRegionAvail().x;
-    const ImVec2 size(width > 0 ? width : textSize.x + pad * 2, textSize.y + st.FramePadding.y * 4.4f);
-    const ImVec2 at = ImGui::GetCursorScreenPos();
-    // (Invisible buttons are left out of pad and keyboard navigation unless asked.)
-    const bool pressed = ImGui::InvisibleButton(label, size, ImGuiButtonFlags_EnableNav);
-    const bool lit = chosen || ImGui::IsItemHovered() || ImGui::IsItemFocused() || ImGui::IsItemActive();
-    ImDrawList* d = ImGui::GetWindowDrawList();
-    const ImVec2 end(at.x + size.x, at.y + size.y);
-    d->AddRectFilled(at, end, ImGui::GetColorU32(lit ? kOlive : kTile));
-    d->AddRect(at, end, ImGui::GetColorU32(lit ? kGoldLine : kCream), 0, 0, std::max(1.0f, g_uiScale));
-    const float textY = at.y + (size.y - textSize.y) * 0.5f;
-    if (lit) {
-        const float y = textY + textSize.y + st.FramePadding.y * 0.4f;
-        const ImU32 solid = ImGui::GetColorU32(kGoldLine);
-        const ImU32 clear = ImGui::GetColorU32(ImVec4(kGoldLine.x, kGoldLine.y, kGoldLine.z, 0.0f));
-        d->AddRectFilledMultiColor(ImVec2(at.x + pad, y), ImVec2(end.x - pad, y + std::max(1.0f, g_uiScale)), solid, clear, clear, solid);
-    }
-    d->AddText(ImVec2(at.x + pad, textY), ImGui::GetColorU32(lit ? kGold : kTileText), text.c_str());
-    ImGui::PopFont();
-    return pressed;
-}
-
-// Two tiles side by side, splitting the row.
-float HalfRow() { return (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f; }
-
 // Latency at a glance: green under 80 ms, yellow to 149, red from 150.
 ImVec4 PingColor(unsigned ms)
 {
@@ -559,35 +467,8 @@ ImVec4 PingColor(unsigned ms)
     return kRed;
 }
 
-// Peer to peer, or relayed (through whose TURN: Cloudflare's, for the
-// public server). Short for the player bars, long for the lobby.
-std::string PathText(const NetView& v, bool brief)
-{
-    switch (v.linkPath) {
-    case NetView::Path::Direct: return brief ? "P2P" : "Peer to peer";
-    case NetView::Path::Relayed: {
-        if (brief) return "RELAY";
-        std::string host = v.relayHost;
-        if (host.find("cloudflare") != std::string::npos) host = "Cloudflare";
-        return host.empty() ? "Relayed (TURN)" : "Relayed via " + host;
-    }
-    case NetView::Path::Unknown: break;
-    }
-    return "";
-}
-
 // Relayed links add the relay's detour: shown in yellow, a direct one dim.
 ImVec4 PathColor(const NetView& v) { return v.linkPath == NetView::Path::Relayed ? Rgb(255, 210, 80) : kDim; }
-
-const char* LinkText(lobby::Link link)
-{
-    switch (link) {
-    case lobby::Link::Wired: return "Wired";
-    case lobby::Link::WiFi: return "Wi-Fi";
-    case lobby::Link::Unknown: break;
-    }
-    return "";
-}
 
 // A connection's icon in a square of `size` from `at`: Wi-Fi's arcs over a
 // dot, or a wired network plug; nothing when unknown.
@@ -624,16 +505,6 @@ void DrawRelayIcon(ImDrawList* d, ImVec2 at, float size, ImU32 color)
     d->AddCircleFilled(p(0.33f, 0.58f), size * 0.2f, color);
     d->AddCircleFilled(p(0.56f, 0.46f), size * 0.27f, color);
     d->AddCircleFilled(p(0.76f, 0.62f), size * 0.19f, color);
-}
-
-// The icon inline in a window, as a text-sized item.
-void LinkIcon(lobby::Link link, ImVec4 color)
-{
-    const float size = ImGui::GetTextLineHeight();
-    const ImVec2 at = ImGui::GetCursorScreenPos();
-    DrawLinkIcon(ImGui::GetWindowDrawList(), ImVec2(at.x, at.y + (ImGui::GetFrameHeight() - size) * 0.5f), size, link,
-                 ImGui::GetColorU32(color));
-    ImGui::Dummy(ImVec2(size, ImGui::GetFrameHeight()));
 }
 
 // "I", "II", "III": how the menus number V-Skills and V-Triggers.
@@ -796,7 +667,7 @@ Tables ReadTables()
         std::vector<CostumeSwatches> swatches;
         for (int k : costumes) swatches.push_back(CostumeSwatchColors(i, k));
         t.swatches.push_back(std::move(swatches));
-        t.vcomments.push_back(VCommentNames(CharaCode(i)));
+        t.vcomments.emplace_back(); // read after the rest (ReadComments)
         t.elevenCostume.push_back(CostumeInFolder(i, "0C"));
         t.charas.push_back(CharaCode(i));
         t.charaIndex.push_back(i);
@@ -900,11 +771,41 @@ Tables ReadTables()
 std::mutex g_tablesMutex;
 std::unique_ptr<Tables> g_readTables; // from the worker, taken by the render thread
 std::atomic<bool> g_readingTables{false};
+// The V-Comment names by character code, read once the tables are there:
+// each loads the character's subtitle asset on the game thread (about 0.4 s
+// a character, 18 s for the roster), so the lists, the hub and the rooms do
+// not wait for them. Until they come, the V-Comment row says "Comment 2".
+std::unique_ptr<std::map<std::string, std::vector<std::string>>> g_readComments;
+
+void ReadComments(std::vector<std::string> codes)
+{
+    Act([codes = std::move(codes)] {
+        const ULONGLONG from = GetTickCount64();
+        auto out = std::make_unique<std::map<std::string, std::vector<std::string>>>();
+        for (const std::string& code : codes) {
+            if (Stopping()) return;
+            if (code != "ELV") (*out)[code] = VCommentNames(code);
+        }
+        Log("overlay: V-Comment names read in %llu ms", GetTickCount64() - from);
+        std::lock_guard lock(g_tablesMutex);
+        g_readComments = std::move(out);
+    });
+}
 
 // Render thread: starts the read, and takes its result once there.
 void LoadTables()
 {
-    if (g_tables.loaded) return;
+    if (g_tables.loaded) {
+        std::lock_guard lock(g_tablesMutex);
+        if (g_readComments) {
+            for (size_t i = 0; i < g_tables.charas.size() && i < g_tables.vcomments.size(); i++) {
+                const auto it = g_readComments->find(g_tables.charas[i]);
+                if (it != g_readComments->end()) g_tables.vcomments[i] = it->second;
+            }
+            g_readComments.reset();
+        }
+        return;
+    }
     // Not while the game is still starting (boot, title): its character data
     // is only partly there, and a read then came out short but not empty and
     // stayed (a spectator who joined from the title saw "KEN", "Z34",
@@ -918,6 +819,7 @@ void LoadTables()
                 g_tables = std::move(*g_readTables);
                 Log("overlay: character lists read: %zu characters, %zu stages (scene %s)", g_tables.charas.size(),
                     g_tables.stages.size(), CurrentScene().c_str());
+                ReadComments(g_tables.charas);
             }
             g_readTables.reset();
             g_readingTables = false; // not loaded yet (game still starting): read again later
@@ -926,7 +828,12 @@ void LoadTables()
     }
     if (g_readingTables.exchange(true)) return;
     Act([] {
+        static int tries = 0;
+        const ULONGLONG from = GetTickCount64();
         auto t = std::make_unique<Tables>(ReadTables());
+        tries++;
+        Log("overlay: character lists %s in %llu ms (try %d, scene %s)", t->loaded ? "read" : "not there yet", GetTickCount64() - from, tries,
+            CurrentScene().c_str());
         if (!t->loaded) Sleep(1000); // the game has not loaded them yet
         std::lock_guard lock(g_tablesMutex);
         g_readTables = std::move(t);
@@ -1106,30 +1013,6 @@ std::string ColorLabel(int id)
     return id >= 100 ? "EX Color " + std::to_string(id - 99) : "Color " + std::to_string(id + 1);
 }
 
-// The game's name of a character's costume (the game's index), or its number.
-std::string CostumeLabel(const std::string& code, int costume)
-{
-    const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), code);
-    if (it != g_tables.charas.end()) {
-        const int chara = static_cast<int>(it - g_tables.charas.begin());
-        const auto& costumes = g_tables.costumes[chara];
-        const auto at = std::find(costumes.begin(), costumes.end(), costume);
-        if (at != costumes.end()) return g_tables.costumeNames[chara][at - costumes.begin()];
-    }
-    return "costume " + std::to_string(costume);
-}
-
-std::string PlayerText(const PlayerSetup& p)
-{
-    if (!p.character) return "as the game has it";
-    const std::string code = UnpackCode(p.character);
-    char buf[320];
-    std::snprintf(buf, sizeof(buf), "%s  %s  %s  V-Skill %s  V-Trigger %s", CharaLabel(code).c_str(),
-                  CostumeLabel(code, p.costume).c_str(), ColorLabel(p.color).c_str(), SkillText(code, false, p.vskill).c_str(),
-                  SkillText(code, true, p.vtrigger).c_str());
-    return buf;
-}
-
 std::string StageText(uint16_t index)
 {
     const std::string code = StageCode(index);
@@ -1138,102 +1021,6 @@ std::string StageText(uint16_t index)
     return it == g_tables.stages.end() ? code : g_tables.stageLabels[it - g_tables.stages.begin()];
 }
 
-// Host, join or watch with the panel's choices; they are kept for F7/F8 and saved.
-void HostOrJoin(const std::string& code, bool spectate = false)
-{
-    const NetplayOptions o = ChosenOptions();
-    Act([o, code, spectate] {
-        NetOptions() = o;
-        if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, o, o.stageCode);
-        if (code.empty()) NetHost(o);
-        else NetJoin(code, o, spectate);
-    });
-}
-
-std::string StageRuleText(uint16_t rule)
-{
-    if (rule == lobby::kRandomStage) return "Random";
-    if (rule == lobby::kAnyStage) return "As prepared";
-    return StageText(rule);
-}
-
-
-// A short list stepped through one at a time: left and right (d-pad, stick,
-// arrow keys) while it has the focus, or a click on its arrows. Focused, it
-// owns those keys, so they change the value instead of moving the focus.
-// `label` as ImGui's ("##..." hides it). True when the value changed.
-bool Stepper(const char* label, int* value, int min, int max, const std::function<std::string(int)>& text)
-{
-    *value = std::clamp(*value, min, max);
-    const float width = ImGui::CalcItemWidth();
-    const float height = ImGui::GetFrameHeight();
-    const ImVec2 at = ImGui::GetCursorScreenPos();
-    const bool clicked = ImGui::InvisibleButton(label, ImVec2(width, height), ImGuiButtonFlags_EnableNav);
-    const ImGuiID id = ImGui::GetItemID();
-    const bool focused = ImGui::IsItemFocused();
-    const bool hovered = ImGui::IsItemHovered();
-    static const ImGuiKey kLess[] = {ImGuiKey_LeftArrow, ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft};
-    static const ImGuiKey kMore[] = {ImGuiKey_RightArrow, ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight};
-    int step = 0;
-    if (focused) {
-        for (ImGuiKey k : kLess) {
-            ImGui::SetKeyOwner(k, id);
-            if (ImGui::IsKeyPressed(k, ImGuiInputFlags_Repeat, id)) step = -1;
-        }
-        for (ImGuiKey k : kMore) {
-            ImGui::SetKeyOwner(k, id);
-            if (ImGui::IsKeyPressed(k, ImGuiInputFlags_Repeat, id)) step = 1;
-        }
-    }
-    if (clicked) {
-        const float x = ImGui::GetIO().MousePos.x - at.x;
-        step = x < width * 0.35f ? -1 : x > width * 0.65f ? 1 : 0;
-    }
-    const int before = *value;
-    *value = std::clamp(*value + step, min, max);
-    // A frame with an arrow at each end, gold when it can step that way.
-    ImDrawList* d = ImGui::GetWindowDrawList();
-    const ImVec2 end(at.x + width, at.y + height);
-    const ImGuiStyle& st = ImGui::GetStyle();
-    d->AddRectFilled(at, end, ImGui::GetColorU32(focused ? kOlive : hovered ? st.Colors[ImGuiCol_FrameBgHovered] : st.Colors[ImGuiCol_FrameBg]));
-    d->AddRect(at, end, ImGui::GetColorU32(focused ? kGoldLine : st.Colors[ImGuiCol_Border]), 0, 0, st.FrameBorderSize);
-    const float s = height * 0.22f, cy = at.y + height * 0.5f;
-    const float lx = at.x + st.FramePadding.x + s, rx = end.x - st.FramePadding.x - s;
-    auto arrowColor = [&](bool can) { return ImGui::GetColorU32(can ? (focused ? kGold : kGoldLine) : st.Colors[ImGuiCol_TextDisabled]); };
-    d->AddTriangleFilled(ImVec2(lx - s, cy), ImVec2(lx + s * 0.6f, cy - s), ImVec2(lx + s * 0.6f, cy + s), arrowColor(*value > min));
-    d->AddTriangleFilled(ImVec2(rx + s, cy), ImVec2(rx - s * 0.6f, cy - s), ImVec2(rx - s * 0.6f, cy + s), arrowColor(*value < max));
-    // Long names (V-Skills, V-Triggers in a narrow window) shrink to fit,
-    // to 70%, then clip.
-    const std::string shown = text(*value);
-    const float inner = rx - lx - s * 4;
-    float fontSize = ImGui::GetFontSize();
-    const float full = ImGui::CalcTextSize(shown.c_str()).x;
-    if (full > inner && full > 0) fontSize *= std::max(0.7f, inner / full);
-    const ImVec2 size = ImGui::GetFont()->CalcTextSizeA(fontSize, FLT_MAX, 0, shown.c_str());
-    const ImVec2 textAt(std::max(lx + s * 2, at.x + (width - size.x) * 0.5f), at.y + (height - size.y) * 0.5f);
-    d->PushClipRect(ImVec2(lx + s * 2, at.y), ImVec2(lx + s * 2 + inner, end.y), true);
-    d->AddText(ImGui::GetFont(), fontSize, textAt, ImGui::GetColorU32(focused ? kGold : st.Colors[ImGuiCol_Text]), shown.c_str());
-    d->PopClipRect();
-    // The label to the right, as ImGui's own widgets.
-    std::string visible = label;
-    if (const size_t hash = visible.find("##"); hash != std::string::npos) visible.resize(hash);
-    if (!visible.empty()) {
-        ImGui::SameLine(0, st.ItemInnerSpacing.x);
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(visible.c_str());
-    }
-    return *value != before;
-}
-
-// A V-Skill or V-Trigger choice by the game's names (numbers when unknown).
-void SkillStepper(const char* label, const std::vector<std::string>& names, int* value)
-{
-    const int count = names.empty() ? 2 : static_cast<int>(names.size());
-    Stepper(label, value, 1, count, [&](int n) {
-        const std::string name = n - 1 < static_cast<int>(names.size()) ? names[n - 1] : "";
-        return Roman(n) + (name.empty() ? "" : " " + name);
-    });
-}
 
 // Saves the panel's settings (and keeps them for the next host or join).
 void SaveChoices()
@@ -1437,110 +1224,6 @@ void SwitchCharacter(Choices& c, int chara)
     AvoidTakenColor(c);
 }
 
-void PickCharacter(Choices& c, const char* label)
-{
-    if (ImGui::BeginCombo(label, g_tables.labels[c.chara].c_str())) {
-        for (int i = 0; i < static_cast<int>(g_tables.charas.size()); i++) {
-            ImGui::PushID(i);
-            const bool owned = CharaOwned(i);
-            const std::string text = owned ? g_tables.labels[i] : g_tables.labels[i] + " (locked)";
-            if (ImGui::Selectable(text.c_str(), i == c.chara, owned ? 0 : ImGuiSelectableFlags_Disabled)) SwitchCharacter(c, i);
-            ImGui::PopID();
-        }
-        ImGui::EndCombo();
-    }
-    PickValid(c);
-}
-
-// Costumes by the game's names, in its list's order (the menus'); the pick
-// keeps the game's index.
-void PickCostume(Choices& c, const char* label)
-{
-    const std::vector<int>& costumes = g_tables.costumes[c.chara];
-    const std::vector<std::string>& names = g_tables.costumeNames[c.chara];
-    if (ImGui::BeginCombo(label, names[CostumeSlot(c.chara, c.costume)].c_str())) {
-        for (size_t k = 0; k < costumes.size(); k++) {
-            const bool owned = CostumeOwned(c.chara, static_cast<int>(k));
-            const std::string text = owned ? names[k] : names[k] + " (locked)";
-            if (ImGui::Selectable(text.c_str(), costumes[k] == c.costume, owned ? 0 : ImGuiSelectableFlags_Disabled)) {
-                c.costume = costumes[k];
-                PickValid(c);
-                AvoidTakenColor(c);
-            }
-        }
-        ImGui::EndCombo();
-    }
-    PickValid(c);
-}
-
-// The costume's colors, then its EX colors.
-void PickColor(Choices& c, const char* label)
-{
-    const std::vector<int>& colors = g_tables.colors[c.chara][CostumeSlot(c.chara, c.costume)];
-    const int taken = TakenColor(c);
-    if (ImGui::BeginCombo(label, ColorLabel(c.color).c_str())) {
-        const int slot = CostumeSlot(c.chara, c.costume);
-        for (int k = 0; k < static_cast<int>(colors.size()); k++) {
-            const int id = colors[k];
-            // The other player's color on this costume, and colors not
-            // owned: shown, not offered.
-            const bool owned = ColorOwnedAt(c.chara, slot, k);
-            const std::string text = !owned ? ColorLabel(id) + " (locked)"
-                                     : id == taken ? ColorLabel(id) + " (the other player's)"
-                                                   : ColorLabel(id);
-            if (ImGui::Selectable(text.c_str(), id == c.color, id == taken || !owned ? ImGuiSelectableFlags_Disabled : 0)) c.color = id;
-        }
-        ImGui::EndCombo();
-    }
-}
-
-// The menus' held-button variants: the costume's own, the character's
-// special one (Urien's thong, Akira's helmet off), or both; a stepper over
-// those the costume has. False when it has none (nothing drawn).
-bool PickVariant(Choices& c, const char* label)
-{
-    const int variants = VariantsOf(c.chara, c.costume);
-    if (variants < 0) {
-        std::string visible = label;
-        if (const size_t hash = visible.find("##"); hash != std::string::npos) visible.resize(hash);
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(kDim, "%s%s", visible.empty() ? "" : (visible + ": ").c_str(), "checking...");
-        return true;
-    }
-    if (variants == 0) {
-        c.variant = 0;
-        return false;
-    }
-    std::vector<int> options;
-    for (int n = 0; n <= variants; n++) {
-        if ((n & variants) == n) options.push_back(n);
-    }
-    int at = static_cast<int>(std::find(options.begin(), options.end(), c.variant) - options.begin());
-    if (at >= static_cast<int>(options.size())) at = 0;
-    const std::string& code = g_tables.charas[c.chara];
-    Stepper(label, &at, 0, static_cast<int>(options.size()) - 1,
-            [&](int i) { return VariantLabel(code, static_cast<uint8_t>(options[i])); });
-    c.variant = options[at];
-    return true;
-}
-
-void PickVSkill(Choices& c, const char* label) { SkillStepper(label, g_tables.vskills[c.chara], &c.vskill); }
-void PickVTrigger(Choices& c, const char* label) { SkillStepper(label, g_tables.vtriggers[c.chara], &c.vtrigger); }
-
-// Auto, then the character's own comments by number (the text rarely fits),
-// with the chosen one's text under it.
-void PickComment(Choices& c, const char* label)
-{
-    const std::vector<std::string>& names = g_tables.vcomments[c.chara];
-    c.comment = std::clamp(c.comment, 0, static_cast<int>(names.size()));
-    Stepper(label, &c.comment, 0, static_cast<int>(names.size()),
-            [&](int n) { return n == 0 ? std::string("Auto") : "Comment " + std::to_string(n); });
-    if (c.comment > 0) {
-        ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextColored(kDim, "\"%s\"", names[c.comment - 1].c_str());
-        ImGui::PopTextWrapPos();
-    }
-}
 
 std::string CommentText(const std::string& code, int comment)
 {
@@ -1550,190 +1233,9 @@ std::string CommentText(const std::string& code, int comment)
     return "Comment " + std::to_string(comment);
 }
 
-// This player's pick as a column of labelled widgets (the side windows).
-void DrawPick(Choices& c)
-{
-    if (!PickValid(c)) {
-        ImGui::TextDisabled("(reading the character list...)");
-        return;
-    }
-    PickCharacter(c, "Character");
-    if (IsEleven(c.chara)) {
-        ImGui::TextColored(kDim, "A random fighter in silver, its V-Skill and V-Trigger at random.");
-        return;
-    }
-    PickCostume(c, "Costume");
-    PickColor(c, "Color");
-    PickVariant(c, "Variant");
-    PickVSkill(c, "V-Skill");
-    PickVTrigger(c, "V-Trigger");
-    PickComment(c, "V-Comment");
-}
-
-// The host's stage for the next matches: random, or a stage select stage
-// with one of its settings (The Grid: The Grid Alternative).
-void DrawStage(Choices& c)
-{
-    if (!g_tables.loaded || !c.initialised) return;
-    c.stage = std::clamp(c.stage, 1, static_cast<int>(g_tables.stages.size()) + 1);
-    const std::string current = c.stage <= 1 ? "Random" : g_tables.stageLabels[c.stage - 2];
-    if (ImGui::BeginCombo("Stage", current.c_str())) {
-        if (ImGui::Selectable("Random", c.stage <= 1)) c.stage = 1;
-        for (int i = 0; i < static_cast<int>(g_tables.stages.size()); i++) {
-            ImGui::PushID(i);
-            const bool owned = StageOwned(i, 0);
-            const std::string text = owned ? g_tables.stageLabels[i] : g_tables.stageLabels[i] + " (locked)";
-            const bool picked = ImGui::Selectable(text.c_str(), c.stage == i + 2, owned ? 0 : ImGuiSelectableFlags_Disabled);
-            ImGui::PopID();
-            if (picked) {
-                c.stage = i + 2;
-                c.setting = 0;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    if (c.stage < 2) {
-        c.setting = 0;
-        return;
-    }
-    const auto& names = g_tables.settingLabels[c.stage - 2];
-    c.setting = std::clamp(c.setting, 0, static_cast<int>(names.size()));
-    if (names.empty()) return;
-    const std::string setting = c.setting == 0 ? "Default" : names[c.setting - 1];
-    if (ImGui::BeginCombo("Setting", setting.c_str())) {
-        if (ImGui::Selectable("Default", c.setting == 0)) c.setting = 0;
-        for (int k = 0; k < static_cast<int>(names.size()); k++) {
-            const bool owned = StageOwned(c.stage - 2, k + 1);
-            const std::string text = owned ? names[k] : names[k] + " (locked)";
-            if (ImGui::Selectable(text.c_str(), c.setting == k + 1, owned ? 0 : ImGuiSelectableFlags_Disabled)) c.setting = k + 1;
-        }
-        ImGui::EndCombo();
-    }
-}
-
-// This player's input delay for the next match, and a suggestion for it
-// from the session's ping.
+// This player's input delay for the next match (the vote's delay row).
 constexpr int kMaxDelayFrames = 10;
 std::string FramesText(int n) { return std::to_string(n) + (n == 1 ? " frame" : " frames"); }
-
-void DrawDelay(Choices& c, const char* label = "Delay")
-{
-    Stepper(label, &c.delay, 0, kMaxDelayFrames, FramesText);
-}
-
-// The delay that leaves at most two frames to rollback at this link's ping
-// and jitter, 0 to 3 (core/input_delay.h).
-void DrawDelaySuggestion(const NetView& v)
-{
-    // A spectator has no input delay of its own.
-    if (v.spectator) return;
-    const int fixed = NetOptions().delaySetting;
-    const int suggested = v.SuggestedDelay();
-    // Wrapped at the window's edge: the post-match side windows are narrow.
-    ImGui::PushTextWrapPos(0.0f);
-    if (fixed >= 0) ImGui::TextColored(kDim, "Your setting: delay %d (SFVR settings)", fixed);
-    else if (suggested >= 0) ImGui::TextColored(kDim, "Suggested delay %d (ping %u ms)", suggested, v.link.pingMs);
-    ImGui::PopTextWrapPos();
-}
-
-void DrawDelay(Choices& c, const NetView& v)
-{
-    DrawDelay(c);
-    DrawDelaySuggestion(v);
-}
-
-// The Settings tab: name and spectators (before a session), frame rate.
-void DrawSettings(bool locked)
-{
-    Choices& c = g_choices;
-    ImGui::BeginDisabled(locked);
-    ImGui::SetNextItemWidth(260 * g_uiScale);
-    bool changed = ImGui::InputTextWithHint("Name", "(Steam name)", c.name, sizeof(c.name));
-    changed |= ImGui::Checkbox("Others may watch my sessions", &c.allowSpectators);
-    ImGui::EndDisabled();
-    if (locked) ImGui::TextColored(kDim, "Name and spectators apply from the next session.");
-    changed |= ImGui::Checkbox("Show my country flag", &c.shareCountry);
-    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440 * g_uiScale);
-    ImGui::TextColored(kDim, "The SFVR server finds your country from your connection and shows its flag beside "
-                             "your name in custom rooms and on the rooms list online. Off: it keeps it to itself.");
-    ImGui::PopTextWrapPos();
-    changed |= ImGui::Checkbox("Word filter", &c.wordFilter);
-    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440 * g_uiScale);
-    ImGui::TextColored(kDim, "Public rooms: names on the server's word list show as \"Player 1234\" and its words in chat "
-                             "are starred. Off: you see them as they are (the rooms list stays filtered).");
-    ImGui::PopTextWrapPos();
-    changed |= ImGui::Checkbox("Streamer mode", &c.streamerMode);
-    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440 * g_uiScale);
-    ImGui::TextColored(kDim, "Room codes show as dots on the custom room screens, so a stream does not give "
-                             "them away. Copy code still copies it.");
-    ImGui::PopTextWrapPos();
-    ImGui::Spacing();
-    if (NetOptions().udp) ImGui::TextDisabled("Transport: UDP, for testing (sfv_rollback.ini)");
-    else ImGui::TextDisabled("Server: %s (change it in the Debug tab)", NetOptions().server.c_str());
-    if (changed) SaveChoices();
-
-    // The SFVR folder next to the game (files.h): what a player sends.
-    ImGui::Spacing();
-    Heading("Logs");
-    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440 * g_uiScale);
-    ImGui::TextColored(kDim, "Event logs and match recordings are in the SFVR folder next to the game. "
-                             "To report a problem, pack them and send the zip.");
-    ImGui::PopTextWrapPos();
-    if (ImGui::Checkbox("Send desync and crash reports to the SFVR server", &g_choices.uploadReports)) SaveChoices();
-    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440 * g_uiScale);
-    ImGui::TextColored(kDim, "After a match with a desync, its recording and match log (names, picks, inputs) "
-                             "go to the server so both players' halves can be compared. After a crash, the "
-                             "end of the log and a small crash dump go at the next start.");
-    ImGui::PopTextWrapPos();
-    if (TileButton("Open folder")) OpenDataFolder();
-    ImGui::SameLine();
-    if (TileButton("Pack logs to share")) {
-        // A few MB read and written at once: a short stall, on a click.
-        std::string error;
-        const std::wstring zip = PackLogsToShare(&error);
-        if (zip.empty()) g_packResult = "Could not pack the logs: " + error;
-        else {
-            std::string name;
-            for (wchar_t ch : zip.substr(zip.find_last_of(L'\\') + 1)) name += ch < 128 ? static_cast<char>(ch) : '_';
-            g_packResult = "Packed " + name + " in the SFVR folder";
-            OpenDataFolder(zip);
-        }
-    }
-    if (!g_packResult.empty()) ImGui::TextColored(kDim, "%s", g_packResult.c_str());
-
-    // Updates from the project site, installed only when asked (updater.h).
-    ImGui::Spacing();
-    Heading("Updates");
-    const UpdateView u = UpdateViewNow();
-    using U = UpdateView::State;
-    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440 * g_uiScale);
-    switch (u.state) {
-    case U::Off: ImGui::TextColored(kDim, "Updates are off: %s.", u.message.c_str()); break;
-    case U::Idle: ImGui::TextColored(kDim, "Not checked yet."); break;
-    case U::Checking: ImGui::TextColored(kDim, "Checking for updates..."); break;
-    case U::UpToDate: ImGui::TextColored(kDim, "SFVR %s is the latest.", u.current.c_str()); break;
-    case U::Available:
-        ImGui::TextColored(kGold, "SFVR %s is available%s%s.", u.latest.c_str(), u.published.empty() ? "" : ", from ",
-                           u.published.c_str());
-        if (!u.notes.empty()) ImGui::TextColored(kDim, "%s", u.notes.c_str());
-        ImGui::TextColored(kDim, "Both players need the same version to play each other.");
-        break;
-    case U::Downloading: ImGui::TextColored(kDim, "Downloading SFVR %s...", u.latest.c_str()); break;
-    case U::Ready: ImGui::TextColored(kGreen, "SFVR %s is installed. Restart the game to use it.", u.latest.c_str()); break;
-    case U::Failed: ImGui::TextColored(kRed, "The update failed: %s.", u.message.c_str()); break;
-    }
-    ImGui::PopTextWrapPos();
-    if (u.state == U::Downloading) {
-        const float part = u.total ? static_cast<float>(double(u.done) / double(u.total)) : 0.0f;
-        ImGui::ProgressBar(part, ImVec2(260 * g_uiScale, 0));
-    }
-    if (u.state == U::Available && TileButton("Download and install")) UpdateInstall();
-    if (u.state == U::Available) ImGui::SameLine();
-    if ((u.state == U::Idle || u.state == U::UpToDate || u.state == U::Failed || u.state == U::Available) &&
-        TileButton("Check again")) {
-        UpdateCheck();
-    }
-}
 
 // In a session: the panel's pick, the host's stage and this player's delay
 // go to the session as they change, and are saved for the next session.
@@ -1767,439 +1269,8 @@ void SyncChoices(const NetView& v)
     });
 }
 
-// An on-screen keypad for match codes, for players on a pad.
-void DrawKeypad()
-{
-    static const char kChars[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    const float key = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 7) / 8;
-    for (int i = 0; kChars[i]; i++) {
-        if (i % 8) ImGui::SameLine();
-        const char label[2] = {kChars[i], 0};
-        if (ImGui::Button(label, ImVec2(key, 0))) {
-            const size_t n = std::strlen(g_choices.code);
-            if (n + 1 < sizeof(g_choices.code)) {
-                g_choices.code[n] = kChars[i];
-                g_choices.code[n + 1] = 0;
-            }
-        }
-    }
-    if (ImGui::Button("Delete", ImVec2(HalfRow(), 0))) {
-        const size_t n = std::strlen(g_choices.code);
-        if (n) g_choices.code[n - 1] = 0;
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Clear", ImVec2(-1, 0))) g_choices.code[0] = 0;
-}
-
-const char* ChoiceText(lobby::Choice c)
-{
-    switch (c) {
-    case lobby::Choice::Rematch: return "wants a rematch";
-    case lobby::Choice::CharacterSelect: return "back to character select";
-    case lobby::Choice::None: break;
-    }
-    return "choosing...";
-}
-
 // The character's name ("CHUN-LI"), for the short pick lines.
 std::string ShortCharaName(const std::string& code) { return CharaLabel(code); }
-
-void DrawWatchControls(const NetView& v);
-
-// Both seats side by side, P1 left: name, pick in two lines and, in the
-// lobby, whether ready.
-void DrawSeats(const NetView& v, bool readiness)
-{
-    if (!ImGui::BeginTable("seats", 2, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_BordersInnerV)) return;
-    ImGui::TableNextRow();
-    for (int i = 0; i < kNumPlayers; i++) {
-        const lobby::Seat& s = v.seats[i];
-        ImGui::TableNextColumn();
-        ImGui::PushFont(g_fontHeading);
-        ImGui::TextColored(i == 0 ? kP1 : kP2, "P%d", i + 1);
-        ImGui::SameLine();
-        ImGui::PushTextWrapPos(0.0f); // a long name wraps in its column
-        if (s.present) ImGui::TextUnformatted(s.name.empty() ? "Player" : s.name.c_str());
-        else ImGui::TextColored(kDim, "waiting...");
-        ImGui::PopTextWrapPos();
-        ImGui::PopFont();
-        if (s.present && v.you == i) {
-            ImGui::SameLine();
-            ImGui::TextColored(kDim, "(you)");
-        }
-        if (!s.present) continue;
-        if (s.hasPick && s.pick.character) {
-            const std::string code = UnpackCode(s.pick.character);
-            ImGui::TextUnformatted(ShortCharaName(code).c_str());
-            std::string detail = CostumeLabel(code, s.pick.costume) + ", " + ColorLabel(s.pick.color);
-            if (s.pick.variation) detail += ", " + VariantLabel(code, s.pick.variation);
-            ImGui::TextColored(kDim, "%s", detail.c_str());
-        }
-        else {
-            ImGui::TextColored(kDim, "choosing...");
-        }
-        if (readiness) {
-            if (s.ready) ImGui::TextColored(kGreen, "%s", s.preloaded ? "READY" : "READY (loading)");
-            else ImGui::TextColored(kDim, "not ready");
-        }
-    }
-    ImGui::EndTable();
-}
-
-// One quiet line: matches played, spectators, ping, the host's code.
-void DrawSessionLine(const NetView& v)
-{
-    std::string text = "Matches " + std::to_string(v.played);
-    if (v.linkPingMs) text += "   ping " + std::to_string(v.linkPingMs) + " ms";
-    // Who watches is the spectators' business: players see no count (user,
-    // 2026-11-05; in a table set it was the keeper's relay anyway).
-    if (v.spectators && v.spectator) text += "   " + std::to_string(v.spectators) + " watching";
-    if (v.host && !v.code.empty()) text += "   code " + v.code;
-    ImGui::TextColored(kDim, "%s", text.c_str());
-}
-
-// Character select: a row per part of the pick with P1's column and P2's
-// side by side (this player's widgets, the other's choices as text), then
-// the stage, Ready and Leave.
-void DrawLobby(const NetView& v)
-{
-    Heading("Character select");
-    const bool ready = v.you >= 0 && v.seats[v.you].ready;
-    const bool valid = PickValid(g_choices);
-    const ImGuiStyle& st = ImGui::GetStyle();
-    const float labels = ImGui::CalcTextSize("V-Trigger").x + st.CellPadding.x * 2;
-    const float column = 250 * g_uiScale;
-    // A gold rule between P1's column and P2's, drawn once the table's
-    // height is known.
-    float ruleX = 0, ruleTop = 0;
-    if (ImGui::BeginTable("lobby", 3, ImGuiTableFlags_SizingFixedFit)) {
-        ImGui::TableSetupColumn("##labels", ImGuiTableColumnFlags_WidthFixed, labels);
-        ImGui::TableSetupColumn("##p1", ImGuiTableColumnFlags_WidthFixed, column);
-        ImGui::TableSetupColumn("##p2", ImGuiTableColumnFlags_WidthFixed, column);
-        ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        for (int i = 0; i < kNumPlayers; i++) {
-            const lobby::Seat& s = v.seats[i];
-            ImGui::TableNextColumn();
-            if (i == 1) {
-                ruleX = ImGui::GetCursorScreenPos().x - st.CellPadding.x;
-                ruleTop = ImGui::GetCursorScreenPos().y;
-            }
-            ImGui::PushFont(g_fontHeading);
-            ImGui::TextColored(i == 0 ? kP1 : kP2, "P%d", i + 1);
-            ImGui::SameLine();
-            ImGui::PushTextWrapPos(0.0f); // a long name wraps in its column
-            if (s.present) ImGui::TextUnformatted(s.name.empty() ? "Player" : s.name.c_str());
-            else ImGui::TextColored(kDim, "waiting...");
-            ImGui::PopTextWrapPos();
-            ImGui::PopFont();
-            if (s.present && v.you == i) {
-                ImGui::SameLine();
-                ImGui::TextColored(kDim, "(you)");
-            }
-        }
-        // Under the names, each player's connection and the ping between them.
-        ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        for (int i = 0; i < kNumPlayers; i++) {
-            const lobby::Seat& s = v.seats[i];
-            ImGui::TableNextColumn();
-            if (!s.present) continue;
-            if (s.link != lobby::Link::Unknown) {
-                LinkIcon(s.link, kDim);
-                ImGui::SameLine();
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextColored(kDim, "%s", LinkText(s.link));
-                ImGui::SameLine();
-            }
-            ImGui::AlignTextToFramePadding();
-            // The ping between the players; a spectator has no link to measure.
-            if (v.linkPingMs) ImGui::TextColored(PingColor(v.linkPingMs), "%u ms", v.linkPingMs);
-            else if (!v.spectator) ImGui::TextColored(kDim, "measuring...");
-        }
-        // How the two are linked: peer to peer, or through a relay.
-        if (v.linkPath != NetView::Path::Unknown) {
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            for (int i = 0; i < kNumPlayers; i++) {
-                ImGui::TableNextColumn();
-                if (v.seats[i].present) ImGui::TextColored(PathColor(v), "%s", PathText(v, false).c_str());
-            }
-        }
-        // `mine` draws this player's widget, `theirs` the other's choice.
-        auto row = [&](const char* name, const std::function<void()>& mine, const std::function<std::string(const lobby::Seat&, const std::string&)>& theirs) {
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextColored(kDim, "%s", name);
-            for (int i = 0; i < kNumPlayers; i++) {
-                const lobby::Seat& s = v.seats[i];
-                ImGui::TableNextColumn();
-                ImGui::PushID(i);
-                if (i == v.you && !v.spectator && valid) {
-                    ImGui::BeginDisabled(ready);
-                    ImGui::PushItemWidth(-FLT_MIN);
-                    mine();
-                    ImGui::PopItemWidth();
-                    ImGui::EndDisabled();
-                }
-                else {
-                    ImGui::AlignTextToFramePadding();
-                    const bool picked = s.present && s.hasPick && s.pick.character;
-                    if (!s.present) ImGui::TextUnformatted("");
-                    else if (!picked && i == v.you) ImGui::TextColored(kDim, "(reading the lists...)");
-                    else if (!picked) ImGui::TextColored(kDim, "choosing...");
-                    else ImGui::TextUnformatted(theirs(s, UnpackCode(s.pick.character)).c_str());
-                }
-                ImGui::PopID();
-            }
-        };
-        Choices& c = g_choices;
-        const bool eleven = IsEleven(c.chara);
-        auto random = [] {
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextColored(kDim, "random");
-        };
-        row("Character", [&] { PickCharacter(c, "##character"); },
-            [](const lobby::Seat& s, const std::string& code) { return IsElevenSetup(s.pick) ? std::string("ELEVEN") : ShortCharaName(code); });
-        row("Costume", [&] { if (eleven) random(); else PickCostume(c, "##costume"); },
-            [](const lobby::Seat& s, const std::string& code) { return IsElevenSetup(s.pick) ? std::string("Silver") : CostumeLabel(code, s.pick.costume); });
-        row("Color", [&] { if (eleven) random(); else PickColor(c, "##color"); }, [](const lobby::Seat& s, const std::string&) { return ColorLabel(s.pick.color); });
-        row("Variant", [&] {
-                if (eleven) random();
-                else if (!PickVariant(c, "##variant")) {
-                    ImGui::AlignTextToFramePadding();
-                    ImGui::TextColored(kDim, "none");
-                }
-            },
-            [](const lobby::Seat& s, const std::string& code) { return VariantLabel(code, s.pick.variation); });
-        row("V-Skill", [&] { if (eleven) random(); else PickVSkill(c, "##vskill"); }, [](const lobby::Seat& s, const std::string& code) { return SkillText(code, false, s.pick.vskill); });
-        row("V-Trigger", [&] { if (eleven) random(); else PickVTrigger(c, "##vtrigger"); }, [](const lobby::Seat& s, const std::string& code) { return SkillText(code, true, s.pick.vtrigger); });
-        row("V-Comment", [&] { if (eleven) random(); else PickComment(c, "##comment"); },
-            [](const lobby::Seat& s, const std::string& code) { return CommentText(code, s.pick.comment); });
-        row("Delay", [&] { DrawDelay(c, "##delay"); }, [](const lobby::Seat& s, const std::string&) { return FramesText(s.inputDelay); });
-        // Ready, for both.
-        ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        for (int i = 0; i < kNumPlayers; i++) {
-            const lobby::Seat& s = v.seats[i];
-            ImGui::TableNextColumn();
-            if (!s.present) continue;
-            if (s.ready) ImGui::TextColored(kGreen, "%s", s.preloaded ? "READY" : "READY (loading)");
-            else ImGui::TextColored(kDim, "not ready");
-        }
-        ImGui::EndTable();
-        if (ruleX > 0) {
-            const float bottom = ImGui::GetItemRectMax().y;
-            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(ruleX - g_uiScale, ruleTop), ImVec2(ruleX + g_uiScale, bottom),
-                                                      ImGui::GetColorU32(ImVec4(kGoldLine.x, kGoldLine.y, kGoldLine.z, 0.8f)));
-        }
-    }
-    ImGui::Spacing();
-    if (v.spectator) {
-        ImGui::TextColored(kDim, "Stage: %s", StageRuleText(v.stageRule).c_str());
-        ImGui::Text("Watching. The next match shows here when it starts.");
-        DrawWatchControls(v);
-        if (TileButton("Stop watching", -1)) Act([] { NetLeave(); });
-        return;
-    }
-    ImGui::PushItemWidth(column + labels);
-    ImGui::BeginDisabled(ready);
-    if (v.host) DrawStage(g_choices);
-    else ImGui::TextColored(kDim, "Stage (the host's): %s", StageRuleText(v.stageRule).c_str());
-    ImGui::EndDisabled();
-    ImGui::PopItemWidth();
-    DrawDelaySuggestion(v);
-    ImGui::Spacing();
-    // Ready locks the pick in until the match starts (netplay_driver.h).
-    ImGui::BeginDisabled(ready);
-    if (TileButton("Ready", HalfRow(), ready)) Act([] { NetSetReady(true); });
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (TileButton("Leave", -1)) Act([] { NetLeave(); });
-    if (ready) ImGui::TextColored(kDim, "Locked in. The match starts once both players are ready.");
-    DrawSessionLine(v);
-    SyncChoices(v);
-}
-
-// After the match's last KO: the menu over the win screen.
-// Spectator: which of the session's matches is shown, and Previous / Next /
-// Live (each plays the match from its start), then the list to pick from.
-void DrawWatchControls(const NetView& v)
-{
-    if (v.matches.empty()) return;
-    const int count = static_cast<int>(v.matches.size());
-    int at = -1;
-    for (int i = 0; i < count; i++) {
-        if (v.matches[i].id == v.watchingMatch) at = i;
-    }
-    const bool live = at == count - 1;
-    if (at >= 0) {
-        ImGui::Text("Match %d of %d%s", at + 1, count, live ? "  (live)" : "");
-        if (!live) {
-            ImGui::SameLine();
-            ImGui::TextColored(kDim, "  %d behind the players", count - 1 - at);
-        }
-    }
-    else {
-        ImGui::Text("%d match%s in this session", count, count == 1 ? "" : "es");
-    }
-    const float third = (ImGui::GetContentRegionAvail().x - 2 * ImGui::GetStyle().ItemSpacing.x) / 3.0f;
-    auto watch = [](uint64_t id) { Act([id] { NetWatchMatch(id); }); };
-    ImGui::BeginDisabled(at <= 0);
-    if (TileButton("Previous", third)) watch(v.matches[at - 1].id);
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::BeginDisabled(at < 0 || at >= count - 1);
-    if (TileButton("Next", third)) watch(v.matches[at + 1].id);
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::BeginDisabled(live);
-    if (TileButton("Live", third)) watch(0);
-    ImGui::EndDisabled();
-    for (int i = 0; i < count; i++) {
-        const lobby::MatchEntry& e = v.matches[i];
-        const std::string p1 = ShortCharaName(UnpackCode(e.setup.players[0].character));
-        const std::string p2 = ShortCharaName(UnpackCode(e.setup.players[1].character));
-        std::string result = !e.finished ? "playing" : e.winner == 0 ? "P1 won" : e.winner == 1 ? "P2 won" : "over";
-        char label[160];
-        std::snprintf(label, sizeof(label), "%s%d  %s vs %s  (%s)##match%d", i == at ? "> " : "  ", i + 1, p1.c_str(),
-                      p2.c_str(), result.c_str(), i);
-        if (ImGui::Selectable(label, i == at) && i != at) watch(e.id);
-    }
-}
-
-void DrawPostMatch(const NetView& v)
-{
-    static ULONGLONG shownAt = 0;
-    static uint64_t shownFor = ~0ull;
-    const uint64_t key = (uint64_t(v.played) << 1) | 1;
-    if (shownFor != key) {
-        shownFor = key;
-        shownAt = GetTickCount64();
-    }
-    Heading("Match over");
-    DrawSeats(v, false);
-    ImGui::Spacing();
-    if (v.spectator) {
-        ImGui::Text("Waiting for the players' choice...");
-        DrawWatchControls(v);
-        if (TileButton("Stop watching", -1)) Act([] { NetLeave(); });
-        return;
-    }
-    const int other = v.you == 0 ? 1 : 0;
-    ImGui::TextColored(kDim, "%s %s", v.seats[other].name.c_str(), ChoiceText(v.seats[other].choice));
-    const lobby::Choice mine = v.you >= 0 ? v.seats[v.you].choice : lobby::Choice::None;
-    // Buttons held from the match must not choose by accident.
-    ImGui::BeginDisabled(GetTickCount64() - shownAt < 750);
-    if (TileButton("Rematch", -1, mine == lobby::Choice::Rematch)) Act([] { NetChoose(lobby::Choice::Rematch); });
-    if (TileButton("Character select", -1, mine == lobby::Choice::CharacterSelect)) {
-        Act([] { NetChoose(lobby::Choice::CharacterSelect); });
-    }
-    if (TileButton("Leave", -1)) Act([] { NetLeave(); });
-    ImGui::EndDisabled();
-    ImGui::Spacing();
-    DrawDelay(g_choices, v);
-    SyncChoices(v);
-}
-
-void DrawSession(const NetView& v)
-{
-    if (v.haveSetup) {
-        ImGui::TextColored(kDim, "Stage: %s", StageText(v.setup.stage).c_str());
-    }
-    if (v.phase != NetView::Phase::Running) return;
-    if (v.syncing) {
-        ImGui::Text("Connecting to the other player...");
-        return;
-    }
-    if (ImGui::BeginTable("stats", 2, ImGuiTableFlags_SizingFixedFit)) {
-        auto row = [](const char* name, const std::string& value) {
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::TextColored(kDim, "%s", name);
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted(value.c_str());
-        };
-        char buf[64];
-        if (v.spectator) row("In hand", std::to_string(v.behind) + " frames");
-        row("Ping", std::to_string(v.pingMs) + " ms");
-        std::snprintf(buf, sizeof(buf), "%.1f", v.framesAhead);
-        row("Frames ahead", buf);
-        std::snprintf(buf, sizeof(buf), "%u (longest %u frames)", v.rollbacks, v.longestRollback);
-        row("Rollbacks", buf);
-        std::snprintf(buf, sizeof(buf), "%d %s", v.inputDelay, v.inputDelay == 1 ? "frame" : "frames");
-        row("Delay", buf);
-        ImGui::EndTable();
-    }
-    if (v.desyncFrame >= 0) ImGui::TextColored(kRed, "DESYNC at frame %d (report saved)", v.desyncFrame);
-}
-
-// The Debug tab's server switch: which Weyvelength server the next host,
-// join or watch goes to, with the ones used before; saved with the panel's
-// choices. And relay only, to test TURN.
-void DrawServerControls()
-{
-    static char server[128] = "";
-    static bool initialised = false;
-    if (!initialised) {
-        std::snprintf(server, sizeof(server), "%s", NetOptions().server.c_str());
-        initialised = true;
-    }
-    const NetView v = NetViewNow();
-    const bool inSession = v.phase != NetView::Phase::Idle && v.phase != NetView::Phase::Ended;
-    ImGui::SeparatorText("Server");
-    ImGui::BeginDisabled(inSession);
-    ImGui::SetNextItemWidth(300 * g_uiScale);
-    const bool enter = ImGui::InputTextWithHint("##server", "host:port", server, sizeof(server), ImGuiInputTextFlags_EnterReturnsTrue);
-    ImGui::SameLine();
-    auto use = [](const std::string& chosen) {
-        if (chosen.empty()) return;
-        Act([chosen] {
-            NetplayOptions& o = NetOptions();
-            o.server = o.savedServer = chosen;
-            auto& recent = o.recentServers;
-            recent.erase(std::remove(recent.begin(), recent.end(), chosen), recent.end());
-            recent.insert(recent.begin(), chosen);
-            if (recent.size() > 6) recent.resize(6);
-            if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, o, o.stageCode);
-            Log("overlay: server %s for the next sessions", chosen.c_str());
-        });
-    };
-    if (ImGui::Button("Use") || enter) use(server);
-    ImGui::SameLine();
-    if (ImGui::Button("This PC")) {
-        std::snprintf(server, sizeof(server), "127.0.0.1:5555");
-        use(server);
-    }
-    // Back from a test server (players pressed "This PC" and stayed on it).
-    ImGui::SameLine();
-    if (ImGui::Button("Public server")) {
-        std::snprintf(server, sizeof(server), "%s", kDefaultServer);
-        use(server);
-    }
-    const NetplayOptions o = NetOptions();
-    for (size_t k = 0; k < o.recentServers.size(); k++) {
-        if (o.recentServers[k] == o.server) continue;
-        ImGui::PushID(static_cast<int>(k));
-        if (ImGui::SmallButton(o.recentServers[k].c_str())) {
-            std::snprintf(server, sizeof(server), "%s", o.recentServers[k].c_str());
-            use(server);
-        }
-        ImGui::PopID();
-        ImGui::SameLine();
-    }
-    ImGui::NewLine();
-    ImGui::EndDisabled();
-    ImGui::TextColored(kDim, "Now: %s%s", o.server.c_str(), inSession ? " (in a session: change it after)" : "");
-    bool relayOnly = WeyveService::RelayOnly();
-    ImGui::BeginDisabled(inSession);
-    if (ImGui::Checkbox("Relay only (test TURN: links take only relay candidates)", &relayOnly)) WeyveService::SetRelayOnly(relayOnly);
-    ImGui::EndDisabled();
-    if (inSession && v.linkPath != NetView::Path::Unknown) {
-        ImGui::TextColored(PathColor(v), "This session's link: %s", PathText(v, false).c_str());
-    }
-}
 
 // The Debug tab's previews: the match windows with made-up data, each on
 // its own, to look at without a session (render thread).
@@ -2237,48 +1308,6 @@ void DrawTexturePreview()
         ImGui::Image(reinterpret_cast<ImTextureID>(g_texture), ImVec2(g_textureW * scale, g_textureH * scale));
     }
     ImGui::End();
-}
-
-void DrawPreviewControls()
-{
-    Preview& p = g_preview;
-    ImGui::SeparatorText("Preview the match windows (made-up data)");
-    ImGui::Checkbox("Player bars", &p.hud);
-    ImGui::SameLine();
-    ImGui::Checkbox("Corner strip", &p.strip);
-    ImGui::SameLine();
-    ImGui::Checkbox("Desync banner", &p.desync);
-    ImGui::SameLine();
-    ImGui::Checkbox("Relayed link", &p.relayed);
-    ImGui::Checkbox("P1 window", &p.side[0]);
-    ImGui::SameLine();
-    ImGui::Checkbox("P2 window", &p.side[1]);
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(200 * g_uiScale);
-    ImGui::Combo("##sides", &p.sides, "Rematch vote\0Character select\0");
-    ImGui::SetNextItemWidth(120 * g_uiScale);
-    ImGui::Combo("You are", &p.you, "P1\0P2\0");
-    for (int i = 0; i < kNumPlayers; i++) {
-        ImGui::PushID(i);
-        ImGui::SetNextItemWidth(200 * g_uiScale);
-        ImGui::Combo(i == 0 ? "P1 vote" : "P2 vote", &p.choice[i], "choosing\0Rematch\0Character select\0");
-        ImGui::SameLine();
-        ImGui::Checkbox(i == 0 ? "P1 ready" : "P2 ready", &p.ready[i]);
-        ImGui::PopID();
-    }
-    if (ImGui::Button("Sample toasts")) g_sampleToasts = true;
-    ImGui::SameLine();
-    if (ImGui::Button("Fade the player bars")) {
-        p.hud = true;
-        p.fadeAt = GetTickCount64();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("All off")) {
-        const Preview defaults;
-        p.hud = p.strip = p.desync = p.side[0] = p.side[1] = false;
-        p.sides = defaults.sides;
-    }
-    ImGui::TextColored(kDim, "They stay up with the panel closed; their buttons do nothing.");
 }
 
 // Testing aids: simulated network, mashing, quick scene switches, the log.
@@ -2584,236 +1613,6 @@ void ApplySelectInput(const SelectInput& in, const NetView& v)
     if (in.unready && ready) Act([] { NetSetReady(false); });
 }
 
-void DrawDebug()
-{
-    static bool initialised = false;
-    static int latency = 0, jitter = 0, loss = 0;
-    static bool mash = false;
-    static int seed = 1;
-    if (!initialised) {
-        const NetplayOptions o = NetOptions();
-        latency = o.conditions.latencyMs;
-        jitter = o.conditions.jitterMs;
-        loss = static_cast<int>(o.conditions.loss * 100 + 0.5);
-        mash = o.mashSeed != 0;
-        seed = o.mashSeed ? static_cast<int>(o.mashSeed) : 1;
-        initialised = true;
-    }
-    DrawServerControls();
-    DrawPreviewControls();
-    ImGui::SeparatorText("Simulated network (what this side sends)");
-    ImGui::SliderInt("Latency (ms)", &latency, 0, 300);
-    ImGui::SliderInt("Jitter (ms)", &jitter, 0, 100);
-    ImGui::SliderInt("Loss (%)", &loss, 0, 20);
-    if (ImGui::Button("Apply")) {
-        NetConditions c;
-        c.latencyMs = latency;
-        c.jitterMs = jitter;
-        c.loss = loss / 100.0;
-        Act([c] {
-            NetOptions().conditions = c;
-            NetSetConditions(c);
-        });
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Off")) {
-        latency = jitter = loss = 0;
-        Act([] {
-            NetOptions().conditions = NetConditions{};
-            NetSetConditions(NetConditions{});
-        });
-    }
-    ImGui::SeparatorText("Testing");
-    if (ImGui::Checkbox("Mash (next match)", &mash) || (mash && ImGui::InputInt("Seed", &seed))) {
-        const uint64_t value = mash ? static_cast<uint64_t>(std::max(1, seed)) : 0;
-        Act([value] { NetOptions().mashSeed = value; });
-    }
-    if (ImGui::Button("Main menu")) ReturnToMainMenu(1);
-    ImGui::SameLine();
-    if (ImGui::Button("Battle now")) Act([] { JumpToBattle(); });
-    ImGui::SameLine();
-    // The select screen as the game draws its own, with mock players.
-    ImGui::BeginDisabled(!g_tables.loaded);
-    if (ImGui::Button("Character select preview")) {
-        OpenSelectPreview(PreviewSelectData());
-        SetOverlayVisible(false);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("... as a spectator")) {
-        SelectData data = PreviewSelectData();
-        data.spectator = true;
-        OpenSelectPreview(std::move(data));
-        SetOverlayVisible(false);
-    }
-    ImGui::EndDisabled();
-    ImGui::SeparatorText("Log");
-    ImGui::TextColored(kDim, "instance %d, %.0f fps", StatusInstance(), ImGui::GetIO().Framerate);
-    ImGui::BeginChild("log", ImVec2(720 * g_uiScale, 260 * g_uiScale), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
-    for (const std::string& line : RecentLog(60)) ImGui::TextUnformatted(line.c_str());
-    if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4) ImGui::SetScrollHereY(1.0f); // follow the end
-    ImGui::EndChild();
-}
-
-// Not in a session: host, or join with a code.
-void DrawStart(const NetView& v)
-{
-    if (!v.result.empty()) {
-        const bool bad = v.result.find("could not") != std::string::npos || v.result.find("cannot") != std::string::npos ||
-                         v.result.find("not a valid") != std::string::npos || v.result.find("differ") != std::string::npos;
-        ImGui::TextColored(bad ? kRed : kDim, "%s", v.result.c_str());
-        ImGui::Spacing();
-    }
-    if (TileButton("Host a match", -1)) HostOrJoin("");
-    ImGui::SetItemDefaultFocus();
-    ImGui::TextColored(kDim, "You get a code to send to the other player.");
-    ImGui::Spacing();
-    Heading("Join");
-    // The code in large type; Paste beside it.
-    std::string code = g_choices.code;
-    code.erase(std::remove_if(code.begin(), code.end(), [](char ch) { return ch == ' ' || ch == '\r' || ch == '\n'; }), code.end());
-    MatchCode decoded;
-    const bool valid = DecodeMatchCode(code, &decoded);
-    const float paste = ImGui::CalcTextSize("Paste").x + ImGui::GetStyle().FramePadding.x * 4;
-    ImGui::PushFont(g_fontBig);
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - paste - ImGui::GetStyle().ItemSpacing.x);
-    ImGui::InputTextWithHint("##code", "CODE", g_choices.code, sizeof(g_choices.code), ImGuiInputTextFlags_CharsUppercase);
-    const float bigHeight = ImGui::GetItemRectSize().y;
-    ImGui::PopFont();
-    ImGui::SameLine();
-    if (ImGui::Button("Paste", ImVec2(-1, bigHeight))) {
-        if (const char* clip = ImGui::GetClipboardText()) {
-            std::strncpy(g_choices.code, clip, sizeof(g_choices.code) - 1);
-            g_choices.code[sizeof(g_choices.code) - 1] = 0;
-        }
-    }
-    if (g_choices.code[0] && !valid) ImGui::TextColored(kDim, "A code is 6 characters, like ABCDEF.");
-    ImGui::BeginDisabled(!valid);
-    if (TileButton("Join", HalfRow())) HostOrJoin(code);
-    ImGui::SameLine();
-    if (TileButton("Watch", -1)) HostOrJoin(code, true);
-    ImGui::EndDisabled();
-    ImGui::Spacing();
-    DrawKeypad();
-}
-
-// Hosting: the code, large, until the other player joins.
-void DrawHosting(const NetView& v)
-{
-    Heading("Hosting");
-    ImGui::TextUnformatted("Send this code to the other player:");
-    ImGui::PushFont(g_fontBig);
-    ImGui::TextColored(kGold, "%s", v.code.c_str());
-    ImGui::PopFont();
-    ImGui::TextColored(kDim, "Copied to the clipboard.");
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Copy again")) ImGui::SetClipboardText(v.code.c_str());
-    ImGui::Spacing();
-    ImGui::Text("Waiting for the other player...");
-    if (TileButton("Cancel", -1)) Act([] { NetLeave(); });
-}
-
-void DrawPanel()
-{
-    const NetView v = NetViewNow();
-    LoadTables();
-    InitChoices();
-    ImGuiIO& io = ImGui::GetIO();
-    // Always in the middle of the screen, whatever its size.
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSizeConstraints(ImVec2(460 * g_uiScale, 0), ImVec2(FLT_MAX, FLT_MAX));
-    if (g_focusPanel.exchange(false)) ImGui::SetNextWindowFocus();
-    ImGui::Begin("###panel", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar);
-    // The title as the menus' black bar has it, the version on the right.
-    ImGui::PushFont(g_fontHeading);
-    ImGui::TextColored(kGold, "NETPLAY");
-    ImGui::PopFont();
-    ImGui::SameLine();
-    const float version = ImGui::CalcTextSize(g_build.c_str()).x;
-    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowContentRegionMax().x - version));
-    ImGui::TextDisabled("%s", g_build.c_str());
-    if (!ImGui::BeginTabBar("tabs")) {
-        ImGui::End();
-        return;
-    }
-    const bool inSession = v.phase != NetView::Phase::Idle && v.phase != NetView::Phase::Ended;
-    if (ImGui::BeginTabItem("Match", nullptr, ImGuiTabItemFlags_SetSelected * g_selectMatchTab.exchange(false))) {
-        ImGui::Spacing();
-        switch (v.phase) {
-        case NetView::Phase::Idle:
-        case NetView::Phase::Ended:
-            DrawStart(v);
-            break;
-        case NetView::Phase::Connecting:
-        case NetView::Phase::Joining:
-            Heading("Connecting");
-            ImGui::TextWrapped("%s", v.status.c_str());
-            if (TileButton("Cancel", -1)) Act([] { NetLeave(); });
-            break;
-        case NetView::Phase::Hosting:
-            DrawHosting(v);
-            break;
-        case NetView::Phase::Lobby:
-            DrawLobby(v);
-            break;
-        case NetView::Phase::Jumping:
-        case NetView::Phase::Loading:
-            Heading("Loading");
-            ImGui::TextWrapped("%s", v.status.c_str());
-            DrawSeats(v, false);
-            DrawSession(v);
-            if (TileButton("Leave", -1)) Act([] { NetLeave(); });
-            break;
-        case NetView::Phase::Running:
-            Heading(v.spectator ? "Watching" : "In a match");
-            DrawSeats(v, false);
-            DrawSession(v);
-            if (v.spectator) DrawWatchControls(v);
-            if (TileButton("Leave", -1)) Act([] { NetLeave(); });
-            break;
-        case NetView::Phase::PostMatch:
-            DrawPostMatch(v);
-            break;
-        }
-        ImGui::EndTabItem();
-    }
-    // In a match only the match's own tab.
-    const bool inMatch = v.phase == NetView::Phase::Running;
-    if (!inMatch && ImGui::BeginTabItem("Settings")) {
-        ImGui::Spacing();
-        DrawSettings(inSession);
-        ImGui::EndTabItem();
-    }
-    if (!inMatch && ImGui::BeginTabItem("Debug")) {
-        DrawDebug();
-        ImGui::EndTabItem();
-    }
-    ImGui::EndTabBar();
-    ImGui::Spacing();
-    ImGui::TextDisabled("%s closes this; the game gets no input while it is open.",
-                        g_startCloses ? "Start, F1 or Back + Start" : "F1 or Back + Start");
-    ImGui::End();
-}
-
-// In a match, while Start is held towards the panel: a short bar in the
-// bottom center, filling, with "Hold for menu..." over it (shown once the
-// hold is longer than a tap).
-void DrawStartHold()
-{
-    const float part = g_startHold;
-    if (part < 0.1f) return;
-    const ImGuiIO& io = ImGui::GetIO();
-    ImDrawList* d = ImGui::GetForegroundDrawList();
-    const float w = 220 * g_uiScale, h = std::max(4.0f, 6.0f * g_uiScale);
-    const float x = (io.DisplaySize.x - w) / 2, y = io.DisplaySize.y - 36 * g_uiScale;
-    const char* text = "Hold for menu...";
-    ImFont* font = g_fontSmall ? g_fontSmall : ImGui::GetFont();
-    const ImVec2 size = font->CalcTextSizeA(font->LegacySize, FLT_MAX, 0, text);
-    d->AddText(font, font->LegacySize, ImVec2((io.DisplaySize.x - size.x) / 2 + 1, y - size.y - 4 * g_uiScale + 1), IM_COL32(0, 0, 0, 160), text);
-    d->AddText(font, font->LegacySize, ImVec2((io.DisplaySize.x - size.x) / 2, y - size.y - 4 * g_uiScale), IM_COL32(230, 226, 214, 200), text);
-    d->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), IM_COL32(0, 0, 0, 150), h / 2);
-    d->AddRectFilled(ImVec2(x, y), ImVec2(x + w * std::min(part, 1.0f), y + h), ImGui::GetColorU32(kGold), h / 2);
-}
-
 // While the panel is closed: one line in a corner during a session.
 void DrawStrip(const NetView& v)
 {
@@ -2862,13 +1661,14 @@ struct Toast {
     std::string text;
     ImVec4 color;
     ULONGLONG until;
+    ULONGLONG at = 0; // when it came (it slides in)
 };
 std::vector<Toast> g_toasts; // render thread
 
 void AddToast(const std::string& text, ImVec4 color = ImVec4(1, 1, 1, 1), int seconds = 4)
 {
     if (g_toasts.size() >= 5) g_toasts.erase(g_toasts.begin());
-    g_toasts.push_back({text, color, GetTickCount64() + seconds * 1000ull});
+    g_toasts.push_back({text, color, GetTickCount64() + seconds * 1000ull, GetTickCount64()});
 }
 
 bool OnMenuScreen();
@@ -2915,7 +1715,7 @@ void ToastChanges(const NetView& now)
     }
     using P = NetView::Phase;
     if (now.phase == P::Hosting && before.phase != P::Hosting && !g_visible && !now.setPlay) {
-        AddToast("Hosting: code " + now.code + " (copied). F1 for the panel.", kGreen, 10);
+        AddToast("Hosting: code " + now.code + " (copied)", kGreen, 10);
     }
     for (int i = 0; i < kNumPlayers; i++) {
         const lobby::Seat &a = before.seats[i], &b = now.seats[i];
@@ -2936,40 +1736,35 @@ void ToastChanges(const NetView& now)
     before = now;
 }
 
-// `top`: the select screen is up (the bottom has its grid and stages).
-void DrawToasts(bool top)
+// A desync in this match: a note at the bottom centre of the fight until the
+// match is over (the recording is in SFVR\matches, named ..._desync.sfvr).
+Notice DesyncNotice(const NetView& v)
+{
+    return {"DESYNC AT FRAME " + std::to_string(v.desyncFrame), v.desyncReport.empty() ? "saving the recording..." : "recording saved",
+            IM_COL32(255, 107, 94, 255), 1, 99};
+}
+
+// The notices (the design system's "Notices"): out of a fight, toasts down
+// from the top right; in one (`fight`), small notes at the bottom centre,
+// the desync's with them.
+NetView PreviewView(NetView::Phase phase);
+
+void DrawNotices(bool fight, const NetView& v)
 {
     const ULONGLONG now = GetTickCount64();
     g_toasts.erase(std::remove_if(g_toasts.begin(), g_toasts.end(), [&](const Toast& t) { return t.until <= now; }),
                    g_toasts.end());
-    if (g_toasts.empty()) return;
-    // All notices in one place: the bottom center, above the game's gauges;
-    // on the select screen the top center, under the prompts.
-    const ImGuiIO& io = ImGui::GetIO();
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * (top ? 0.135f : 0.86f)), ImGuiCond_Always,
-                            ImVec2(0.5f, top ? 0.0f : 1.0f));
-    ImGui::SetNextWindowBgAlpha(0.7f);
-    ImGui::Begin("##toasts", nullptr,
-                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
-                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
-    // Centered, each on a line; one wider than most of the screen wraps.
-    const float padding = ImGui::GetStyle().WindowPadding.x;
-    const float most = io.DisplaySize.x * 0.9f - 2 * padding;
-    float widest = 0;
-    for (const Toast& t : g_toasts) widest = std::max(widest, ImGui::CalcTextSize(t.text.c_str()).x);
-    widest = std::min(widest, most);
+    std::vector<Notice> notices;
     for (const Toast& t : g_toasts) {
         ImVec4 c = t.color;
-        if (t.until - now < 500) c.w = (t.until - now) / 500.0f; // fade out
-        const float width = ImGui::CalcTextSize(t.text.c_str()).x;
-        ImGui::SetCursorPosX(padding + std::max(0.0f, widest - width) * 0.5f);
-        ImGui::PushStyleColor(ImGuiCol_Text, c);
-        ImGui::PushTextWrapPos(padding + widest);
-        ImGui::TextUnformatted(t.text.c_str());
-        ImGui::PopTextWrapPos();
-        ImGui::PopStyleColor();
+        c.w = 1;
+        notices.push_back({"", t.text, ImGui::ColorConvertFloat4ToU32(c), (now - t.at) / 1000.0f, (t.until - now) / 1000.0f});
     }
-    ImGui::End();
+    if (fight && v.desyncFrame >= 0) notices.push_back(DesyncNotice(v));
+    else if (g_preview.desync) notices.push_back(DesyncNotice(PreviewView(NetView::Phase::Running))); // the previews' (`overlay preview desync`)
+    if (notices.empty()) return;
+    if (fight) DrawFightNotes(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, notices);
+    else DrawToasts(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, notices);
 }
 
 // During a match: a bar at the very top of the screen over each health bar
@@ -3090,25 +1885,6 @@ void DrawPlayerBars(const NetView& v)
     }
 }
 
-// A desync in this match: one small line along the bottom, until the match is
-// over (the recording is in SFVR\matches, named ..._desync.sfvr).
-void DrawDesyncBanner(const NetView& v)
-{
-    const ImGuiIO& io = ImGui::GetIO();
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y - io.DisplaySize.y * 0.012f), ImGuiCond_Always,
-                            ImVec2(0.5f, 1));
-    ImGui::SetNextWindowBgAlpha(0.6f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8 * g_uiScale, 3 * g_uiScale));
-    ImGui::Begin("##desync", nullptr,
-                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
-                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
-    ImGui::TextColored(kRed, "Desync at frame %d", v.desyncFrame);
-    ImGui::SameLine();
-    ImGui::TextDisabled("%s", v.desyncReport.empty() ? "(saving the recording...)" : "(recording saved)");
-    ImGui::End();
-    ImGui::PopStyleVar();
-}
-
 const char* VoteText(lobby::Choice c)
 {
     switch (c) {
@@ -3116,206 +1892,94 @@ const char* VoteText(lobby::Choice c)
     case lobby::Choice::CharacterSelect: return "Character select";
     case lobby::Choice::None: break;
     }
-    return "choosing...";
+    return "Choosing...";
 }
 
-// The other player's pick, a line per part.
-void DrawPickText(const PlayerSetup& p)
-{
-    if (!p.character) {
-        ImGui::TextColored(kDim, "(choosing)");
-        return;
-    }
-    const std::string code = UnpackCode(p.character);
-    if (IsElevenSetup(p)) {
-        ImGui::TextUnformatted("ELEVEN");
-        ImGui::TextColored(kDim, "random fighter in silver");
-        return;
-    }
-    ImGui::TextUnformatted(ShortCharaName(code).c_str());
-    const std::string variant = p.variation ? "   " + VariantLabel(code, p.variation) : "";
-    ImGui::TextColored(kDim, "%s", CostumeLabel(code, p.costume).c_str());
-    ImGui::TextColored(kDim, "%s%s", ColorLabel(p.color).c_str(), variant.c_str());
-    ImGui::TextColored(kDim, "V-Skill %s", SkillText(code, false, p.vskill).c_str());
-    ImGui::TextColored(kDim, "V-Trigger %s", SkillText(code, true, p.vtrigger).c_str());
-    ImGui::TextColored(kDim, "V-Comment %s", CommentText(code, p.comment).c_str());
-}
-
-// After a match, over its results screen: P1's side on the left and P2's on
-// the right, where the screen leaves room. First each player's choice of
-// what follows (Rematch, Character select, Leave) and input delay; once both
-// chose Character select (the lobby, still over the results screen) each
-// player's pick, the host's stage, and Ready. The game's own results menu is
-// kept from opening meanwhile (flow.h SetHoldResults).
+// After a match, over its results screen: a glass pane docked at each side's
+// bottom (fight_ui.h DrawVote): the score, each player's choice of what
+// follows (Rematch, Character select, Leave) and this player's input delay
+// for the next match. Character select is the select screen. The game's own
+// results menu is kept from opening meanwhile (flow.h SetHoldResults).
 void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
 {
     static ULONGLONG shownAt = 0;
     static int shownFor = -1;
     const int key = v.played * 2 + (v.phase == NetView::Phase::Lobby ? 1 : 0);
-    const bool appearing = shownFor != key;
-    if (appearing) {
+    if (shownFor != key) {
         shownFor = key;
         shownAt = GetTickCount64();
+        ResetVote();
     }
-    const ImGuiIO& io = ImGui::GetIO();
-    const bool lobbyPhase = v.phase == NetView::Phase::Lobby;
     // Buttons held from the match must not choose by accident: presses in
-    // the first 750 ms do nothing (the buttons stay enabled so that the pad
-    // focus can start on the first one).
+    // the first 750 ms do nothing.
     const bool armed = GetTickCount64() - shownAt >= 750;
-    // Under a quarter of the screen each, in the bottom corners (over the
-    // edge of the character portraits); the lobby's taller window grows up.
-    const float width = std::max(io.DisplaySize.x * 0.23f, 300 * g_uiScale);
+    const int setWinner = !v.setPlay ? -1 : v.seats[0].wins >= v.firstTo ? 0 : v.seats[1].wins >= v.firstTo ? 1 : -1;
+    // Flags from the room, for a table's set (the session's seats have none).
+    const RoomsView rooms = v.setPlay && !g_previewing ? RoomsSnapshot() : RoomsView{};
+    VoteSide sides[kNumPlayers];
     for (int i = 0; i < kNumPlayers; i++) {
-        if (!show[i]) continue;
         const lobby::Seat& s = v.seats[i];
-        const bool mine = v.you == i;
-        const float margin = io.DisplaySize.y * 0.015f;
-        const float x = i == 0 ? margin : io.DisplaySize.x - margin;
-        ImGui::SetNextWindowPos(ImVec2(x, io.DisplaySize.y - margin), ImGuiCond_Always, ImVec2(i == 0 ? 0.0f : 1.0f, 1.0f));
-        ImGui::SetNextWindowSize(ImVec2(width, 0));
-        ImGui::SetNextWindowBgAlpha(0.88f);
-        if (appearing && mine) ImGui::SetNextWindowFocus();
-        ImGui::Begin(i == 0 ? "##side1" : "##side2", nullptr,
-                     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings |
-                         (mine ? 0 : ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing));
-        // The pad's A only presses a button while ImGui shows its nav cursor:
-        // a window that just took focus has it hidden (and a mouse move
-        // hides it), so A did nothing until a direction was pressed. Shown
-        // as the window appears; an A while hidden shows it.
-        if (mine && ImGui::IsWindowFocused() && (appearing || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false))) {
-            ImGui::SetNavCursorVisible(true);
+        VoteSide& o = sides[i];
+        o.shown = show[i];
+        o.mine = v.you == i;
+        o.slot = i;
+        o.name = s.name;
+        for (const RoomMember& m : rooms.members) {
+            if (m.name == s.name) o.country = m.country;
         }
-        // Fields fill the window but for their labels ("V-Trigger" the widest).
-        ImGui::PushItemWidth(-(ImGui::CalcTextSize("V-Trigger").x + ImGui::GetStyle().ItemInnerSpacing.x));
-        ImGui::PushFont(g_fontHeading);
-        ImGui::TextColored(i == 0 ? kP1 : kP2, "P%d", i + 1);
-        ImGui::SameLine();
-        // A long name wraps (under itself) rather than run past the window.
-        ImGui::PushTextWrapPos(0.0f);
-        ImGui::TextUnformatted((s.name + (mine ? " (you)" : "")).c_str());
-        ImGui::PopTextWrapPos();
-        ImGui::PopFont();
-        Rule();
-        if (!lobbyPhase && v.setPlay) {
-            // A table's set: the score; then a vote as Direct Match's (rematch:
-            // the set's next game, character select, leave: a forfeit), with
-            // a timer (no choice counts as rematch; core/match_ticket.h). Won:
-            // what follows for each player (rooms_client.h RoomsAfterSet).
-            const int setWinner = v.seats[0].wins >= v.firstTo ? 0 : v.seats[1].wins >= v.firstTo ? 1 : -1;
-            ImGui::PushFont(g_fontBig);
-            ImGui::TextColored(kGold, "%u", s.wins);
-            ImGui::PopFont();
-            // The line beside it on the number's baseline.
-            ImGui::SameLine();
-            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (g_fontBig->LegacySize - ImGui::GetFontSize()) * 0.62f);
-            ImGui::TextColored(kDim, "of %u to win the set", v.firstTo);
-            if (setWinner >= 0) {
-                if (setWinner == i) ImGui::TextColored(kGreen, "Wins the set");
-                else ImGui::TextColored(kDim, "Set over");
-                const std::string next = v.againVote ? std::string() : RoomsAfterSet(i, setWinner);
-                if (!next.empty()) {
-                    ImGui::PushTextWrapPos(0.0f);
-                    ImGui::TextColored(kDim, "%s", next.c_str());
-                    ImGui::PopTextWrapPos();
-                }
-            }
-            // Between games; or the set won with nobody else waiting for the
-            // table, where Rematch is the next set (keeper again).
-            if (setWinner < 0 || v.againVote) {
-                if (v.againVote && mine) {
-                    ImGui::PushTextWrapPos(0.0f);
-                    ImGui::TextColored(kDim, "Nobody is waiting: play on into the next set.");
-                    ImGui::PopTextWrapPos();
-                }
-                ImGui::TextColored(s.choice == lobby::Choice::None ? kDim : kGreen, "%s", VoteText(s.choice));
-                if (mine) {
-                    auto button = [&](const char* label, lobby::Choice c) {
-                        const bool chosen = s.choice == c && c != lobby::Choice::None;
-                        return TileButton(label, -1, chosen) && armed;
-                    };
-                    if (button("Rematch", lobby::Choice::Rematch)) Act([] { NetChoose(lobby::Choice::Rematch); });
-                    ImGui::SetItemDefaultFocus();
-                    if (button("Character select", lobby::Choice::CharacterSelect)) {
-                        Act([] { NetChoose(lobby::Choice::CharacterSelect); });
-                    }
-                    if (button("Leave", lobby::Choice::None)) Act([] { NetLeave(); });
-                    ImGui::PushTextWrapPos(0.0f);
-                    if (v.voteSecondsLeft >= 0 && s.choice == lobby::Choice::None) {
-                        // Playing on: no choice from either is back to the
-                        // room (both leave); the other's choice carries it.
-                        const bool neither = v.seats[1 - i].choice == lobby::Choice::None;
-                        ImGui::TextColored(kDim,
-                                           !v.againVote ? "No choice in %d s: rematch"
-                                           : neither    ? "If neither chooses in %d s: back to the room"
-                                                        : "No choice in %d s: the next set",
-                                           v.voteSecondsLeft);
-                    }
-                    ImGui::TextColored(kDim, v.againVote ? "Leave: back to the room." : "Leave ends the set here.");
-                    ImGui::PopTextWrapPos();
-                    ImGui::Spacing();
-                    DrawDelay(g_choices, v);
-                    SyncChoices(v);
-                }
-                else {
-                    ImGui::TextColored(kDim, "input delay %u", s.inputDelay);
-                }
-            }
+        o.wins = s.wins;
+        o.firstTo = v.setPlay ? v.firstTo : 0;
+        // A table's set won: what follows for each player (rooms_client.h
+        // RoomsAfterSet); with nobody else waiting for the table, Rematch is
+        // the next set (keeper again).
+        const bool voting = setWinner < 0 || v.againVote;
+        if (setWinner >= 0) {
+            o.status = setWinner == i ? "Wins the set" : "Set over";
+            o.statusKind = setWinner == i ? 1 : 2;
+            const std::string next = v.againVote ? std::string() : RoomsAfterSet(i, setWinner);
+            if (!next.empty()) o.lines.push_back(next);
         }
-        else if (!lobbyPhase) {
-            ImGui::TextColored(s.choice == lobby::Choice::None ? kDim : kGreen, "%s", VoteText(s.choice));
-            if (mine) {
-                auto button = [&](const char* label, lobby::Choice c) {
-                    const bool chosen = s.choice == c && c != lobby::Choice::None;
-                    return TileButton(label, -1, chosen) && armed;
-                };
-                if (button("Rematch", lobby::Choice::Rematch)) Act([] { NetChoose(lobby::Choice::Rematch); });
-                ImGui::SetItemDefaultFocus();
-                if (button("Character select", lobby::Choice::CharacterSelect)) {
-                    Act([] { NetChoose(lobby::Choice::CharacterSelect); });
-                }
-                if (button("Leave", lobby::Choice::None)) Act([] { NetLeave(); });
-                ImGui::Spacing();
-                DrawDelay(g_choices, v);
-                SyncChoices(v);
+        if (voting) {
+            if (setWinner < 0) {
+                o.status = VoteText(s.choice);
+                o.statusKind = s.choice == lobby::Choice::None ? 0 : 1;
             }
-            else {
-                ImGui::TextColored(kDim, "input delay %u", s.inputDelay);
-            }
+            if (v.againVote && o.mine) o.lines.push_back("Nobody is waiting: play on into the next set.");
+            o.choosing = o.mine;
+            o.chosen = s.choice == lobby::Choice::Rematch ? 0 : s.choice == lobby::Choice::CharacterSelect ? 1 : -1;
         }
-        else if (mine) {
-            const bool ready = s.ready;
-            ImGui::BeginDisabled(ready);
-            if (TileButton("Ready", -1, ready) && armed) Act([] { NetSetReady(true); });
-            ImGui::EndDisabled();
-            ImGui::SetItemDefaultFocus();
-            if (ready) ImGui::TextColored(kDim, "Locked in. The match starts once both are ready.");
-            ImGui::BeginDisabled(ready);
-            DrawPick(g_choices);
-            if (v.host) {
-                ImGui::Spacing();
-                DrawStage(g_choices);
+        char line[160];
+        if (o.mine) {
+            o.delay = g_choices.delay;
+            const int fixed = NetOptions().delaySetting, suggested = v.SuggestedDelay();
+            if (v.spectator) {}
+            else if (fixed >= 0) std::snprintf(line, sizeof(line), "Your setting: delay %d (SFVR settings)", fixed), o.suggestion = line;
+            else if (suggested >= 0) std::snprintf(line, sizeof(line), "Suggested delay %d (ping %u ms)", suggested, v.link.pingMs), o.suggestion = line;
+            if (voting && v.voteSecondsLeft >= 0 && s.choice == lobby::Choice::None) {
+                // Playing on: no choice from either is back to the room (both
+                // leave); the other's choice carries it.
+                const bool neither = v.seats[1 - i].choice == lobby::Choice::None;
+                std::snprintf(line, sizeof(line),
+                              !v.setPlay || !v.againVote ? "No choice in %d s: rematch"
+                              : neither                  ? "Neither chooses in %d s: back to the room"
+                                                         : "No choice in %d s: the next set",
+                              v.voteSecondsLeft);
+                o.hint = line;
             }
-            ImGui::Spacing();
-            DrawDelay(g_choices, v);
-            ImGui::EndDisabled();
-            ImGui::Spacing();
-            if (TileButton("Leave", -1) && armed) Act([] { NetLeave(); });
-            SyncChoices(v);
+            else o.hint = !v.setPlay ? "Leave ends the session." : v.againVote ? "Leave: back to the room." : "Leave ends the set here.";
         }
         else {
-            DrawPickText(s.pick);
-            if (i == 0) ImGui::TextColored(kDim, "Stage: %s", StageRuleText(v.stageRule).c_str());
-            ImGui::TextColored(kDim, "input delay %u", s.inputDelay);
-            ImGui::TextColored(s.ready ? kGreen : kDim, "%s%s", s.ready ? "READY" : "choosing...",
-                               s.ready && !s.preloaded ? " (loading)" : "");
+            o.delay = s.inputDelay;
+            o.hint = "Their delay: " + std::to_string(s.inputDelay) + (s.inputDelay == 1 ? " frame" : " frames");
         }
-        if (mine && lobbyPhase && !v.host) {
-            ImGui::TextColored(kDim, "Stage (the host's): %s", StageRuleText(v.stageRule).c_str());
-        }
-        ImGui::PopItemWidth();
-        ImGui::End();
     }
+    VoteInput in;
+    DrawVote(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, sides, armed, !g_previewing, &in);
+    if (in.choose == 0) Act([] { NetChoose(lobby::Choice::Rematch); });
+    else if (in.choose == 1) Act([] { NetChoose(lobby::Choice::CharacterSelect); });
+    else if (in.choose == 2) Act([] { NetLeave(); });
+    if (in.delayStep) g_choices.delay = std::clamp(g_choices.delay + in.delayStep, 0, kMaxDelayFrames);
+    if (v.you >= 0 && v.you < kNumPlayers && sides[v.you].choosing) SyncChoices(v);
 }
 
 // A made-up session for the previews: this player's pick from the panel,
@@ -4000,19 +2664,57 @@ void DrawMyCharacter(const RoomsView& rooms, bool takeInput)
                               : "You keep your place in the room. If your turn comes first, you play with what you last confirmed.";
     g_my.alpha = std::min(1.0f, g_my.alpha + ImGui::GetIO().DeltaTime / 0.15f);
     SelectInput in;
-    DrawSelectLive(SelectFonts{g_fontBig, g_fontHuge, g_fontBody}, live, g_my.alpha, takeInput && ImGui::GetFrameCount() > g_my.openedFrame, &in);
+    DrawSelectLive(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold}, live, g_my.alpha, takeInput && ImGui::GetFrameCount() > g_my.openedFrame, &in);
     ApplyMyCharacterInput(in);
 }
 
 // The hub's live parts, and what its choices do.
 
+bool g_roomsWhenReady = false; // Custom Rooms chosen before the lists were read: opens once they are
+
+void DrawHubScreens(bool takeInput);
+int g_hubScreen = -1; // what DrawHubScreens drew: 0 the hub, 1 the room browser, 2 a room, 3 settings, 4 My character
+
+// The hub and the screens it leads to. Where one screen gives way to
+// another (the hub, the room browser, a room, settings, My character) the
+// new one fades in quickly over the stage, which stays.
 void DrawHubFrame(bool takeInput)
 {
+    constexpr double kFadeSeconds = 0.16;
+    static int shown = -1;
+    static double changedAt = -1;
+    ui::g_backdropEnd = -1;
+    g_hubScreen = -1;
+    DrawHubScreens(takeInput);
+    // What was drawn (DrawHubScreens says, from the state it drew).
+    const double now = ImGui::GetTime();
+    if (g_hubScreen != shown) {
+        if (shown >= 0 && g_hubScreen >= 0) changedAt = now;
+        shown = g_hubScreen;
+    }
+    const float alpha = changedAt < 0 ? 1.0f : static_cast<float>(std::clamp((now - changedAt) / kFadeSeconds, 0.0, 1.0));
+    if (alpha < 1 && ui::g_backdropEnd >= 0) {
+        const float eased = 1 - (1 - alpha) * (1 - alpha);
+        ui::FadeFrom(ImGui::GetBackgroundDrawList(), ui::g_backdropEnd, eased);
+    }
+}
+
+void DrawHubScreens(bool takeInput)
+{
     NetplayOptions& o = NetOptions();
+    if (g_roomsWhenReady && g_tables.loaded) {
+        g_roomsWhenReady = false;
+        RoomsClearNotice();
+        OpenRoomsScreen();
+    }
     if (!RoomsOpened()) {
         RoomsOpen(o.server, LocalPlayerName(), o.server == kDefaultServer ? kDefaultServerAlsoPort : o.serverAlsoPort, o.keeperKey);
     }
     const RoomsView rooms = RoomsSnapshot();
+    g_hubScreen = SettingsScreenOpen()                     ? 3
+                  : rooms.state == RoomsView::State::Room ? (g_myCharacterOpen ? 4 : 2)
+                  : RoomsScreenOpen()                     ? 1
+                                                          : 0;
     // A lost or unreachable server (a restart or an update on the VPS, the
     // network gone a moment): tried again every 10 s while the hub is up, as
     // a fresh start would. The hub is closed during matches, so a match that
@@ -4034,14 +2736,6 @@ void DrawHubFrame(bool takeInput)
     using S = RoomsView::State;
     live.serverState = rooms.state == S::Off ? 0 : rooms.state == S::Connecting ? 1 : rooms.state == S::Failed ? 3 : 2;
     live.version = g_build;
-    if (rooms.state == S::Failed) live.roomsInfo = "Cannot reach the rooms server";
-    else if (!rooms.otherBuild.empty() && !rooms.keeper) live.roomsInfo = "The rooms server runs another SFVR version";
-    else if (rooms.state == S::NoLobby || ((rooms.state == S::Lobby || rooms.state == S::Room) && !rooms.keeper))
-        live.roomsInfo = "Custom rooms are offline right now";
-    else if ((rooms.state == S::Browsing || rooms.state == S::Lobby) && rooms.summary.publicRooms > 0)
-        live.roomsInfo = std::to_string(rooms.summary.publicRooms) + (rooms.summary.publicRooms == 1 ? " public room" : " public rooms") +
-                         " \xC2\xB7 browse, create, or join with a code";
-    else live.roomsInfo = "Browse, create, or join with a code";
     // The tile's strip: live state only (what it is for is the hint's).
     if (rooms.state == S::Failed) live.roomsState = "Cannot reach the server";
     else if (!rooms.otherBuild.empty() && !rooms.keeper) live.roomsState = "Update needed";
@@ -4050,6 +2744,7 @@ void DrawHubFrame(bool takeInput)
         const int n = rooms.summary.publicRooms, p = rooms.summary.players;
         live.roomsState = std::to_string(n) + (n == 1 ? " public room" : " public rooms") + " \xC2\xB7 " + std::to_string(p) + (p == 1 ? " player" : " players");
     }
+    if (!g_tables.loaded) live.roomsState = "Getting ready...";
     live.roomsInfo = "Browse, create, or join with a code";
     {
         std::lock_guard lock(g_favoritesMutex);
@@ -4158,6 +2853,12 @@ void DrawHubFrame(bool takeInput)
         RoomsClose();
         break;
     case HubAction::CustomRooms:
+        // Before the game's lists are read (a few seconds after launch) it
+        // opens once they are.
+        if (!g_tables.loaded) {
+            g_roomsWhenReady = true;
+            break;
+        }
         RoomsClearNotice();
         OpenRoomsScreen();
         break;
@@ -4179,26 +2880,7 @@ bool OnMenuScreen()
 
 void DrawMenuHint()
 {
-    const ImVec2 screen = ImGui::GetIO().DisplaySize;
-    ImDrawList* d = ImGui::GetBackgroundDrawList();
-    const char* title = "SFVR";
-    const char* keys = "Hold Start: the hub      F1: the panel";
-    const float gap = 14 * g_uiScale, pad = 40 * g_uiScale;
-    const ImVec2 titleSize = g_fontHeading->CalcTextSizeA(g_fontHeading->LegacySize, FLT_MAX, 0, title);
-    const ImVec2 keysSize = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, 0, keys);
-    const float width = titleSize.x + gap + keysSize.x + pad * 2;
-    const float rule = std::max(1.0f, 1.5f * g_uiScale);
-    const float height = titleSize.y + 8 * g_uiScale + rule;
-    const float x0 = (screen.x - width) * 0.5f, x1 = x0 + width;
-    // A solid plate as the panel's windows: near-black, a cream outline and
-    // a gold rule along its bottom.
-    d->AddRectFilled(ImVec2(x0, 0), ImVec2(x1, height), ImGui::GetColorU32(Rgb(20, 20, 18, 0.95f)));
-    d->AddRect(ImVec2(x0, -1), ImVec2(x1, height), ImGui::GetColorU32(Rgb(216, 212, 178, 0.6f)), 0, 0, std::max(1.0f, g_uiScale));
-    d->AddRectFilled(ImVec2(x0 + 1, height - rule - 1), ImVec2(x1 - 1, height - 1), ImGui::GetColorU32(kGoldLine));
-    const float y = (height - rule - titleSize.y) * 0.5f;
-    d->AddText(g_fontHeading, g_fontHeading->LegacySize, ImVec2(x0 + pad, y), ImGui::GetColorU32(kGold), title);
-    d->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(x0 + pad + titleSize.x + gap, y + (titleSize.y - keysSize.y) * 0.5f),
-               ImGui::GetColorU32(Rgb(242, 240, 230)), keys);
+    DrawMenuNote(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold});
 }
 
 // The Debug tab's previews, each window on its own.
@@ -4250,12 +2932,9 @@ void DrawPreviews()
         DrawPlayerBars(PreviewView(over ? NetView::Phase::PostMatch : NetView::Phase::Running));
     }
     if (p.strip) DrawStrip(PreviewView(NetView::Phase::Running));
-    if (p.desync) DrawDesyncBanner(PreviewView(NetView::Phase::Running));
     if (p.side[0] || p.side[1]) DrawSides(PreviewView(p.sides == 0 ? NetView::Phase::PostMatch : NetView::Phase::Lobby), p.side);
     g_previewing = false;
 }
-
-constexpr float kPanelFadeMs = 400;
 
 void Draw(IDXGISwapChain* swapChain)
 {
@@ -4309,7 +2988,7 @@ void Draw(IDXGISwapChain* swapChain)
         });
     }
     static bool warmed = false;
-    const bool onTheWay = phase != NetView::Phase::Idle ? phase != NetView::Phase::Ended : g_visible && OnMenuScreen();
+    const bool onTheWay = phase != NetView::Phase::Idle && phase != NetView::Phase::Ended;
     if (!warmed && onTheWay && g_tables.loaded) {
         warmed = true;
         SetSelectData(PreviewSelectData());
@@ -4345,24 +3024,9 @@ void Draw(IDXGISwapChain* swapChain)
     const bool sides = phase == NetView::Phase::PostMatch && !g_visible;
     g_voting = overResults && !view.spectator;
     g_watchHold = overResults && view.spectator;
-    // Once the session goes into the battle the panel fades out and closes.
-    static bool wasInBattle = false;
-    static ULONGLONG panelFadeAt = 0;
-    const bool inBattle = phase == NetView::Phase::Jumping || phase == NetView::Phase::Loading || phase == NetView::Phase::Running;
-    if (inBattle && !wasInBattle && g_visible) panelFadeAt = GetTickCount64();
-    wasInBattle = inBattle;
-    if (!g_visible) panelFadeAt = 0;
-    float panelAlpha = 1.0f;
-    if (panelFadeAt) {
-        const float t = static_cast<float>(GetTickCount64() - panelFadeAt) / kPanelFadeMs;
-        if (t >= 1) {
-            panelFadeAt = 0;
-            SetOverlayVisible(false);
-        }
-        else {
-            panelAlpha = 1 - t;
-        }
-    }
+    // In a match: the leave modal (Back + Start); anywhere else it goes.
+    const bool leaveUp = g_visible && (phase == NetView::Phase::Running || phase == NetView::Phase::Loading || phase == NetView::Phase::Jumping);
+    if (g_visible && !leaveUp) SetOverlayVisible(false);
     const bool visible = g_visible;
     const bool session = phase != NetView::Phase::Idle;
     io.MouseDrawCursor = visible || g_voting || g_selectLive || SelectPreviewOpen() || HubOpen(); // the game hides the system cursor
@@ -4380,8 +3044,7 @@ void Draw(IDXGISwapChain* swapChain)
     // Not over a match: it waits for a menu.
     if (OnMenuScreen()) ToastUpdate();
     ToastReports();
-    // The select screen preview covers everything; closing it brings the panel back.
-    static bool previewWas = false;
+    // The select screen preview covers everything.
     if (const int wanted = g_selectRequest.load(); wanted >= 0 && g_tables.loaded) {
         g_selectRequest = -1;
         SelectData data = PreviewSelectData();
@@ -4390,8 +3053,6 @@ void Draw(IDXGISwapChain* swapChain)
         SetOverlayVisible(false);
     }
     const bool preview = SelectPreviewOpen();
-    if (previewWas && !preview) SetOverlayVisible(true);
-    previewWas = preview;
     // A session's lobby is the select screen: it fades in (over the last
     // match's results screen after Character select), the panel closes as it
     // comes (and stays shut: B on the screen leaves), and it fades out as the
@@ -4453,7 +3114,7 @@ void Draw(IDXGISwapChain* swapChain)
     g_selectLive = (lobby || holding) && !g_visible;
     if (liveAlpha > 0) {
         SelectInput in;
-        DrawSelectLive(SelectFonts{g_fontBig, g_fontHuge, g_fontBody}, SelectLiveFor(view), liveAlpha, lobby && !g_visible, &in);
+        DrawSelectLive(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold}, SelectLiveFor(view), liveAlpha, lobby && !g_visible, &in);
         if (lobby) ApplySelectInput(in, view);
         if (toBlack) {
             const float black = static_cast<float>(std::min(1.0, (now - blackFrom) / kToBlack));
@@ -4464,11 +3125,11 @@ void Draw(IDXGISwapChain* swapChain)
     // held there. It goes when a session starts or a battle loads; Play
     // Offline closes it (and the hub's presence connection with it).
     const bool atMenus = OnMenuScreen() && (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended || tableConnecting) && !preview;
-    g_hubAllowed = atMenus && g_tables.loaded;
+    g_hubAllowed = atMenus;
     static bool hubBooted = false;
-    if (!hubBooted && atMenus && g_tables.loaded) {
+    if (!hubBooted && atMenus) {
         hubBooted = true;
-        OpenHub();
+        OpenHub(true);
     }
     if (HubOpen() && !atMenus) {
         CloseHub();
@@ -4492,12 +3153,7 @@ void Draw(IDXGISwapChain* swapChain)
     }
     if (HubOpen()) DrawHubFrame(!g_visible);
     if (preview) {
-        DrawSelectPreview(SelectFonts{g_fontBig, g_fontHuge, g_fontBody});
-    }
-    else if (visible) {
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, panelAlpha);
-        DrawPanel();
-        ImGui::PopStyleVar();
+        DrawSelectPreview(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold});
     }
     else if (session) {
         const bool inMatch = phase == NetView::Phase::Running || phase == NetView::Phase::PostMatch;
@@ -4505,9 +3161,19 @@ void Draw(IDXGISwapChain* swapChain)
         else if (!sides && liveAlpha <= 0 && !HubOpen()) DrawStrip(view);
         if (sides) DrawSides(view);
     }
-    if (session && view.desyncFrame >= 0 && (phase == NetView::Phase::Running || phase == NetView::Phase::PostMatch)) {
-        DrawDesyncBanner(view);
+    static bool leaveWas = false;
+    if (leaveUp) {
+        if (!leaveWas) ResetLeaveModal();
+        bool leave = false, stay = false;
+        DrawLeaveModal(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, view.setPlay, true, &leave, &stay);
+        if (stay) SetOverlayVisible(false);
+        if (leave) {
+            SetOverlayVisible(false);
+            Log("overlay: left the match (the leave modal)");
+            Act([] { NetLeave(); });
+        }
     }
+    leaveWas = leaveUp;
     // Watching (M5): the pause panel, opened and closed by a Start tap.
     {
         static bool watchPanel = false;
@@ -4529,6 +3195,15 @@ void Draw(IDXGISwapChain* swapChain)
             wl.behindSeconds = view.behind / 60.0f;
             wl.players[0] = view.seats[0].name;
             wl.players[1] = view.seats[1].name;
+            if (wl.table >= 0) {
+                // Their flags from the room (the session's seats have none).
+                const RoomsView rooms = RoomsSnapshot();
+                for (int i = 0; i < 2; i++) {
+                    for (const RoomMember& m : rooms.members) {
+                        if (m.name == wl.players[i]) wl.countries[i] = m.country;
+                    }
+                }
+            }
             WatchPanelInput wi;
             DrawWatchPanel(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, wl, watchAlpha, watchPanel && !g_visible, &wi);
             if (wi.resume) watchPanel = false;
@@ -4553,8 +3228,7 @@ void Draw(IDXGISwapChain* swapChain)
     const bool hint = !visible && !preview && !HubOpen() && (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) && OnMenuScreen();
     if (hint) DrawMenuHint();
     DrawPreviews();
-    DrawToasts(liveAlpha > 0);
-    DrawStartHold();
+    DrawNotices(session && (phase == NetView::Phase::Running || phase == NetView::Phase::PostMatch), view);
     DrawTexturePreview();
     bool texture = false;
     {
@@ -4627,7 +3301,7 @@ HRESULT DrawAndPresent(PresentFn next, IDXGISwapChain* self, UINT syncInterval, 
     g_gameSyncInterval = syncInterval;
     g_gamePresentFlags = flags;
     // The frame-drop log (hitch.h), for the frame that ends here.
-    if (frameMicros) hitch::FramePresented(frameMicros, g_inMatch);
+    if (frameMicros) hitch::FramePresented(frameMicros, g_inMatch ? "match" : HubOpen() ? "menus" : nullptr);
     return result;
 }
 
@@ -4949,7 +3623,6 @@ void RequestScreenshot(const std::string& path, int scale)
 
 void SetOverlayVisible(bool visible)
 {
-    if (visible && !g_visible) g_focusPanel = true;
     if (g_visible.exchange(visible) != visible) Log("overlay %s", visible ? "shown" : "hidden");
 }
 
@@ -5070,8 +3743,8 @@ float RenderFps()
 
 bool OverlayWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
-    if (msg == WM_KEYDOWN && wp == VK_F1 && !(lp & (1 << 30))) { // not on key repeat
-        ToggleOverlay();
+    if (msg == WM_KEYDOWN && wp == VK_F1 && !(lp & (1 << 30))) { // not on key repeat: Back + Start
+        g_chordKey = true;
         return true;
     }
     if (w != g_inputWindow) return false;
@@ -5098,13 +3771,6 @@ void OverlayPad(unsigned user, const XINPUT_GAMEPAD& pad)
     g_pads[user].buttons = pad.wButtons;
     g_pads[user].lx = pad.sThumbLX;
     g_pads[user].ly = pad.sThumbLY;
-    const uint16_t buttons = pad.wButtons;
-    constexpr uint16_t kChord = XINPUT_GAMEPAD_BACK | XINPUT_GAMEPAD_START;
-    const bool now = (buttons & kChord) == kChord;
-    const bool before = (g_lastButtons[user] & kChord) == kChord;
-    g_lastButtons[user] = buttons;
-    // In a match the chord only closes: the panel opens by Start held (FeedPads).
-    if (now && !before && (g_visible || !g_inMatch)) ToggleOverlay();
 }
 
 } // namespace sfv::mod

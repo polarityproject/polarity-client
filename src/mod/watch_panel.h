@@ -1,10 +1,10 @@
 #pragma once
 // The spectator's pause panel (custom-rooms-plan.md M5): Start while
 // watching opens it over the match. It says what is watched (a table, or a
-// Direct Match), which game of how many, how far behind the players, a chip
-// per kept game, and steps through them: Previous, Current game (the newest),
-// Next; B resumes, Y stops watching. It replaces the F1 panel's Previous /
-// Next / Live for watching. Render thread, in an ImGui frame.
+// Direct Match), which game, who plays, and has three buttons: the previous
+// game, the current one (the newest), the next. Nothing else: no results and
+// no list of games, so watching a set spoils none of it. B resumes, Y stops
+// watching. Render thread, in an ImGui frame.
 
 #include "mod/hub_screen.h"
 
@@ -25,6 +25,7 @@ struct WatchPanelLive {
     int at = -1;                       // the one being watched
     float behindSeconds = 0;           // frames in hand not yet played, as time
     std::string players[2];            // P1's and P2's names
+    std::string countries[2];          // their flags (the room's members); "" none
 };
 
 struct WatchPanelInput {

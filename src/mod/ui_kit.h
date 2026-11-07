@@ -126,6 +126,9 @@ constexpr ImU32 kSelfRow = IM_COL32(233, 196, 106, 41);
 // The stage behind every full screen (the Capcom Pro Tour arena), softened a
 // little and dimmed flat. Over the whole display; `alpha` fades it.
 void Backdrop(ImDrawList* d, float alpha = 1);
+// The vertex index right after this frame's backdrop (-1: none drawn yet):
+// a screen change fades what is drawn over it in (the stage stays).
+extern int g_backdropEnd;
 enum class Glass {
     Panel, // a screen's panes: 55% glass over the blurred stage
     Modal, // modals and toasts: 84%

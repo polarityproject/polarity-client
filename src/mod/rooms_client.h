@@ -103,7 +103,7 @@ struct WatchTicket {
     std::string rules; // FormatRules
 };
 const char* RoomsStateName(RoomsView::State state);
-// The Word filter setting (SFVR settings, F1 Settings): in public rooms,
+// The Word filter setting (SFVR settings): in public rooms,
 // names the keeper masks show as "Player 1234" and chat has the keeper's
 // words starred. Off: names and chat as they are. Any thread.
 void SetRoomsWordFilter(bool on);

@@ -8,17 +8,19 @@
 //
 // Input: window messages reach ImGui through the mod's window procedure
 // (control.cpp), queued and fed to ImGui on the render thread (ImGui is not
-// thread-safe). While the panel is open the game gets no keyboard or mouse
-// messages and sees neutral pads.
+// thread-safe). While one of the mod's screens takes input the game gets no
+// keyboard or mouse messages and sees neutral pads.
 //
-// Toggle: F1, or Back + Start on a pad. `overlay show|hide|toggle` in the
-// command file.
+// The SFVR hub fades in at launch in place of the game's main menu; Back +
+// Start (or F1) brings it back from the game's menus. In a match the same
+// opens the leave modal (`overlay show|hide|toggle` in the command file);
+// watching, the watch panel.
 //
-// Without the panel, during a session: a status strip, the match HUD (both
-// players, ping and jitter, rollbacks, the other's frame rate and link), a
-// desync banner, short notices (toasts), and after a match the vote on what
-// follows (Rematch, Character select, Leave), which takes the pads. Pads navigate the panel (ImGui gamepad navigation, fed from
-// the mod's XInput hook).
+// During a session: a status strip, the match HUD (both players, ping and
+// jitter, rollbacks, the other's frame rate and link), notices (toasts at the
+// top right; in a fight small notes at the bottom centre, a desync's too),
+// and after a match the vote on what follows (Rematch, Character select,
+// Leave), which takes the pads (fight_ui.h).
 
 #include <windows.h>
 #include <xinput.h>

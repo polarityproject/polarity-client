@@ -48,6 +48,7 @@ struct SelectFonts {
     ImFont* title = nullptr; // small headings
     ImFont* name = nullptr;  // the big character names, the screen's headers
     ImFont* text = nullptr;  // rows, labels
+    ImFont* bold = nullptr;  // Barlow Bold: the modal's buttons and kicker
 };
 
 // The loadout's rows, top to bottom.

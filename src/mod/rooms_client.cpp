@@ -135,6 +135,7 @@ struct Client {
     std::string peekCode;
     int64_t peekAskedMs = -kPeekEveryMs;
     std::vector<std::string> peekParts;
+    std::string peekLogged; // the last room whose answer was logged
     // Ping: per member, the last few round trips (shown: the lowest; each
     // side answers from a loop that wakes every 20 ms, which the lowest of a
     // few mostly leaves out) and when they were pinged.
@@ -508,6 +509,7 @@ struct Client {
             if (a.kind == "peek") {
                 if (a.seq != peekSeq) continue; // an older one
                 if (!a.ok) {
+                    Log("rooms: peek %s refused: %s", peekCode.c_str(), a.text.c_str());
                     peekSeq = 0;
                     svc->SetMemberData(keeper::kAck, std::to_string(a.seq));
                     view.peek = keeper::RoomDetail{};
@@ -522,7 +524,13 @@ struct Client {
                 svc->SetMemberData(keeper::kAck, std::to_string(a.seq));
                 keeper::RoomDetail d;
                 d.code = peekCode;
-                if (keeper::JoinRoomDetail(peekParts, &d)) view.peek = std::move(d);
+                const bool joined = keeper::JoinRoomDetail(peekParts, &d);
+                if (peekLogged != peekCode) {
+                    peekLogged = peekCode;
+                    Log("rooms: peek %s answered: %s, %zu tables, %zu people", peekCode.c_str(), joined ? "ok" : "unreadable", d.tables.size(),
+                        d.people.size());
+                }
+                if (joined) view.peek = std::move(d);
                 peekSeq = 0;
                 continue;
             }
@@ -713,6 +721,7 @@ struct Client {
         if (peekWanted != view.peek.code) view.peek = keeper::RoomDetail{}; // another room's: not shown
         if (peekSeq && NowMs() - peekAskedMs < kPeekEveryMs * 2) return;   // one in flight
         if (peekWanted == peekCode && NowMs() - peekAskedMs < kPeekEveryMs) return;
+        if (peekCode != peekWanted) Log("rooms: peek %s", peekWanted.c_str());
         peekCode = peekWanted;
         peekSeq = ++seq;
         peekAskedMs = NowMs();

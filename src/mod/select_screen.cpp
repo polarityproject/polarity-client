@@ -514,45 +514,39 @@ void OpenLeave()
 // A (or a click) to take it, B stays.
 void DrawLeaveDialog(ImDrawList* d, const SelectFonts& f, const SelectLive& live, bool takeInput, SelectInput* in)
 {
-    const float bw = 170, bh = 48, gap = 24;
-    const float y0 = 330, h = 236, by = y0 + 150;
-    const float lx = 800 - gap / 2 - bw, sx = 800 + gap / 2;
-    if (takeInput) {
-        if (Left() || Right()) g_ui.leaveChosen = !g_ui.leaveChosen;
-        const bool back = Back(), confirm = Confirm();
-        int clicked = -1; // 1 Leave, 0 Stay
-        if (Clicked()) {
-            if (MouseIn(g_v.P(lx, by), g_v.P(lx + bw, by + bh))) clicked = 1;
-            if (MouseIn(g_v.P(sx, by), g_v.P(sx + bw, by + bh))) clicked = 0;
-        }
-        if (clicked >= 0) g_ui.leaveChosen = clicked == 1;
-        if (back) g_ui.leaving = false;
-        else if (confirm || clicked >= 0) {
-            in->leave = g_ui.leaveChosen;
-            g_ui.leaving = false;
-        }
-        if (!g_ui.leaving) return;
-    }
+    // The S modal (600 wide): its kicker, a title, what happens, Leave and
+    // Stay; the prompts in its footer.
     const bool watching = live.you < 0;
-    const char* title = watching ? "STOP WATCHING?" : live.set ? "LEAVE THE SET?" : "LEAVE THE SESSION?";
+    const char* title = watching ? "Stop watching?" : live.set ? "Leave the set?" : "Leave the session?";
     const char* detail = watching   ? "You go back to the main menu."
                          : live.set ? "The set ends here for both players."
                                     : "The session ends for both players.";
-    const float w = std::max({460.0f, TextW(f.name, 34, title) + 90, TextW(f.text, 17, detail) + 90});
-    const float x0 = 800 - w / 2;
-    d->AddRectFilled(g_v.P(0, 0), g_v.P(1600, 900), Rgba(0, 0, 0, 150));
-    d->AddRectFilled(g_v.P(x0, y0), g_v.P(x0 + w, y0 + h), Rgba(14, 16, 20, 240), g_v.L(18));
-    d->AddRect(g_v.P(x0, y0), g_v.P(x0 + w, y0 + h), Rgba(233, 196, 106, 170), g_v.L(18), 0, g_v.L(1.5f));
-    Text(d, f.name, g_v.L(34), g_v.P(800, y0 + 34), Rgba(255, 255, 255), title, 0.5f, true);
-    Text(d, f.text, g_v.L(17), g_v.P(800, y0 + 96), Rgba(217, 212, 198), detail, 0.5f);
-    auto button = [&](float x, const char* label, bool on) {
-        const ImVec2 a = g_v.P(x, by), b = g_v.P(x + bw, by + bh);
-        d->AddRectFilled(a, b, on ? Rgba(233, 196, 106) : Rgba(0, 0, 0, 150), g_v.L(24));
-        d->AddRect(a, b, on ? Rgba(233, 196, 106) : Rgba(93, 90, 82), g_v.L(24));
-        Text(d, f.text, g_v.L(19), g_v.P(x + bw / 2, by + 13), on ? Rgba(20, 20, 22) : Rgba(244, 241, 232), label, 0.5f);
-    };
-    button(lx, "Leave", g_ui.leaveChosen);
-    button(sx, "Stay", !g_ui.leaveChosen);
+    ImFont* bold = f.bold ? f.bold : f.text;
+    ui::ModalSpec m;
+    m.w = 600;
+    m.h = 44 + 22 + 34 + 12 + 24 + 24 + 48 + 26 + 46;
+    m.x0 = 500;
+    m.y0 = (844 - m.h) / 2;
+    m.kicker = watching ? "STOP WATCHING" : "LEAVE";
+    m.danger = !watching;
+    m.prompts = {{"button_a", "Select"}, {"button_b", "Stay"}};
+    int prompt = -1;
+    float y = ui::Modal(d, bold, f.text, m, &prompt) + 22;
+    Text(d, f.name, g_v.L(28), g_v.P(528, y), Rgba(244, 241, 232), title);
+    y += 46;
+    Text(d, f.text, g_v.L(17), g_v.P(528, y), look::kSoft, detail);
+    y += 24 + 24;
+    int pressed = -1; // 1 Leave, 0 Stay
+    if (ui::Button(d, bold, 528, y, 806, y + 48, watching ? "Stop watching" : "Leave", g_ui.leaveChosen, !watching)) pressed = 1;
+    if (ui::Button(d, bold, 822, y, 1072, y + 48, "Stay", !g_ui.leaveChosen)) pressed = 0;
+    if (!takeInput) return;
+    if (Left() || Right()) g_ui.leaveChosen = !g_ui.leaveChosen;
+    if (pressed >= 0) g_ui.leaveChosen = pressed == 1;
+    if (Back() || prompt == 1) g_ui.leaving = false;
+    else if (Confirm() || pressed >= 0 || prompt == 0) {
+        in->leave = g_ui.leaveChosen;
+        g_ui.leaving = false;
+    }
 }
 
 // The whole screen for a lobby's state; what the player does goes to `in`.
@@ -834,9 +828,9 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
     }
     if (watching && live.loading) StatusPill(d, f, kLoadingText);
     g_inputOn = inputOn;
+    // The leave modal has its prompts in its footer.
     if (g_ui.leaving) DrawLeaveDialog(d, f, live, dialog, in);
-    if (g_ui.leaving) prompts = {{"button_a", "Select", 0}, {"button_b", "Stay", 1}};
-    DrawPrompts(d, f, prompts);
+    else DrawPrompts(d, f, prompts);
 }
 
 

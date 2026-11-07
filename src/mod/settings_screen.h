@@ -3,8 +3,8 @@
 // board "Settings"): Start in the hub. One scrolling list with a header per
 // category (Updates first, so a new version is seen at once; then Online,
 // Game, Reports), a side panel for the focused row, and the stripe's hint.
-// The F1 panel's Settings and Debug options a player needs, on a pad; each
-// change saves at once.
+// What the old F1 panel's Settings and Debug tabs offered a player, on a pad;
+// each change saves at once.
 //
 // The screen only draws rows and reports what was done to them; the overlay
 // builds the rows from the live state and applies the changes.

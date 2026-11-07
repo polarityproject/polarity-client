@@ -477,6 +477,8 @@ void StageAt(ImDrawList* d, float x0, float y0, float x1, float y1, float pixels
 
 } // namespace
 
+int g_backdropEnd = -1;
+
 void Backdrop(ImDrawList* d, float alpha)
 {
     const ImVec2 screen = ImGui::GetIO().DisplaySize;
@@ -485,6 +487,7 @@ void Backdrop(ImDrawList* d, float alpha)
     const float left = std::max(kStageX0, -g_v.ox / g_v.s), right = std::min(kStageX0 + kStageW, (screen.x - g_v.ox) / g_v.s);
     StageAt(d, left, 0, right, 900, std::max(256.0f, g_v.L(kStageW) / 4), WithAlpha(kStageTint, alpha));
     d->AddRectFilled(ImVec2(0, 0), screen, WithAlpha(kScrim, alpha));
+    g_backdropEnd = d->VtxBuffer.Size;
 }
 
 void DropShadow(ImDrawList* d, float x0, float y0, float x1, float y1, float offset, float blur, float alpha, bool core)

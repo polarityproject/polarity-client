@@ -21,7 +21,9 @@ const ImU32 kSoft = IM_COL32(217, 212, 198, 255);
 const ImU32 kMuted = IM_COL32(168, 162, 147, 255);
 const ImU32 kLine = IM_COL32(201, 168, 92, 190);
 
-constexpr float kTop = 110, kBottom = 832, kRowH = 52, kRowPitch = 56, kHeaderH = 44;
+// The list inside its pane (48, 96)-(948, 832): rows of 50 under strips of 38.
+constexpr float kTop = 98, kBottom = 830, kRowH = 50, kRowPitch = 50, kHeaderH = 38;
+constexpr float kValueX = 766; // the value box's centre (260 wide), its arrows either side
 constexpr size_t kMaxText = 96; // a name's bytes (lobby::kMaxName)
 
 std::atomic<bool> g_open{false};
@@ -62,7 +64,7 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
     if (!g_open || !f.display || !f.strong || !f.body || rows.empty()) return;
     BeginScreen();
     ImDrawList* d = ImGui::GetBackgroundDrawList();
-    d->AddRectFilled(ImVec2(0, 0), ImGui::GetIO().DisplaySize, Rgba(6, 8, 11));
+    Backdrop(d);
     d->PushClipRect(g_v.P(0, 0), g_v.P(1600, 900), true);
     g_inputOn = takeInput;
     const int count = static_cast<int>(rows.size());
@@ -81,12 +83,6 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
         return from;
     };
     if (!rows[g.focus].enabled) g.focus = step(g.focus, 1) != g.focus ? step(g.focus, 1) : step(g.focus, -1);
-
-    if (const TextureView* bg = Texture(StageTex("CHN", "StageSelectBG"))) {
-        Image(d, bg, g_v.P(-500, -40), g_v.P(2100, 720), ImVec2(0, 0), ImVec2(1, 1), Rgba(70, 70, 70));
-    }
-    d->AddRectFilledMultiColor(g_v.P(0, 315), g_v.P(1600, 630), Rgba(6, 8, 11, 64), Rgba(6, 8, 11, 64), Rgba(6, 8, 11, 210), Rgba(6, 8, 11, 210));
-    d->AddRectFilledMultiColor(g_v.P(0, 630), g_v.P(1600, 900), Rgba(6, 8, 11, 210), Rgba(6, 8, 11, 210), Rgba(6, 8, 11), Rgba(6, 8, 11));
 
     // ---- input ----
     const SettingsRow& on = rows[g.focus];
@@ -140,8 +136,8 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
     }
 
     // ---- the list ----
-    Text(d, f.display, g_v.L(40), g_v.P(48, 22), Rgba(255, 255, 255), "SFVR SETTINGS", 0, true);
-    Text(d, f.body, g_v.L(16), g_v.P(48, 78), kSoft, "Version " + version);
+    StageText(d, f.display, 40, 48, 22, Rgba(255, 255, 255), "SFVR SETTINGS");
+    StageText(d, f.body, 16, 48 + TextW(f.display, 40, "SFVR SETTINGS") + 28, 42, kSoft, "Version " + version);
     // Layout: where each row and header sits (design y, before scrolling).
     std::vector<float> ys(count);
     float y = 0;
@@ -160,113 +156,101 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
     if (want - kHeaderH < g.scroll) g.scroll = std::max(0.0f, want - kHeaderH);
     if (want + kRowH > g.scroll + view) g.scroll = want + kRowH - view;
     g.scroll = std::clamp(g.scroll, 0.0f, std::max(0.0f, total - view));
-    d->PushClipRect(g_v.P(40, kTop), g_v.P(960, kBottom), true);
+    // One glass pane holds the list: a dark strip for each section, the rows
+    // with hairlines, the focused one gold.
+    Pane(d, 48, kTop - 2, 948, kBottom + 2);
+    d->PushClipRect(g_v.P(50, kTop), g_v.P(946, kBottom), true);
     section.clear();
+    ImFont* bold = f.bold ? f.bold : f.strong;
     for (int i = 0; i < count; i++) {
         const SettingsRow& r = rows[i];
         const float ry = kTop + ys[i] - g.scroll;
         if (r.section != section) {
             section = r.section;
-            Text(d, f.strong, g_v.L(16), g_v.P(52, ry - kHeaderH + 14), kGold, r.section);
+            Strip(d, 50, ry - kHeaderH, 946, ry, false);
+            Text(d, bold, g_v.L(14), g_v.P(72, ry - kHeaderH + 10), kGold, r.section);
         }
         if (ry > kBottom || ry + kRowH < kTop) continue;
         const bool focused = i == g.focus;
-        const ImVec2 a = g_v.P(48, ry), b = g_v.P(948, ry + kRowH);
-        if (focused) {
-            d->AddRectFilledMultiColor(a, g_v.P(48 + 900 * 0.3f, ry + kRowH), Rgba(240, 200, 90, 128), Rgba(240, 200, 90, 26),
-                                       Rgba(240, 200, 90, 26), Rgba(240, 200, 90, 128));
-            d->AddRectFilledMultiColor(g_v.P(48 + 900 * 0.3f, ry), b, Rgba(240, 200, 90, 26), Rgba(8, 9, 11, 153), Rgba(8, 9, 11, 153),
-                                       Rgba(240, 200, 90, 26));
-        }
-        else {
-            d->AddRectFilled(a, b, Rgba(8, 9, 11, 170));
-        }
-        d->AddLine(a, g_v.P(948, ry), kLine, g_v.L(1));
-        d->AddLine(g_v.P(48, ry + kRowH), b, kLine, g_v.L(1));
-        const ImU32 labelCol = r.enabled ? kCream : Rgba(244, 241, 232, 90);
-        Text(d, f.body, g_v.L(19), g_v.P(88, ry + 14), labelCol, r.label);
+        const ImVec2 a = g_v.P(50, ry), b = g_v.P(946, ry + kRowH);
+        if (focused) d->AddRectFilled(a, b, look::kGold);
+        else d->AddLine(g_v.P(50, ry + kRowH - 0.5f), g_v.P(946, ry + kRowH - 0.5f), look::kHairline, std::max(1.0f, g_v.L(1)));
+        const ImU32 labelCol = focused ? look::kInk : r.enabled ? kCream : Rgba(244, 241, 232, 90);
+        Text(d, focused ? bold : f.body, g_v.L(18), g_v.P(90, ry + 13), labelCol, r.label);
         std::string value = r.value;
         if (focused && g.typing) value = g.text + ((static_cast<int>(ImGui::GetTime() * 2) & 1) ? "|" : " ");
-        const ImU32 valueCol = !r.enabled ? Rgba(233, 196, 106, 90) : r.highlight ? kGold : kCream;
-        Text(d, f.body, g_v.L(19), g_v.P(r.arrows ? 648.0f : 626.0f, ry + 14), valueCol, value, 0.5f);
+        const ImU32 valueCol = focused ? look::kInk : !r.enabled ? Rgba(233, 196, 106, 90) : r.highlight ? kGold : kCream;
+        // A long value (a path) takes the room left of the box.
+        const float valueW = TextW(focused ? bold : f.body, 18, value);
+        Text(d, focused ? bold : f.body, g_v.L(18), g_v.P(valueW > 260 ? 896.0f : kValueX, ry + 13), valueCol, value, valueW > 260 ? 1.0f : 0.5f);
         if (r.arrows && focused) {
-            d->AddTriangleFilled(g_v.P(376, ry + 20), g_v.P(376, ry + 32), g_v.P(366, ry + 26), kGold);
-            d->AddTriangleFilled(g_v.P(920, ry + 20), g_v.P(930, ry + 26), g_v.P(920, ry + 32), kGold);
+            d->AddTriangleFilled(g_v.P(kValueX - 144, ry + 19), g_v.P(kValueX - 144, ry + 31), g_v.P(kValueX - 154, ry + 25), look::kInk);
+            d->AddTriangleFilled(g_v.P(kValueX + 144, ry + 19), g_v.P(kValueX + 154, ry + 25), g_v.P(kValueX + 144, ry + 31), look::kInk);
         }
-        if (focused && g.typing) d->AddRect(a, b, kGold, 0, 0, g_v.L(2));
+        if (focused && g.typing) {
+            d->AddRectFilled(a, b, Rgba(0, 0, 0, 140));
+            Text(d, f.body, g_v.L(18), g_v.P(90, ry + 13), kCream, r.label);
+            Text(d, f.body, g_v.L(18), g_v.P(896, ry + 13), kCream, value, 1.0f);
+            d->AddRect(a, b, look::kRing, 0, 0, g_v.L(2));
+        }
         if (takeInput && !g.typing && Clicked() && MouseIn(a, b) && r.enabled) {
             if (g.focus == i) {
                 if (r.text) {
                     g.typing = true;
                     g.text = r.editValue;
                 }
-                else if (r.arrows) in->row = r.id, in->delta = MouseIn(g_v.P(48, ry), g_v.P(648, ry + kRowH)) ? -1 : 1;
+                else if (r.arrows) in->row = r.id, in->delta = MouseIn(g_v.P(48, ry), g_v.P(kValueX, ry + kRowH)) ? -1 : 1;
                 else if (!r.action.empty()) in->row = r.id, in->confirm = true;
             }
             g.focus = i;
         }
     }
-    if (total > view) {
-        const float thumb = view * view / total, top = kTop + (view - thumb) * g.scroll / (total - view);
-        d->AddRectFilled(g_v.P(954, kTop), g_v.P(958, kBottom), Rgba(255, 255, 255, 20), g_v.L(2));
-        d->AddRectFilled(g_v.P(954, top), g_v.P(958, top + thumb), Rgba(233, 196, 106, 190), g_v.L(2));
-    }
     d->PopClipRect();
+    // Longer than the pane: the bar inside its right edge.
+    ScrollBar(d, 936, kTop + 4, kBottom - 4, g.scroll, view, total, false);
 
     // ---- the side panel ----
     const SettingsRow& r = rows[g.focus];
     if (!r.title.empty()) {
-        float py = 132;
+        float py = 140;
         const float x = 1026, width = 500;
         // Measured first, so the frame fits what it holds.
         float bottom = py + 30 + 46;
         for (size_t k = 0; k < r.lines.size(); k++) {
-            bottom += f.body->CalcTextSizeA(g_v.L(17), FLT_MAX, g_v.L(width), r.lines[k].c_str()).y / g_v.s + 12;
+            bottom += f.body->CalcTextSizeA(g_v.L(16), FLT_MAX, g_v.L(width), r.lines[k].c_str()).y / g_v.s + 12;
         }
-        d->AddRectFilledMultiColor(g_v.P(1000, 104), g_v.P(1552, bottom + 20), Rgba(26, 31, 38, 235), Rgba(26, 31, 38, 235),
-                                   Rgba(8, 9, 11, 240), Rgba(8, 9, 11, 240));
-        d->AddLine(g_v.P(1000, 104), g_v.P(1552, 104), kLine, g_v.L(1));
-        d->AddLine(g_v.P(1000, bottom + 20), g_v.P(1552, bottom + 20), kLine, g_v.L(1));
-        Text(d, f.body, g_v.L(14), g_v.P(x, py - 4), kMuted, r.kicker);
+        Pane(d, 1000, 96, 1552, bottom + 12);
+        Strip(d, 1002, 98, 1550, 140, false);
+        Text(d, f.bold ? f.bold : f.strong, g_v.L(14), g_v.P(x, 110), kGold, r.kicker);
         // A long title (a folder's path) shows its end.
         std::string title = r.title;
         while (title.size() > 4 && TextW(f.display, 26, title) > width) title = "..." + title.substr(4);
-        Text(d, f.display, g_v.L(26), g_v.P(x, py + 22), kCream, title);
-        py += 76;
+        Text(d, f.display, g_v.L(26), g_v.P(x, py + 18), kCream, title);
+        py += 66;
         for (size_t k = 0; k < r.lines.size(); k++) {
             float end = py;
-            Wrapped(d, f.body, 17, x, py, width, k == 0 && r.goldFirst ? kGold : kSoft, r.lines[k], &end);
+            Wrapped(d, f.body, 16, x, py, width, k == 0 ? (r.goldFirst ? kGold : kSoft) : kMuted, r.lines[k], &end);
             py = end + 12;
         }
     }
 
-    // ---- the stripe ----
-    d->AddRectFilled(g_v.P(0, 844), g_v.P(1600, 900), Rgba(8, 9, 11, 245));
-    d->AddLine(g_v.P(0, 844), g_v.P(1600, 844), kLine, g_v.L(1));
-    Text(d, f.body, g_v.L(16), g_v.P(48, 862), kSoft,
-         g.typing ? "Type, then Enter to keep it or Escape to leave it as it was. Empty: your Steam name." : r.hint);
-    std::vector<std::pair<const char*, std::string>> prompts;
-    if (g.typing) prompts = {};
-    else {
+    // ---- the hint and prompts, on the stage ----
+    PromptList prompts;
+    if (!g.typing) {
         if (r.text) prompts.push_back({"button_a", "Type"});
         else if (!r.action.empty()) prompts.push_back({"button_a", r.action});
         prompts.push_back({"button_b", "Back"});
     }
-    float right = 1564;
-    for (int i = static_cast<int>(prompts.size()) - 1; i >= 0; i--) {
-        const float w = 32 + 8 + TextW(f.body, 17, prompts[i].second);
-        const float px = right - w;
-        if (const TextureView* icon = Texture(PadTex(prompts[i].first))) Image(d, icon, g_v.P(px, 856), g_v.P(px + 32, 888));
-        Text(d, f.body, g_v.L(17), g_v.P(px + 40, 861), kCream, prompts[i].second);
-        if (takeInput && Clicked() && MouseIn(g_v.P(px, 850), g_v.P(right, 894))) {
-            if (std::string(prompts[i].first) == "button_b") in->back = true;
-            else if (r.text) {
-                g.typing = true;
-                g.text = r.editValue;
-            }
-            else in->row = r.id, in->confirm = true;
+    int clicked = -1;
+    PromptLine(d, f.body, f.bold ? f.bold : f.strong, "", kGold,
+               g.typing ? "Type, then Enter to keep it or Escape to leave it as it was. Empty: your Steam name." : r.hint, prompts, &clicked);
+    if (takeInput && clicked >= 0) {
+        if (std::string(prompts[clicked].first) == "button_b") in->back = true;
+        else if (r.text) {
+            g.typing = true;
+            g.text = r.editValue;
         }
-        right = px - 26;
+        else in->row = r.id, in->confirm = true;
     }
     g_inputOn = false;
     d->PopClipRect();

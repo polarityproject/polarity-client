@@ -239,6 +239,7 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/rooms_screen.cpp
     src/mod/room_screen.cpp
     src/mod/watch_panel.cpp
+    src/mod/fight_ui.cpp
     src/mod/settings_screen.cpp
     src/mod/weyve_service.cpp
     src/mod/fonts.rc)
