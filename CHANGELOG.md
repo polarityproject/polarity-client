@@ -81,6 +81,9 @@ at each table and watching any table. SFVR moved to a new server, which
 
 ### Fixed
 
+- A malformed message from a rooms server could make the game set aside
+  gigabytes of memory; messages are now held to a size cap (the same fix
+  keeps the rooms server itself from being crashed this way).
 - The marker over each fighter at the start of a round said "Player 1" over
   both fighters in sessions and replays. It says Player 1 and Player 2 again,
   as in local Versus.

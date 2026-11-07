@@ -96,6 +96,15 @@ if(SFV_BUILD_MOD AND WIN32)
   if(NOT link_mux EQUAL 0)
     message(FATAL_ERROR "cannot apply third_party/weyvelength-link-mux.patch")
   endif()
+  # A cap on what decoding one message may allocate, on both ends (a few
+  # bytes claiming gigabytes ran the rooms server out of memory). The same
+  # patch goes into sfvr-server's server image and native install.
+  execute_process(COMMAND ${CMAKE_COMMAND} -DPATCH=${CMAKE_CURRENT_SOURCE_DIR}/third_party/weyvelength-decode-limit.patch
+                          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/apply-patch.cmake
+                  WORKING_DIRECTORY ${weyvelength_SOURCE_DIR} RESULT_VARIABLE decode_limit)
+  if(NOT decode_limit EQUAL 0)
+    message(FATAL_ERROR "cannot apply third_party/weyvelength-decode-limit.patch")
+  endif()
   set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
   set(NO_SERVER ON CACHE BOOL "" FORCE)
   set(NO_TESTS ON CACHE BOOL "" FORCE)
