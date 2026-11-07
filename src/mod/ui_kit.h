@@ -118,8 +118,8 @@ namespace look {
 constexpr ImU32 kGold = IM_COL32(233, 196, 106, 255);    // the focus; kickers, rules, actions as text
 constexpr ImU32 kRing = IM_COL32(240, 194, 74, 255);     // the 2 px ring round a focused pane
 constexpr ImU32 kCream = IM_COL32(244, 241, 232, 255);   // names, titles, values
-constexpr ImU32 kSoft = IM_COL32(217, 212, 198, 255);    // body text, rules, labels
-constexpr ImU32 kMuted = IM_COL32(168, 162, 147, 255);   // hints, footers
+constexpr ImU32 kSoft = IM_COL32(228, 224, 212, 255);    // body text, rules, labels
+constexpr ImU32 kMuted = IM_COL32(198, 193, 180, 255);   // hints, footers
 constexpr ImU32 kInk = IM_COL32(11, 11, 11, 255);        // text on gold
 constexpr ImU32 kInkSoft = IM_COL32(58, 47, 18, 255);    // a second line on gold
 constexpr ImU32 kOk = IM_COL32(127, 216, 139, 255);

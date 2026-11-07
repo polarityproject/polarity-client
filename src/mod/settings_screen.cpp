@@ -17,8 +17,8 @@ namespace {
 
 const ImU32 kGold = IM_COL32(233, 196, 106, 255);
 const ImU32 kCream = IM_COL32(244, 241, 232, 255);
-const ImU32 kSoft = IM_COL32(217, 212, 198, 255);
-const ImU32 kMuted = IM_COL32(168, 162, 147, 255);
+const ImU32 kSoft = IM_COL32(228, 224, 212, 255);
+const ImU32 kMuted = IM_COL32(198, 193, 180, 255);
 const ImU32 kLine = IM_COL32(201, 168, 92, 190);
 
 // The list inside its pane (48, 96)-(948, 832): rows of 50 under strips of 38.
@@ -168,7 +168,7 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
         if (r.section != section) {
             section = r.section;
             Strip(d, 50, ry - kHeaderH, 946, ry, false);
-            Text(d, bold, g_v.L(14), g_v.P(72, ry - kHeaderH + 10), kGold, r.section);
+            Text(d, bold, g_v.L(17), g_v.P(72, ry - kHeaderH + 9), kGold, r.section);
         }
         if (ry > kBottom || ry + kRowH < kTop) continue;
         const bool focused = i == g.focus;
@@ -176,21 +176,23 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
         if (focused) d->AddRectFilled(a, b, look::kGold);
         else d->AddLine(g_v.P(50, ry + kRowH - 0.5f), g_v.P(946, ry + kRowH - 0.5f), look::kHairline, std::max(1.0f, g_v.L(1)));
         const ImU32 labelCol = focused ? look::kInk : r.enabled ? kCream : Rgba(244, 241, 232, 90);
-        Text(d, focused ? bold : f.body, g_v.L(18), g_v.P(90, ry + 13), labelCol, r.label);
+        // Rows in the medium weight (the light one read faintly on the glass).
+        ImFont* rowFont = focused ? bold : f.strong;
+        Text(d, rowFont, g_v.L(21), g_v.P(90, ry + 11), labelCol, r.label);
         std::string value = r.value;
         if (focused && g.typing) value = g.text + ((static_cast<int>(ImGui::GetTime() * 2) & 1) ? "|" : " ");
         const ImU32 valueCol = focused ? look::kInk : !r.enabled ? Rgba(233, 196, 106, 90) : r.highlight ? kGold : kCream;
         // A long value (a path) takes the room left of the box.
-        const float valueW = TextW(focused ? bold : f.body, 18, value);
-        Text(d, focused ? bold : f.body, g_v.L(18), g_v.P(valueW > 260 ? 896.0f : kValueX, ry + 13), valueCol, value, valueW > 260 ? 1.0f : 0.5f);
+        const float valueW = TextW(rowFont, 21, value);
+        Text(d, rowFont, g_v.L(21), g_v.P(valueW > 260 ? 896.0f : kValueX, ry + 11), valueCol, value, valueW > 260 ? 1.0f : 0.5f);
         if (r.arrows && focused) {
             d->AddTriangleFilled(g_v.P(kValueX - 144, ry + 19), g_v.P(kValueX - 144, ry + 31), g_v.P(kValueX - 154, ry + 25), look::kInk);
             d->AddTriangleFilled(g_v.P(kValueX + 144, ry + 19), g_v.P(kValueX + 154, ry + 25), g_v.P(kValueX + 144, ry + 31), look::kInk);
         }
         if (focused && g.typing) {
             d->AddRectFilled(a, b, Rgba(0, 0, 0, 140));
-            Text(d, f.body, g_v.L(18), g_v.P(90, ry + 13), kCream, r.label);
-            Text(d, f.body, g_v.L(18), g_v.P(896, ry + 13), kCream, value, 1.0f);
+            Text(d, f.strong, g_v.L(21), g_v.P(90, ry + 11), kCream, r.label);
+            Text(d, f.strong, g_v.L(21), g_v.P(896, ry + 11), kCream, value, 1.0f);
             d->AddRect(a, b, look::kRing, 0, 0, g_v.L(2));
         }
         if (takeInput && !g.typing && Clicked() && MouseIn(a, b) && r.enabled) {
@@ -217,19 +219,19 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
         // Measured first, so the frame fits what it holds.
         float bottom = py + 30 + 46;
         for (size_t k = 0; k < r.lines.size(); k++) {
-            bottom += f.body->CalcTextSizeA(TextPx(17), FLT_MAX, g_v.L(width), r.lines[k].c_str()).y / g_v.s + 12;
+            bottom += f.body->CalcTextSizeA(TextPx(20), FLT_MAX, g_v.L(width), r.lines[k].c_str()).y / g_v.s + 12;
         }
         Pane(d, 1000, 96, 1552, bottom + 12);
         Strip(d, 1002, 98, 1550, 140, false);
-        Text(d, f.bold ? f.bold : f.strong, g_v.L(14), g_v.P(x, 110), kGold, r.kicker);
+        Text(d, f.bold ? f.bold : f.strong, g_v.L(17), g_v.P(x, 109), kGold, r.kicker);
         // A long title (a folder's path) shows its end.
         std::string title = r.title;
-        while (title.size() > 4 && TextW(f.display, 26, title) > width) title = "..." + title.substr(4);
-        Text(d, f.display, g_v.L(26), g_v.P(x, py + 18), kCream, title);
+        while (title.size() > 4 && TextW(f.display, 28, title) > width) title = "..." + title.substr(4);
+        Text(d, f.display, g_v.L(28), g_v.P(x, py + 16), kCream, title);
         py += 66;
         for (size_t k = 0; k < r.lines.size(); k++) {
             float end = py;
-            Wrapped(d, f.body, 17, x, py, width, k == 0 ? (r.goldFirst ? kGold : kCream) : kSoft, r.lines[k], &end);
+            Wrapped(d, f.body, 20, x, py, width, k == 0 ? (r.goldFirst ? kGold : kCream) : kSoft, r.lines[k], &end);
             py = end + 12;
         }
     }

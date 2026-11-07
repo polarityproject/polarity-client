@@ -23,7 +23,9 @@
 #include "mod/hub_screen.h"
 #include "mod/rooms_client.h"
 
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace sfv::mod {
@@ -41,7 +43,20 @@ struct RoomScreenInput {
     bool clearNotice = false; // the table notice read
     bool cancelHandoff = false; // B on the connecting modal: out of this set before it began
     int watch = -2;             // X on a table: watch it (M5); -1 stop watching; -2 nothing
+    int vskill = 0, vtrigger = 0; // the card: a V-Skill or V-Trigger chosen (from 1); 0 unchanged
 };
+
+// What this player plays at the tables, for the your-turn card's V-Skill and
+// V-Trigger rows: the character, its V-Skill and V-Trigger (from 1); not
+// `editable` for Eleven (random each time).
+struct CardPick {
+    std::string chara;
+    int vskill = 1, vtrigger = 1;
+    bool editable = false;
+};
+void SetCardPick(const CardPick& pick);
+// Each character's V-Skill and V-Trigger names (the game's), by code.
+void SetSkillNames(std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::string>>> names);
 
 // This player's table session as the overlay sees it (NetView), for the
 // connecting modal.

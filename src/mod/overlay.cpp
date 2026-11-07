@@ -2624,8 +2624,9 @@ void ApplyMyCharacterInput(const SelectInput& in)
     if (in.setting >= 0) c.setting = in.setting;
     PickValid(c);
     if (in.ready) {
+        // Locked in: saved, and straight back to the room.
         SaveMyCharacter();
-        g_my.savedNow = true;
+        return CloseMyCharacter(false, "saved");
     }
 }
 
@@ -2696,6 +2697,73 @@ void DrawHubFrame(bool takeInput)
     }
 }
 
+// What the tables play for this player (My character's pick, else the
+// profile's favorite, as the room shows): its character, V-Skill and
+// V-Trigger (from 1); Eleven's are random.
+CardPick TablePick(const NetplayOptions& o, const std::string& favorite)
+{
+    CardPick p;
+    if (o.hasPick) {
+        p.chara = UnpackCode(o.pick.character);
+        p.vskill = o.pick.vskill + 1;
+        p.vtrigger = o.pick.vtrigger + 1;
+        p.editable = !IsElevenSetup(o.pick);
+        return p;
+    }
+    p.chara = favorite;
+    p.editable = favorite != "ELV";
+    std::lock_guard lock(g_favoritesMutex);
+    for (const FavoriteChara& f : g_favorites.charas) {
+        if (f.code != favorite) continue;
+        p.vskill = std::clamp(f.vskill + 1, 1, 2);
+        p.vtrigger = std::clamp(f.vtrigger + 1, 1, 2);
+    }
+    return p;
+}
+
+// The your-turn card's V-Skill or V-Trigger (from 1; 0 unchanged): into the
+// pick the tables play (made from the profile's favorite when there was
+// none), saved, and to the driver for the match about to start.
+void SetTableSkills(int vskill, int vtrigger)
+{
+    InitChoices();
+    if (!g_choices.initialised) return;
+    Choices& c = g_choices;
+    const NetplayOptions now = NetOptions();
+    if (now.hasPick) {
+        if (IsElevenSetup(now.pick)) return; // random each time
+        const std::string code = UnpackCode(now.pick.character);
+        const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), code);
+        if (it == g_tables.charas.end()) return;
+        c.chara = static_cast<int>(it - g_tables.charas.begin());
+        c.costume = now.pick.costume;
+        c.color = now.pick.color;
+        c.vskill = now.pick.vskill + 1;
+        c.vtrigger = now.pick.vtrigger + 1;
+        c.variant = now.pick.variation;
+        c.comment = now.pick.comment;
+    }
+    else {
+        ApplyProfileFavorite(c);
+    }
+    if (vskill > 0) c.vskill = vskill;
+    if (vtrigger > 0) c.vtrigger = vtrigger;
+    c.pick = true;
+    PickValid(c);
+    const NetplayOptions o = ChosenOptions();
+    const NetView::Phase phase = NetViewNow().phase;
+    const bool idle = phase == NetView::Phase::Idle || phase == NetView::Phase::Ended;
+    Act([o, idle] {
+        if (idle) NetSetPick(o.hasPick, o.pick);
+        else {
+            NetOptions().hasPick = o.hasPick;
+            NetOptions().pick = o.pick;
+        }
+        if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, NetOptions(), NetOptions().stageCode);
+    });
+    Log("overlay: the card's pick: %s V-Skill %d V-Trigger %d", g_tables.charas[c.chara].c_str(), c.vskill, c.vtrigger);
+}
+
 void DrawHubScreens(bool takeInput)
 {
     NetplayOptions& o = NetOptions();
@@ -2751,6 +2819,11 @@ void DrawHubScreens(bool takeInput)
     // In the rooms: the pick played at the tables (My character), else the
     // profile's favorite.
     RoomsSetCharacter(o.hasPick ? UnpackCode(o.pick.character) : live.offlineChara);
+    // Its V-Skill and V-Trigger, for the others' your-turn cards.
+    const CardPick tablePick = TablePick(o, live.offlineChara);
+    if (tablePick.editable) RoomsSetSkills(tablePick.vskill, tablePick.vtrigger);
+    else RoomsSetSkills(0, 0);
+    SetCardPick(tablePick);
     live.roomsChara = "CNL";
     live.roomsStage = "CHN";
     if (live.offlineStage.empty() && !g_tables.stages.empty()) live.offlineStage = g_tables.stages.front();
@@ -2793,6 +2866,11 @@ void DrawHubScreens(bool takeInput)
             std::vector<std::pair<std::string, std::string>> names;
             for (size_t i = 0; i < g_tables.charas.size() && i < g_tables.labels.size(); i++) names.push_back({g_tables.charas[i], g_tables.labels[i]});
             SetCharaNames(std::move(names));
+            std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::string>>> skills;
+            for (size_t i = 0; i < g_tables.charas.size() && i < g_tables.vskills.size() && i < g_tables.vtriggers.size(); i++) {
+                skills[g_tables.charas[i]] = {g_tables.vskills[i], g_tables.vtriggers[i]};
+            }
+            SetSkillNames(std::move(skills));
         }
         RoomScreenInput in;
         {
@@ -2819,6 +2897,7 @@ void DrawHubScreens(bool takeInput)
         }
         if (!in.request.empty()) RoomsTable(in.request, in.args);
         if (in.delay >= 0) g_tableDelay = in.delay;
+        if (in.vskill > 0 || in.vtrigger > 0) SetTableSkills(in.vskill, in.vtrigger);
         if (in.myCharacter && !g_myCharacterOpen) OpenMyCharacter();
         if (in.watch != -2) {
             RoomsWatch(in.watch);

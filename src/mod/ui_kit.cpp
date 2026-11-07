@@ -720,7 +720,7 @@ int StageTextFit(ImDrawList* d, ImFont* f, float size, float smallest, float x, 
     return 2;
 }
 
-void PromptLine(ImDrawList* d, ImFont* body, ImFont* bold, const std::string& lead, ImU32 leadCol, const std::string& text,
+void PromptLine(ImDrawList* d, ImFont* /*body*/, ImFont* bold, const std::string& lead, ImU32 leadCol, const std::string& text,
                 const PromptList& prompts, int* clicked)
 {
     // The prompts first (right to left), then the hint in the room left.
@@ -731,7 +731,8 @@ void PromptLine(ImDrawList* d, ImFont* body, ImFont* bold, const std::string& le
         StageText(d, bold, 20, x, 855, leadCol, lead);
         x += TextW(bold, 20, lead) + 14;
     }
-    StageTextFit(d, body, 20, 17, x, 855, left - 36 - x, kCream, text);
+    // The hint in the prompts' own weight and colour (the light one read as fainter).
+    StageTextFit(d, bold, 20, 17, x, 855, left - 36 - x, kCream, text);
 }
 
 float Modal(ImDrawList* d, ImFont* bold, ImFont* body, const ModalSpec& m, int* clicked)

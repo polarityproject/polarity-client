@@ -57,6 +57,7 @@ constexpr int64_t kAnswerWaitMs = 20000; // the keeper's answer to a request
 constexpr int64_t kVerifyMs = 4000;      // a joined room shows it is a custom room within this
 constexpr int64_t kHandBackEveryMs = 2000;
 constexpr int64_t kPeekEveryMs = 3000;   // the focused room's detail, again while focused
+constexpr int64_t kPeekGapMs = 650;      // between any two peeks (the keeper drops one within 500 ms)
 constexpr int64_t kPingEveryMs = 2000;   // each room member
 
 int64_t ClockUs()
@@ -144,6 +145,7 @@ struct Client {
     std::set<uint32_t> pingLogged;
     int64_t lastPingMs = 0;
     std::string net = "u"; // this PC's connection, for member data `net`
+    std::string skills;    // member data `vs`: V-Skill and V-Trigger, "r" random
     std::map<uint32_t, int> mask; // the room's masked names (keeper_protocol.h kMask)
     // The keeper's word list (a public room's wl0.., by its hash wlv): kept
     // across rooms, read again when the hash changes.
@@ -428,6 +430,7 @@ struct Client {
                 toldMasked = false;
                 Set(State::Room);
                 if (!chara.empty()) svc->SetMemberData("ch", chara);
+                if (!skills.empty()) svc->SetMemberData("vs", skills);
                 svc->SetMemberData("net", net);
             }
             break;
@@ -677,6 +680,14 @@ struct Client {
             // claim); missing for a player who keeps it hidden.
             const auto cc = m.data.find("@cc");
             if (cc != m.data.end()) r.country = keeper::CleanCountry(cc->second);
+            const auto vs = m.data.find("vs");
+            if (vs != m.data.end()) {
+                if (vs->second == "r") r.vskill = r.vtrigger = -1;
+                else if (vs->second.size() == 2 && vs->second[0] >= '1' && vs->second[0] <= '9' && vs->second[1] >= '1' && vs->second[1] <= '9') {
+                    r.vskill = vs->second[0] - '0';
+                    r.vtrigger = vs->second[1] - '0';
+                }
+            }
             const auto netData = m.data.find("net");
             if (netData != m.data.end()) r.link = netData->second == "w" ? 1 : netData->second == "f" ? 2 : 0;
             const auto watch = m.data.find("w");
@@ -719,8 +730,17 @@ struct Client {
             return;
         }
         if (peekWanted != view.peek.code) view.peek = keeper::RoomDetail{}; // another room's: not shown
-        if (peekSeq && NowMs() - peekAskedMs < kPeekEveryMs * 2) return;   // one in flight
-        if (peekWanted == peekCode && NowMs() - peekAskedMs < kPeekEveryMs) return;
+        // The keeper drops a peek that comes within 500 ms of the last one
+        // (keeper.cpp kPeekEveryMs): never sooner than that, or the focus
+        // moving on quickly asked for a room never answered (its preview
+        // stayed empty for 6 s). A room newly focused is asked for at once,
+        // not after one still in flight.
+        const int64_t since = NowMs() - peekAskedMs;
+        if (since < kPeekGapMs) return;
+        if (peekWanted == peekCode) {
+            if (peekSeq && since < kPeekEveryMs * 2) return; // one in flight
+            if (since < kPeekEveryMs) return;
+        }
         if (peekCode != peekWanted) Log("rooms: peek %s", peekWanted.c_str());
         peekCode = peekWanted;
         peekSeq = ++seq;
@@ -1148,6 +1168,18 @@ void RoomsSetCharacter(const std::string& code)
         if (c.chara == code) return true;
         c.chara = code;
         if (c.view.state == State::Lobby || c.view.state == State::Room) c.svc->SetMemberData("ch", code);
+        return true;
+    });
+}
+
+void RoomsSetSkills(int vskill, int vtrigger)
+{
+    const std::string value = vskill <= 0 || vtrigger <= 0 ? "r" : std::to_string(std::min(vskill, 9)) + std::to_string(std::min(vtrigger, 9));
+    WithClient([&](Client& c) {
+        if (c.skills == value) return true;
+        c.skills = value;
+        Log("rooms: V-Skill and V-Trigger for the tables: %s", value.c_str());
+        if (c.view.state == State::Lobby || c.view.state == State::Room) c.svc->SetMemberData("vs", value);
         return true;
     });
 }

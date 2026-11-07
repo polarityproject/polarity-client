@@ -26,8 +26,8 @@ namespace {
 const ImU32 kGold = IM_COL32(233, 196, 106, 255);
 const ImU32 kRing = IM_COL32(240, 194, 74, 255);
 const ImU32 kCream = IM_COL32(244, 241, 232, 255);
-const ImU32 kSoft = IM_COL32(217, 212, 198, 255);
-const ImU32 kMuted = IM_COL32(168, 162, 147, 255);
+const ImU32 kSoft = IM_COL32(228, 224, 212, 255);
+const ImU32 kMuted = IM_COL32(198, 193, 180, 255);
 const ImU32 kGreen = IM_COL32(127, 216, 139, 255);
 const ImU32 kRed = IM_COL32(255, 107, 94, 255);
 const ImU32 kLine = IM_COL32(201, 168, 92, 190);
@@ -61,6 +61,12 @@ struct State {
     double cardSince = 0;
     int cardDelay = 2;
     bool cardReady = false;
+    int cardRow = 0;           // 0 V-Skill, 1 V-Trigger, 2 the input delay
+    int cardVs = 1, cardVt = 1; // this player's, as chosen on the card
+    int cardMouseRow = -1, cardMouseDir = 0; // a click on a row (acted on the next frame)
+    // The opponent's, as last seen, and when they last changed (shown gold a moment).
+    int oppVs = 0, oppVt = 0;
+    double oppChangedAt = -10;
     // The connecting modal: the step in progress and since when.
     int handoffTable = -1, handoffStep = -1;
     double handoffSince = 0;
@@ -73,6 +79,33 @@ struct State {
 int g_suggestedDelay = 2;
 TableHandoff g_handoff;
 std::map<std::string, std::string> g_names;
+std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::string>>> g_skillNames;
+CardPick g_cardPick;
+
+std::string Roman(int n)
+{
+    static const char* const kRoman[] = {"I", "II", "III", "IV", "V"};
+    return n >= 1 && n <= 5 ? kRoman[n - 1] : std::to_string(n);
+}
+
+// "II HAZANSHU" (as the select screen has it); "" for 0.
+std::string SkillLabel(const std::string& code, bool trigger, int index)
+{
+    if (index <= 0) return "";
+    const auto it = g_skillNames.find(code);
+    if (it != g_skillNames.end()) {
+        const auto& names = trigger ? it->second.second : it->second.first;
+        if (index - 1 < static_cast<int>(names.size()) && !names[index - 1].empty()) return Roman(index) + " " + names[index - 1];
+    }
+    return Roman(index);
+}
+
+int SkillCount(const std::string& code, bool trigger)
+{
+    const auto it = g_skillNames.find(code);
+    const int n = it == g_skillNames.end() ? 0 : static_cast<int>((trigger ? it->second.second : it->second.first).size());
+    return std::max(2, n);
+}
 
 ImU32 Dim(ImU32 c, bool dim) { return dim ? (c & ~IM_COL32_A_MASK) | (static_cast<ImU32>(((c >> IM_COL32_A_SHIFT) & 0xFF) * 0.45f) << IM_COL32_A_SHIFT) : c; }
 
@@ -121,7 +154,7 @@ void Seat(ImDrawList* d, const HubFonts& f, float x, float y, const RoomMember* 
     if (sitHere) {
         d->AddRectFilled(a, b, Rgba(233, 196, 106, 36));
         d->AddRect(ImVec2(a.x + g_v.L(1), a.y + g_v.L(1)), ImVec2(b.x - g_v.L(1), b.y - g_v.L(1)), look::kRing, 0, 0, g_v.L(2));
-        Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(x + 165, y + 49), kGold, seat ? "Sit here as P2" : "Sit here as P1", 0.5f);
+        Text(d, f.bold ? f.bold : f.strong, g_v.L(18), g_v.P(x + 165, y + 48), kGold, seat ? "Sit here as P2" : "Sit here as P1", 0.5f);
         return;
     }
     d->AddRectFilled(a, b, look::kControl);
@@ -140,7 +173,7 @@ void Seat(ImDrawList* d, const HubFonts& f, float x, float y, const RoomMember* 
         }
         const float tx = p2 ? x + 16 : x + 314, align = p2 ? 0.0f : 1.0f;
         const auto name = g_names.find(m->chara);
-        if (name != g_names.end()) StageText(d, f.body, 14, tx, y + 62, Dim(kSoft, dim), name->second, align);
+        if (name != g_names.end()) StageText(d, f.body, 16, tx, y + 60, Dim(kCream, dim), name->second, align);
         ImFont* bold = f.bold ? f.bold : f.strong;
         const bool flag = m->country.size() == 2;
         const float flagW = flag ? 28.0f : 0.0f;
@@ -149,10 +182,10 @@ void Seat(ImDrawList* d, const HubFonts& f, float x, float y, const RoomMember* 
         const float left = p2 ? tx : tx - nameW - flagW;
         if (flag) DrawFlag(d, f.strong, m->country, left, y + 89, 13, dim ? 0.45f : 1.0f);
         StageText(d, bold, 21, left + flagW, y + 82, Dim(kCream, dim), who);
-        if (ready) StageText(d, bold, 13, tx, y + 12, Dim(kGreen, dim), "READY", align);
+        if (ready) StageText(d, bold, 15, tx, y + 11, Dim(kGreen, dim), "READY", align);
     }
     d->AddRect(a, b, Dim(look::kEdgeControl, dim), 0, 0, std::max(1.0f, g_v.L(1)));
-    if (!m) Text(d, f.body, g_v.L(16), g_v.P(x + 165, y + 50), Dim(kMuted, dim), "Open seat", 0.5f);
+    if (!m) Text(d, f.body, g_v.L(18), g_v.P(x + 165, y + 49), Dim(kSoft, dim), "Open seat", 0.5f);
 }
 
 void Table(ImDrawList* d, const HubFonts& f, const RoomsView& v, float y, int index, bool on, bool dim)
@@ -168,8 +201,8 @@ void Table(ImDrawList* d, const HubFonts& f, const RoomsView& v, float y, int in
     const std::string line = tv && ParseRules(tv->rules, &rules) ? DescribeRules(rules) : std::string();
     // How many wait in the queue (user, 2026-11-04: not the watchers).
     const std::string queue = std::to_string(tv ? tv->queue.size() : 0) + " in queue";
-    Text(d, f.body, g_v.L(16), g_v.P(852, y + 11), lit ? look::kInkSoft : Dim(kSoft, dim), queue, 1);
-    Text(d, f.body, g_v.L(16), g_v.P(852 - TextW(f.body, 16, queue) - 18, y + 11), lit ? look::kInkSoft : Dim(kGold, dim), line, 1);
+    Text(d, f.body, g_v.L(17), g_v.P(852, y + 10), lit ? look::kInkSoft : Dim(kCream, dim), queue, 1);
+    Text(d, f.body, g_v.L(17), g_v.P(852 - TextW(f.body, 17, queue) - 18, y + 10), lit ? look::kInkSoft : Dim(kGold, dim), line, 1);
     // The seat A would take: on the focused open table, for a player not at it.
     const bool mine = s.seat[0] == v.self || s.seat[1] == v.self;
     int sitHere = -1;
@@ -189,7 +222,7 @@ void Table(ImDrawList* d, const HubFonts& f, const RoomsView& v, float y, int in
     const char* doing = s.phase == TablePhase::Call ? "Your turn" : s.phase == TablePhase::Connecting ? "Connecting"
                         : s.phase == TablePhase::Playing ? "Playing" : s.phase == TablePhase::After ? "Set over" : "";
     if (s.phase == TablePhase::Call && !mine) doing = "Getting ready";
-    if (*doing) Text(d, f.body, g_v.L(14), g_v.P(458, y + 132), Dim(kSoft, dim), doing, 0.5f);
+    if (*doing) Text(d, f.body, g_v.L(16), g_v.P(458, y + 130), Dim(kCream, dim), doing, 0.5f);
     if (lit) Ring(d, 48, y, 868, y + kTableH);
 }
 
@@ -238,12 +271,12 @@ void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
 {
     Panel(d, 892, 80, 1552, kPlayersBottom);
     Strip(d, 894, 82, 1550, 110, false);
-    Text(d, f.bold ? f.bold : f.strong, g_v.L(14), g_v.P(910, 87), kGold, "PLAYERS \xC2\xB7 " + std::to_string(v.members.size()) + " / 16");
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(910, 86), kGold, "PLAYERS \xC2\xB7 " + std::to_string(v.members.size()) + " / 16");
     const std::vector<RoomMember> list = PlayerOrder(v);
     const int first = std::clamp(g.player - kPlayersInView + 1, 0, std::max(0, static_cast<int>(list.size()) - kPlayersInView));
     for (int i = first; i < static_cast<int>(list.size()) && i < first + kPlayersInView; i++) {
         const RoomMember& m = list[i];
-        const float y = kRowsTop + (i - first) * kRowH, ty = y + 15;
+        const float y = kRowsTop + (i - first) * kRowH, ty = y + 13;
         if (m.id == v.self) d->AddRectFilled(g_v.P(894, y), g_v.P(1550, y + kRowH - 1), look::kSelfRow);
         // The character: head and shoulders, from the panel's edge, fading in
         // and then out under the name.
@@ -261,37 +294,38 @@ void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
         if (g.onPlayers && i == g.player) Ring(d, 896, y + 1, 1536, y + kRowH - 2);
         float x = 994;
         if (m.owner) {
-            DrawCrown(d, x, ty + 15, 0.85f, kGold);
+            DrawCrown(d, x, ty + 17, 0.85f, kGold);
             x += 20;
         }
-        if (const float fw = DrawFlag(d, f.strong, m.country, x, ty + 3, 13)) x += fw + 7;
+        if (const float fw = DrawFlag(d, f.strong, m.country, x, ty + 4, 15)) x += fw + 8;
+        ImFont* bold = f.bold ? f.bold : f.strong;
         std::string who = Upper(m.name);
-        const float room = 1162 - x - (m.id == v.self ? TextW(f.body, 16, "(you)") + 6 : 0);
-        if (TextW(f.strong, 16, who) > room) {
-            while (who.size() > 1 && TextW(f.strong, 16, who + "...") > room) {
+        const float room = 1150 - x - (m.id == v.self ? TextW(f.body, 18, "(you)") + 6 : 0);
+        if (TextW(bold, 19, who) > room) {
+            while (who.size() > 1 && TextW(bold, 19, who + "...") > room) {
                 who.pop_back();
                 while (!who.empty() && (static_cast<unsigned char>(who.back()) & 0xC0) == 0x80) who.pop_back(); // whole characters
             }
             who += "...";
         }
-        StageText(d, f.bold ? f.bold : f.strong, 16, x, ty, kCream, who);
-        x += TextW(f.bold ? f.bold : f.strong, 16, who) + 6;
-        if (m.id == v.self) Text(d, f.body, g_v.L(16), g_v.P(x, ty), kMuted, "(you)", 0, true);
-        if (g.muted.count(m.id)) Text(d, f.body, g_v.L(14), g_v.P(x, ty + 1), kMuted, "muted", 0, true);
+        StageText(d, bold, 19, x, ty, kCream, who);
+        x += TextW(bold, 19, who) + 6;
+        if (m.id == v.self) Text(d, f.body, g_v.L(18), g_v.P(x, ty + 1), kSoft, "(you)", 0, true);
+        if (g.muted.count(m.id)) Text(d, f.body, g_v.L(16), g_v.P(x, ty + 2), kSoft, "muted", 0, true);
         const std::string place = RoomsPlace(v, m.id);
-        Text(d, f.body, g_v.L(16), g_v.P(1170, ty), place == "Idle" ? kSoft : kGreen, place);
+        Text(d, f.body, g_v.L(18), g_v.P(1160, ty + 1), place == "Idle" ? kSoft : kGreen, place);
         // The round trip to them (green under 60 ms, gold under 120, red
         // after), with a cloud when it goes through a relay.
         if (m.pingMs >= 0) {
             const ImU32 col = m.pingMs < 60 ? kGreen : m.pingMs < 120 ? kGold : kRed;
             const std::string ms = std::to_string(m.pingMs) + " ms";
-            Text(d, f.strong, g_v.L(16), g_v.P(1418, ty), col, ms, 1);
-            if (m.relayed) IconCloud(d, g_v.P(1418 - TextW(f.strong, 16, ms) - 16, ty + 10), g_v.L(1.6f), col);
+            Text(d, bold, g_v.L(18), g_v.P(1428, ty + 1), col, ms, 1);
+            if (m.relayed) IconCloud(d, g_v.P(1428 - TextW(bold, 18, ms) - 16, ty + 12), g_v.L(1.7f), col);
         }
         if (m.link) {
             const char* what = m.link == 1 ? "Wired" : "Wi-Fi";
-            Text(d, f.body, g_v.L(15), g_v.P(1512, ty + 1), kSoft, what, 1);
-            IconLinkType(d, g_v.P(1512 - TextW(f.body, 15, what) - 14, ty + 10), g_v.L(1.4f), m.link, kSoft);
+            Text(d, f.body, g_v.L(17), g_v.P(1520, ty + 2), kSoft, what, 1);
+            IconLinkType(d, g_v.P(1520 - TextW(f.body, 17, what) - 14, ty + 12), g_v.L(1.5f), m.link, kSoft);
         }
     }
     // More than eight: the bar inside the list's right edge (RB, then up and down).
@@ -303,11 +337,11 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
 {
     Panel(d, 892, kChatTop, 1552, 832);
     Strip(d, 894, kChatTop + 2, 1550, kChatTop + 30, false);
-    Text(d, f.bold ? f.bold : f.strong, g_v.L(14), g_v.P(910, kChatTop + 7), kGold, "ROOM CHAT");
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(910, kChatTop + 6), kGold, "ROOM CHAT");
     // The newest at the bottom, above the box; older lines above it. Scrolled
     // up (the wheel over it, or up and down while typing), new lines do not
     // move the view: a chip says how many wait below.
-    const float wrap = 610, size = 16, top = kChatTop + 36, viewBottom = 773;
+    const float wrap = 610, size = 19, top = kChatTop + 36, viewBottom = 773;
     const ImVec2 ca = g_v.P(894, top), cb = g_v.P(1550, viewBottom);
     if (g_inputOn && MouseIn(ca, cb) && ImGui::GetIO().MouseWheel != 0) g.chatScroll += ImGui::GetIO().MouseWheel * 40;
     if (g.typing) {
@@ -344,7 +378,7 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
         // line indented by the name (spaces as wide), the rest wrapping under.
         std::string all = text;
         if (line.from) {
-            const float nameW = TextW(f.strong, size, Upper(name)) + 8;
+            const float nameW = TextW(f.bold ? f.bold : f.strong, size, Upper(name)) + 8;
             std::string pad;
             while (TextW(f.body, size, pad) < nameW) pad += ' ';
             all = pad + text;
@@ -354,11 +388,11 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
         height += h + 4;
         if (y < viewBottom && y + h > top) {
             if (line.from) {
-                d->AddText(f.body, TextPx(size), g_v.P(910, y), kSoft, all.c_str(), nullptr, g_v.L(wrap));
-                d->AddText(f.strong, TextPx(size), g_v.P(910, y), kCream, Upper(name).c_str());
+                d->AddText(f.body, TextPx(size), g_v.P(910, y), kCream, all.c_str(), nullptr, g_v.L(wrap));
+                d->AddText(f.bold ? f.bold : f.strong, TextPx(size), g_v.P(910, y), kGold, Upper(name).c_str());
             }
             else {
-                d->AddText(f.body, TextPx(size), g_v.P(910, y), kGold, all.c_str(), nullptr, g_v.L(wrap));
+                d->AddText(f.body, TextPx(size), g_v.P(910, y), kSoft, all.c_str(), nullptr, g_v.L(wrap));
             }
         }
         bottom = y - 4;
@@ -371,12 +405,12 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
         // "n new messages", above the box at the right: a click goes down.
         const std::string label = std::to_string(unseen) + (unseen == 1 ? " new message" : " new messages");
         ImFont* bold = f.bold ? f.bold : f.strong;
-        const float w = TextW(bold, 14, label) + 34, x1 = 1530, x0 = x1 - w, y0 = 748, y1 = 772;
+        const float w = TextW(bold, 16, label) + 34, x1 = 1530, x0 = x1 - w, y0 = 744, y1 = 772;
         DropShadow(d, x0, y0, x1, y1, 4, 10, 0.35f, false);
         d->AddRectFilled(g_v.P(x0, y0), g_v.P(x1, y1), Rgba(10, 12, 16, 214));
         d->AddRect(g_v.P(x0, y0), g_v.P(x1, y1), Rgba(236, 228, 206, 115), 0, 0, std::max(1.0f, g_v.L(1)));
-        Text(d, bold, g_v.L(14), g_v.P(x0 + 10, y0 + 4), kCream, label);
-        d->AddTriangleFilled(g_v.P(x1 - 18, y0 + 9), g_v.P(x1 - 8, y0 + 9), g_v.P(x1 - 13, y0 + 16), kCream);
+        Text(d, bold, g_v.L(16), g_v.P(x0 + 10, y0 + 5), kCream, label);
+        d->AddTriangleFilled(g_v.P(x1 - 18, y0 + 11), g_v.P(x1 - 8, y0 + 11), g_v.P(x1 - 13, y0 + 18), kCream);
         if (Clicked() && MouseIn(g_v.P(x0, y0), g_v.P(x1, y1))) g.chatScroll = 0;
     }
     // The box and Send.
@@ -387,14 +421,14 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
         const std::string shown = g.text + ((static_cast<int>(ImGui::GetTime() * 2) & 1) ? "|" : " ");
         // Long text shows its end.
         std::string tail = shown;
-        while (tail.size() > 1 && TextW(f.body, 16, tail) > 520) tail.erase(0, 1);
-        Text(d, f.body, g_v.L(16), g_v.P(924, 790), kCream, tail);
+        while (tail.size() > 1 && TextW(f.body, 19, tail) > 520) tail.erase(0, 1);
+        Text(d, f.body, g_v.L(19), g_v.P(924, 788), kCream, tail);
     }
     else {
-        Text(d, f.body, g_v.L(16), g_v.P(924, 790), kMuted, "Say something (Enter, or Back + Y on a pad)");
+        Text(d, f.body, g_v.L(19), g_v.P(924, 788), kSoft, "Say something (Enter, or Back + Y on a pad)");
     }
     d->AddRectFilled(g_v.P(1468, 781), g_v.P(1534, 819), kGold);
-    Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(1501, 790), look::kInk, "Send", 0.5f);
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(18), g_v.P(1501, 788), look::kInk, "Send", 0.5f);
     *clickedBox = Clicked() && MouseIn(a, b);
     *clickedSend = Clicked() && MouseIn(g_v.P(1468, 781), g_v.P(1534, 819));
 }
@@ -451,7 +485,7 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
 {
     const keeper::TableState& s = v.tableViews[t].s;
     ImFont* bold = f.bold ? f.bold : f.strong;
-    const float x0 = 380, w = 840, h = 414, y0 = 214, x1 = x0 + w;
+    const float x0 = 380, w = 840, h = 616, y0 = 142, x1 = x0 + w;
     ModalSpec m;
     m.x0 = x0, m.y0 = y0, m.w = w, m.h = h;
     m.kicker = "YOUR TURN \xC2\xB7 TABLE " + std::to_string(t + 1);
@@ -460,11 +494,38 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
     m.hint = hint, m.hintCol = hintCol;
     m.prompts = prompts;
     ui::Modal(d, bold, f.body, m, clicked);
+    const int mySeat = s.seat[0] == v.self ? 0 : 1;
+    // The opponent's V-Skill and V-Trigger as they change them: gold a moment.
+    if (const RoomMember* other = Member(v, s.seat[1 - mySeat])) {
+        if ((other->vskill != g.oppVs || other->vtrigger != g.oppVt) && g.oppVs > 0 && other->vskill > 0) g.oppChangedAt = ImGui::GetTime();
+        g.oppVs = other->vskill;
+        g.oppVt = other->vtrigger;
+    }
     for (int i = 0; i < 2; i++) {
         const RoomMember* mm = Member(v, s.seat[i]);
         const float sx = i ? x1 - 28 - 330 : x0 + 28;
+        const float align = i ? 1.0f : 0.0f, ax = i ? sx + 330 : sx;
         Seat(d, f, sx, y0 + 66, mm, s.ready[i], false, i, false);
-        Text(d, bold, g_v.L(13), i ? g_v.P(sx + 330, y0 + 192) : g_v.P(sx, y0 + 192), kMuted, i ? "P2" : "P1 \xC2\xB7 HOSTS THE MATCH", i ? 1.0f : 0.0f);
+        Text(d, bold, g_v.L(15), g_v.P(ax, y0 + 192), kSoft, i ? (i == mySeat ? "P2 \xC2\xB7 YOU" : "P2") : i == mySeat ? "P1 \xC2\xB7 YOU \xC2\xB7 HOSTS" : "P1 \xC2\xB7 HOSTS THE MATCH",
+             align);
+        // Under each seat its V-Skill and V-Trigger: this player's as chosen
+        // below, the opponent's live.
+        const bool me = i == mySeat;
+        const std::string code = me ? g_cardPick.chara : mm ? mm->chara : std::string();
+        const int vs = me ? (g_cardPick.editable ? g.cardVs : -1) : mm ? mm->vskill : 0;
+        const int vt = me ? (g_cardPick.editable ? g.cardVt : -1) : mm ? mm->vtrigger : 0;
+        const bool fresh = !me && ImGui::GetTime() - g.oppChangedAt < 1.5;
+        for (int k = 0; k < 2; k++) {
+            const float ly = y0 + 222 + k * 30;
+            const char* kicker = k ? "V-TRIGGER" : "V-SKILL";
+            const int value = k ? vt : vs;
+            const std::string text = value < 0 ? std::string("Random") : value == 0 ? std::string("\xE2\x80\x94") : SkillLabel(code, k == 1, value);
+            const float kw = TextW(bold, 15, kicker) + 10;
+            const float tw = TextW(f.strong, 18, text);
+            const float tx = i ? ax - tw : ax + kw;
+            Text(d, bold, g_v.L(15), g_v.P(i ? tx - kw : ax, ly + 3), kGold, kicker);
+            Text(d, f.strong, g_v.L(18), g_v.P(tx, ly), fresh ? kGold : kCream, text);
+        }
     }
     StageText(d, f.display, 36, x0 + w / 2, y0 + 104, Rgba(255, 255, 255), "VS", 0.5f);
     // The time left: the keeper's call, from when it showed here (also while
@@ -472,26 +533,41 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
     // trip to the keeper.
     const double total = std::max(1.0, (s.callSeconds ? s.callSeconds : 10) - kCardMarginSeconds);
     const double left = std::clamp(total - (RoomsClockMs() - v.tableViews[t].callSeenMs) / 1000.0, 0.0, total);
-    const int mySeat = s.seat[0] == v.self ? 0 : 1;
+    const float ty = y0 + 296;
     if (g.cardReady || s.ready[mySeat]) {
-        Text(d, f.display, g_v.L(26), g_v.P(x0 + w / 2, y0 + 228), kGreen, "READY", 0.5f);
-        Text(d, f.body, g_v.L(17), g_v.P(x0 + w / 2, y0 + 270), kSoft, "Waiting for " + NameOf(v, s.seat[1 - mySeat]) + ".", 0.5f);
+        Text(d, f.display, g_v.L(28), g_v.P(x0 + w / 2, ty + 40), kGreen, "READY", 0.5f);
+        Text(d, f.body, g_v.L(19), g_v.P(x0 + w / 2, ty + 86), kCream, "Waiting for " + NameOf(v, s.seat[1 - mySeat]) + ".", 0.5f);
         return;
     }
-    Text(d, f.display, g_v.L(26), g_v.P(x0 + w / 2, y0 + 216), Rgba(255, 255, 255),
+    Text(d, f.display, g_v.L(26), g_v.P(x0 + w / 2, ty), Rgba(255, 255, 255),
          left > 0 ? "Ready in " + std::to_string(static_cast<int>(left + 0.99)) : std::string("Out of time"), 0.5f);
-    d->AddRectFilled(g_v.P(x0 + 28, y0 + 256), g_v.P(x1 - 28, y0 + 260), Rgba(255, 255, 255, 31));
-    d->AddRectFilled(g_v.P(x0 + 28, y0 + 256), g_v.P(x0 + 28 + (w - 56) * static_cast<float>(left / total), y0 + 260), kGold);
-    // The delay for this match: a focused stepper row.
-    const float ry = y0 + 278;
-    Control(d, x0 + 160, ry, x1 - 160, ry + 50, true);
-    Text(d, bold, g_v.L(18), g_v.P(x0 + 182, ry + 13), look::kInk, "Input delay");
-    const std::string frames = std::to_string(g.cardDelay) + (g.cardDelay == 1 ? " frame" : " frames");
-    const float vx = x1 - 160 - 120;
-    Text(d, bold, g_v.L(18), g_v.P(vx, ry + 13), look::kInk, frames, 0.5f);
-    d->AddTriangleFilled(g_v.P(vx - 72, ry + 19), g_v.P(vx - 72, ry + 31), g_v.P(vx - 82, ry + 25), look::kInk);
-    d->AddTriangleFilled(g_v.P(vx + 72, ry + 19), g_v.P(vx + 82, ry + 25), g_v.P(vx + 72, ry + 31), look::kInk);
-    Text(d, f.body, g_v.L(15), g_v.P(x0 + w / 2, ry + 60), kMuted, "No answer in time: back of the queue.", 0.5f);
+    d->AddRectFilled(g_v.P(x0 + 28, ty + 40), g_v.P(x1 - 28, ty + 44), Rgba(255, 255, 255, 31));
+    d->AddRectFilled(g_v.P(x0 + 28, ty + 40), g_v.P(x0 + 28 + (w - 56) * static_cast<float>(left / total), ty + 44), kGold);
+    // This match's V-Skill, V-Trigger and input delay: stepper rows, the
+    // focused one gold (as the game's own ready screen offers them).
+    static const char* const kRows[] = {"V-Skill", "V-Trigger", "Input delay"};
+    const float rx0 = x0 + 160, rx1 = x1 - 160, vx = rx1 - 150;
+    for (int r = 0; r < 3; r++) {
+        const float ry = ty + 62 + r * 56;
+        const bool on = r == g.cardRow, usable = r == 2 || g_cardPick.editable;
+        Control(d, rx0, ry, rx1, ry + 50, on);
+        const ImU32 col = on ? look::kInk : usable ? kCream : Rgba(244, 241, 232, 110);
+        Text(d, on ? bold : f.strong, g_v.L(19), g_v.P(rx0 + 22, ry + 12), col, kRows[r]);
+        std::string value = r == 2 ? std::to_string(g.cardDelay) + (g.cardDelay == 1 ? " frame" : " frames")
+                            : !g_cardPick.editable ? std::string("Random")
+                                                   : SkillLabel(g_cardPick.chara, r == 1, r ? g.cardVt : g.cardVs);
+        Text(d, on ? bold : f.strong, g_v.L(19), g_v.P(vx, ry + 12), col, FitName(bold, 19, value, 230), 0.5f);
+        if (on && usable) {
+            d->AddTriangleFilled(g_v.P(vx - 128, ry + 19), g_v.P(vx - 128, ry + 31), g_v.P(vx - 138, ry + 25), look::kInk);
+            d->AddTriangleFilled(g_v.P(vx + 128, ry + 19), g_v.P(vx + 138, ry + 25), g_v.P(vx + 128, ry + 31), look::kInk);
+        }
+        if (usable && Clicked() && MouseIn(g_v.P(rx0, ry), g_v.P(rx1, ry + 50))) {
+            // On the focused row: the left half steps down, the right half up.
+            g.cardMouseRow = r;
+            g.cardMouseDir = on ? (MouseIn(g_v.P(rx0, ry), g_v.P(vx, ry + 50)) ? -1 : 1) : 0;
+        }
+    }
+    Text(d, f.body, g_v.L(17), g_v.P(x0 + w / 2, ty + 62 + 3 * 56 + 6), kSoft, "No answer in time: back of the queue.", 0.5f);
 }
 
 // A name cut to fit `width` (ui units) at this size, with an ellipsis.
@@ -679,6 +755,10 @@ void SetCardDelay(int frames) { g_suggestedDelay = std::clamp(frames, 0, kMaxCar
 
 void SetTableHandoff(const TableHandoff& handoff) { g_handoff = handoff; }
 
+void SetCardPick(const CardPick& pick) { g_cardPick = pick; }
+
+void SetSkillNames(std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::string>>> names) { g_skillNames = std::move(names); }
+
 void SetCharaNames(std::vector<std::pair<std::string, std::string>> codeToName)
 {
     g_names.clear();
@@ -746,6 +826,12 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         g.cardCall = callNumber;
         g.cardSince = ImGui::GetTime();
         g.cardReady = callTable >= 0 && v.tableViews[callTable].s.ready[mySeat];
+        g.cardRow = g_cardPick.editable ? 0 : 2;
+        g.cardVs = g_cardPick.vskill;
+        g.cardVt = g_cardPick.vtrigger;
+        g.cardMouseRow = -1;
+        g.oppVs = g.oppVt = 0;
+        g.oppChangedAt = -10;
         if (callTable >= 0) g.typing = false;
     }
 
@@ -759,8 +845,33 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     bool send = false;
     if (g.cardTable >= 0) {
         if (!g.cardReady) {
-            if (Left()) g.cardDelay = std::max(0, g.cardDelay - 1);
-            if (Right()) g.cardDelay = std::min(kMaxCardDelay, g.cardDelay + 1);
+            // Up and down: the row (the V- rows only with a pick to change);
+            // left and right (or a click): its value.
+            const auto usable = [](int r) { return r == 2 || g_cardPick.editable; };
+            if (!usable(g.cardRow)) g.cardRow = 2;
+            if (Up()) {
+                for (int r = g.cardRow - 1; r >= 0; r--) {
+                    if (usable(r)) {
+                        g.cardRow = r;
+                        break;
+                    }
+                }
+            }
+            if (Down()) g.cardRow = std::min(2, g.cardRow + 1);
+            int dir = Left() ? -1 : Right() ? 1 : 0;
+            if (g.cardMouseRow >= 0) {
+                g.cardRow = g.cardMouseRow;
+                dir = g.cardMouseDir;
+                g.cardMouseRow = -1;
+            }
+            if (dir && g.cardRow == 2) g.cardDelay = std::clamp(g.cardDelay + dir, 0, kMaxCardDelay);
+            else if (dir) {
+                const bool trigger = g.cardRow == 1;
+                int& value = trigger ? g.cardVt : g.cardVs;
+                const int n = SkillCount(g_cardPick.chara, trigger);
+                value = (value - 1 + dir + n) % n + 1;
+                (trigger ? in->vtrigger : in->vskill) = value;
+            }
             if (Confirm()) {
                 g.cardReady = true;
                 Request(in, "ready", {std::to_string(g.cardTable)});
@@ -975,7 +1086,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     if (g.cardTable >= 0) {
         prompts = g.cardReady ? std::vector<std::pair<const char*, std::string>>{}
                               : std::vector<std::pair<const char*, std::string>>{{"button_a", "Ready"}, {"button_b", "Leave queue"}};
-        text = g.cardReady ? "Ready. The match opens once both are." : "Left and right: the input delay for this match.";
+        text = g.cardReady ? "Ready. The match opens once both are." : "Up and down: V-Skill, V-Trigger, input delay. Left and right: change.";
         // The last call fell through (the opponent left during the handoff):
         // say so here, since this card covers the notice.
         if (!v.tableNotice.empty() && !g.cardReady) {

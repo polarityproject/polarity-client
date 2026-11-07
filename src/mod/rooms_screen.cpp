@@ -23,8 +23,8 @@ namespace {
 const ImU32 kGold = IM_COL32(233, 196, 106, 255);
 const ImU32 kRing = IM_COL32(240, 194, 74, 255);
 const ImU32 kCream = IM_COL32(244, 241, 232, 255);
-const ImU32 kSoft = IM_COL32(217, 212, 198, 255);
-const ImU32 kMuted = IM_COL32(168, 162, 147, 255);
+const ImU32 kSoft = IM_COL32(228, 224, 212, 255);
+const ImU32 kMuted = IM_COL32(198, 193, 180, 255);
 const ImU32 kGreen = IM_COL32(127, 216, 139, 255);
 const ImU32 kRed = IM_COL32(255, 107, 94, 255);
 
@@ -170,12 +170,12 @@ void RoomRow(ImDrawList* d, const HubFonts& f, float y, const keeper::ListedRoom
     float nx = 90;
     if (const float fw = DrawFlag(d, f.strong, r.ownerCountry, nx, y + 50, 12, fade / 255.0f)) nx += fw + 6;
     ImFont* bold = f.bold ? f.bold : f.strong;
-    Text(d, bold, g_v.L(15), g_v.P(nx, y + 46), on ? look::kInk : Alpha(kSoft, fade), Upper(r.owner));
-    const float ox = nx + TextW(bold, 15, Upper(r.owner));
+    Text(d, bold, g_v.L(17), g_v.P(nx, y + 46), on ? look::kInk : Alpha(kSoft, fade), Upper(r.owner));
+    const float ox = nx + TextW(bold, 17, Upper(r.owner));
     std::string detail = " \xC2\xB7 " + Plural(r.tables, "table", "tables");
     const std::string ft = FirstTo(r.rules);
     if (!ft.empty()) detail += " \xC2\xB7 " + ft;
-    Text(d, f.body, g_v.L(15), g_v.P(ox, y + 46), sub, detail);
+    Text(d, f.body, g_v.L(17), g_v.P(ox, y + 46), sub, detail);
     float fx = 484;
     for (size_t i = 0; i < r.faces.size() && i < 6; i++) {
         DrawFace(d, r.faces[i], fx, y + 22, 30, 40);
@@ -188,7 +188,7 @@ void RoomRow(ImDrawList* d, const HubFonts& f, float y, const keeper::ListedRoom
     ImU32 col = kGreen;
     const std::string seats = OpenSeatsText(r, &col);
     if (on) col = col == kGreen ? Rgba(31, 74, 39) : look::kInkSoft;
-    Text(d, bold, g_v.L(15), g_v.P(848, y + 48), col, seats, 1);
+    Text(d, bold, g_v.L(17), g_v.P(848, y + 48), col, seats, 1);
 }
 
 // The right column: a glass pane with a dark strip for its kicker.
@@ -201,14 +201,14 @@ void PanelFrame(ImDrawList* d)
 // The panel's kicker, in its strip.
 void Kicker(ImDrawList* d, const HubFonts& f, const char* kicker, ImU32 col = kGold)
 {
-    Text(d, f.bold ? f.bold : f.strong, g_v.L(14), g_v.P(918, 94), col, kicker);
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(918, 94), col, kicker);
 }
 
 void RoomPanel(ImDrawList* d, const HubFonts& f, const keeper::ListedRoom& r, const keeper::RoomDetail* detail)
 {
     const bool full = r.members >= keeper::kRoomCap;
     Kicker(d, f, full ? "FULL \xC2\xB7 16 OF 16" : "PUBLIC ROOM", full ? kRed : kGold);
-    Text(d, f.body, g_v.L(15), g_v.P(1526, 95), kSoft, r.code, 1);
+    Text(d, f.body, g_v.L(17), g_v.P(1526, 95), kSoft, r.code, 1);
     FitText(d, f.display, 28, 20, 608, g_v.P(918, 138), kCream, RoomTitleText(r.title, r.owner));
     DrawCrown(d, 918, 202, 1, kGold);
     float ox = 940;
@@ -216,29 +216,29 @@ void RoomPanel(ImDrawList* d, const HubFonts& f, const keeper::ListedRoom& r, co
     Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(ox, 186), kCream, Upper(r.owner));
     Text(d, f.body, g_v.L(16), g_v.P(ox + TextW(f.bold ? f.bold : f.strong, 16, Upper(r.owner)), 186), kSoft,
          " \xC2\xB7 " + std::to_string(r.members) + " / 16 players \xC2\xB7 " + Plural(r.tables, "table", "tables"));
-    Text(d, f.bold ? f.bold : f.strong, g_v.L(14), g_v.P(918, 224), kGold, "TABLES");
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(918, 224), kGold, "TABLES");
     // Each table's rules from the keeper's detail; before it comes, the
     // first table's from the list.
     const int shown = std::min(r.tables, 5);
     float y = 248;
     for (int t = 0; t < shown; t++) {
         Control(d, 918, y, 1526, y + 52, false);
-        Text(d, f.display, g_v.L(15), g_v.P(935, y + 16), kCream, "TABLE " + std::to_string(t + 1));
+        Text(d, f.display, g_v.L(17), g_v.P(935, y + 16), kCream, "TABLE " + std::to_string(t + 1));
         const std::string text = detail && t < static_cast<int>(detail->tables.size()) ? detail->tables[t] : t == 0 ? r.rules : "";
         Rules rules;
         if (ParseRules(text, &rules)) {
             std::string line = DescribeRules(rules);
-            while (line.size() > 4 && TextW(f.body, 14, line) > 330) line = line.substr(0, line.size() - 4) + "...";
-            Text(d, f.body, g_v.L(14), g_v.P(1035, y + 17), kGold, line);
+            while (line.size() > 4 && TextW(f.body, 16, line) > 330) line = line.substr(0, line.size() - 4) + "...";
+            Text(d, f.body, g_v.L(16), g_v.P(1035, y + 17), kGold, line);
         }
-        Text(d, f.strong, g_v.L(15), g_v.P(1512, y + 16), kGreen, "Open seat", 1);
+        Text(d, f.strong, g_v.L(17), g_v.P(1512, y + 16), kGreen, "Open seat", 1);
         y += 58;
     }
     if (r.tables > shown) {
-        Text(d, f.body, g_v.L(14), g_v.P(918, y), kMuted, "+" + Plural(r.tables - shown, "more table", "more tables"));
+        Text(d, f.body, g_v.L(16), g_v.P(918, y), kMuted, "+" + Plural(r.tables - shown, "more table", "more tables"));
         y += 26;
     }
-    Text(d, f.bold ? f.bold : f.strong, g_v.L(14), g_v.P(918, y + 10), kGold, "PLAYERS \xC2\xB7 " + std::to_string(r.members) + " / 16");
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(918, y + 10), kGold, "PLAYERS \xC2\xB7 " + std::to_string(r.members) + " / 16");
     if (detail) {
         // Two to a row, as many rows as the panel has room for: a cell with
         // the face, the flag and the name.
@@ -254,12 +254,12 @@ void RoomPanel(ImDrawList* d, const HubFonts& f, const keeper::ListedRoom& r, co
             float nx = px + 44;
             if (const float fw = DrawFlag(d, f.strong, detail->people[i].country, nx, py + 14, 13)) nx += fw + 8;
             std::string name = Upper(detail->people[i].name);
-            while (name.size() > 1 && TextW(bold, 15, name) > px + 288 - nx) name.pop_back();
-            Text(d, bold, g_v.L(15), g_v.P(nx, py + 11), kCream, name);
+            while (name.size() > 1 && TextW(bold, 17, name) > px + 288 - nx) name.pop_back();
+            Text(d, bold, g_v.L(17), g_v.P(nx, py + 11), kCream, name);
         }
         if (shownPeople < count) {
             const float px = 918 + (shownPeople % 2) * 308.0f, py = top + (shownPeople / 2) * 48.0f;
-            Text(d, f.body, g_v.L(15), g_v.P(px + 14, py + 11), kMuted, "+" + std::to_string(count - shownPeople) + " more");
+            Text(d, f.body, g_v.L(17), g_v.P(px + 14, py + 11), kMuted, "+" + std::to_string(count - shownPeople) + " more");
         }
         return;
     }

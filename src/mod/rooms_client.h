@@ -31,6 +31,10 @@ struct RoomMember {
     bool masked = false;
     int watching = -1; // the table they watch (member data `w`, 1-based), -1 none
     std::string country; // ISO 3166 alpha-2, the rooms server's lookup (member data `@cc`); "" unknown or hidden
+    // Their V-Skill and V-Trigger (from 1; member data `vs`, two digits),
+    // live as they change them on the your-turn card; 0 not told (an older
+    // build), -1 random (Eleven).
+    int vskill = 0, vtrigger = 0;
 };
 
 // A table as the room shows it (keeper_protocol.h TableState, queue, rules).
@@ -164,6 +168,9 @@ std::string RoomsPlace(const RoomsView& v, uint32_t id);
 // The character others see beside this player (member data `ch`: the
 // Fighter Profile favorite until My character, M4).
 void RoomsSetCharacter(const std::string& code);
+// The V-Skill and V-Trigger the tables play (from 1; 0 and 0: random), for
+// the others' your-turn cards (member data `vs`).
+void RoomsSetSkills(int vskill, int vtrigger);
 RoomsView RoomsSnapshot();
 std::string DescribeRooms(const RoomsView& v);
 

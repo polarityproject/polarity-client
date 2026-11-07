@@ -699,6 +699,17 @@ struct Bot {
         }
         uint32_t from = 0, len = 0;
         while (const uint8_t* data = weyve_next_p2p(c, &from, &len)) {
+            // A player's ping (the room's player list shows the round trip): answered as the game does.
+            bool pong = false;
+            uint64_t clock = 0;
+            if (ParsePing(data, len, &pong, &clock)) {
+                if (!pong) {
+                    uint8_t reply[kPingSize];
+                    FormatPing(true, clock, reply);
+                    weyve_send_p2p(c, from, reply, sizeof(reply));
+                }
+                continue;
+            }
             Answer a;
             if (!ParseAnswer(data, len, &a)) continue;
             weyve_set_member_data(c, kAck, std::to_string(a.seq).c_str());

@@ -44,7 +44,7 @@ constexpr Frame kPanel{546, 118, 994, 330};
 const ImU32 kGold = IM_COL32(233, 196, 106, 255);
 const ImU32 kRing = IM_COL32(240, 194, 74, 255);
 const ImU32 kCream = IM_COL32(244, 241, 232, 255);
-const ImU32 kMuted = IM_COL32(168, 162, 147, 255);
+const ImU32 kMuted = IM_COL32(198, 193, 180, 255);
 
 std::vector<Entry> Entries(const HubLive& live)
 {
