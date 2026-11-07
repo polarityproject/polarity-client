@@ -885,7 +885,7 @@ private:
                               "; they need to update";
                     }
                     else if (CompareVersions(theirs, modVersion_) > 0) {
-                        why = "the host runs SFVR " + theirs + "; update from Settings, Updates";
+                        why = "the host runs SFVR " + theirs + "; update from SFVR settings, Updates";
                     }
                     else {
                         // Same version: the game, or the noise mask (a 0.1.0 install

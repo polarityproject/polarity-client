@@ -1680,14 +1680,14 @@ void ToastReports()
         if (!g_panelPath.empty() && NetOptions().uploadReports &&
             !GetPrivateProfileIntW(L"report", L"notice_shown", 0, g_panelPath.c_str())) {
             WritePrivateProfileStringW(L"report", L"notice_shown", L"1", g_panelPath.c_str());
-            AddToast("Desync and crash reports are sent to the SFVR server to help fix them. Settings, Logs turns this off.", kGold, 15);
+            AddToast("Desync and crash reports are sent to the SFVR server to help fix them. SFVR settings, Reports turns this off.", kGold, 15);
         }
     }
     static int toasted = 0;
     const int sent = ReportsSent();
     if (sent == toasted) return;
     toasted = sent;
-    AddToast("Report sent to the SFVR server (Settings, Logs)", kDim, 6);
+    AddToast("Report sent to the SFVR server (SFVR settings, Reports)", kDim, 6);
 }
 
 // Notices from what changed in the session since the last frame.
@@ -1698,7 +1698,7 @@ void ToastUpdate()
     const UpdateView u = UpdateViewNow();
     if (u.state != UpdateView::State::Available || u.latest == toasted) return;
     toasted = u.latest;
-    AddToast("SFVR " + u.latest + " is available: Settings, Updates", kGold, 8);
+    AddToast("SFVR " + u.latest + " is available: SFVR settings, Updates", kGold, 8);
 }
 
 void ToastChanges(const NetView& now)
@@ -2220,7 +2220,7 @@ std::vector<SettingsRow> SettingsRows()
         r.kicker = "ONLINE";
         r.title = ServerLabel(NetOptions().server);
         r.lines = {"Custom rooms and Direct Match use this server. Public server: the SFVR server everyone plays on.",
-                   "Other servers show here once used (the F1 panel's Debug tab adds them)."};
+                   "Other servers show here once used (the server= line of sfv_rollback.ini)."};
         r.hint = r.arrows ? "Left and right: the server." : "The public server. Others show here once used.";
     }
     // Game.
@@ -2916,6 +2916,7 @@ void DrawPreviews()
         AddToast("Player Two wants a rematch");
         AddToast("A spectator joined (1 watching)", kDim);
         AddToast("Session over: the other player left", kRed, 6);
+        AddToast("Desync and crash reports are sent to the SFVR server to help fix them. SFVR settings, Reports turns this off.", kGold, 15);
     }
     const Preview& p = g_preview;
     if (!p.Any()) return;

@@ -204,6 +204,9 @@ void DrawToasts(const HubFonts& f, const std::vector<Notice>& toasts, bool overS
         const float w = 18 + 10 + 12 + textW + 18 + 2, h = textH + 20;
         const float x0 = kRight - w, y0 = y - (1 - ease) * (h + 10);
         const int from = d->VtxBuffer.Size;
+        // Over the game's own menus (bright, busy) a darker backing under
+        // the fight glass, or the text behind shows through.
+        if (!overScreen) d->AddRectFilled(g_v.P(x0, y0), g_v.P(kRight, y0 + h), Rgba(10, 12, 16, 160));
         Pane(d, x0, y0, kRight, y0 + h, overScreen ? Glass::Modal : Glass::Fight);
         Diamond(d, x0 + 18 + 5, y0 + h / 2, 10, n.color);
         Wrapped(d, f.body, 16, x0 + 18 + 10 + 12, y0 + 10, kTextW, look::kCream, n.text);
