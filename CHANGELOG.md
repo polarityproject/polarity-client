@@ -5,23 +5,63 @@ first paragraph is the summary players see in the game (Settings, Updates);
 `scripts/release.ps1` reads it, and refuses to publish a version that has no
 entry here. Newest first; the format follows [Keep a Changelog](https://keepachangelog.com).
 
-## [Unreleased]
+## [0.3.0] - 2026-11-07
 
-The rooms branch's builds (0.3.0-rooms.N), for invited testers: custom rooms
-are on the way. Rooms builds only play other rooms builds.
+Custom rooms: up to 16 players on up to eight tables with their own rules,
+in public rooms anyone can find or private ones by code, with chat, a queue
+at each table and watching any table. SFVR moved to a new server, which
+0.3.0 finds by itself; it plays only 0.3.0.
+
+### Added
+
+- **The SFVR hub** after the title: Play offline (the game as it ships;
+  hold Start in its menus to come back), Custom rooms, and SFVR settings
+  (Start). A lost rooms server is tried again every 10 seconds.
+- **Custom rooms.** Create one with a title from the game's own Battle
+  Lounge comments (two of them name characters you pick), public or private,
+  with 1 to 8 tables. Public rooms are listed with their title, owner,
+  players, faces and open seats, and the focused room shows its tables and
+  players before you join. Any room joins by its code (Copy code beside the
+  room's title; Y pastes a copied one).
+- **Tables:** sit or queue, ready when called, and play a set; the winner
+  stays (as the table's rules say) and the queue rotates. Each table has its
+  own rules: first to 1-20, best of 1, 3 or 5 rounds, a 99, 60 or 30 second
+  timer; the owner changes them between sets. After a set: play on, or
+  character select.
+- **Watching a table** from the room: any set, from its first game even if
+  you come late, through the server's relay (the players stream once).
+- **Room chat** (200 characters, about one message a second), each player's
+  ping and connection (wired or Wi-Fi), muting a player for yourself, and the
+  owner removing a player; the room passes on when its owner leaves.
+- **My character** from the room: character, costume and color, V-Skill and
+  V-Trigger, input delay and preferred stage, kept for the next set.
+- **Country flags** beside names in rooms and the room list, from the
+  server's look-up of each player's connection (IP Geolocation by DB-IP).
+  SFVR settings, Country flag: Hidden keeps yours to the server.
+- **Word filter** in public rooms: names on the server's word list show as
+  "Player 1234" and its words in chat are starred. SFVR settings, Word
+  filter: Off shows them to you as they are. Private rooms are never
+  filtered.
+- **Streamer mode** (SFVR settings): room codes show as dots on the rooms
+  screens; Copy code still copies them.
+- **SFVR settings** in one list: updates, name, frame rate, country flag,
+  word filter, streamer mode, input delay, server, the server login at
+  start, and reports.
 
 ### Changed
+
+- **SFVR's server moved** (rooms, Direct Match and desync and crash
+  reports). A server chosen in settings before 0.3.0 that was the old public
+  one becomes the new one by itself. 0.3.0 plays only 0.3.0.
 
 - The suggested input delay now starts at 0 frames: nearby players play
   with no delay, as the game's own online did, and rollback covers the rest.
   It aims at rollbacks of 2 frames or fewer and goes up to 3 frames for far
   players. It goes by the ping and its jitter over the lobby's last 10
   seconds, not one moment's ping.
-- Rooms builds take their updates from the rooms channel
-  (sfvr.pages.dev/rooms/update.json), and play only other rooms builds
-  (lobby protocol 14).
 - Versions like 0.3.0-rooms.10 order after 0.3.0-rooms.9 (the parts after
-  the dash compare as numbers where they are numbers).
+  the dash compare as numbers where they are numbers): the rooms testers'
+  builds move to 0.3.0 by themselves.
 - Updates can install the bundled font into SFVR\fonts\ (.ttc files only),
   and skip files the game folder already has.
 - The panel and the select screen use bundled fonts (Barlow, Archivo Black,

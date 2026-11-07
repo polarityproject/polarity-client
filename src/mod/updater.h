@@ -21,8 +21,8 @@ namespace sfv::mod {
 // rooms branch's builds rooms/update.json (docs/custom-rooms-plan.md). The
 // channel is part of the build, so 0.3.0, built from main, moves branch
 // installs back by itself. release.ps1 checks it against -Channel.
-constexpr const char* kUpdateChannel = "rooms";
-constexpr const char* kDefaultUpdateUrl = "https://sfvr.pages.dev/rooms/update.json";
+constexpr const char* kUpdateChannel = "main";
+constexpr const char* kDefaultUpdateUrl = "https://sfvr.pages.dev/update.json";
 
 struct UpdateView {
     enum class State {
