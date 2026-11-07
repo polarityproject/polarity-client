@@ -20,6 +20,7 @@
 #include "core/spectate_relay.h"
 #include "core/png.h"
 #include "core/state.h"
+#include "core/key_names.h"
 #include "core/texture_package.h"
 #include "core/verifier.h"
 #include "testbed/match_runner.h"
@@ -1960,6 +1961,19 @@ void TestTexturePackage()
     CHECK(n1 == n2 && n1.size() == 64 * 64 * 4 && white > 1700 && black > 1700);
 }
 
+void TestKeyNames()
+{
+    // The default assignment, slot by slot: W S D A B N G H K J Comma M Period Slash Enter Escape.
+    CHECK(VirtualKeyOf("W") == 'W' && VirtualKeyOf("b") == 'B' && VirtualKeyOf("Comma") == 0xBC && VirtualKeyOf("Period") == 0xBE);
+    CHECK(VirtualKeyOf("Slash") == 0xBF && VirtualKeyOf("Enter") == 0x0D && VirtualKeyOf("Escape") == 0x1B);
+    CHECK(VirtualKeyOf("One") == '1' && VirtualKeyOf("NumPadNine") == 0x69 && VirtualKeyOf("F12") == 0x7B && VirtualKeyOf("F13") == 0);
+    CHECK(VirtualKeyOf("LeftShift") == 0x10 && VirtualKeyOf("SpaceBar") == 0x20 && VirtualKeyOf("Nonsense") == 0 && VirtualKeyOf("") == 0);
+    // Up, down, right, left; B (slot 4) is the pad's A, N its B, G X, H Y; Enter Start, Escape Back.
+    CHECK(PadKeyOfSlot(0) == 0x1 && PadKeyOfSlot(2) == 0x8 && PadKeyOfSlot(3) == 0x4);
+    CHECK(PadKeyOfSlot(4) == 0x40 && PadKeyOfSlot(5) == 0x80 && PadKeyOfSlot(6) == 0x10 && PadKeyOfSlot(7) == 0x20);
+    CHECK(PadKeyOfSlot(14) == 0x4000 && PadKeyOfSlot(15) == 0x8000 && PadKeyOfSlot(16) == 0 && PadKeyOfSlot(-1) == 0);
+}
+
 void TestUpdateSignature()
 {
     // A key pair as the release script makes one, through the same API.
@@ -2017,6 +2031,7 @@ int main()
         {"update info", TestUpdateInfo},
         {"update signature", TestUpdateSignature},
         {"texture package", TestTexturePackage},
+        {"key names", TestKeyNames},
         {"shown setup", TestShownSetup},
         {"rules format", TestRulesFormat},
         {"match ticket", TestMatchTicket},

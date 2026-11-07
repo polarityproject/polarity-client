@@ -142,6 +142,91 @@ void DrawTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame& r, 
     if (on) Ring(d, r.x, r.y, r.x + r.w, r.y + r.h);
 }
 
+bool g_problemOpen = false; // the Custom Rooms modal (HubLive::roomsProblem)
+int g_problemChoice = 0;    // its focused button
+
+// The modal: what is wrong and what can be done. While connecting it waits,
+// and Custom Rooms opens by itself once it can; a problem gone (the server
+// answered) does the same.
+HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live)
+{
+    using P = HubLive::RoomsProblem;
+    if (live.roomsProblem == P::None) {
+        g_problemOpen = false;
+        Log("hub: custom rooms can be used now: opening them");
+        return HubAction::CustomRooms;
+    }
+    ImFont* bold = f.bold ? f.bold : f.strong;
+    const std::string server = live.roomsServer.empty() ? std::string("the rooms server") : live.roomsServer;
+    std::string title, text;
+    const char* primary = nullptr; // the first button, besides Close
+    HubAction primaryAction = HubAction::None;
+    switch (live.roomsProblem) {
+    case P::Connecting:
+        title = "Connecting...";
+        text = "SFVR is connecting to " + server + ". Custom Rooms opens as soon as it answers.";
+        break;
+    case P::Unreachable:
+        title = "Can't reach the rooms server";
+        text = "SFVR could not connect to " + server + ". Check this PC's internet connection and that a firewall lets the game out. "
+               "If those are fine, the server may be down for a moment: SFVR tries again every 10 seconds.";
+        primary = "Try again";
+        primaryAction = HubAction::RetryRooms;
+        break;
+    case P::UpdateNeeded:
+        title = "Update needed";
+        text = "The rooms server runs a newer SFVR" + (live.roomsBuild.empty() ? std::string() : " (protocol " + live.roomsBuild + ")") +
+               " than this one. Update from SFVR settings, Updates, then start the game again.";
+        primary = "SFVR settings";
+        primaryAction = HubAction::Settings;
+        break;
+    default:
+        title = "Custom Rooms are offline";
+        text = "The rooms server answers, but its room keeper is not running, so no room can be made or joined right now. "
+               "Try again in a little while.";
+        primary = "Try again";
+        primaryAction = HubAction::RetryRooms;
+        break;
+    }
+    const float wrap = 544;
+    const float textH = f.body->CalcTextSizeA(TextPx(19), FLT_MAX, g_v.L(wrap), text.c_str()).y / g_v.s;
+    ModalSpec m;
+    m.w = 600;
+    m.x0 = 500;
+    m.h = 44 + 22 + 34 + 12 + textH + 24 + 48 + 26 + 48;
+    m.y0 = (844 - m.h) / 2;
+    m.kicker = "CUSTOM ROOMS";
+    m.danger = live.roomsProblem == P::Unreachable;
+    m.prompts = {{"button_a", "Select"}, {"button_b", "Close"}};
+    int prompt = -1;
+    float y = Modal(d, bold, f.body, m, &prompt) + 22;
+    Text(d, f.display, g_v.L(28), g_v.P(528, y), look::kCream, title);
+    y += 46;
+    d->AddText(f.body, TextPx(19), g_v.P(528, y), look::kCream, text.c_str(), nullptr, g_v.L(wrap));
+    y += textH + 24;
+    const int buttons = primary ? 2 : 1;
+    if (g_problemChoice >= buttons) g_problemChoice = 0;
+    int pressed = -1;
+    if (primary) {
+        if (Button(d, bold, 528, y, 806, y + 48, primary, g_problemChoice == 0)) pressed = 0;
+        if (Button(d, bold, 822, y, 1072, y + 48, "Close", g_problemChoice == 1)) pressed = 1;
+    }
+    else if (Button(d, bold, 528, y, 1072, y + 48, "Close", true)) pressed = 0;
+    if (!g_inputOn) return HubAction::None;
+    if (buttons == 2 && (Left() || Right())) g_problemChoice = 1 - g_problemChoice;
+    if (pressed >= 0) g_problemChoice = pressed;
+    if (Back()) {
+        g_problemOpen = false;
+        return HubAction::None;
+    }
+    if (Confirm() || pressed >= 0) {
+        const bool primaryChosen = primary && g_problemChoice == 0;
+        if (!primaryChosen || primaryAction != HubAction::RetryRooms) g_problemOpen = false; // Try again keeps it up (it opens the rooms once they answer)
+        return primaryChosen ? primaryAction : HubAction::None;
+    }
+    return HubAction::None;
+}
+
 void DrawTop(ImDrawList* d, const HubFonts& f, const HubLive& live)
 {
     StageText(d, f.display, 42, 800, 30, Rgba(255, 255, 255), "SFVR", 0.5f);
@@ -216,9 +301,9 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     // Input: left and right between the column and the online tiles; the
     // mouse focuses what it is over and a click selects it.
     HubAction action = HubAction::None;
-    if (Left()) g_focus = 0;
-    if (Right()) g_focus = 1;
-    for (int i = 0; i < count; i++) {
+    if (!g_problemOpen && Left()) g_focus = 0;
+    if (!g_problemOpen && Right()) g_focus = 1;
+    for (int i = 0; i < count && !g_problemOpen; i++) {
         const Frame& r = kFrames[i];
         if (takeInput && MouseIn(g_v.P(r.x, r.y), g_v.P(r.x + r.w, r.y + r.h))) {
             if (ImGui::GetIO().MouseDelta.x != 0 || ImGui::GetIO().MouseDelta.y != 0) g_focus = i;
@@ -232,10 +317,20 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     DrawPanel(d, f, entries[g_focus]);
     for (int i = 0; i < count; i++) DrawTile(d, f, entries[i], kFrames[i], i == g_focus, entries[i].action == HubAction::CustomRooms ? live.roomsState : "");
     int prompt = -1;
-    PromptLine(d, f.body, f.bold ? f.bold : f.strong, "", kGold, entries[g_focus].text,
-               {{"button_a", "Select"}, {"button_start", "SFVR settings"}}, &prompt);
-    if (Confirm() || std::exchange(g_clickedTile, false) || prompt == 0) action = entries[g_focus].action;
-    if (Pressed({ImGuiKey_GamepadStart}, false) || prompt == 1) action = HubAction::Settings;
+    PromptLine(d, f.body, f.bold ? f.bold : f.strong, "", kGold, g_problemOpen ? std::string() : entries[g_focus].text,
+               g_problemOpen ? PromptList{} : PromptList{{"button_a", "Select"}, {"button_start", "SFVR settings"}}, &prompt);
+    if (g_problemOpen) action = DrawRoomsProblem(d, f, live);
+    else {
+        if (Confirm() || std::exchange(g_clickedTile, false)) action = entries[g_focus].action;
+        if (Pressed({ImGuiKey_GamepadStart}, false)) action = HubAction::Settings;
+        // Custom Rooms that cannot be used: why, in a modal, not a dead screen.
+        if (action == HubAction::CustomRooms && live.roomsProblem != HubLive::RoomsProblem::None) {
+            action = HubAction::None;
+            g_problemOpen = true;
+            g_problemChoice = 0;
+            Log("hub: custom rooms cannot be used now (%d): the modal", static_cast<int>(live.roomsProblem));
+        }
+    }
     g_inputOn = false;
     d->PopClipRect();
     FadeFrom(d, from, alpha);
@@ -244,6 +339,12 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
         Log("hub: %s", kNames[static_cast<int>(action)]);
     }
     return action;
+}
+
+void ShowRoomsProblem()
+{
+    g_problemOpen = true;
+    g_problemChoice = 0;
 }
 
 } // namespace sfv::mod

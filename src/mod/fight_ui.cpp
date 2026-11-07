@@ -72,9 +72,8 @@ void DrawLeaveModal(const HubFonts& f, bool set, bool takeInput, bool* leave, bo
         if (pressed >= 0) g_leaveChoice = pressed;
         const char* how = nullptr;
         if (Back()) how = "B", *stay = true;
-        else if (prompt == 1) how = "the footer's Stay", *stay = true;
-        else if (Confirm() || pressed >= 0 || prompt == 0) {
-            how = pressed >= 0 ? "a click" : prompt == 0 ? "the footer's Select" : "A";
+        else if (Confirm() || pressed >= 0) {
+            how = pressed >= 0 ? "a click" : "A";
             if (g_leaveChoice == 0) *leave = true;
             else *stay = true;
         }

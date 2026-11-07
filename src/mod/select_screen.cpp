@@ -567,8 +567,8 @@ void DrawLeaveDialog(ImDrawList* d, const SelectFonts& f, const SelectLive& live
     if (!takeInput) return;
     if (Left() || Right()) g_ui.leaveChosen = !g_ui.leaveChosen;
     if (pressed >= 0) g_ui.leaveChosen = pressed == 1;
-    if (Back() || prompt == 1) g_ui.leaving = false;
-    else if (Confirm() || pressed >= 0 || prompt == 0) {
+    if (Back()) g_ui.leaving = false;
+    else if (Confirm() || pressed >= 0) {
         in->leave = g_ui.leaveChosen;
         g_ui.leaving = false;
     }
@@ -751,7 +751,7 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
                 DrawTile(d, t, tag[0], tag[1], f);
                 if (grid && Clicked() && MouseInQuad(t.q)) {
                     // A click moves the cursor; on the tile under it, picks.
-                    if (g_ui.cursorRow == r && g_ui.cursorX == x) g_clickConfirm = true;
+                    if (g_ui.cursorRow == r && g_ui.cursorX == x) ui::ClickPad(ImGuiKey_GamepadFaceDown);
                     g_ui.cursorRow = r;
                     g_ui.cursorX = x;
                     g_ui.onRandom = t.random;
@@ -819,8 +819,8 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         else if (ready && a && live.myCharacter) {
             in->done = true;
         }
-        if ((grid || loadout) && live.myCharacter && Pressed({ImGuiKey_GamepadFaceLeft, ImGuiKey_X}, false)) in->openStage = true;
-        if (grid && live.myCharacter && Pressed({ImGuiKey_GamepadFaceUp, ImGuiKey_Y}, false)) {
+        if ((grid || loadout) && live.myCharacter && Pressed({ImGuiKey_GamepadFaceLeft}, false)) in->openStage = true;
+        if (grid && live.myCharacter && Pressed({ImGuiKey_GamepadFaceUp}, false)) {
             in->randomPick = true;
             g_ui.loadout = true;
             g_ui.onRandom = false;

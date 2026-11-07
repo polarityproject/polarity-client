@@ -145,6 +145,7 @@ add_library(sfvcore STATIC
   src/core/json.cpp
   src/core/update_info.cpp
   src/core/texture_package.cpp
+  src/core/key_names.cpp
   src/core/look.cpp
   src/core/rules.cpp
   src/core/match_ticket.cpp

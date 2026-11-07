@@ -22,13 +22,6 @@ multi_instance=0
 ; already holds. 0: the list stays as the game has it.
 steam_entitlements=1
 
-[boot]
-; 1: no server login. The title runs its local preparation, then takes the
-; game's own "continue offline" route straight to the main menu (about 25 s
-; from launch; no login attempt, no login dialogs). 0: the game's login, as
-; shipped (about 30 s of waiting, then the dialogs).
-offline=1
-
 [probe]
 ; Debugging: F5 copy state out, F9 copy it back (copy mode, what netplay uses)
 ; F6 remember the last ring frame, F10 restore it with the game's own Restore.

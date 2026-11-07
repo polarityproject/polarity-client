@@ -6,7 +6,7 @@
 // dialogs, which wait for their timeouts before taking input; picking
 // "offline" in the second one leads to the main menu.
 //
-// Offline boot (flow.h, [boot] offline=1): InitialState runs its local
+// Offline boot (flow.h, always): InitialState runs its local
 // preparation steps, then where it would start the login it takes the game's
 // own "continue offline" step to the main menu instead (about 25 s from
 // launch, no server requests, no dialogs).

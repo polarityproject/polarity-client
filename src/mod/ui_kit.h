@@ -55,17 +55,31 @@ inline float TextPx(float size) { return g_v.L(size) > kMinTextPx ? g_v.L(size) 
 void FadeFrom(ImDrawList* d, int from, float alpha);
 
 // ----- input ----------------------------------------------------------------------
+// The keyboard as the game reads it (Input2.ini [AssignKeyboard], key_names.h):
+// a key assigned there is the pad button it is in the game's own menus (B
+// confirms, N goes back, Enter is Start, Escape is Back with the default
+// keys), and nothing else, unless a text field takes the keyboard.
+void SetKeyboardMap(const int (&vk)[16]);
+uint32_t MappedPadKeys(int vk); // the game's pad-key bits a virtual key drives; 0 none
+// A text field takes the keyboard this frame (typing a chat line, a name, a
+// room code): every key is itself. Screens set it while drawing; it applies
+// to the next frame's keys.
+extern bool g_textEntry;
 extern bool g_inputOn; // this frame reads input
-// A prompt clicked last frame acts as its button this frame: A, B or Y.
-extern bool g_clickConfirm, g_clickBack, g_clickSetting;
+// A prompt's glyph clicked is its button pressed, the next frame (every
+// prompt the same way: the screens only read buttons). ClickPad asks for it;
+// BeginInputFrame (the overlay, each frame first) makes it this frame's.
+void ClickPad(ImGuiKey key);
+ImGuiKey PadKeyOfGlyph(const char* glyph); // "button_a" -> GamepadFaceDown ...; None if not a button
+void BeginInputFrame();
 // Directions repeat while held; A and B count once per press.
 bool Pressed(std::initializer_list<ImGuiKey> keys, bool repeat = true);
 bool Left();
 bool Right();
 bool Up();
 bool Down();
-bool Confirm();     // A, Enter, Space
-bool Back();        // B, Escape, Backspace
+bool Confirm();     // A (on a keyboard the key the game has for A)
+bool Back();        // B
 bool NextSetting(); // Y
 bool Clicked();
 bool MouseIn(ImVec2 a, ImVec2 b);

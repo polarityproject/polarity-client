@@ -53,7 +53,6 @@ struct Config {
 
     int virtualPads = 0; // XInput pads driven by sfv_cmd.txt, connected at startup
     bool alwaysActive = false; // keep reading pads while the window is in the background
-    bool offlineBoot = true;   // skip the server login: from the title straight to the main menu (flow.h)
 };
 
 // panelPath: the overlay's saved choices (sfv_rollback.panel[.N].ini); its

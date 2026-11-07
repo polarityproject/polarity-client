@@ -144,7 +144,6 @@ SceneTickFn g_origSceneTick = nullptr;
 std::atomic<uint64_t> g_sceneTicks{0};
 std::atomic<uint64_t> g_pumps{0};
 std::atomic<uint64_t> g_lastPumpUs{0};
-bool g_offlineBoot = false;
 using StepFn = uint64_t (*)(void* self, int step, uint8_t force);
 StepFn g_origStep = nullptr;
 using Step0Fn = uint64_t (*)(void* self, void* data, uint8_t a, uint8_t b);
@@ -350,7 +349,7 @@ void ChangeDetour(void* self, const void* stateClass, void* param)
     LogStack("ChangeSceneState", g_base);
     g_origChange(self, stateClass, param);
     TraceSceneSteps(ue4::ObjectName(stateClass));
-    if (g_offlineBoot && ue4::ObjectName(stateClass) == "InitialState") GoOfflineFromTitle();
+    if (ue4::ObjectName(stateClass) == "InitialState") GoOfflineFromTitle();
 }
 
 // Scene states run one step function at a time (+0x338, after +0x378
@@ -863,9 +862,8 @@ bool Hook(const GameImage& image, const game::CodeSite& site, void* detour, void
 
 } // namespace
 
-bool InstallFlowProbes(const GameImage& image, bool offlineBoot)
+bool InstallFlowProbes(const GameImage& image)
 {
-    g_offlineBoot = offlineBoot;
     g_base = image.base;
     // Walking the image for the name and object tables takes seconds.
     std::thread([image] {

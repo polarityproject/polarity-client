@@ -109,11 +109,11 @@ void DrawWatchPanel(const HubFonts& f, const WatchPanelLive& live, float alpha, 
             }
         }
         if (Pressed({ImGuiKey_GamepadL1}, false) && can[0]) pressed = 0;
-        if (Pressed({ImGuiKey_GamepadFaceLeft, ImGuiKey_X}, false)) pressed = 1;
+        if (Pressed({ImGuiKey_GamepadFaceLeft}, false)) pressed = 1;
         if (Pressed({ImGuiKey_GamepadR1}, false) && can[2]) pressed = 2;
-        if (Confirm() || prompt == 0) pressed = g_focus;
-        if (Pressed({ImGuiKey_GamepadFaceUp, ImGuiKey_Y}, false) || prompt == 1 || g_clickSetting) in->stop = true;
-        if (Back() || Pressed({ImGuiKey_GamepadStart}, false) || prompt == 2) in->resume = true;
+        if (Confirm()) pressed = g_focus;
+        if (Pressed({ImGuiKey_GamepadFaceUp}, false)) in->stop = true;
+        if (Back() || Pressed({ImGuiKey_GamepadStart}, false)) in->resume = true;
         if (pressed >= 0) {
             g_focus = pressed;
             in->watch = pressed == 0 ? at - 1 : pressed == 2 ? at + 1 : -1;

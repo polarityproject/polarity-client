@@ -16,6 +16,7 @@
 #include "mod/netplay_driver.h"
 #include "mod/select_screen.h"
 #include "mod/fight_ui.h"
+#include "core/key_names.h"
 #include "mod/hub_screen.h"
 #include "mod/ui_kit.h" // the screens' fade
 #include "mod/rooms_screen.h"
@@ -136,6 +137,41 @@ struct PadState {
 PadState g_pads[XUSER_MAX_COUNT];
 
 // All pads together, as ImGui gamepad keys.
+// The keyboard keys the game assigns (Input2.ini [AssignKeyboard]) that are
+// down, as the game's pad-key bits (render thread).
+uint32_t g_keyPad = 0;
+
+// Input2.ini's [AssignKeyboard] into ui::SetKeyboardMap, again every 2 s (the
+// game's own key settings write it).
+void LoadKeyboardMap()
+{
+    static ULONGLONG readAt = 0;
+    if (readAt && GetTickCount64() - readAt < 2000) return;
+    readAt = GetTickCount64();
+    wchar_t local[MAX_PATH] = {};
+    if (!GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH)) return;
+    const std::wstring path = std::wstring(local) + L"\\StreetFighterV\\Saved\\Config\\WindowsNoEditor\\Input2.ini";
+    // The game's defaults when the file has no such key.
+    static const wchar_t* const kDefaults[kKeyboardSlots] = {L"W", L"S", L"D", L"A", L"B", L"N", L"G", L"H",
+                                                             L"K", L"J", L"Comma", L"M", L"Period", L"Slash", L"Enter", L"Escape"};
+    int vk[kKeyboardSlots] = {};
+    std::string names;
+    for (int slot = 0; slot < kKeyboardSlots; slot++) {
+        wchar_t value[64] = {};
+        GetPrivateProfileStringW(L"AssignKeyboard", (L"KeyboardKeys_" + std::to_wstring(slot)).c_str(), kDefaults[slot], value, 64, path.c_str());
+        std::string name;
+        for (const wchar_t* c = value; *c; c++) name += static_cast<char>(*c < 128 ? *c : '?');
+        vk[slot] = VirtualKeyOf(name);
+        names += (slot ? " " : "") + name;
+    }
+    static std::string logged;
+    if (names != logged) {
+        logged = names;
+        Log("overlay: the game's keyboard keys: %s", names.c_str());
+    }
+    ui::SetKeyboardMap(vk);
+}
+
 void FeedPads(ImGuiIO& io)
 {
     uint16_t buttons = 0;
@@ -169,7 +205,9 @@ void FeedPads(ImGuiIO& io)
         {0x40, XINPUT_GAMEPAD_A},          {0x80, XINPUT_GAMEPAD_B},           {0x100, XINPUT_GAMEPAD_LEFT_SHOULDER},
         {0x200, XINPUT_GAMEPAD_RIGHT_SHOULDER}, {0x4000, XINPUT_GAMEPAD_START}, {0x8000, XINPUT_GAMEPAD_BACK},
     };
-    const uint32_t keys = GamePadKeys();
+    // And the keyboard's keys as the game assigns them (the screens eat the
+    // keyboard, so the game's own reading of it sees nothing then).
+    const uint32_t keys = GamePadKeys() | g_keyPad;
     uint16_t game = 0;
     for (const GameKey& k : kGameKeys) {
         if (keys & k.key) game |= k.button;
@@ -2223,17 +2261,6 @@ std::vector<SettingsRow> SettingsRows()
                    "Other servers show here once used (the server= line of sfv_rollback.ini)."};
         r.hint = r.arrows ? "Left and right: the server." : "The public server. Others show here once used.";
     }
-    // Game.
-    {
-        SettingsRow& r = row("boot", "GAME", "At start");
-        r.arrows = true;
-        r.value = ReadMainIni(L"boot", L"offline", 1) ? "Skip the server login" : "Log in to the server";
-        r.kicker = "GAME";
-        r.title = "At start";
-        r.lines = {"Skip the server login: the title goes straight to the menus. SFVR does not need the game's own servers.",
-                   "Log in: the game's own online modes work, and the start waits for Capcom's servers. From the next start."};
-        r.hint = "Left and right: skip the login or log in. From the next start.";
-    }
     // Reports.
     {
         SettingsRow& r = row("reports", "REPORTS", "Send reports");
@@ -2277,7 +2304,6 @@ void ApplySetting(const SettingsInput& in)
     if (in.row == "install" && in.confirm) UpdateInstall();
     else if (in.row == "check" && in.confirm) UpdateCheck();
     else if (in.row == "checkstart" && in.delta) SaveMainIni(L"update", L"check", ReadMainIni(L"update", L"check", 1) ? 0 : 1);
-    else if (in.row == "boot" && in.delta) SaveMainIni(L"boot", L"offline", ReadMainIni(L"boot", L"offline", 1) ? 0 : 1);
     else if (in.row == "name" && in.typed) {
         std::snprintf(g_choices.name, sizeof(g_choices.name), "%s", in.text.c_str());
         SaveChoices();
@@ -2704,10 +2730,11 @@ CardPick TablePick(const NetplayOptions& o, const std::string& favorite)
 {
     CardPick p;
     if (o.hasPick) {
-        p.chara = UnpackCode(o.pick.character);
+        const bool eleven = IsElevenSetup(o.pick);
+        p.chara = eleven ? "ELV" : UnpackCode(o.pick.character); // the roll stays hidden
         p.vskill = o.pick.vskill + 1;
         p.vtrigger = o.pick.vtrigger + 1;
-        p.editable = !IsElevenSetup(o.pick);
+        p.editable = !eleven;
         return p;
     }
     p.chara = favorite;
@@ -2795,6 +2822,13 @@ void DrawHubScreens(bool takeInput)
         }
     }
     else failedSince = 0;
+    // The browser with its server gone can do nothing: back to the hub,
+    // which says why (and opens the rooms again once they answer).
+    if (RoomsScreenOpen() && !SettingsScreenOpen() && rooms.state == RoomsView::State::Failed) {
+        Log("hub: the rooms server is gone: the rooms screen gives way to the hub's modal");
+        CloseRoomsScreen();
+        ShowRoomsProblem();
+    }
     HubLive live;
     live.player = LocalPlayerName();
     live.server = o.server == kDefaultServer ? "Public server" : o.server;
@@ -2810,6 +2844,13 @@ void DrawHubScreens(bool takeInput)
         live.roomsState = std::to_string(n) + (n == 1 ? " public room" : " public rooms") + " \xC2\xB7 " + std::to_string(p) + (p == 1 ? " player" : " players");
     }
     if (!g_tables.loaded) live.roomsState = "Getting ready...";
+    // What would leave the Custom Rooms screen with nothing to do.
+    using RP = HubLive::RoomsProblem;
+    live.roomsServer = o.server;
+    if (rooms.state == S::Failed) live.roomsProblem = RP::Unreachable;
+    else if (!rooms.otherBuild.empty() && !rooms.keeper) live.roomsProblem = RP::UpdateNeeded, live.roomsBuild = rooms.otherBuild;
+    else if (rooms.state == S::Off || rooms.state == S::Connecting || rooms.state == S::Finding) live.roomsProblem = RP::Connecting;
+    else if (rooms.state == S::NoLobby || !rooms.keeper) live.roomsProblem = RP::Offline;
     live.roomsInfo = "Browse, create, or join with a code";
     {
         std::lock_guard lock(g_favoritesMutex);
@@ -2818,7 +2859,9 @@ void DrawHubScreens(bool takeInput)
     }
     // In the rooms: the pick played at the tables (My character), else the
     // profile's favorite.
-    RoomsSetCharacter(o.hasPick ? UnpackCode(o.pick.character) : live.offlineChara);
+    // Eleven shows as Eleven: the fighter it rolled stays hidden from
+    // everyone (as in the game) until the match loads.
+    RoomsSetCharacter(!o.hasPick ? live.offlineChara : IsElevenSetup(o.pick) ? std::string("ELV") : UnpackCode(o.pick.character));
     // Its V-Skill and V-Trigger, for the others' your-turn cards.
     const CardPick tablePick = TablePick(o, live.offlineChara);
     if (tablePick.editable) RoomsSetSkills(tablePick.vskill, tablePick.vtrigger);
@@ -2941,6 +2984,10 @@ void DrawHubScreens(bool takeInput)
     case HubAction::Settings:
         OpenSettingsScreen();
         break;
+    case HubAction::RetryRooms:
+        Log("hub: the rooms server again, asked for (%s)", o.server.c_str());
+        RoomsOpen(o.server, LocalPlayerName(), o.server == kDefaultServer ? kDefaultServerAlsoPort : o.serverAlsoPort, o.keeperKey);
+        break;
     case HubAction::None:
         break;
     }
@@ -3021,7 +3068,29 @@ void Draw(IDXGISwapChain* swapChain)
         std::lock_guard lock(g_inputMutex);
         input.swap(g_input);
     }
-    for (const Message& m : input) ImGui_ImplWin32_WndProcHandler(g_window, m.msg, m.wp, m.lp);
+    // The keyboard: a key the game assigns is its pad button (FeedPads), not a
+    // key, unless a text field took the keyboard last frame.
+    LoadKeyboardMap();
+    ui::BeginInputFrame();
+    const bool textEntry = ui::g_textEntry;
+    ui::g_textEntry = false;
+    if (textEntry) g_keyPad = 0;
+    for (const Message& m : input) {
+        const bool down = m.msg == WM_KEYDOWN || m.msg == WM_SYSKEYDOWN, up = m.msg == WM_KEYUP || m.msg == WM_SYSKEYUP;
+        if (m.msg == WM_KILLFOCUS) g_keyPad = 0;
+        if (!textEntry && (down || up)) {
+            if (const uint32_t bits = ui::MappedPadKeys(static_cast<int>(m.wp))) {
+                if (down) g_keyPad |= bits;
+                else g_keyPad &= ~bits;
+                continue;
+            }
+        }
+        if (!textEntry && m.msg == WM_CHAR) {
+            const SHORT scan = VkKeyScanW(static_cast<WCHAR>(m.wp));
+            if (scan != -1 && ui::MappedPadKeys(scan & 0xFF)) continue; // the letter of a mapped key: not typed
+        }
+        ImGui_ImplWin32_WndProcHandler(g_window, m.msg, m.wp, m.lp);
+    }
     ImGuiIO& io = ImGui::GetIO();
     FeedPads(io);
     // A frame every time, also with nothing to show: it consumes the input

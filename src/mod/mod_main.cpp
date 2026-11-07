@@ -145,7 +145,7 @@ DWORD WINAPI ModMain(LPVOID self)
     InstallBattleSetup(image);
     InstallBootProbes(image, config.verbose);
     InstallFreePlayGuard(image);
-    InstallFlowProbes(image, config.offlineBoot);
+    InstallFlowProbes(image);
     WatchLoginStatus();
     InstallBattleDriver(image, &game);
     if (config.netplay.skipLoadCallbacks) SetSkippedLoadCallbacks(DefaultSkippedLoadCallbacks());

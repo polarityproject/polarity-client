@@ -201,8 +201,13 @@ void Table(ImDrawList* d, const HubFonts& f, const RoomsView& v, float y, int in
     const std::string line = tv && ParseRules(tv->rules, &rules) ? DescribeRules(rules) : std::string();
     // How many wait in the queue (user, 2026-11-04: not the watchers).
     const std::string queue = std::to_string(tv ? tv->queue.size() : 0) + " in queue";
-    Text(d, f.body, g_v.L(17), g_v.P(852, y + 10), lit ? look::kInkSoft : Dim(kCream, dim), queue, 1);
-    Text(d, f.body, g_v.L(17), g_v.P(852 - TextW(f.body, 17, queue) - 18, y + 10), lit ? look::kInkSoft : Dim(kGold, dim), line, 1);
+    // In the bottom hint's weight, so it reads at a Deck's size; cut if long.
+    ImFont* infoFont = f.bold ? f.bold : f.strong;
+    const float queueW = TextW(infoFont, 19, queue);
+    const float tableW = TextW(f.display, 21, "TABLE " + std::to_string(index + 1));
+    Text(d, infoFont, g_v.L(19), g_v.P(852, y + 9), lit ? look::kInk : Dim(kCream, dim), queue, 1);
+    Text(d, infoFont, g_v.L(19), g_v.P(852 - queueW - 18, y + 9), lit ? look::kInkSoft : Dim(kGold, dim),
+         FitName(infoFont, 19, line, 852 - queueW - 18 - (64 + tableW + 24)), 1);
     // The seat A would take: on the focused open table, for a player not at it.
     const bool mine = s.seat[0] == v.self || s.seat[1] == v.self;
     int sitHere = -1;
@@ -425,7 +430,8 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
         Text(d, f.body, g_v.L(19), g_v.P(924, 788), kCream, tail);
     }
     else {
-        Text(d, f.body, g_v.L(19), g_v.P(924, 788), kSoft, "Say something (Enter, or Back + Y on a pad)");
+        Text(d, f.body, g_v.L(19), g_v.P(924, 788), kSoft,
+             ui::MappedPadKeys(0x0D /* Enter */) ? "Say something (Back + Y, or click here)" : "Say something (Enter, or Back + Y)");
     }
     d->AddRectFilled(g_v.P(1468, 781), g_v.P(1534, 819), kGold);
     Text(d, f.bold ? f.bold : f.strong, g_v.L(18), g_v.P(1501, 788), look::kInk, "Send", 0.5f);
@@ -718,6 +724,7 @@ void RulesModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, const Prom
     for (int t = 0; t < tables; t++) tw += TextW(bold, 15, "Table " + std::to_string(t + 1)) + 28 + 8;
     float tx = x1 - 28 - 30 - 8 - tw - 30;
     Glyph(d, "button_lb", g_v.P(tx, y0 + 66), g_v.P(tx + 30, y0 + 96), IM_COL32_WHITE, false);
+    if (Clicked() && MouseIn(g_v.P(tx - 4, y0 + 62), g_v.P(tx + 34, y0 + 100))) ui::ClickPad(ImGuiKey_GamepadL1);
     tx += 38;
     for (int t = 0; t < tables; t++) {
         const std::string label = "Table " + std::to_string(t + 1);
@@ -728,6 +735,7 @@ void RulesModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, const Prom
         tx += lw + 8;
     }
     Glyph(d, "button_rb", g_v.P(tx, y0 + 66), g_v.P(tx + 30, y0 + 96), IM_COL32_WHITE, false);
+    if (Clicked() && MouseIn(g_v.P(tx - 4, y0 + 62), g_v.P(tx + 34, y0 + 100))) ui::ClickPad(ImGuiKey_GamepadR1);
     for (int row = 0; row < 5; row++) {
         const float y = y0 + 120 + row * 58.0f;
         const bool on = row == g.rulesRow;
@@ -841,6 +849,8 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     const auto inQueue = focused ? std::find(focused->queue.begin(), focused->queue.end(), v.self) : std::vector<uint32_t>::const_iterator{};
     const bool queuedHere = focused && inQueue != focused->queue.end();
 
+    // Typing a chat line: every key is itself (not the game's keys).
+    if (g.typing && takeInput) ui::g_textEntry = true;
     // ---- input (the card, a dialog or typing take it first) ----
     bool send = false;
     if (g.cardTable >= 0) {
@@ -898,7 +908,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     }
     else if (g.modal == Modal::Rules) {
         if (Pressed({ImGuiKey_GamepadL1}, false)) g.rulesTable = (g.rulesTable + tables - 1) % tables;
-        if (Pressed({ImGuiKey_GamepadR1, ImGuiKey_Tab}, false)) g.rulesTable = (g.rulesTable + 1) % tables;
+        if (Pressed({ImGuiKey_GamepadR1}, false)) g.rulesTable = (g.rulesTable + 1) % tables;
         if (Up()) g.rulesRow = std::max(0, g.rulesRow - 1);
         if (Down()) g.rulesRow = std::min(4, g.rulesRow + 1);
         if (Left()) StepRule(&g.rulesEdit[g.rulesTable], g.rulesRow, -1);
@@ -970,8 +980,8 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
                 if (Left()) g.seatSide = 0;
                 if (Right()) g.seatSide = 1;
             }
-            // Enter is the chat's here (it starts typing below): A, Space or a
-            // click confirm.
+            // Enter starts typing here, when the game's keys leave it free
+            // (by default it is Start); A or a click confirm.
             const bool enter = Pressed({ImGuiKey_Enter, ImGuiKey_KeypadEnter}, false);
             const bool confirm = Confirm() && !enter;
             if (!v.tableNotice.empty() && confirm) {
@@ -989,7 +999,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
             }
             if (y && !back) in->myCharacter = true;
             // X: watch this table's sets (not the one you sit at); again, stop.
-            if (Pressed({ImGuiKey_GamepadFaceLeft, ImGuiKey_X}, false) && !paused && !atFocused) in->watch = v.watching == g.table ? -1 : g.table;
+            if (Pressed({ImGuiKey_GamepadFaceLeft}, false) && !paused && !atFocused) in->watch = v.watching == g.table ? -1 : g.table;
             if (Pressed({ImGuiKey_GamepadStart}, false) && v.owner == v.self && !paused) {
                 g.modal = Modal::Rules;
                 g.rulesTable = g.table;
@@ -1197,29 +1207,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         else if (pressed == 0) Request(in, "kick", {std::to_string(g.removing)});
         g.modal = Modal::None;
     }
-    if (clicked >= 0) {
-        const std::string what = prompts[clicked].second;
-        const char* icon = prompts[clicked].first;
-        if ((g.modal == Modal::Leaving || g.modal == Modal::Remove) && what == "Select") {
-            if (g.choice == 0 && g.modal == Modal::Leaving) in->leave = true;
-            else if (g.choice == 0) Request(in, "kick", {std::to_string(g.removing)});
-            g.modal = Modal::None;
-        }
-        else if (std::strcmp(icon, "button_b") == 0 && g.modal != Modal::None) g.modal = Modal::None;
-        else if (what == "Leave") g.modal = Modal::Leaving, g.choice = 0;
-        else if (what == "Ready") {
-            g.cardReady = true;
-            if (!v.tableNotice.empty()) in->clearNotice = true;
-            Request(in, "ready", {std::to_string(g.cardTable)});
-            in->delay = g.cardDelay;
-        }
-        else if (what == "Leave queue") Request(in, "decline", {std::to_string(g.cardTable)});
-        else if (what == "My character") in->myCharacter = true;
-        else if (what == "Watch") in->watch = g.table;
-        else if (what == "Stop watching") in->watch = -1;
-        else if (what == "OK") in->clearNotice = true;
-        else if (what == "Cancel" && handoffTable >= 0) in->cancelHandoff = true;
-    }
+    // A prompt clicked is its button, the next frame (ui::ClickPad).
     (void)mySeat;
     g_inputOn = false;
     d->PopClipRect();

@@ -282,7 +282,6 @@ Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const st
     c.savestateHotkeys = ReadInt(path, L"probe", L"debug_hotkeys", 0) != 0;
     c.forceOfflineFrames = ReadInt(path, L"probe", L"force_offline_frames", 0) != 0;
     c.forceEnable = ReadInt(path, L"probe", L"force_enable", 0) != 0;
-    c.offlineBoot = ReadInt(path, L"boot", L"offline", 1) != 0;
     c.includeSyncCounters = ReadInt(path, L"probe", L"include_sync_counters", 1) != 0;
     c.verbose = ReadInt(path, L"probe", L"verbose", 0) != 0;
 

@@ -1,5 +1,6 @@
 #include "mod/ui_kit.h"
 
+#include "core/key_names.h"
 #include "mod/flow.h"
 #include "mod/log.h"
 #include "mod/pak_textures.h"
@@ -200,7 +201,42 @@ void FadeFrom(ImDrawList* d, int from, float alpha)
 // ----- input ----------------------------------------------------------------
 
 bool g_inputOn = false;                         // this frame reads input
-bool g_clickConfirm = false, g_clickBack = false, g_clickSetting = false; // a prompt clicked last frame: A, B or Y this frame
+bool g_textEntry = false;
+namespace {
+int g_keyboardMap[16] = {};
+} // namespace
+
+void SetKeyboardMap(const int (&vk)[16]) { std::copy(std::begin(vk), std::end(vk), std::begin(g_keyboardMap)); }
+
+uint32_t MappedPadKeys(int vk)
+{
+    uint32_t bits = 0;
+    for (int slot = 0; slot < kKeyboardSlots && vk; slot++) {
+        if (g_keyboardMap[slot] == vk) bits |= PadKeyOfSlot(slot);
+    }
+    return bits;
+}
+ImGuiKey g_clickKey = ImGuiKey_None, g_clickNext = ImGuiKey_None; // a glyph clicked: this frame's button, the next's
+
+void ClickPad(ImGuiKey key) { g_clickNext = key; }
+void BeginInputFrame() { g_clickKey = std::exchange(g_clickNext, ImGuiKey_None); }
+
+ImGuiKey PadKeyOfGlyph(const char* glyph)
+{
+    struct Named {
+        const char* glyph;
+        ImGuiKey key;
+    };
+    static const Named kGlyphs[] = {
+        {"button_a", ImGuiKey_GamepadFaceDown}, {"button_b", ImGuiKey_GamepadFaceRight}, {"button_x", ImGuiKey_GamepadFaceLeft},
+        {"button_y", ImGuiKey_GamepadFaceUp},   {"button_start", ImGuiKey_GamepadStart}, {"button_back", ImGuiKey_GamepadBack},
+        {"button_lb", ImGuiKey_GamepadL1},      {"button_rb", ImGuiKey_GamepadR1},
+    };
+    for (const Named& n : kGlyphs) {
+        if (glyph && std::strcmp(glyph, n.glyph) == 0) return n.key;
+    }
+    return ImGuiKey_None;
+}
 
 // Directions repeat while held; A and B count once per press (a long
 // frame, a character loading, would make a held A a repeat: the loadout's
@@ -209,29 +245,22 @@ bool Pressed(std::initializer_list<ImGuiKey> keys, bool repeat)
 {
     if (!g_inputOn) return false;
     for (ImGuiKey k : keys) {
-        if (ImGui::IsKeyPressed(k, repeat)) return true;
+        if (k == g_clickKey || ImGui::IsKeyPressed(k, repeat)) return true;
     }
     return false;
 }
-bool Left() { return Pressed({ImGuiKey_LeftArrow, ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}); }
-bool Right() { return Pressed({ImGuiKey_RightArrow, ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight}); }
-bool Up() { return Pressed({ImGuiKey_UpArrow, ImGuiKey_GamepadDpadUp, ImGuiKey_GamepadLStickUp}); }
-bool Down() { return Pressed({ImGuiKey_DownArrow, ImGuiKey_GamepadDpadDown, ImGuiKey_GamepadLStickDown}); }
-bool Confirm()
-{
-    const bool clicked = g_inputOn && std::exchange(g_clickConfirm, false);
-    return clicked || Pressed({ImGuiKey_Enter, ImGuiKey_KeypadEnter, ImGuiKey_Space, ImGuiKey_GamepadFaceDown}, false);
-}
-bool Back()
-{
-    const bool clicked = g_inputOn && std::exchange(g_clickBack, false);
-    return clicked || Pressed({ImGuiKey_Escape, ImGuiKey_Backspace, ImGuiKey_GamepadFaceRight}, false);
-}
+// The keyboard's keys come as the pad's (SetKeyboardMap): no keys of the
+// mod's own beside them, so a keyboard works as in the game's menus.
+bool Left() { return Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}); }
+bool Right() { return Pressed({ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight}); }
+bool Up() { return Pressed({ImGuiKey_GamepadDpadUp, ImGuiKey_GamepadLStickUp}); }
+bool Down() { return Pressed({ImGuiKey_GamepadDpadDown, ImGuiKey_GamepadLStickDown}); }
+bool Confirm() { return Pressed({ImGuiKey_GamepadFaceDown}, false); }
+bool Back() { return Pressed({ImGuiKey_GamepadFaceRight}, false); }
 // Y: the stage's next setting.
 bool NextSetting()
 {
-    const bool clicked = g_inputOn && std::exchange(g_clickSetting, false);
-    return clicked || Pressed({ImGuiKey_GamepadFaceUp}, false);
+    return Pressed({ImGuiKey_GamepadFaceUp}, false);
 }
 
 bool Clicked() { return g_inputOn && ImGui::IsMouseClicked(ImGuiMouseButton_Left); }
@@ -438,9 +467,7 @@ void DrawPrompts(ImDrawList* d, ImFont* text, const std::vector<Prompt>& prompts
         Glyph(d, p.icon, g_v.P(right - w + 5, top + 5), g_v.P(right - w + 37, top + 37), IM_COL32_WHITE, false);
         Text(d, text, g_v.L(19), g_v.P(right - w + 42, top + 9), Rgba(244, 241, 232), p.label);
         if (Clicked() && MouseIn(a, b)) {
-            if (p.action == 0) g_clickConfirm = true;
-            else if (p.action == 1) g_clickBack = true;
-            else if (p.action == 3) g_clickSetting = true;
+            ClickPad(PadKeyOfGlyph(p.icon));
         }
         right -= w + 18;
     }
@@ -677,7 +704,10 @@ float PromptRow(ImDrawList* d, ImFont* f, float size, const PromptList& prompts,
         const float ty = y + (glyph - size * 1.25f) / 2;
         if (stage) StageText(d, f, size, px + glyph + 8, ty, kCream, prompts[i].second);
         else Text(d, f, g_v.L(size), g_v.P(px + glyph + 8, ty), kCream, prompts[i].second);
-        if (clicked && Clicked() && MouseIn(g_v.P(px, y - 6), g_v.P(right, y + glyph + 6))) *clicked = i;
+        if (Clicked() && MouseIn(g_v.P(px, y - 6), g_v.P(right, y + glyph + 6))) {
+            ClickPad(PadKeyOfGlyph(prompts[i].first));
+            if (clicked) *clicked = i;
+        }
         right = px - gap;
     }
     return right + gap;

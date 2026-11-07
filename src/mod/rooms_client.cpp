@@ -57,7 +57,8 @@ constexpr int64_t kAnswerWaitMs = 20000; // the keeper's answer to a request
 constexpr int64_t kVerifyMs = 4000;      // a joined room shows it is a custom room within this
 constexpr int64_t kHandBackEveryMs = 2000;
 constexpr int64_t kPeekEveryMs = 3000;   // the focused room's detail, again while focused
-constexpr int64_t kPeekGapMs = 650;      // between any two peeks (the keeper drops one within 500 ms)
+constexpr int64_t kPeekGapMs = 650;
+constexpr int64_t kLeftHideMs = 30000;   // a room just left alone stays out of the list until the listing drops it, this long at most      // between any two peeks (the keeper drops one within 500 ms)
 constexpr int64_t kPingEveryMs = 2000;   // each room member
 
 int64_t ClockUs()
@@ -79,6 +80,12 @@ struct Client {
     int64_t createAskAt = 0;
     std::optional<std::string> joinAsk;
     bool leaveAsk = false;
+    // The room just left, and when: the server's listing has it a few
+    // seconds more, counting this player; left alone in it, that showed a
+    // room already closing with you in it. Listed rooms of 1 by that code
+    // are left out until the listing drops it (or kLeftHideMs).
+    std::string leftRoom;
+    int64_t leftAtMs = 0;
     std::vector<std::string> chatOut;
     keeper::ChatLimiter limiter;
     std::string peekWanted; // RoomsPeek
@@ -328,6 +335,11 @@ struct Client {
             if (!keeper::ParseRoomListing(r.code, r.listing, lobby::kProtocol, &l)) continue;
             if (!Signed(keeper::ListingMessage(r.code, r.listing), r.listing)) continue;
             list.push_back(std::move(l));
+        }
+        if (!leftRoom.empty()) {
+            const auto left = std::find_if(list.begin(), list.end(), [&](const keeper::ListedRoom& r) { return r.code == leftRoom; });
+            if (left == list.end() || NowMs() - leftAtMs > kLeftHideMs) leftRoom.clear(); // gone from the listing: done
+            else if (left->members <= 1) list.erase(left);                                     // only this player was in it
         }
         keeper::SortRoomList(&list);
         view.publicRooms = std::move(list);
@@ -968,6 +980,9 @@ struct Client {
                     }
                 }
                 Log("rooms: leaving %s", view.room.c_str());
+                leftRoom = view.room;
+                leftAtMs = NowMs();
+                std::erase_if(view.publicRooms, [&](const keeper::ListedRoom& r) { return r.code == leftRoom && r.members <= 1; });
                 BackToLobby("", true);
             }
         }

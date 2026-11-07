@@ -15,10 +15,11 @@
 
 namespace sfv::mod {
 
-// offlineBoot: when the title asks for InitialState (which logs in to the
-// game's servers, then shows the login result dialogs), switch to the main
-// menu instead.
-bool InstallFlowProbes(const GameImage& image, bool offlineBoot);
+// When the title asks for InitialState (which logs in to the game's servers,
+// then shows the login result dialogs), switch to the main menu instead:
+// always, so the game never tries Capcom's servers with the mod in (the
+// [boot] offline setting is gone).
+bool InstallFlowProbes(const GameImage& image);
 
 // Runs `task` on the game thread at its next frame: PumpGameThread runs the
 // queue from the scene manager's tick and from the pad poll (neither runs

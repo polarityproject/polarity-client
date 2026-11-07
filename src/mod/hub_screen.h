@@ -36,14 +36,24 @@ struct HubLive {
     // The pictures: Play Offline shows the player's favorite (Fighter
     // Profile), Custom Rooms its own.
     std::string offlineChara, offlineStage, roomsChara, roomsStage;
+    // Why Custom Rooms cannot be used now (picking it shows this in a modal
+    // instead of a screen that can do nothing), "" when it can.
+    enum class RoomsProblem { None, Connecting, Unreachable, UpdateNeeded, Offline };
+    RoomsProblem roomsProblem = RoomsProblem::None;
+    std::string roomsServer;  // the address, for the modal
+    std::string roomsBuild;   // UpdateNeeded: the build the server runs
 };
 
-enum class HubAction { None, PlayOffline, CustomRooms, Settings };
+// RetryRooms: the modal's Try again (connect to the rooms server now).
+enum class HubAction { None, PlayOffline, CustomRooms, Settings, RetryRooms };
 
 // `fromBlack`: at launch, in place of the game's main menu: it fades in
 // from black (the menu never shows), else over whatever is there.
 void OpenHub(bool fromBlack = false);
 void CloseHub();
+// Custom Rooms' modal on the hub (HubLive::roomsProblem): the rooms screen
+// lost its server, so it gave way to the hub saying why.
+void ShowRoomsProblem();
 bool HubOpen();
 // Draws the hub (fading in when opened) and, with `takeInput`, returns what
 // the player chose this frame.

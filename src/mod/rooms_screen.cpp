@@ -531,7 +531,9 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
             if (Up()) g.key = g.key >= kKeyCols ? g.key - kKeyCols : g.key;
             if (Down()) g.key = std::min(kKeys - 1, g.key + kKeyCols);
         }
-        // Typing on a keyboard goes straight into the code.
+        // Typing on a keyboard goes straight into the code; in its panel
+        // every key is itself (not the game's keys: a code has their letters).
+        if (g.focus == kCode && g.inPanel && takeInput && !failed) ui::g_textEntry = true;
         if (g.focus == kCode && takeInput && !failed) {
             for (ImWchar c : ImGui::GetIO().InputQueueCharacters) {
                 const char up = static_cast<char>(c >= 'a' && c <= 'z' ? c - 32 : c);
@@ -687,15 +689,14 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
         prompts = {{"button_a", "Join"}, {"button_b", "Back"}};
     }
     PromptLine(d, f.body, f.bold ? f.bold : f.strong, lead, leadCol, text, prompts, &barClick);
-    const char* clicked = barClick >= 0 && barClick < static_cast<int>(prompts.size()) ? prompts[barClick].first : "";
-    auto is = [&](const char* icon) { return std::strcmp(clicked, icon) == 0; };
 
     if (!busy && v.state != S::Room) {
-        const bool a = Confirm() || is("button_a"), b = Back() || is("button_b");
-        const bool start = Pressed({ImGuiKey_GamepadStart}, false) || is("button_start") ||
+        const bool typingCode = g.focus == kCode && g.inPanel && !failed;
+        const bool a = Confirm(), b = Back() || (typingCode && Pressed({ImGuiKey_Escape}, false));
+        const bool start = Pressed({ImGuiKey_GamepadStart}, false) ||
                            (g.inPanel && Pressed({ImGuiKey_Enter, ImGuiKey_KeypadEnter}, false) && g.focus == kCode);
-        const bool x = Pressed({ImGuiKey_GamepadFaceLeft}, false) || is("button_x");
-        const bool y = Pressed({ImGuiKey_GamepadFaceUp}, false) || is("button_y");
+        const bool x = Pressed({ImGuiKey_GamepadFaceLeft}, false);
+        const bool y = Pressed({ImGuiKey_GamepadFaceUp}, false);
         if (!v.keeper && start && (v.state == S::Failed || !v.otherBuild.empty())) {
             in->settings_ = true;
         }

@@ -86,6 +86,7 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
 
     // ---- input ----
     const SettingsRow& on = rows[g.focus];
+    if (g.typing && takeInput) ui::g_textEntry = true; // typing a name: every key is itself
     if (g.typing) {
         for (ImWchar c : ImGui::GetIO().InputQueueCharacters) {
             if (c < 32 || c == 127) continue;
@@ -246,14 +247,7 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
     int clicked = -1;
     PromptLine(d, f.body, f.bold ? f.bold : f.strong, "", kGold,
                g.typing ? "Type, then Enter to keep it or Escape to leave it as it was. Empty: your Steam name." : r.hint, prompts, &clicked);
-    if (takeInput && clicked >= 0) {
-        if (std::string(prompts[clicked].first) == "button_b") in->back = true;
-        else if (r.text) {
-            g.typing = true;
-            g.text = r.editValue;
-        }
-        else in->row = r.id, in->confirm = true;
-    }
+    (void)clicked; // a prompt clicked is its button, next frame
     g_inputOn = false;
     d->PopClipRect();
 }
