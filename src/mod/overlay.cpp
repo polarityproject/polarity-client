@@ -2201,7 +2201,7 @@ std::vector<SettingsRow> SettingsRows()
         r.kicker = "ONLINE";
         r.title = "Country flag";
         r.lines = {"Shows your country's flag next to your name in rooms, based on your connection.",
-                   "When hidden, your country isn't shown to anyone.", "IP Geolocation by DB-IP (db-ip.com), CC BY 4.0."};
+                   "When hidden, your country isn't shown to anyone."};
     }
     {
         SettingsRow& r = row("wordfilter", "ONLINE", "Word filter");
@@ -2210,8 +2210,7 @@ std::vector<SettingsRow> SettingsRows()
         r.kicker = "ONLINE";
         r.title = "Word filter";
         r.lines = {"Hides offensive names and words in public rooms. Hidden names show as \"Player 1234\".",
-                   "The room list is always filtered. Private rooms never are.",
-                   "Uses the List of Dirty, Naughty, Obscene, and Otherwise Bad Words (LDNOOBW), CC BY 4.0."};
+                   "The room list is always filtered. Private rooms never are."};
     }
     {
         SettingsRow& r = row("streamer", "ONLINE", "Streamer mode");
@@ -2274,6 +2273,21 @@ std::vector<SettingsRow> SettingsRows()
         r.title = "Pack logs";
         r.lines = {"Zips logs and recent recordings into one file in the SFVR folder, to send with a bug report."};
         if (!g_packResult.empty()) r.lines.push_back(g_packResult);
+    }
+    // Third-party acknowledgements, all in one place (last).
+    {
+        SettingsRow& r = row("credits", "ABOUT", "Acknowledgements");
+        r.kicker = "ABOUT";
+        r.title = "Acknowledgements";
+        r.lines = {"Dear ImGui by Omar Cornut, MIT",
+                   "GekkoNet and Weyvelength by Jamie Meyer, BSD 2-Clause",
+                   "MinHook by Tsuda Kageyu, BSD 2-Clause",
+                   "libjuice by Paul-Louis Ageneau, MPL 2.0",
+                   "Asio by Christopher M. Kohlhoff, Boost Software License 1.0",
+                   "zpp::bits by Eyal Z, MIT",
+                   "Barlow, Archivo Black and Noto Sans CJK fonts, SIL Open Font License 1.1",
+                   "IP Geolocation by DB-IP (db-ip.com), CC BY 4.0",
+                   "List of Dirty, Naughty, Obscene, and Otherwise Bad Words (LDNOOBW), CC BY 4.0"};
     }
     return rows;
 }
