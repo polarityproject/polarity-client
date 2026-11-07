@@ -56,9 +56,14 @@ struct Notice {
 };
 // Out of a fight: glass toasts from the top right, the newest on top,
 // sliding down as they come.
-void DrawToasts(const HubFonts& f, const std::vector<Notice>& toasts);
+// `overScreen`: over one of the mod's screens (glass over its stage), else
+// over the game.
+void DrawToasts(const HubFonts& f, const std::vector<Notice>& toasts, bool overScreen);
 // In a fight: small notes at the bottom centre.
 void DrawFightNotes(const HubFonts& f, const std::vector<Notice>& notes);
+// During a session outside a fight (connecting, loading, the lobby): one
+// line at the bottom right, what is going on.
+void DrawStatusNote(const HubFonts& f, const std::string& text, uint32_t color);
 // At the game's menus (Play Offline): a note at the top centre, how to get
 // back to the hub.
 void DrawMenuNote(const HubFonts& f);

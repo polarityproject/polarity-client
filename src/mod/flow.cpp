@@ -2534,12 +2534,32 @@ void ReadLoungeComments()
 
 } // namespace
 
+std::atomic<bool> g_commentsReading{false};
+
 std::string LoungeCommentText(int id)
 {
-    std::lock_guard lock(g_commentMutex);
-    ReadLoungeComments();
-    const auto it = g_comments.find(id);
-    return it != g_comments.end() ? it->second : std::string();
+    // Asked for while drawing (the room titles): finding the table walks the
+    // game's objects (a frame of 100 ms or more, again every 2 s until the
+    // table is there), so that is done on a thread of its own; until then
+    // the title is "".
+    {
+        std::unique_lock lock(g_commentMutex, std::try_to_lock);
+        if (lock && g_commentsRead) {
+            const auto it = g_comments.find(id);
+            return it != g_comments.end() ? it->second : std::string();
+        }
+    }
+    if (!g_commentsReading.exchange(true)) {
+        std::thread([] {
+            ThreadGuard running;
+            {
+                std::lock_guard lock(g_commentMutex);
+                ReadLoungeComments();
+            }
+            g_commentsReading = false;
+        }).detach();
+    }
+    return std::string();
 }
 
 void LogAllVariants()

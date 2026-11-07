@@ -170,6 +170,7 @@ struct ModalSpec {
     std::string kicker, aside;
     ImU32 asideCol = look::kSoft;
     bool danger = false;
+    Glass glass = Glass::Modal; // Fight over a fight (no stage behind to blur)
     std::string hint;
     ImU32 hintCol = look::kMuted;
     PromptList prompts;

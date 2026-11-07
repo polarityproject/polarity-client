@@ -641,7 +641,7 @@ float Modal(ImDrawList* d, ImFont* bold, ImFont* body, const ModalSpec& m, int* 
     const ImVec2 screen = ImGui::GetIO().DisplaySize;
     d->AddRectFilled(ImVec2(0, 0), screen, IM_COL32(4, 5, 7, 153));
     const float x1 = m.x0 + m.w, y1 = m.y0 + m.h;
-    Pane(d, m.x0, m.y0, x1, y1, Glass::Modal, m.danger ? kDanger : 0);
+    Pane(d, m.x0, m.y0, x1, y1, m.glass, m.danger ? kDanger : 0);
     Strip(d, m.x0 + 2, m.y0 + 2, x1 - 2, m.y0 + 44, false);
     Text(d, bold, g_v.L(14), g_v.P(m.x0 + 28, m.y0 + 14), m.danger ? kDanger : kGold, m.kicker);
     if (!m.aside.empty()) Text(d, body, g_v.L(15), g_v.P(x1 - 28, m.y0 + 13), m.asideCol, m.aside, 1);

@@ -1,5 +1,6 @@
 #include "mod/fight_ui.h"
 
+#include "mod/log.h"
 #include "mod/rooms_screen.h" // DrawFlag
 #include "mod/ui_kit.h"
 
@@ -55,6 +56,7 @@ void DrawLeaveModal(const HubFonts& f, bool set, bool takeInput, bool* leave, bo
     m.y0 = (844 - m.h) / 2;
     m.kicker = "LEAVE";
     m.danger = true;
+    m.glass = Glass::Fight;
     m.prompts = {{"button_a", "Select"}, {"button_b", "Stay"}};
     int prompt = -1;
     float y = Modal(d, bold, f.body, m, &prompt) + 22;
@@ -68,11 +70,15 @@ void DrawLeaveModal(const HubFonts& f, bool set, bool takeInput, bool* leave, bo
     if (takeInput) {
         if (Left() || Right()) g_leaveChoice = 1 - g_leaveChoice;
         if (pressed >= 0) g_leaveChoice = pressed;
-        if (Back() || prompt == 1) *stay = true;
+        const char* how = nullptr;
+        if (Back()) how = "B", *stay = true;
+        else if (prompt == 1) how = "the footer's Stay", *stay = true;
         else if (Confirm() || pressed >= 0 || prompt == 0) {
+            how = pressed >= 0 ? "a click" : prompt == 0 ? "the footer's Select" : "A";
             if (g_leaveChoice == 0) *leave = true;
             else *stay = true;
         }
+        if (how) Log("leave modal: %s by %s", *leave ? "Leave" : "Stay", how);
     }
     g_inputOn = false;
 }
@@ -100,7 +106,7 @@ void DrawVote(const HubFonts& f, const VoteSide (&sides)[2], bool armed, bool ta
         if (buttons) h += 4 + 3 * 48 + 2 * 8 + 10 + 50 + (s.suggestion.empty() ? 0 : 26);
         h += 18 + 46;
         const float x0 = s.slot == 0 ? 48 : 1600 - 48 - kW, x1 = x0 + kW, y0 = kBottom - h;
-        Pane(d, x0, y0, x1, kBottom, Glass::Modal);
+        Pane(d, x0, y0, x1, kBottom, Glass::Fight);
         Strip(d, x0 + 2, y0 + 2, x1 - 2, y0 + 44, false);
         Text(d, bold, g_v.L(14), g_v.P(x0 + 22, y0 + 14), look::kGold, s.slot == 0 ? (s.mine ? "P1 \xC2\xB7 YOU" : "P1") : (s.mine ? "P2 \xC2\xB7 YOU" : "P2"));
         // The flag and name on the right: the name has what the kicker leaves.
@@ -180,7 +186,7 @@ void DrawVote(const HubFonts& f, const VoteSide (&sides)[2], bool armed, bool ta
 
 // ----- notices ----------------------------------------------------------------------
 
-void DrawToasts(const HubFonts& f, const std::vector<Notice>& toasts)
+void DrawToasts(const HubFonts& f, const std::vector<Notice>& toasts, bool overScreen)
 {
     if (toasts.empty() || !f.body) return;
     BeginScreen();
@@ -198,7 +204,7 @@ void DrawToasts(const HubFonts& f, const std::vector<Notice>& toasts)
         const float w = 18 + 10 + 12 + textW + 18 + 2, h = textH + 20;
         const float x0 = kRight - w, y0 = y - (1 - ease) * (h + 10);
         const int from = d->VtxBuffer.Size;
-        Pane(d, x0, y0, kRight, y0 + h, Glass::Modal);
+        Pane(d, x0, y0, kRight, y0 + h, overScreen ? Glass::Modal : Glass::Fight);
         Diamond(d, x0 + 18 + 5, y0 + h / 2, 10, n.color);
         Wrapped(d, f.body, 16, x0 + 18 + 10 + 12, y0 + 10, kTextW, look::kCream, n.text);
         FadeFrom(d, from, alpha);
@@ -236,6 +242,21 @@ void DrawFightNotes(const HubFonts& f, const std::vector<Notice>& notes)
         FadeFrom(d, from, alpha);
         y1 = y0 - 6;
     }
+}
+
+void DrawStatusNote(const HubFonts& f, const std::string& text, uint32_t color)
+{
+    if (!f.body || text.empty()) return;
+    BeginScreen();
+    ImDrawList* d = ImGui::GetForegroundDrawList();
+    std::string shown = text;
+    while (shown.size() > 1 && TextW(f.body, 14, shown) > 760) shown.pop_back();
+    const float w = 14 + 8 + 10 + TextW(f.body, 14, shown) + 14, h = 30;
+    const float x1 = 1600 - 24, y1 = 900 - 18, x0 = x1 - w, y0 = y1 - h;
+    d->AddRectFilled(g_v.P(x0, y0), g_v.P(x1, y1), Rgba(10, 12, 16, 184));
+    d->AddRect(g_v.P(x0, y0), g_v.P(x1, y1), Rgba(236, 228, 206, 89), 0.0f, 0, std::max(1.0f, g_v.L(1)));
+    Diamond(d, x0 + 14 + 4, y0 + h / 2, 8, color);
+    Text(d, f.body, g_v.L(14), g_v.P(x0 + 32, y0 + 6), look::kSoft, shown);
 }
 
 void DrawMenuNote(const HubFonts& f)

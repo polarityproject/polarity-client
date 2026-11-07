@@ -187,7 +187,10 @@ void FeedPads(ImGuiIO& io)
     if (fresh || g_chordKey.exchange(false)) {
         chordAt = GetTickCount64();
         chordInPress = chord;
-        if (g_visible) SetOverlayVisible(false);
+        if (g_visible) {
+            Log("overlay: Back + Start again: the leave modal closes");
+            SetOverlayVisible(false);
+        }
         else if (g_hubAllowed && !HubOpen()) {
             Log("overlay: Back + Start: the hub");
             OpenHub();
@@ -820,6 +823,7 @@ void LoadTables()
                 Log("overlay: character lists read: %zu characters, %zu stages (scene %s)", g_tables.charas.size(),
                     g_tables.stages.size(), CurrentScene().c_str());
                 ReadComments(g_tables.charas);
+                LoungeCommentText(0); // the room titles' table, read on its own thread before the browser asks
             }
             g_readTables.reset();
             g_readingTables = false; // not loaded yet (game still starting): read again later
@@ -1620,12 +1624,12 @@ void DrawStrip(const NetView& v)
     ImVec4 color = kDim;
     char buf[160];
     switch (v.phase) {
-    case NetView::Phase::Hosting: text = "Hosting " + v.code + " - waiting (F1)"; break;
+    case NetView::Phase::Hosting: text = "Hosting " + v.code + ": waiting for the other player"; break;
     case NetView::Phase::Connecting:
     case NetView::Phase::Joining:
     case NetView::Phase::Jumping:
     case NetView::Phase::Loading: text = v.status; break;
-    case NetView::Phase::Lobby: text = "Lobby (F1)"; break;
+    case NetView::Phase::Lobby: text = "Lobby"; break;
     case NetView::Phase::PostMatch: text = "Match over"; break;
     case NetView::Phase::Running:
         if (v.syncing) {
@@ -1645,14 +1649,7 @@ void DrawStrip(const NetView& v)
     case NetView::Phase::Ended:
     case NetView::Phase::Idle: return;
     }
-    const ImGuiIO& io = ImGui::GetIO();
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 10, io.DisplaySize.y - 10), ImGuiCond_Always, ImVec2(1, 1));
-    ImGui::SetNextWindowBgAlpha(0.45f);
-    ImGui::Begin("##strip", nullptr,
-                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
-                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
-    ImGui::TextColored(color, "%s", text.c_str());
-    ImGui::End();
+    DrawStatusNote(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, text, ImGui::ColorConvertFloat4ToU32(color));
 }
 
 // ----- without the panel: HUD, banner, toasts, the vote ---------------------
@@ -1764,7 +1761,7 @@ void DrawNotices(bool fight, const NetView& v)
     else if (g_preview.desync) notices.push_back(DesyncNotice(PreviewView(NetView::Phase::Running))); // the previews' (`overlay preview desync`)
     if (notices.empty()) return;
     if (fight) DrawFightNotes(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, notices);
-    else DrawToasts(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, notices);
+    else DrawToasts(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, notices, HubOpen());
 }
 
 // During a match: a bar at the very top of the screen over each health bar

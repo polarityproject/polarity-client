@@ -42,6 +42,7 @@ void DrawWatchPanel(const HubFonts& f, const WatchPanelLive& live, float alpha, 
     m.w = 760;
     m.h = 44 + 20 + 34 + 18 + 52 + 24 + 48;
     m.y0 = 440;
+    m.glass = Glass::Fight;
     m.kicker = live.table >= 0 ? "WATCHING \xC2\xB7 TABLE " + std::to_string(live.table + 1) : "WATCHING";
     m.aside = "GAME " + std::to_string(at >= 0 ? at + 1 : std::max(count, 1));
     m.asideCol = look::kGold;
@@ -49,17 +50,28 @@ void DrawWatchPanel(const HubFonts& f, const WatchPanelLive& live, float alpha, 
     m.prompts = {{"button_a", "Go"}, {"button_y", "Stop watching"}, {"button_b", "Resume"}};
     int prompt = -1;
     float y = Modal(d, bold, f.body, m, &prompt) + 20;
-    // Flag, name, "vs", flag, name.
+    // Flag, name, "vs", flag, name: smaller (down to 18) when two long names
+    // would run past the pane, then cut.
+    std::string names[2];
+    for (int i = 0; i < 2; i++) names[i] = live.players[i].empty() ? (i == 0 ? "P1" : "P2") : live.players[i];
+    auto lineW = [&](float size) {
+        return TextW(f.display, size, names[0]) + TextW(f.display, size, names[1]) + TextW(f.display, size, "vs") + 4 * 12 + 2 * 32;
+    };
+    float size = 28;
+    while (size > 18 && lineW(size) > 704) size -= 1;
+    for (int i = 0; i < 2; i++) {
+        while (names[i].size() > 1 && lineW(size) > 704) names[i].pop_back();
+    }
     float x = 448;
+    const float ty = y + (28 - size) / 2;
     for (int i = 0; i < 2; i++) {
         if (i == 1) {
-            Text(d, f.display, g_v.L(28), g_v.P(x, y), look::kSoft, "vs");
-            x += TextW(f.display, 28, "vs") + 12;
+            Text(d, f.display, g_v.L(size), g_v.P(x, ty), look::kSoft, "vs");
+            x += TextW(f.display, size, "vs") + 12;
         }
         if (const float fw = DrawFlag(d, f.strong, live.countries[i], x, y + 11, 15)) x += fw + 12;
-        const std::string name = live.players[i].empty() ? (i == 0 ? "P1" : "P2") : live.players[i];
-        Text(d, f.display, g_v.L(28), g_v.P(x, y), look::kCream, name);
-        x += TextW(f.display, 28, name) + 12;
+        Text(d, f.display, g_v.L(size), g_v.P(x, ty), look::kCream, names[i]);
+        x += TextW(f.display, size, names[i]) + 12;
     }
     y += 34 + 18;
     // The three buttons, the focused one gold; LB, X and RB go straight there.
