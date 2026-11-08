@@ -12,8 +12,13 @@
 #     the same for the rooms branch's builds (docs/custom-rooms-plan.md):
 #     writes public\rooms\update.json and its .sig instead, with the files in
 #     the shared releases\<version>\. The build's own channel (kUpdateChannel
-#     in src\mod\updater.h) must match. Rooms versions carry -rooms.N; a plain
-#     version goes on rooms only as 0.3.0, the move back to main.
+#     in src\mod\updater.h) must match. Rooms versions carry -rooms.N. Since
+#     0.3.0 rooms installs move to main: for a plain version, -Channel rooms
+#     mirrors main's update info (re-signed, same files), and every main
+#     publish refreshes that mirror, so it never points at a pruned release.
+#   prune-releases.ps1
+#     removes the release folders no update info points at (updaters only
+#     ever read the current update.json).
 #   release.ps1 -NewKey
 #     makes the update signing key, once: the private half goes to -KeyFile
 #     (outside the repositories: keep a backup, never share it), the public
@@ -67,17 +72,16 @@ $public = Join-Path (Resolve-Path $Site) 'public'
 # The channel: the build's own, and the versions that belong on it.
 $isRooms = $version -match '-rooms\.\d+$'
 if ($Channel -eq 'main' -and $isRooms) { throw "$version is a rooms build; publish it with -Channel rooms" }
-if ($Channel -eq 'rooms' -and -not $isRooms -and $version -ne '0.3.0') { throw "the rooms channel takes 0.3.0-rooms.N versions (or 0.3.0 itself), not $version" }
 $infoDir = if ($Channel -eq 'rooms') { Join-Path $public 'rooms' } else { $public }
 # Rooms' update info sits a folder down; its URLs start at the site's root.
 $prefix = if ($Channel -eq 'rooms') { '/' } else { '' }
 
-# The move back to main: 0.3.0, already published on main, offered on rooms
-# too. Main's update info is re-signed for rooms with the same files, which
-# stay byte for byte; nothing is built or copied.
-if ($Channel -eq 'rooms' -and $version -eq '0.3.0') {
+# Rooms installs move to main: main's update info, re-signed for rooms with
+# the same files (which stay byte for byte; nothing built or copied). Its
+# URLs start at the site's root, as rooms' update info sits a folder down.
+function Write-RoomsMirror {
   $main = Get-Content (Join-Path $public 'update.json') -Raw | ConvertFrom-Json
-  if ($main.version -ne '0.3.0') { throw "publish 0.3.0 on main first (public\update.json has $($main.version))" }
+  $roomsDir = Join-Path $public 'rooms'
   $info = [ordered]@{
     product = $main.product; version = $main.version; published = $main.published; notes = $main.notes
     download = "/$($main.download)"
@@ -85,10 +89,15 @@ if ($Channel -eq 'rooms' -and $version -eq '0.3.0') {
     more_files = @($main.more_files | Where-Object { $_ } | ForEach-Object { [ordered]@{ path = $_.path; size = $_.size; sha256 = $_.sha256; url = "/$($_.url)" } })
   }
   $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($info | ConvertTo-Json -Depth 4) + "`n")
-  New-Item -ItemType Directory -Force $infoDir | Out-Null
-  [IO.File]::WriteAllBytes((Join-Path $infoDir 'update.json'), $bytes)
-  [IO.File]::WriteAllText((Join-Path $infoDir 'update.json.sig'), [Convert]::ToBase64String($ecdsa.SignData($bytes, [Security.Cryptography.HashAlgorithmName]::SHA256)))
-  "SFVR 0.3.0 offered on the rooms channel ($infoDir): rooms installs move to main with it"
+  New-Item -ItemType Directory -Force $roomsDir | Out-Null
+  [IO.File]::WriteAllBytes((Join-Path $roomsDir 'update.json'), $bytes)
+  [IO.File]::WriteAllText((Join-Path $roomsDir 'update.json.sig'), [Convert]::ToBase64String($ecdsa.SignData($bytes, [Security.Cryptography.HashAlgorithmName]::SHA256)))
+  "SFVR $($main.version) offered on the rooms channel too ($roomsDir): rooms installs move to main with it"
+}
+if ($Channel -eq 'rooms' -and -not $isRooms) {
+  $main = Get-Content (Join-Path $public 'update.json') -Raw | ConvertFrom-Json
+  if ($main.version -ne $version) { throw "publish $version on main first (public\update.json has $($main.version))" }
+  Write-RoomsMirror
   exit 0
 }
 $followed = (Select-String -Path (Join-Path $root 'src\mod\updater.h') -Pattern 'kUpdateChannel = "([^"]+)"').Matches.Groups[1].Value
@@ -157,5 +166,6 @@ New-Item -ItemType Directory -Force $infoDir | Out-Null
 [IO.File]::WriteAllBytes((Join-Path $infoDir 'update.json'), $bytes)
 [IO.File]::WriteAllText((Join-Path $infoDir 'update.json.sig'), [Convert]::ToBase64String($signature))
 "SFVR $version published to $infoDir on the $Channel channel ($($files.Count) files + $($moreFiles.Count) more, signed)"
+if ($Channel -eq 'main' -and (Test-Path (Join-Path $public 'rooms\update.json'))) { Write-RoomsMirror }
 "notes: $Notes"
 "next: commit here and in sfvr-site, git tag v$version, then sfvr-site\build.ps1 for the upload"
