@@ -5,6 +5,6 @@
 
 namespace sfv {
 
-constexpr const char* kSfvrVersion = "0.3.0";
+constexpr const char* kSfvrVersion = "0.3.0.1";
 
 } // namespace sfv

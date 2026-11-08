@@ -5,6 +5,19 @@ first paragraph is the summary players see in the game (Settings, Updates);
 `scripts/release.ps1` reads it, and refuses to publish a version that has no
 entry here. Newest first; the format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [0.3.0.1] - 2026-11-07
+
+Players who updated from 0.2.x reach the new server, and a new name takes
+effect without restarting the game.
+
+### Fixed
+
+- A game updated from 0.2.x kept looking for SFVR's old server, so Custom
+  Rooms couldn't connect, unless a server had been picked in SFVR settings
+  since. The old address now means the new server wherever it was saved.
+- A name changed in SFVR settings only showed in rooms after restarting the
+  game. It now takes effect at once (in a room, as soon as you leave it).
+
 ## [0.3.0] - 2026-11-07
 
 Custom rooms: up to 16 players on up to eight tables with their own rules,
