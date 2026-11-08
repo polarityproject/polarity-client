@@ -126,18 +126,32 @@ class Agent:
     def launch_options(self):
         # The game's Steam launch options (localconfig.vdf), for ping.
         home = os.path.expanduser('~')
+        seen = False  # a block for the app, without options
         for vdf in glob.glob(os.path.join(home, '.local/share/Steam/userdata/*/config/localconfig.vdf')) + \
                 glob.glob(os.path.join(home, '.steam/steam/userdata/*/config/localconfig.vdf')):
             try:
                 text = open(vdf, encoding='utf-8', errors='replace').read()
             except OSError:
                 continue
-            m = re.search(r'"' + APP_ID + r'"\s*\{(.*?)\n\t*\}', text, re.S)
-            if not m:
-                continue
-            opts = re.search(r'"LaunchOptions"\s*"((?:[^"\\]|\\.)*)"', m.group(1))
-            return opts.group(1).replace('\\"', '"') if opts else ''
-        return None
+            # Every block for the app (the file has more than one, and they
+            # nest), to its matching brace: the first with LaunchOptions.
+            for m in re.finditer(r'"' + APP_ID + r'"\s*\{', text):
+                depth, i = 1, m.end()
+                while i < len(text) and depth:
+                    if text[i] == '"':  # a quoted string: braces in it do not count
+                        i += 1
+                        while i < len(text) and text[i] != '"':
+                            i += 2 if text[i] == '\\' else 1
+                    elif text[i] == '{':
+                        depth += 1
+                    elif text[i] == '}':
+                        depth -= 1
+                    i += 1
+                opts = re.search(r'"LaunchOptions"\s*"((?:[^"\\]|\\.)*)"', text[m.end():i])
+                if opts:
+                    return opts.group(1).replace('\\"', '"')
+                seen = True
+        return '' if seen else None
 
     # ----- ops -------------------------------------------------------------------
 
