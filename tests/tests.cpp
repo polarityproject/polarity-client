@@ -864,6 +864,47 @@ void TestSpectator()
     }
 }
 
+// Watching with the stream falling behind: low on frames it holds some
+// rendered frames (and plays the rest), dry it stalls, and it resumes with a
+// quarter of the delay in hand, not all of it.
+void TestSpectatorPacing()
+{
+    MockGame game;
+    SpectateConfig sc;
+    sc.delayFrames = 20;
+    SpectatorPlayback spec(game, sc);
+    std::string error;
+    CHECK(spec.Start(&error));
+    std::vector<FrameInputs> in(1);
+    int sent = 0;
+    auto send = [&](int n) {
+        for (int i = 0; i < n; i++, sent++) spec.Add(sent, in, {0});
+    };
+    send(19);
+    spec.Update();
+    CHECK(spec.NextFrame() == 0); // the first start waits for the whole delay
+    send(1);
+    for (int i = 0; i < 9; i++) spec.Update();
+    CHECK(spec.NextFrame() == 9 && spec.Held() == 0); // 11 in hand: full speed
+    for (int i = 0; i < 12; i++) spec.Update();
+    CHECK(spec.Held() > 0 && spec.Stalls() == 0);     // under a quarter of the delay: some frames held
+    const int played = spec.NextFrame();
+    for (int i = 0; i < 40 && spec.Stalls() == 0; i++) spec.Update();
+    CHECK(spec.Stalls() == 1 && spec.NextFrame() == 20); // dry
+    CHECK(played < 20);
+    send(4);
+    spec.Update();
+    CHECK(spec.NextFrame() == 20); // 4 in hand: not yet
+    send(1);
+    for (int i = 0; i < 3; i++) spec.Update();
+    CHECK(spec.NextFrame() > 20 && spec.Stalls() == 1); // 5 (a quarter of 20): playing again (slowly)
+    send(60);
+    for (int i = 0; i < 30; i++) spec.Update();
+    const int heldBefore = spec.Held();
+    for (int i = 0; i < 6; i++) spec.Update();
+    CHECK(spec.Held() == heldBefore); // half the delay in hand again: full speed
+}
+
 void TestUpdateInfo()
 {
     JsonValue j;
@@ -2028,6 +2069,7 @@ int main()
         {"mux and net conditions", TestMuxAndConditions},
         {"wrong build refused", TestWrongBuildIsRefused},
         {"spectator", TestSpectator},
+        {"spectator pacing", TestSpectatorPacing},
         {"update info", TestUpdateInfo},
         {"update signature", TestUpdateSignature},
         {"texture package", TestTexturePackage},

@@ -2815,8 +2815,8 @@ private:
             const ReplayFile rf = spectate_->Recording();
             const std::string path = SaveReport(rf, "watched");
             char summary[160];
-            std::snprintf(summary, sizeof(summary), "watched %d frames (%d stalls, %d desyncs)", spectate_->NextFrame(),
-                          spectate_->Stalls(), spectate_->DesyncCount());
+            std::snprintf(summary, sizeof(summary), "watched %d frames (%d stalls, %d frames held, longest wait for frames %d ms, %d desyncs)",
+                          spectate_->NextFrame(), spectate_->Stalls(), spectate_->Held(), spectate_->LongestGapMs(), spectate_->DesyncCount());
             Log("netplay: %s; recording %s", summary, path.c_str());
             WriteMatchLog(path, rf, summary);
             spectate_.reset();
