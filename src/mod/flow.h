@@ -249,6 +249,8 @@ void SetSchedulerPhase(int phase, bool replaying = false);
 // Experiment (`resimtasks`): task functions (rvas) that replayed ticks leave
 // out in scheduler phases 4 and 8.
 void SetResimTaskSkip(std::vector<uintptr_t> rvas);
+// The phase-4 tasks replayed ticks leave out by default (flow.cpp kLeanResimTasks).
+std::vector<uintptr_t> DefaultLeanResimTasks();
 // The game's own rollback of sounds (flow.cpp kSoundReconcileTask): on by
 // default; off, resimulated ticks play their sounds again (`soundrollback`).
 void SetSoundRollback(bool on);

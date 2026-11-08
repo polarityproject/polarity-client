@@ -2278,6 +2278,7 @@ private:
         nc.skipUnloadableSaves = options_.skipSaves;
         nc.verifyLoads = options_.verifyLoads;
         nc.verifyLoadsEvery = options_.verifyLoadsEvery;
+        nc.hashOnConfirm = options_.hashOnConfirm;
         nc.maxDumps = static_cast<size_t>(std::max(0, options_.maxDumps));
         nc.log = [](const std::string& m) { Log("netplay: %s", m.c_str()); };
         game.localPadSlot = 0;

@@ -103,6 +103,16 @@ skip_load_callbacks=1
 verify_loads=1
 ; ... after every this many loads (each check hashes the whole state; 1: all).
 verify_loads_every=16
+; 1: ticks a rollback simulates again leave out presentation work (the
+; battle update's phase 8 and some phase-4 tasks: effects, camera) that the
+; frame's newest tick makes up for; about a sixth of a long rollback's time.
+; 0: every replayed tick runs the whole update (for comparing).
+lean_resim=1
+; 1: a frame simulated on predicted inputs is hashed (for the desync check
+; and the recording) once its inputs are confirmed, from its save, instead of
+; at every simulation: a long rollback runs most frames several times.
+; 0: hashed at every simulation (for comparing).
+hash_on_confirm=1
 ; 1: when the two games' frozen starting states differ (memory the game has
 ; not initialised yet), the joiner takes the host's values before the
 ; session starts (pointer-like values and masked words excepted).

@@ -82,6 +82,8 @@ struct NetplayOptions {
     bool skipLoadCallbacks = true;         // loads leave out the costliest game callbacks (DefaultSkippedLoadCallbacks)
     bool verifyLoads = true;               // loads checked against their save's checksum (netplay.h)
     unsigned int verifyLoadsEvery = 16;    // ... every this many loads (1: all)
+    bool leanResim = true;                 // replayed ticks without presentation work (sfv_game.h SetLeanResim)
+    bool hashOnConfirm = true;             // frames on predicted inputs hashed once confirmed (NetplayConfig)
     bool menuAfterMatch = true;            // back to the main menu when a session ends or on leave
     bool hotkeys = false;                  // F7 hosts, F8 joins (testing; capture tools bind F8)
     bool reconcileStart = true;            // joiner takes the host's values where the frozen states differ (lobby.h)

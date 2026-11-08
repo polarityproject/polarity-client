@@ -810,6 +810,7 @@ namespace {
 std::mutex g_skipMutex;
 std::vector<uint64_t> g_skipCallbacks;
 std::atomic<bool> g_skipAny{false};
+std::atomic<bool> g_gameFrameIds{true};
 } // namespace
 
 std::vector<uint64_t> DefaultSkippedLoadCallbacks()
@@ -837,7 +838,7 @@ void SetSkippedLoadCallbacks(std::vector<uint64_t> keys)
     Log("loads skip %zu game callbacks:%s", g_skipCallbacks.size(), text.c_str());
 }
 
-void SfvGame::RunPostRestoreCallbacks(const game::FrameId& id)
+void SfvGame::RunPostRestoreCallbacks(const game::FrameId& gameId, const game::FrameId& oldId)
 {
     // Mirrors the loop at 0x48A45C in Restore.
     uint8_t* m = Manager();
@@ -852,30 +853,29 @@ void SfvGame::RunPostRestoreCallbacks(const game::FrameId& id)
         // Timed per function (LoadCosts): where the time after a load goes,
         // by the thunk and the function its context names (its first word,
         // an rva in the image; 0 when not): 50 callbacks share two thunks.
+        // The game's thunks (rva 0x4C1D10, 0x447A60) read the context to make
+        // the call, so it is readable whenever the call is made: no
+        // VirtualQuery per callback (about 50 a load, ~1 us each).
         void* ctx = Read<void*>(node, mgr::callback::kContext);
-        uintptr_t target = ctx && IsReadable(ctx, 8) ? *static_cast<const uintptr_t*>(ctx) : 0;
+        uintptr_t target = ctx ? *static_cast<const uintptr_t*>(ctx) : 0;
         target = target > image_.base && target < image_.base + 0x8000000 ? target - image_.base : 0;
         const uint64_t key = ((reinterpret_cast<uintptr_t>(fn) - image_.base) << 32) | target;
         if (g_skipAny) {
             std::lock_guard lock(g_skipMutex);
             if (std::find(g_skipCallbacks.begin(), g_skipCallbacks.end(), key) != g_skipCallbacks.end()) continue;
         }
-        // The sound manager's (rva 0x4B6230, flow.cpp kSoundReconcileTask)
-        // reads the restored frame from id +4 and compares it with the
-        // frames its sounds were played on (InputUnit +0x2180): it gets the
-        // game's own id, the restored counters.
-        game::FrameId soundId = id;
-        if (target == kSoundRestoreCallback && inputUnit_ && SoundRollbackOn()) {
-            soundId.lo = Read<int32_t>(inputUnit_, game::inputunit::kFrameTag);
-            soundId.hi = Read<int32_t>(inputUnit_, game::inputunit::kSimFrame);
-            if (soundRestoresLogged_ < 5) {
-                soundRestoresLogged_++;
-                Log("sound: rollback to frame %d (InputUnit tag %d, driven tick %u)", soundId.hi, soundId.lo, DrivenTicks());
-            }
-        }
+        // Two callbacks read the restored frame from id +4 and compare it
+        // with frames the game stamped from InputUnit +0x2180: the sound
+        // manager's (rva 0x4B6230: sounds played after it are replay
+        // candidates, flow.cpp kSoundReconcileTask) and 0x4D5820 (flags the
+        // items of its objects that started after it). They get the game's
+        // own id, as every callback does (soundrollback 0 / frameids 0: the
+        // mod's old id, for comparison).
+        const bool sound = target == kSoundRestoreCallback;
+        const bool useGame = sound ? SoundRollbackOn() : g_gameFrameIds.load();
         LARGE_INTEGER a, b;
         QueryPerformanceCounter(&a);
-        fn(ctx, target == kSoundRestoreCallback ? &soundId : &id);
+        fn(ctx, useGame ? &gameId : &oldId);
         QueryPerformanceCounter(&b);
         CallbackCost& c = callbackCosts_[key];
         c.ticks += b.QuadPart - a.QuadPart;
@@ -929,9 +929,7 @@ void SfvGame::Advance(const FrameInputs& inputs, bool rollingBack)
     injecting_ = true;
     BeginDrivenTick();
     SeedTickRandom();
-    // One tick: BattleFrame::Update runs 1 + [this+0x1A8] ticks.
-    *reinterpret_cast<int32_t*>(battleFrame_ + game::battleframe::kExtraTicks) = 0;
-    runFrame_(battleFrame_);
+    RunBattleTick(rollingBack);
     injecting_ = false;
     // The round director's check for this tick, and its state into the snapshot.
     RunRoundDirector();
@@ -950,6 +948,67 @@ void SfvGame::Advance(const FrameInputs& inputs, bool rollingBack)
         auto* values = reinterpret_cast<uint32_t*>(inputUnit_ + game::inputunit::kValues);
         for (int i = 0; i < 4; i++) values[i] = 0;
     }
+}
+
+namespace {
+std::atomic<bool> g_leanResim{true};
+} // namespace
+
+void SetLeanResim(bool on) { g_leanResim = on; }
+bool LeanResimOn() { return g_leanResim; }
+
+void SfvGame::RunBattleTick(bool replayed)
+{
+    namespace bf = game::battleframe;
+    uint8_t* frame = battleFrame_;
+    if (!replayed || !g_leanResim) {
+        // One tick: BattleFrame::Update runs 1 + [this+0x1A8] ticks.
+        *reinterpret_cast<int32_t*>(frame + bf::kExtraTicks) = 0;
+        runFrame_(frame);
+        return;
+    }
+    // A replayed tick: BattleFrame::Update's parts without scheduler phase 8,
+    // and phase 4 without the tasks flow.cpp leaves out of replayed ticks
+    // (kLeanResimTasks); the newest tick of the frame is a whole update and
+    // runs them. Measured 2026-11-08 (stress replays): what can be left out
+    // is presentation the newest tick makes up for, and leaving it out
+    // keeps every frame's state equal to a straight run's. Phase 1 (the round
+    // state's clocks, rva 0x4BB540), phase 2 (the battle) and the fighters'
+    // phase-4 tasks (their box ring: rva 0x386950; and 0x37D1C0, which
+    // costs more once after many ticks than once per tick) run every tick.
+    // The update's own counters (battleframe.state, in the snapshot) move
+    // as a whole update moves them.
+    using StartFn = uint64_t (*)(void*);
+    using PhaseFn = uint64_t (*)(void*, int);
+    using TickFn = uint64_t (*)(void*);
+    auto u32 = [frame](uint32_t at) -> uint32_t& { return *reinterpret_cast<uint32_t*>(frame + at); };
+    void* scheduler = *reinterpret_cast<void**>(frame + bf::kScheduler);
+    auto phase = [&](int p) {
+        if (scheduler) image_.At<PhaseFn>(bf::kSchedulerPhaseRva)(scheduler, p);
+    };
+    image_.At<StartFn>(bf::kUpdateStartRva)(frame);
+    phase(1);
+    const bool stopped = u32(bf::kStopped) != 0 && u32(bf::kStopReleased) == 0;
+    const uint32_t slow = u32(bf::kSlowEvery);
+    const bool slowed = slow != 0 && u32(bf::kUpdates) % (slow + 1) != 0;
+    if (!stopped && !slowed) {
+        const uint32_t extra = u32(bf::kExtraTicks), least = u32(bf::kMinExtraTicks);
+        const uint32_t ticks = (extra >= least ? extra : least) + 1;
+        for (uint32_t i = 0; i < ticks; i++) {
+            u32(bf::kTickCount)++;
+            phase(2);
+            if (!image_.At<TickFn>(bf::kTickProperRva)(frame)) break;
+        }
+        phase(4);
+        u32(bf::kFightUpdates)++;
+        const uint32_t step = u32(bf::kClockStep);
+        float add = static_cast<float>(static_cast<int32_t>(step & 0xFFFF)) * *image_.At<const float*>(bf::kClockScaleRva);
+        add += static_cast<float>(static_cast<int32_t>(step) >> 16);
+        float& clock = *reinterpret_cast<float*>(frame + bf::kFrameClock);
+        clock = add + clock;
+    }
+    u32(bf::kUpdates)++;
+    *reinterpret_cast<uint64_t*>(frame + bf::kExtraTicks) = 0;
 }
 
 bool SfvGame::OutcomeDecided() { return MatchDecided(); }
@@ -975,6 +1034,7 @@ std::atomic<int> g_warmupExtra{0};
 } // namespace
 
 void SetWarmupSleep(int ms) { g_warmupSleepMs = std::max(0, ms); }
+void SetGameFrameIds(bool on) { g_gameFrameIds = on; }
 void SetWarmupExtra(int ticks) { g_warmupExtra = std::max(0, ticks); }
 
 std::atomic<bool> g_watchCamera{false};
@@ -1195,12 +1255,23 @@ void SfvGame::LogStartProbe(const char* why)
 
 void SfvGame::OnStateLoaded(int frame)
 {
-    // The callbacks receive the id of the restored frame. Ours are not ids the
-    // game issued, so a callback that looks up its own per-frame data by id
-    // would fail; the probe log lists the callbacks to check that statically.
+    // The callbacks receive the id of the restored frame: the game's own, from
+    // the InputUnit's counters (restored with the snapshot), as its Restore
+    // passes it; {frame, 0x5346} was the mod's until 2026-11-08.
     LARGE_INTEGER a, b, c;
     QueryPerformanceCounter(&a);
-    RunPostRestoreCallbacks(game::FrameId{frame, 0x5346});
+    const game::FrameId oldId{frame, 0x5346};
+    game::FrameId gameId = oldId;
+    if (inputUnit_) {
+        gameId.lo = Read<int32_t>(inputUnit_, game::inputunit::kFrameTag);
+        gameId.hi = Read<int32_t>(inputUnit_, game::inputunit::kSimFrame);
+        if (restoresLogged_ < 5) {
+            restoresLogged_++;
+            Log("restore: to frame %d (InputUnit tag %d, simulated frame %d, driven tick %u)", frame, gameId.lo, gameId.hi,
+                DrivenTicks());
+        }
+    }
+    RunPostRestoreCallbacks(gameId, oldId);
     QueryPerformanceCounter(&b);
     RoundDirectorFromSnapshot();
     MatchStopToDirector(battleFrame_);

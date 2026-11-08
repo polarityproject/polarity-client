@@ -942,15 +942,20 @@ void RunNetCommand(const std::string& line)
     }
     else if (cmd == "resimtasks") {
         // resimtasks <task rva (hex)> | v<class vtable rva> (the generic task
-        // 0x3EB3F4 by its object's class)... | off
+        // 0x3EB3F4 by its object's class)... | off | default (the lean replayed ticks' list)
         std::vector<uintptr_t> rvas;
         std::string word;
+        bool standard = false;
         while (ss >> word) {
             if (word == "off") continue;
+            if (word == "default") {
+                standard = true;
+                continue;
+            }
             if (word[0] == 'v') rvas.push_back(0x80000000u | static_cast<uintptr_t>(std::stoull(word.substr(1), nullptr, 16)));
             else rvas.push_back(static_cast<uintptr_t>(std::stoull(word, nullptr, 16)));
         }
-        SetResimTaskSkip(std::move(rvas));
+        SetResimTaskSkip(standard ? DefaultLeanResimTasks() : std::move(rvas));
     }
     else if (cmd == "resimskip") {
         int on = 1;
@@ -970,6 +975,21 @@ void RunNetCommand(const std::string& line)
         int on = 1;
         ss >> on;
         SetSoundRollback(on != 0);
+    }
+    else if (cmd == "frameids") {
+        // frameids 0|1: the game's restore callbacks get the game's own frame id (on by default; 0: the mod's old one)
+        int on = 1;
+        ss >> on;
+        SetGameFrameIds(on != 0);
+        Log("restore: callbacks get %s frame id", on ? "the game's" : "the mod's old");
+    }
+    else if (cmd == "leanresim") {
+        // leanresim 0|1: replayed ticks without phase 8 and some phase-4 tasks (on by default; 0: whole updates)
+        int on = 1;
+        ss >> on;
+        SetLeanResim(on != 0);
+        SetResimTaskSkip(on ? DefaultLeanResimTasks() : std::vector<uintptr_t>{});
+        Log("resim: replayed ticks %s", on ? "without presentation the newest tick makes up for" : "each a whole battle update");
     }
     else if (cmd == "soundlog") {
         // soundlog <count>: the next cue plays (research: sounds a rollback plays again)
@@ -1663,7 +1683,7 @@ bool Parse(const std::string& line, Step& step)
         return !ss.fail();
     }
     if (cmd == "host" || cmd == "join" || cmd == "matchchat" || cmd == "shot" || cmd == "warmupsleep" || cmd == "warmupextra" || cmd == "watchcamera" || cmd == "emptystage" || cmd == "spectate" || cmd == "ticket" || cmd == "presence" || cmd == "rooms" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "crash" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
-        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "wordfilter" || cmd == "countryflag" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "soundlog" || cmd == "soundrollback" || cmd == "startprobe" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
+        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "wordfilter" || cmd == "countryflag" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "soundlog" || cmd == "soundrollback" || cmd == "frameids" || cmd == "leanresim" || cmd == "startprobe" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
         step.kind = Step::Net;
         step.line = line;
         return true;

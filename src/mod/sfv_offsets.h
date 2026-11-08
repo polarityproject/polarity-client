@@ -121,6 +121,27 @@ constexpr uint32_t kViewTargetClock = 0x5C0;
 } // namespace presentation
 
 namespace battleframe {
+// BattleFrame::Update (rva 0x4DC6A0), read from the exe: the update's start
+// (rva 0x4DC2D0), scheduler phase 1 ([+0x28], rva 0x4CD890); unless stopped
+// (+0x190 set, +0x194 clear) or slowed (+0x1A0 set and +0x198 % (+0x1A0 + 1)
+// != 0), max(+0x1A8, +0x1A4) + 1 times: +0x1B8 += 1, phase 2, the tick proper
+// (rva 0x4D2850, 0 stops); then phase 4, +0x19C += 1 and the frame clock
+// +0x1B4 += lo16(+0x1B0) * k + hi16(+0x1B0) (k the float at rva 0x2C4ED34);
+// then (stopped or not) phase 8, +0x198 += 1, and the 8 bytes at +0x1A8 cleared.
+constexpr uint32_t kUpdateStartRva = 0x4DC2D0;
+constexpr uint32_t kSchedulerPhaseRva = 0x4CD890;
+constexpr uint32_t kTickProperRva = 0x4D2850;
+constexpr uint32_t kClockScaleRva = 0x2C4ED34;
+constexpr uint32_t kScheduler = 0x28;
+constexpr uint32_t kStopped = 0x190;
+constexpr uint32_t kStopReleased = 0x194;
+constexpr uint32_t kUpdates = 0x198;
+constexpr uint32_t kFightUpdates = 0x19C;
+constexpr uint32_t kSlowEvery = 0x1A0;
+constexpr uint32_t kMinExtraTicks = 0x1A4;
+constexpr uint32_t kClockStep = 0x1B0;
+constexpr uint32_t kFrameClock = 0x1B4;
+constexpr uint32_t kTickCount = 0x1B8;
 constexpr uint32_t kExtraTicks = 0x1A8; // ticks this frame = 1 + value, reset after
 // Frame counter, pause and slow-motion state; not in the game's snapshot.
 constexpr uint32_t kStateBegin = 0x190;

@@ -17,6 +17,11 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   marks; names written in script or bold letters show in plain ones.
 - The room's player list gives names more room before cutting them short
   (shorter activity labels, such as "T2 · playing").
+- Rollbacks cost about a quarter less time: frames a rollback simulates
+  again leave out effects and camera work the newest frame makes up for, a
+  frame is hashed once its inputs are confirmed instead of at every
+  simulation, and each rollback's restore is quicker. Long rollbacks at high
+  ping and low input delay drop fewer frames.
 
 ### Fixed
 
@@ -39,6 +44,9 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   handling for sounds, made for Capcom's netcode, now works: a sound already
   played is not played again, and one from a prediction that turned out
   wrong is stopped.
+- After a rollback, the game's own clean-up of what began in the undone
+  frames got a wrong frame number (as the sounds did), so it never ran; it
+  now gets the game's own.
 
 ## [0.3.0.1] - 2026-11-07
 

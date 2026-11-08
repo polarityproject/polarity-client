@@ -64,6 +64,15 @@ std::vector<uint64_t> DefaultSkippedLoadCallbacks();
 // objects exist waits this long first, so a game reaches them after more
 // ticks (a slower PC's warm-up; 0 off).
 void SetWarmupSleep(int ms);
+// The frame id the game's restore callbacks get: the game's own (InputUnit
+// +0x217C, +0x2180; on by default) or the mod's old {frame, 0x5346}.
+void SetGameFrameIds(bool on);
+// Replayed ticks without presentation work the newest tick makes up for
+// (on by default; [netplay] lean_resim): BattleFrame::Update's parts
+// without scheduler phase 8 and some phase-4 tasks (flow.cpp
+// kLeanResimTasks). Off: every tick is a whole BattleFrame::Update.
+void SetLeanResim(bool on);
+bool LeanResimOn();
 // Test (`warmupextra <n>`): n more neutral ticks once the objects exist (as
 // the camera wait runs them), to see what they do to a session.
 void SetWarmupExtra(int ticks);
@@ -267,8 +276,10 @@ private:
     // A region of a pooled visual effect object (kEffectRegions in sfv_game.cpp):
     // out of the checksum.
     bool IsEffectRegion(const StateRegion& r) const;
-    void RunPostRestoreCallbacks(const game::FrameId& id);
+    void RunPostRestoreCallbacks(const game::FrameId& gameId, const game::FrameId& oldId);
     void LatchInputs(); // InputUnit::LatchFrame, after a tick or a load
+    // One battle tick: a whole BattleFrame::Update, or for a replayed tick its parts (SetLeanResim).
+    void RunBattleTick(bool replayed);
     struct ProbeCapture {
         std::string when;
         std::vector<std::pair<std::string, std::vector<uint8_t>>> objects; // name, bytes
@@ -286,7 +297,7 @@ private:
     std::map<uintptr_t, CallbackCost> callbackCosts_;
     int64_t ownLoadTicks_ = 0;
     int loadsTimed_ = 0;
-    int soundRestoresLogged_ = 0;
+    int restoresLogged_ = 0;
 
     GameImage image_;
     uint8_t* unit_ = nullptr;

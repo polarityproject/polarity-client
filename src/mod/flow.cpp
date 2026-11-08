@@ -745,8 +745,20 @@ std::atomic<bool> g_taskProfiling{false};
 // Experiment (`resimtasks <rva>... | off`): tasks replayed ticks leave out
 // in phases 4 and 8 (game thread reads; set from the command thread).
 std::mutex g_resimSkipMutex;
-std::vector<uintptr_t> g_resimSkip;
-std::atomic<bool> g_resimSkipAny{false};
+// Phase-4 tasks replayed ticks leave out (lean replayed ticks, sfv_game.h
+// SetLeanResim; also in whole updates when `resimtasks` sets them). By rva,
+// or 0x80000000 | the class vtable rva for the generic task 0x3EB3F4. Each
+// left out of every replayed tick in full-match stress 8 replays without a
+// difference from a straight run (2026-10-30, 2026-11-08), and it saves
+// more there than the newest tick spends making it up: per driven tick
+// 53.6 -> 30.0 us (class 0x2C63BB8), 34.4 -> 23.2 (0x2C63E00), 17.3 -> 12.4
+// (0x2C64100), 5.3 -> 1.2 (0x3E3490), 4.3 -> 3.1 (0x4D6B40). Not here: the
+// fighters' tasks (0x37D1C0, 0x37D1B0, 0x37D170, 0x37CF60: fighter state)
+// and the phase machine's 0x3DD1B0 (s652).
+const std::vector<uintptr_t> kLeanResimTasks = {0x80000000u | 0x2C63BB8, 0x80000000u | 0x2C63E00, 0x80000000u | 0x2C64100,
+                                                0x3E3490, 0x4D6B40};
+std::vector<uintptr_t> g_resimSkip = kLeanResimTasks;
+std::atomic<bool> g_resimSkipAny{true};
 struct TaskCost {
     uint64_t ticks = 0, calls = 0;
     uintptr_t object = 0;
@@ -2942,6 +2954,8 @@ void SetSoundRollback(bool on)
 }
 
 bool SoundRollbackOn() { return g_soundRollback; }
+
+std::vector<uintptr_t> DefaultLeanResimTasks() { return kLeanResimTasks; }
 
 void SetResimTaskSkip(std::vector<uintptr_t> rvas)
 {
