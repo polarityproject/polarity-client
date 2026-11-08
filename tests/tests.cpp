@@ -312,6 +312,43 @@ void TestReplayRoundTrip()
     CHECK(!DeserializeReplay(bytes.data(), bytes.size() - 6, &back, &error));
 }
 
+// Frames that ran on predicted inputs are hashed once confirmed, from their
+// saves: the recordings come out as hashing every simulation makes them (delay
+// 0, a link of 5 ticks each way: most frames run predicted and many run again), the peers
+// agree, and each recording verifies against a straight run.
+void TestHashOnConfirm()
+{
+    MockMatchOptions mo;
+    mo.seed = 11;
+    mo.link = {4, 3, 0.05};
+    mo.inputDelay = 0;
+    mo.hashOnConfirm = false;
+    const auto every = RunMockMatch(mo);
+    PrintMatch(every);
+    mo.hashOnConfirm = true;
+    const auto once = RunMockMatch(mo);
+    PrintMatch(once);
+    CHECK(every.started && once.started);
+    CHECK(FirstDesync(every) < 0 && FirstDesync(once) < 0);
+    CHECK(once.rollbacks[0].max_frames >= 3 && once.rollbacks[1].max_frames >= 3);
+    for (int p = 0; p < kNumPlayers; p++) {
+        const ReplayFile& a = every.recording[p];
+        const ReplayFile& b = once.recording[p];
+        CHECK(b.finalThrough > 2500 && a.finalThrough == b.finalThrough);
+        bool same = a.initialHashes == b.initialHashes;
+        for (int f = 0; f <= b.finalThrough && same; f++) {
+            same = a.inputs[f] == b.inputs[f] && a.FrameChecksum(f) == b.FrameChecksum(f) &&
+                   std::memcmp(a.FrameHashes(f), b.FrameHashes(f), a.RegionCount() * 8) == 0;
+        }
+        CHECK(same);
+        CHECK(once.saves[p].loads > 0 && once.saves[p].loadMismatches == 0);
+        const auto straight = Verify(b, MockBug::None, 0, 0);
+        CHECK(straight.status == VerifyResult::Status::Match);
+    }
+    const DiffReport d = DiffReplays(once.recording[0], once.recording[1]);
+    CHECK(d.comparable && d.firstInputMismatch < 0 && d.firstStateMismatch < 0);
+}
+
 // Through the compact format and back.
 ReplayFile Compacted(const ReplayFile& rf, size_t* size = nullptr)
 {
@@ -2124,6 +2161,7 @@ int main()
         {"replay file round trip", TestReplayRoundTrip},
         {"compact recording", TestCompactRecording},
         {"clean match", TestCleanMatch},
+        {"hash on confirm", TestHashOnConfirm},
         {"setup mismatch", TestSetupMismatch},
         {"state outside snapshot", TestStateOutsideSnapshot},
         {"machine specific value", TestMachineSpecificValue},

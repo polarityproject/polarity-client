@@ -17,6 +17,7 @@ class StateHistory {
 public:
     void Reset(size_t depth, size_t stateSize);
     void Store(int frame, const std::vector<StateRegion>& regions);
+    void Store(int frame, const uint8_t* state); // a buffer laid out by SaveRegions
     const std::vector<uint8_t>* Find(int frame) const;
 
 private:

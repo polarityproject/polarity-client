@@ -20,6 +20,7 @@ struct MockMatchOptions {
     uint32_t machineValue[kNumPlayers] = {0, 0};
     MatchSetup setup[kNumPlayers];
     std::function<void(const std::string&)> log;
+    bool hashOnConfirm = true; // NetplayConfig::hashOnConfirm
 };
 
 struct MockMatchResult {

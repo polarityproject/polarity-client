@@ -26,6 +26,14 @@ void StateHistory::Store(int frame, const std::vector<StateRegion>& regions)
     SaveRegions(regions, e.bytes.data());
 }
 
+void StateHistory::Store(int frame, const uint8_t* state)
+{
+    if (entries_.empty() || frame < 0) return;
+    Entry& e = entries_[size_t(frame) % entries_.size()];
+    e.frame = frame;
+    std::memcpy(e.bytes.data(), state, e.bytes.size());
+}
+
 const std::vector<uint8_t>* StateHistory::Find(int frame) const
 {
     if (entries_.empty() || frame < 0) return nullptr;

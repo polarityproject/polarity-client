@@ -47,6 +47,13 @@ struct NetplayConfig {
     // when that frame was saved: a mismatch is a save/load bug, logged. It
     // costs a whole hash, so only every verifyLoadsEvery-th load (1: all).
     bool verifyLoads = true;
+    // A frame simulated on predicted inputs is hashed (and kept in the state
+    // history) once its inputs are confirmed, from its save, rather than at
+    // every simulation of it: a frame a long rollback resimulates several
+    // times is hashed once. GekkoNet reads a frame's checksum from its save
+    // only window + 1 frames later (its health check). Not in stress
+    // sessions (they compare every simulation).
+    bool hashOnConfirm = true;
     unsigned int verifyLoadsEvery = 16;
     std::function<void(const std::string&)> log;
 };
@@ -151,6 +158,7 @@ private:
         int frame = -1;
         uint32_t checksum = 0;
         bool skipped = false;
+        bool pending = false; // hashOnConfirm: no checksum yet
     };
     std::array<SavedFrame, 256> saved_{};
     int loadMismatches_ = 0;
@@ -158,6 +166,21 @@ private:
     SaveStats saveCounts_;
     std::vector<uint64_t> frameHashes_;
     int hashedFrame_ = -2; // frame whose hashes frameHashes_ holds
+    // Frames simulated on predicted inputs and not hashed yet (hashOnConfirm),
+    // by frame % size: the inputs they ran on, and their last save.
+    struct PendingFrame {
+        int frame = -1;
+        FrameInputs inputs;
+        const uint8_t* state = nullptr; // GekkoNet's save buffer
+        unsigned int* checksum = nullptr;
+    };
+    std::array<PendingFrame, 256> pending_{};
+    int lowestPending_ = 0;
+    int unsettled_ = 0; // pending frames that had no save to hash (logged)
+    std::vector<uint64_t> settleHashes_;
+    bool HashOnConfirm() const { return config_.hashOnConfirm && config_.stressCheckDistance == 0; }
+    void Settle(PendingFrame& p);
+    void SettleConfirmed(int upTo = INT32_MAX);
     std::vector<DesyncInfo> desyncs_;
     std::vector<uint8_t> decided_; // per frame: OutcomeDecided after it
 };
