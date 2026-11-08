@@ -1,4 +1,6 @@
 #include "mod/overlay.h"
+
+#include "core/random_stage.h"
 #include "mod/pak_textures.h"
 #include "mod/profile.h"
 #include "mod/textures.h"
@@ -949,6 +951,11 @@ struct Choices {
     bool wordFilter = true;
 };
 Choices g_choices;
+// My character's Random stages: the stage codes the host's random leaves
+// out (core/random_stage.h), kept apart from the pick (Keep on the grid
+// does not undo them); saved once the player has a list.
+std::vector<std::string> g_randomOff;
+bool g_randomOffSaved = false;
 bool IsEleven(int chara);
 void RollEleven(Choices& c);
 PlayerSetup ElevenPick(Choices& c);
@@ -996,6 +1003,10 @@ void InitChoices()
     g_choices.shareCountry = o.shareCountry;
     g_choices.streamerMode = o.streamerMode;
     g_choices.wordFilter = o.wordFilter;
+    if (!g_randomOffSaved) { // a list set here (the seed below) stays
+        g_randomOff = o.randomOff;
+        g_randomOffSaved = o.randomOffSaved;
+    }
     g_choices.initialised = true;
 }
 
@@ -1017,6 +1028,10 @@ NetplayOptions ChosenOptions()
     }
     o.stage = kKeepStage;
     o.stageCode = "random"; // the host picks one per match
+    if (g_randomOffSaved) {
+        o.randomOff = g_randomOff;
+        o.randomOffSaved = true;
+    }
     if (c.stage >= 2 && c.stage - 2 < static_cast<int>(g_tables.stages.size())) {
         const int i = c.stage - 2;
         const auto& settings = g_tables.settings[i];
@@ -2550,6 +2565,42 @@ void SaveMyCharacter()
         o.stageCode.c_str(), delay >= 0 ? std::to_string(delay).c_str() : "auto");
 }
 
+// A new Random stages list: in effect and saved at once (the panel file).
+void SetRandomOff(std::vector<std::string> off, const char* why)
+{
+    g_randomOff = ParseStageMask(FormatStageMask(off));
+    g_randomOffSaved = true;
+    const std::vector<std::string> list = g_randomOff;
+    Act([list] {
+        NetOptions().randomOff = list;
+        NetOptions().randomOffSaved = true;
+        if (!g_panelPath.empty()) SaveRandomStagesOff(g_panelPath, list);
+    });
+    Log("overlay: random stages (%s): leaving out '%s'", why, FormatStageMask(g_randomOff).c_str());
+}
+
+// Random's stages as the card says it: the owned stages and settings on,
+// of all owned ones (never the never-random stages).
+std::string RandomStagesText()
+{
+    int on = 0, owned = 0;
+    auto count = [&](const std::string& code, bool have) {
+        if (!have || IsNeverRandomStage(code)) return;
+        owned++;
+        if (std::find(g_randomOff.begin(), g_randomOff.end(), code) == g_randomOff.end()) on++;
+    };
+    for (size_t i = 0; i < g_tables.stages.size(); i++) {
+        if (IsNeverRandomStage(g_tables.stages[i])) continue;
+        count(g_tables.stages[i], i < g_tables.stageOwned.size() && g_tables.stageOwned[i]);
+        for (size_t k = 0; i < g_tables.settings.size() && k < g_tables.settings[i].size(); k++) {
+            const bool have = i < g_tables.settingOwned.size() && k < g_tables.settingOwned[i].size() && g_tables.settingOwned[i][k];
+            count(g_tables.settings[i][k], have);
+        }
+    }
+    if (on == owned) return "Random";
+    return "Random (" + std::to_string(on) + " of " + std::to_string(owned) + " stages)";
+}
+
 // The card's rows: the pick in effect.
 SelectCard MyCharacterCard(const RoomsView& rooms)
 {
@@ -2577,7 +2628,7 @@ SelectCard MyCharacterCard(const RoomsView& rooms)
         card.rows.push_back({"V-Skill", SkillText(code, false, c.vskill - 1)});
         card.rows.push_back({"V-Trigger", SkillText(code, true, c.vtrigger - 1)});
     }
-    std::string stage = "Random";
+    std::string stage = RandomStagesText();
     if (c.stage >= 2 && c.stage - 2 < static_cast<int>(g_tables.stages.size())) {
         const int i = c.stage - 2;
         const auto& labels = g_tables.settingLabels[i];
@@ -2633,6 +2684,7 @@ void ApplyMyCharacterInput(const SelectInput& in)
         g_my.stagePage = false;
     }
     if (in.lockStage) g_my.stagePage = false;
+    if (in.randomOffChanged) SetRandomOff(in.randomOff, "my character");
     if (in.unready) g_my.savedNow = false;
     if (g_my.savedNow) return;
     if (in.chara >= 0 && in.chara < static_cast<int>(g_tables.charas.size())) SwitchCharacter(c, in.chara);
@@ -2686,6 +2738,7 @@ void DrawMyCharacter(const RoomsView& rooms, bool takeInput)
     live.bothReady = false;
     live.loading = false;
     live.myCharacter = true;
+    live.randomOff = g_randomOff;
     live.keepLabel = "Keep " + g_tables.labels[std::clamp(g_my.saved.chara, 0, static_cast<int>(g_tables.labels.size()) - 1)];
     SelectRow& delay = live.sides[0].rows[6];
     delay.value = g_my.delaySetting >= 0 ? FramesText(g_my.delaySetting) : "Auto";
@@ -3213,6 +3266,23 @@ void Draw(IDXGISwapChain* swapChain)
             std::lock_guard lock(g_favoritesMutex);
             g_favorites = favorites;
         });
+    }
+    // No Random stages list yet: the Fighter Profile's random stage setting,
+    // once (read only; the game's save is never written).
+    static bool randomSeeded = false;
+    if (!randomSeeded && g_tables.loaded) {
+        bool read = false;
+        std::vector<std::string> gameList;
+        {
+            std::lock_guard lock(g_favoritesMutex);
+            read = g_favorites.loaded;
+            if (read) gameList = g_favorites.randomOff;
+        }
+        if (g_randomOffSaved || NetOptions().randomOffSaved) randomSeeded = true;
+        else if (read) {
+            randomSeeded = true;
+            SetRandomOff(gameList, "from the Fighter Profile");
+        }
     }
     static bool warmed = false;
     const bool onTheWay = phase != NetView::Phase::Idle && phase != NetView::Phase::Ended;

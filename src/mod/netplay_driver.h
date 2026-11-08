@@ -70,6 +70,11 @@ struct NetplayOptions {
     PlayerSetup pick;
     uint16_t stage = 0xFFFF;               // host: stage table index (flow.h); 0xFFFF keeps the prepared one
     std::string stageCode;                 // host: as configured; turned into `stage` when a match starts
+    // My character's "Random stages": the variant codes the host's random
+    // leaves out (core/random_stage.h); randomOffSaved once the panel has
+    // the list (else it starts from the Fighter Profile's once).
+    std::vector<std::string> randomOff;
+    bool randomOffSaved = false;
     bool randomSetup = false;              // host: random characters, settings and stage (testing)
     bool randomCostumes = false;           // with randomSetup: costumes other than the default too
     NetConditions conditions;              // simulated latency/jitter/loss on what this side sends

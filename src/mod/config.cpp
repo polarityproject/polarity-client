@@ -1,5 +1,7 @@
 #include "mod/config.h"
 
+#include "core/random_stage.h"
+
 #include <windows.h>
 
 #include <algorithm>
@@ -137,6 +139,11 @@ void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPr
     // A stage code ("CHN"), "random", or nothing (keep the stage the game has
     // prepared); resolved against the stage table when hosting.
     if (has(L"stage")) n.stageCode = Ascii(ReadString(path, L"netplay", L"stage", L""));
+    // The stages random leaves out ("CHN,S25"), once the player has a list.
+    if (const std::wstring off = ReadString(path, L"netplay", L"random_stages_off", kAbsent); off != kAbsent) {
+        n.randomOff = ParseStageMask(Ascii(off));
+        n.randomOffSaved = true;
+    }
     // Set in the panel (the main file has them in [weyve] and [netplay]).
     // The panel keeps a name outside ASCII as hex (name_utf8): Windows' ini
     // functions write a file without a BOM in the system's code page.
@@ -178,6 +185,11 @@ void Write(const std::wstring& path, const wchar_t* key, const std::string& valu
 
 } // namespace
 
+void SaveRandomStagesOff(const std::wstring& path, const std::vector<std::string>& off)
+{
+    Write(path, L"random_stages_off", FormatStageMask(off));
+}
+
 void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const std::string& stage)
 {
     Write(path, L"character", n.hasPick ? UnpackCode(n.pick.character) : "");
@@ -198,6 +210,7 @@ void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const
                                    std::wstring(loadout.begin(), loadout.end()).c_str(), path.c_str());
     }
     Write(path, L"stage", stage);
+    if (n.randomOffSaved) Write(path, L"random_stages_off", FormatStageMask(n.randomOff));
     Write(path, L"input_delay", std::to_string(n.inputDelay));
     Write(path, L"fixed_delay", n.delaySetting >= 0 ? std::to_string(n.delaySetting) : std::string("auto"));
     // ASCII as it is; anything else as hex in name_utf8 (see ReadNetplayChoices).

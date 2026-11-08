@@ -7,6 +7,15 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+
+- Random stages: in My character's Stage Select, X on Random opens the list
+  of stages Random can land on. Turn stages on or off; a stage with
+  settings (such as The Grid and The Grid Alternative) opens a list of its
+  settings, as the game's own menu does. Your list decides Random when you
+  host, and when you're P1 at a table. It starts from your Fighter
+  Profile's random stage setting.
+
 ### Changed
 
 - Pings are colored by the input delay they call for: blue for 0 frames,

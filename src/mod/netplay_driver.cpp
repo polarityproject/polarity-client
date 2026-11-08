@@ -2036,8 +2036,9 @@ private:
             s.stage = rule == lobby::kAnyStage ? kKeepStage : rule;
             if (rule == lobby::kRandomStage) {
                 // The host's random stage: one its profile owns, as the game's
-                // own random would, never one of the never-random stages.
-                const int stage = RandomStage(rng_(), true);
+                // own random would, from its Random stages list, never one of
+                // the never-random stages.
+                const int stage = RandomStage(rng_(), true, options_.randomOff);
                 s.stage = stage < 0 ? kKeepStage : static_cast<uint16_t>(stage);
             }
         }

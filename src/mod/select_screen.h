@@ -120,6 +120,10 @@ struct SelectLive {
     std::string keepLabel;
     SelectCard card;  // in place of the other player
     std::string note; // the line at the bottom left (the loadout: the row's hint)
+    // My character's Random stages: the stage codes (each stage and setting
+    // its own) random leaves out (core/random_stage.h). X on the stage
+    // select's random tile opens the list.
+    std::vector<std::string> randomOff;
 };
 
 // What the local player did this frame.
@@ -138,6 +142,9 @@ struct SelectInput {
     // grid), A once saved (back to the room), B on the grid (keep the
     // current pick and close).
     bool openStage = false, closeStage = false, done = false, cancel = false;
+    // My character's Random stages list changed: the new one (saved at once).
+    bool randomOffChanged = false;
+    std::vector<std::string> randomOff;
     // Leave, confirmed: B with nothing to go back to asks first (the screen's
     // own dialog; the panel does not open over this screen).
     bool leave = false;

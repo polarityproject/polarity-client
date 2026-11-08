@@ -2174,7 +2174,7 @@ bool IsSelectableStage(int index)
     return base >= 0 && IsMenuStage(base) && IsPlayableStage(index);
 }
 
-int RandomStage(uint64_t roll, bool ownedOnly)
+int RandomStage(uint64_t roll, bool ownedOnly, const std::vector<std::string>& off)
 {
     std::vector<RandomStageChoice> stages;
     for (int i = 0; i < StageCount(); i++) {
@@ -2182,7 +2182,7 @@ int RandomStage(uint64_t roll, bool ownedOnly)
         const int base = StageSettingBase(i);
         stages.push_back({i, StageCode(i), base >= 0 ? StageCode(base) : ""});
     }
-    return PickRandomStage(stages, roll);
+    return PickRandomStage(stages, roll, off);
 }
 
 namespace {

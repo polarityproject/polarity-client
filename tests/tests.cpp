@@ -1152,6 +1152,27 @@ void TestRandomStage()
     CHECK(PickRandomStage({{14, "KPB", ""}, {15, "DBI", ""}}, 5) == -1);
     CHECK(PickRandomStage({}, 5) == -1);
     CHECK(IsNeverRandomStage("SX1") && IsNeverRandomStage("DBI") && IsNeverRandomStage("KPB") && !IsNeverRandomStage("") && !IsNeverRandomStage("CHN"));
+
+    // A player's list leaves variants out by their own code: The Grid off
+    // keeps The Grid Alternative.
+    seen.clear();
+    for (int i = 0; i < 2000; i++) seen[PickRandomStage(stages, rng(), {"CHN", "TRN"})]++;
+    CHECK(seen.size() == 1 && seen.count(67));
+    // Leaving everything out: every stage but the never-random ones again.
+    seen.clear();
+    for (int i = 0; i < 2000; i++) seen[PickRandomStage(stages, rng(), {"CHN", "TRN", "S25"})]++;
+    CHECK(seen.size() == 3 && seen.count(3) && seen.count(10) && seen.count(67));
+    // A never-random stage stays out whatever the list says.
+    seen.clear();
+    for (int i = 0; i < 2000; i++) seen[PickRandomStage(stages, rng(), {"CHN", "S25"})]++;
+    CHECK(seen.size() == 1 && seen.count(10));
+
+    // The ini's form: sorted, each once, junk dropped.
+    CHECK(FormatStageMask({"S25", "CHN", "S25"}) == "CHN,S25");
+    CHECK(FormatStageMask({}).empty());
+    CHECK(ParseStageMask("chn, S25,,TRN") == (std::vector<std::string>{"CHN", "S25", "TRN"}));
+    CHECK(ParseStageMask("CHNX,C,C-N,,  ").empty());
+    CHECK(ParseStageMask(FormatStageMask({"TRN", "AFB", "SH4"})) == (std::vector<std::string>{"AFB", "SH4", "TRN"}));
 }
 
 void TestMatchTicket()

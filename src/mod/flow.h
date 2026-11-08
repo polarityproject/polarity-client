@@ -120,8 +120,9 @@ int StageSettingBase(int index); // the menu stage a setting belongs to, or -1
 bool IsSelectableStage(int index);
 // The mod's random stage for `roll`: a selectable stage (only those the
 // profile owns with `ownedOnly`), never one of core/random_stage.h's
-// never-random stages; -1 when none is left.
-int RandomStage(uint64_t roll, bool ownedOnly);
+// never-random stages, nor one `off` leaves out (the host's Random stages
+// list); -1 when none is left.
+int RandomStage(uint64_t roll, bool ownedOnly, const std::vector<std::string>& off = {});
 // The character table (KWCharaEntryDataAsset): entries, the code of entry
 // `index` ("RYU"; "" if none) and how many costumes it has.
 int CharaCount();

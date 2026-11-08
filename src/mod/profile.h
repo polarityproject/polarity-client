@@ -21,6 +21,11 @@ struct ProfileFavorites {
     std::string chara; // favorite character's code ("Z37"), empty if none
     std::string stage; // favorite stage's code ("S25"), empty if none
     std::vector<FavoriteChara> charas;
+    // The Fighter Profile's random stage setting (+0x108
+    // RandomStageSelectSetting.MaskStageCodes): the stage codes random
+    // leaves out. My character starts its own list from it once.
+    std::vector<std::string> randomOff;
+    bool loaded = false; // read from the main profile
 };
 
 // Game thread (it walks the object list once, a few ms). False when the

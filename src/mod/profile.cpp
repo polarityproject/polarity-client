@@ -19,7 +19,9 @@ constexpr size_t kFavorites = 0x68;             // KWFavoriteBattleSettings
 constexpr size_t kFavoriteChara = kFavorites;   // FString CharaCode
 constexpr size_t kFavoriteStage = 0x90;         // FString StageCode
 constexpr size_t kCharaSettings = 0xA0;         // TArray of 0x38-byte entries
-constexpr size_t kProfileSize = 0xB0;
+constexpr size_t kRandomMask = 0x108;          // KWRandomStageSelectSetting: MaskStageCodes TArray<FString>
+constexpr size_t kProfileSize = 0x118;
+constexpr int kMaxMask = 128;
 // One CharaSettings entry.
 constexpr size_t kEntrySize = 0x38;
 constexpr size_t kEntryCostume = 0x10, kEntryColor = 0x14, kEntryComment = 0x28, kEntryVTrigger = 0x2C, kEntryVSkill = 0x30;
@@ -60,6 +62,7 @@ bool ReadProfileFavorites(ProfileFavorites* out)
         return false;
     }
     ProfileFavorites f;
+    f.loaded = true;
     f.chara = Code(main + kFavoriteChara);
     f.stage = Code(main + kFavoriteStage);
     const auto* entries = *reinterpret_cast<const uint8_t* const*>(main + kCharaSettings);
@@ -77,8 +80,17 @@ bool ReadProfileFavorites(ProfileFavorites* out)
         c.vskill = at(kEntryVSkill);
         if (!c.code.empty()) f.charas.push_back(std::move(c));
     }
-    Log("profile: favorite character '%s', stage '%s', %zu characters' settings (%.1f ms)", f.chara.c_str(), f.stage.c_str(),
-        f.charas.size(), ms);
+    const auto* mask = *reinterpret_cast<const uint8_t* const*>(main + kRandomMask);
+    const int32_t masked = *reinterpret_cast<const int32_t*>(main + kRandomMask + 8);
+    std::string maskText;
+    for (int32_t i = 0; mask && i < masked && i < kMaxMask && IsReadable(mask + size_t(i) * 16, 16); i++) {
+        std::string code = Code(mask + size_t(i) * 16);
+        if (code.empty()) continue;
+        maskText += (maskText.empty() ? "" : ",") + code;
+        f.randomOff.push_back(std::move(code));
+    }
+    Log("profile: favorite character '%s', stage '%s', %zu characters' settings, random leaves out %d stages (%s) (%.1f ms)",
+        f.chara.c_str(), f.stage.c_str(), f.charas.size(), masked, maskText.c_str(), ms);
     *out = std::move(f);
     return true;
 }

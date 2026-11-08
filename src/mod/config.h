@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace sfv::mod {
 
@@ -61,6 +62,9 @@ Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const st
 // Writes the player's choices (pick, stage, delay, prediction window, name,
 // spectators allowed, own frame rate shown) to the overlay's file. `stage`: a code, "random" or "" (as prepared).
 void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const std::string& stage);
+// My character's Random stages (`random_stages_off`, core/random_stage.h)
+// into the overlay's file, nothing else.
+void SaveRandomStagesOff(const std::wstring& path, const std::vector<std::string>& off);
 // Each character's loadout as last saved with it (SaveNetplayChoices keeps the
 // pick's in [loadouts] of the overlay's file), by character code.
 std::map<std::string, PlayerSetup> ReadLoadouts(const std::wstring& path);
