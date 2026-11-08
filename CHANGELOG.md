@@ -20,6 +20,10 @@ plays only 0.3.0.
   rooms, and SFVR settings (Start). When the rooms server can't be reached,
   Custom rooms says why instead of opening; it is tried again every 10
   seconds.
+- **Updates in a few presses:** when a new SFVR is out, the hub offers it
+  with its notes; Update now downloads it, then Restart now starts the game
+  again on the new version. Players in a room get a toast instead and the
+  offer when they leave it.
 - **A new look** for every SFVR screen: blurred stage art behind glass
   panels, the game's own button glyphs (each one clickable), and larger text
   sized for the Steam Deck's screen.
@@ -58,6 +62,11 @@ plays only 0.3.0.
 
 ### Changed
 
+- **Custom Rooms need the latest SFVR:** with an update out, they open
+  only once it is installed, and the game checks for one every 15 minutes
+  and before opening them. Rooms are per version: the list shows only
+  rooms on your version, and a room on another version joined by its code
+  says so and lets you go.
 - **The game never logs in to Capcom's servers** with SFVR installed: the
   title goes straight to the main menu, and the setting that allowed the
   login is gone.
