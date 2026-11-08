@@ -254,6 +254,8 @@ std::vector<uintptr_t> DefaultLeanResimTasks();
 // The game's own rollback of sounds (flow.cpp kSoundReconcileTask): on by
 // default; off, resimulated ticks play their sounds again (`soundrollback`).
 void SetSoundRollback(bool on);
+// The round end wait's mode (flow.cpp kKoWaitState) put back by loads (on by default).
+void SetKoWaitRollback(bool on);
 bool SoundRollbackOn();
 void SetTaskProfiling(bool on, uint64_t ticks = 0);
 // Research: logs the battle's phase machine and its phases (`phases`), with

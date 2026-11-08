@@ -494,8 +494,26 @@ struct MachineCopy {
     PhaseCopy phases[kMaxPhases];
     bool hasRecorder;
     uint8_t recorder[kRecorderHead];
+    bool hasKoWait;
+    uint8_t koWait[16];
 };
 std::vector<MachineCopy> g_phaseRing(kPhaseRing);
+// The round's end waits (the round-end phase's timer, rva 0x40BC00, on rva
+// 0x2F2E90) until an object's mode (+0x104) is 6 or 7, then for its one-tick
+// latch (+0x100); +0x108 is set with the mode. The object (0x140 bytes,
+// vtable rva 0x2C602F8, made by rva 0x2F48C0 -> 0x3C7AE0) is not in the
+// snapshot: the round's end events reset it (rva 0x3D66E0) and its own code
+// sets the mode (rva 0x3CCA20), and a load left it as the later timeline had
+// it, so a resimulated round end went on on another tick (stress replay of
+// 2026-11-08_05-14-51 ..._91ba0287: from frame 2813). Its 16 bytes at +0x100
+// go into the per-tick copies and come back with a load.
+constexpr uint32_t kKoWaitCtor = 0x3C7AE0;
+constexpr uintptr_t kKoWaitVtable = 0x2C602F8;
+constexpr uint32_t kKoWaitState = 0x100;
+constexpr size_t kKoWaitStateSize = 16;
+uint8_t* g_koWait = nullptr; // the newest such object
+std::atomic<bool> g_koWaitRollback{true};
+int g_koWaitLogs = 0;
 std::atomic<bool> g_roundEndRollback{false}; // on: no hold; the copies and the journal below instead
 int g_phaseRestoreSkips = 0;                 // pointer words not put back (logged a few times)
 
@@ -546,6 +564,13 @@ size_t PhaseSize(const uint8_t* phase)
 
 template <typename T> T Field(const uint8_t* p, uint32_t off) { return *reinterpret_cast<const T*>(p + off); }
 
+uint8_t* LiveKoWait()
+{
+    uint8_t* w = g_koWaitRollback ? g_koWait : nullptr;
+    if (!w || !IsReadable(w, kKoWaitState + kKoWaitStateSize)) return nullptr;
+    return *reinterpret_cast<const uintptr_t*>(w) == g_base + kKoWaitVtable ? w : nullptr;
+}
+
 uint8_t* LiveRecorder()
 {
     auto* recorder = *reinterpret_cast<uint8_t* const*>(g_base + kRecorderGlobal);
@@ -593,6 +618,9 @@ void CapturePhases()
     const uint8_t* recorder = LiveRecorder();
     c.hasRecorder = recorder != nullptr;
     if (recorder) std::memcpy(c.recorder, recorder, kRecorderHead);
+    const uint8_t* wait = LiveKoWait();
+    c.hasKoWait = wait != nullptr;
+    if (wait) std::memcpy(c.koWait, wait + kKoWaitState, kKoWaitStateSize);
     c.valid = true;
 }
 
@@ -669,6 +697,16 @@ void RestorePhases(uint32_t tick)
         Log("flow: phase machine back to phase %d (was %d) by a load", savedIndex, liveIndex);
     }
     std::memcpy(m + 0x130, c.fields + (0x130 - kMachineFields), kMachineFieldsSize - (0x130 - kMachineFields));
+    if (uint8_t* wait = c.hasKoWait ? LiveKoWait() : nullptr) {
+        if (std::memcmp(wait + kKoWaitState, c.koWait, kKoWaitStateSize) != 0) {
+            if (g_koWaitLogs++ < 8) {
+                Log("flow: round end wait back to mode %d latch %d (was mode %d latch %d) by a load to tick %u",
+                    Field<int32_t>(c.koWait, 4), Field<int32_t>(c.koWait, 0), Field<int32_t>(wait, kKoWaitState + 4),
+                    Field<int32_t>(wait, kKoWaitState), tick);
+            }
+            std::memcpy(wait + kKoWaitState, c.koWait, kKoWaitStateSize);
+        }
+    }
     // The recorder's head, word by word: data back, pointers (both sides)
     // left alone, as for the phases.
     if (uint8_t* recorder = c.hasRecorder ? LiveRecorder() : nullptr) {
@@ -893,7 +931,24 @@ bool Hook(const GameImage& image, const game::CodeSite& site, void* detour, void
     return MH_CreateHook(target, detour, original) == MH_OK && MH_EnableHook(target) == MH_OK;
 }
 
+constexpr game::CodeSite kKoWaitCtorSite{"round end wait object", kKoWaitCtor,
+    {0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0xE8, 0x42, 0x45, 0xF2, 0xFF, 0xC7, 0x83}};
+using KoWaitCtorFn = void* (*)(uint8_t*);
+KoWaitCtorFn g_origKoWaitCtor = nullptr;
+void* KoWaitCtorDetour(uint8_t* self)
+{
+    void* r = g_origKoWaitCtor(self);
+    g_koWait = self;
+    return r;
+}
+
 } // namespace
+
+void SetKoWaitRollback(bool on)
+{
+    g_koWaitRollback = on;
+    Log("flow: the round end wait's mode %s", on ? "is put back by loads" : "stays as it is on loads (as before 2026-11-08)");
+}
 
 bool InstallFlowProbes(const GameImage& image)
 {
@@ -916,6 +971,9 @@ bool InstallFlowProbes(const GameImage& image)
               reinterpret_cast<void**>(&g_origDirectorCheck))) {
         g_origDirectorCheck = nullptr;
         Log("flow: the round director's check stays per rendered frame (a KO in a rollback is found late)");
+    }
+    if (!Hook(image, kKoWaitCtorSite, reinterpret_cast<void*>(&KoWaitCtorDetour), reinterpret_cast<void**>(&g_origKoWaitCtor))) {
+        Log("flow: the round end wait's mode is not put back by loads");
     }
     if (!Hook(image, kRoundHitTally, reinterpret_cast<void*>(&HitTallyDetour), reinterpret_cast<void**>(&g_origHitTally))) {
         Log("flow: the round's hit tallies stay unguarded (a trade can count differently on each side)");

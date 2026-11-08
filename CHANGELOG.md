@@ -47,6 +47,10 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 - After a rollback, the game's own clean-up of what began in the undone
   frames got a wrong frame number (as the sounds did), so it never ran; it
   now gets the game's own.
+- A rollback across a KO could end the round a few frames later on one side
+  than on the other: the round's end waits on a mode the game keeps outside
+  the rollback's state, which a load left as the later frames had set it.
+  Loads now put it back with the rest.
 
 ## [0.3.0.1] - 2026-11-07
 
