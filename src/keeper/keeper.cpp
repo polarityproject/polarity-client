@@ -567,7 +567,11 @@ void Keeper::OnLeft(Room& room, uint32_t id, int64_t nowMs)
 void Keeper::OnMemberData(Room& room, uint32_t id, const std::string& key, const std::string& value, int64_t nowMs)
 {
     auto it = room.members.find(id);
-    if (it == room.members.end()) return;
+    if (it == room.members.end()) {
+        if (key == kRequest && !value.empty() && room.kind == Kind::Custom)
+            Log("keeper: room %s: a request from %u, who has not joined here yet: %s", room.code.c_str(), id, value.c_str());
+        return;
+    }
     Member& m = it->second;
     if (key == "ch") {
         m.chara = value.substr(0, 3);
@@ -1235,7 +1239,10 @@ void Keeper::OffTables(Room& room, uint32_t id, int64_t nowMs)
 
 void Keeper::TableRequest(Room& room, Member& m, const Request& r, int64_t nowMs)
 {
-    if (!room.host) return; // paused: nothing moves
+    if (!room.host) { // paused: nothing moves
+        Log("keeper: room %s: %s (%u) asks %s while the room is paused; ignored", room.code.c_str(), m.name.c_str(), m.id, FormatRequest(r).c_str());
+        return;
+    }
     const int count = static_cast<int>(room.tables.size());
     int index = -1;
     if (!r.args.empty()) index = std::atoi(r.args[0].c_str());
