@@ -244,6 +244,20 @@ bool ApplyMatchSetup(const MatchSetup& setup)
     // battle's results kept a stale id (LDN after CHN), and the battle reads
     // its stage id from here (music, stage name): keep the two the same.
     if (setup.stage != kKeepStage) Put<int32_t>(data, bd::kStage, setup.stage);
+    // The stage's code, as the menus write it: a battle from another
+    // battle's results has none, so its fighters had no stage data (no stage
+    // transition; a spectator or replay from the menus had them).
+    const std::string stageCode = JumpStageCode();
+    if (stageCode.size() == 3 && IsReadable(data + bd::kStageName, bd::kStageNameSize)) {
+        char* name = reinterpret_cast<char*>(data + bd::kStageName);
+        if (std::strncmp(name, stageCode.c_str(), bd::kStageNameSize) != 0) {
+            char before[bd::kStageNameSize + 1] = {};
+            std::memcpy(before, name, bd::kStageNameSize);
+            std::memset(name, 0, bd::kStageNameSize);
+            std::memcpy(name, stageCode.data(), stageCode.size());
+            Log("battle setup: stage name '%s' -> '%s'", before, stageCode.c_str());
+        }
+    }
     // Left alone, the count stayed as the menus or the last battle left it
     // (0 after a jump: both sides read 100%).
     if (uint8_t* s = SituationData()) {

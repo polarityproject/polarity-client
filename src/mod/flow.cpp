@@ -299,6 +299,10 @@ std::string LastScene()
 }
 std::mutex g_stageMutex;
 std::string g_pendingStage;
+// The stage code the last jump's stage request carried (the pending stage,
+// or the one already prepared): battle setup writes it into the battle data
+// (JumpStageCode).
+std::string g_jumpStage;
 std::mutex g_taskMutex;
 std::deque<std::function<void()>> g_tasks;
 
@@ -622,6 +626,24 @@ void CapturePhases()
     c.hasKoWait = wait != nullptr;
     if (wait) std::memcpy(c.koWait, wait + kKoWaitState, kKoWaitStateSize);
     c.valid = true;
+    // The mode goes to 6 or 7 when a KO plays the stage transition (it needs
+    // the fighters' stage data, battle_setup.h kStageName): logged, a few per
+    // battle, to tell in a session's log whether one played.
+    static const uint8_t* modeOf = nullptr;
+    static int32_t lastMode = -1;
+    static int modeLogs = 0;
+    if (wait != modeOf) {
+        modeOf = wait;
+        lastMode = -1;
+        modeLogs = 0;
+    }
+    if (wait) {
+        const int32_t mode = Field<int32_t>(wait, kKoWaitState + 4);
+        if (mode != lastMode && (mode == 6 || mode == 7) && modeLogs++ < 8) {
+            Log("flow: stage transition at tick %u (round end wait mode %d)", tick, mode);
+        }
+        lastMode = mode;
+    }
 }
 
 // A word that points into memory (aligned, mapped): timer rates (0x10000)
@@ -1710,6 +1732,12 @@ std::string PendingStage()
     return g_pendingStage;
 }
 
+std::string JumpStageCode()
+{
+    std::lock_guard lock(g_stageMutex);
+    return g_jumpStage;
+}
+
 std::atomic<int> g_jumpGeneration{0};
 std::atomic<int> g_jumpRetries{0};
 constexpr int kJumpRetries = 5;
@@ -1931,6 +1959,19 @@ void JumpOnGameThread(int setupFrames)
             else {
                 Log("flow: cannot set the stage (request '%s')", before.c_str());
             }
+        }
+        {
+            // What this jump loads: the pending stage, or the one prepared.
+            std::string code = stage.size() == 3 ? stage : std::string{};
+            if (code.empty() && loader) {
+                auto* holder = *reinterpret_cast<uint8_t* const*>(loader + 0x10);
+                using GetFn = uint8_t* (*)(void*);
+                uint8_t* request = holder ? (*reinterpret_cast<GetFn* const*>(holder))[0x70 / 8](holder) : nullptr;
+                const std::string prepared = request ? FStringText(request + 0x10) : "";
+                if (prepared.size() == 3) code = prepared;
+            }
+            std::lock_guard lock(g_stageMutex);
+            g_jumpStage = code;
         }
         // Request the stage now, as stage select does (also the one already
         // prepared: nothing else requests it), and switch once it is loaded:

@@ -52,6 +52,9 @@ uint64_t BattleSceneSwitches();
 // ("S25", "LVS"; empty: what the game asks for).
 void SetPendingStage(const std::string& code);
 std::string PendingStage();
+// The stage code the last jump to battle loads (its request: the pending
+// stage or the one already prepared), empty before any jump or when unknown.
+std::string JumpStageCode();
 // Loads a character (its latest version) the way battle setup does and puts it
 // in the game's character cache (4 slots, least recently used dropped), so a
 // battle with it later finds its assets loaded. Takes the asset queue for a

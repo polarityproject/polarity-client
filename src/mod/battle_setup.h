@@ -31,6 +31,15 @@ constexpr uint32_t kTimer = 0x0C;   // int, frames (99 s = 5940)
 constexpr uint32_t kVersusFlag = 0x40; // int, 1 in local Versus, 0 in the defaults
 constexpr uint32_t kStage = 0x60;   // int, stage and setting id (0 = The Grid Alternative); read only, see ApplyMatchSetup
 constexpr uint32_t kRecordStride = 0x590;
+// char[16], the stage's code ("CHN"; the copy at rva 0x2F0024 moves 16
+// bytes). The menus set it (a KWBattleSpec setter, rva 0x7CAB90); a battle
+// built from another battle's results gets fresh data with it empty. Each
+// battle pawn's setup (rva 0x4EB2B0, the name read by 0x7B6500) looks up
+// its CharaStageData (pawn +0x580, DA_<chara>_Stage_<stage>) by it: none
+// without it, so no stage transition at a KO, and the round's end waits
+// differently (flow.cpp kKoWaitState).
+constexpr uint32_t kStageName = 0x16D0;
+constexpr size_t kStageNameSize = 16;
 constexpr uint32_t kCharaCode = 0x90; // char[4] + wchar_t[4], e.g. "KEN"
 constexpr uint32_t kCharaVersion = 0x9C;
 constexpr uint32_t kCostume = 0xB0;
