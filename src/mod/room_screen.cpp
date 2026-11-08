@@ -719,17 +719,17 @@ void RulesModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, const Prom
     // The tabs, right-aligned, between the LB and RB glyphs.
     const int tables = static_cast<int>(g.rulesEdit.size());
     float tw = 0;
-    for (int t = 0; t < tables; t++) tw += TextW(bold, 15, "Table " + std::to_string(t + 1)) + 28 + 8;
+    for (int t = 0; t < tables; t++) tw += TextW(bold, 17, "Table " + std::to_string(t + 1)) + 28 + 8;
     float tx = x1 - 28 - 30 - 8 - tw - 30;
     Glyph(d, "button_lb", g_v.P(tx, y0 + 66), g_v.P(tx + 30, y0 + 96), IM_COL32_WHITE, false);
     if (Clicked() && MouseIn(g_v.P(tx - 4, y0 + 62), g_v.P(tx + 34, y0 + 100))) ui::ClickPad(ImGuiKey_GamepadL1);
     tx += 38;
     for (int t = 0; t < tables; t++) {
         const std::string label = "Table " + std::to_string(t + 1);
-        const float lw = TextW(bold, 15, label) + 28;
+        const float lw = TextW(bold, 17, label) + 28;
         const bool on = t == g.rulesTable;
         Control(d, tx, y0 + 65, tx + lw, y0 + 97, on);
-        Text(d, bold, g_v.L(15), g_v.P(tx + 14, y0 + 71), on ? look::kInk : kCream, label);
+        Text(d, bold, g_v.L(17), g_v.P(tx + 14, y0 + 70), on ? look::kInk : kCream, label);
         tx += lw + 8;
     }
     Glyph(d, "button_rb", g_v.P(tx, y0 + 66), g_v.P(tx + 30, y0 + 96), IM_COL32_WHITE, false);
@@ -738,8 +738,11 @@ void RulesModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, const Prom
         const float y = y0 + 120 + row * 58.0f;
         const bool on = row == g.rulesRow;
         Control(d, x0 + 28, y, x1 - 28, y + 50, on);
-        Text(d, on ? bold : f.body, g_v.L(18), g_v.P(x0 + 50, y + 13), on ? look::kInk : kCream, kRuleRows[row]);
-        Text(d, on ? bold : f.body, g_v.L(18), g_v.P(x0 + 600, y + 13), on ? look::kInk : kCream, RuleValue(r, row), 0.5f);
+        // As SFVR settings' rows: the medium weight at 21 (the light one read
+        // faintly on the glass), bold on the focused row's gold.
+        ImFont* rowFont = on ? bold : (f.strong ? f.strong : f.body);
+        Text(d, rowFont, g_v.L(21), g_v.P(x0 + 50, y + 11), on ? look::kInk : kCream, kRuleRows[row]);
+        Text(d, rowFont, g_v.L(21), g_v.P(x0 + 600, y + 11), on ? look::kInk : kCream, RuleValue(r, row), 0.5f);
         if (on) {
             d->AddTriangleFilled(g_v.P(x0 + 440, y + 19), g_v.P(x0 + 440, y + 31), g_v.P(x0 + 430, y + 25), look::kInk);
             d->AddTriangleFilled(g_v.P(x0 + 760, y + 19), g_v.P(x0 + 770, y + 25), g_v.P(x0 + 760, y + 31), look::kInk);

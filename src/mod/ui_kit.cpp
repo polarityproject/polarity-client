@@ -595,6 +595,10 @@ void DropShadow(ImDrawList* d, float x0, float y0, float x1, float y1, float off
     const ImVec2 a = g_v.P(x0, y0 + offset), b = g_v.P(x1, y1 + offset);
     const float r = g_v.L(blur);
     if (core) d->AddRectFilled(a, b, in);
+    // No core (a translucent pane: the fight shows through it): the offset
+    // still leaves a strip below the box the feather starts under, which
+    // read as a gap between the pane and its shadow. That strip, solid.
+    else if (offset > 0) d->AddRectFilled(g_v.P(x0, y1), b, in);
     const ImVec2 A(a.x - r, a.y - r), B(b.x + r, b.y + r);
     Quad(d, ImVec2(a.x, a.y), ImVec2(b.x, a.y), ImVec2(b.x, A.y), ImVec2(a.x, A.y), in, out); // top
     Quad(d, ImVec2(b.x, b.y), ImVec2(a.x, b.y), ImVec2(a.x, B.y), ImVec2(b.x, B.y), in, out); // bottom
