@@ -286,6 +286,7 @@ private:
     std::map<uintptr_t, CallbackCost> callbackCosts_;
     int64_t ownLoadTicks_ = 0;
     int loadsTimed_ = 0;
+    int soundRestoresLogged_ = 0;
 
     GameImage image_;
     uint8_t* unit_ = nullptr;

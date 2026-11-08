@@ -34,6 +34,11 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   chosen on the your-turn card.
 - "muted" in the room's player list no longer runs into the player's
   activity.
+- Sounds played twice after rollbacks (hits, whiffs, voices heard doubled a
+  frame or two apart), most at low input delay. The game's own rollback
+  handling for sounds, made for Capcom's netcode, now works: a sound already
+  played is not played again, and one from a prediction that turned out
+  wrong is stopped.
 
 ## [0.3.0.1] - 2026-11-07
 

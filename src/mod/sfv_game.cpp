@@ -328,6 +328,9 @@ uint8_t* SfvGame::SingletonTicks() const
                : nullptr;
 }
 
+// The sound manager's post-restore callback (flow.cpp kSoundReconcileTask).
+constexpr uintptr_t kSoundRestoreCallback = 0x4B6230;
+
 // Rose's soul entity (vtable rva 0x2C5E2A8): the game snapshots 884 bytes of
 // it from +0xF0; +0x5C8..+0x66F (counters, the soul level countdown and
 // table; plain integers, a pointer follows) is added (RefreshRegions).
@@ -857,9 +860,22 @@ void SfvGame::RunPostRestoreCallbacks(const game::FrameId& id)
             std::lock_guard lock(g_skipMutex);
             if (std::find(g_skipCallbacks.begin(), g_skipCallbacks.end(), key) != g_skipCallbacks.end()) continue;
         }
+        // The sound manager's (rva 0x4B6230, flow.cpp kSoundReconcileTask)
+        // reads the restored frame from id +4 and compares it with the
+        // frames its sounds were played on (InputUnit +0x2180): it gets the
+        // game's own id, the restored counters.
+        game::FrameId soundId = id;
+        if (target == kSoundRestoreCallback && inputUnit_ && SoundRollbackOn()) {
+            soundId.lo = Read<int32_t>(inputUnit_, game::inputunit::kFrameTag);
+            soundId.hi = Read<int32_t>(inputUnit_, game::inputunit::kSimFrame);
+            if (soundRestoresLogged_ < 5) {
+                soundRestoresLogged_++;
+                Log("sound: rollback to frame %d (InputUnit tag %d, driven tick %u)", soundId.hi, soundId.lo, DrivenTicks());
+            }
+        }
         LARGE_INTEGER a, b;
         QueryPerformanceCounter(&a);
-        fn(ctx, &id);
+        fn(ctx, target == kSoundRestoreCallback ? &soundId : &id);
         QueryPerformanceCounter(&b);
         CallbackCost& c = callbackCosts_[key];
         c.ticks += b.QuadPart - a.QuadPart;

@@ -94,6 +94,8 @@ constexpr uint32_t kLocalMask = 0x100;
 constexpr uint32_t kValues = 0x118; // uint32 per pad
 // Frame counters the game keeps outside its snapshot.
 constexpr uint32_t kCountersBegin = 0x2170;
+constexpr uint32_t kFrameTag = 0x217C; // with kSimFrame: the game's frame id (RollbackUnit::Pre)
+constexpr uint32_t kSimFrame = 0x2180; // the simulated frame (rva 0x43A840 advances it)
 constexpr uint32_t kCountersSize = 0x30;
 // Written at round start (rva 0x438EBD) from a global that differs between
 // machines; forced during netplay ticks.

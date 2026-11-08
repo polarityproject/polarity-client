@@ -721,6 +721,21 @@ void UndoRoundOvers(uint32_t tick)
 }
 
 constexpr uintptr_t kVirtualTask = 0x3EB3F4; // a task that calls its object's virtual +0x38
+// The battle's sound manager has the game's own rollback handling for sounds
+// (built for Capcom's netcode): its post-restore callback (rva 0x4B6230,
+// sfv_game.cpp) moves the sounds played after the restored frame into a list
+// of candidates and sets replay mode (+0x5C8); in replay mode a sound request
+// (rva 0x4B83D0) is queued with its frame (InputUnit +0x2180) instead of
+// played; this phase-4 task (rva 0x4AFEF0) then ends replay mode and settles
+// the queue against the candidates: a sound played before is not played
+// again, a new one plays, a candidate nobody asked for again is stopped (the
+// mispredicted whiff). Capcom's update ran all resimulated ticks and then
+// phase 4 once; ours run phase 4 on every tick, so the task ended replay
+// mode after the first resimulated tick and the others played their sounds a
+// second time (doubled sounds at low delay, 2026-11-08). Resimulated ticks
+// leave it out: the newest tick settles them all. `soundrollback 0|1`.
+constexpr uintptr_t kSoundReconcileTask = 0x4AFEF0;
+std::atomic<bool> g_soundRollback{true};
 
 // Research (`phasecost`): each task's time by the scheduler phase it ran in
 // (battle_driver.cpp tells the phase), game thread only.
@@ -771,6 +786,9 @@ uint64_t TaskThunkDetour(void* closure, void* a2, void* a3, void* a4)
                 return result;
             }
         }
+    }
+    if (g_soundRollback && g_schedReplaying && *static_cast<const uintptr_t*>(closure) == g_base + kSoundReconcileTask) {
+        return 0;
     }
     if (g_resimSkipAny && g_schedReplaying && (g_schedPhase == 4 || g_schedPhase == 8)) {
         const auto* c = static_cast<const uint8_t*>(closure);
@@ -2915,6 +2933,15 @@ void SetSchedulerPhase(int phase, bool replaying)
     g_schedPhase = phase;
     g_schedReplaying = replaying;
 }
+
+void SetSoundRollback(bool on)
+{
+    g_soundRollback = on;
+    Log("sound: the game's own rollback of sounds %s", on ? "on (resimulated ticks' repeats are not played again)"
+                                                          : "off (resimulated ticks play their sounds again)");
+}
+
+bool SoundRollbackOn() { return g_soundRollback; }
 
 void SetResimTaskSkip(std::vector<uintptr_t> rvas)
 {

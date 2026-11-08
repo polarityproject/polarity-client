@@ -249,6 +249,10 @@ void SetSchedulerPhase(int phase, bool replaying = false);
 // Experiment (`resimtasks`): task functions (rvas) that replayed ticks leave
 // out in scheduler phases 4 and 8.
 void SetResimTaskSkip(std::vector<uintptr_t> rvas);
+// The game's own rollback of sounds (flow.cpp kSoundReconcileTask): on by
+// default; off, resimulated ticks play their sounds again (`soundrollback`).
+void SetSoundRollback(bool on);
+bool SoundRollbackOn();
 void SetTaskProfiling(bool on, uint64_t ticks = 0);
 // Research: logs the battle's phase machine and its phases (`phases`), with
 // the snapshot region each lies in (from the lookup SfvGame's driver sets).
