@@ -4,10 +4,12 @@
 # two-PC tests) drive the game here the same way. Python 3's standard
 # library only (SteamOS has python3).
 #
-# Layout as on Windows: the sfv-rollback folder (at least this scripts/
-# folder) beside the game's StreetFighterV folder, in the game's Steam folder:
+# Layout: the game is at .../steamapps/common/StreetFighterV/StreetFighterV/
+# Binaries/Win64/; this script in a scripts/ folder (its parent is the
+# "sfv-rollback" folder deploys write to), best beside the game:
 #   .../steamapps/common/StreetFighterV/sfv-rollback/scripts/agent_steamos.py
-#   .../steamapps/common/StreetFighterV/StreetFighterV/Binaries/Win64/
+# It finds the game's Win64 folder by itself (each folder above the script,
+# then Steam's libraries); --game names it outright.
 # Run it in Desktop Mode (Konsole), with a token you make up:
 #   python3 agent_steamos.py --token <secret>
 # It listens on TCP --port (47100) for one JSON request per connection,
@@ -73,9 +75,13 @@ class Agent:
     def inside(self, path):
         # A path a request names (Windows or Unix separators), kept inside
         # the game's Win64 folder or the sfv-rollback folder.
+        # "sfv-rollback/..." is under the repo folder, whatever it is called
+        # or wherever it is.
         p = str(path).replace('\\', '/')
-        base = os.path.dirname(self.repo) if p.startswith('sfv-rollback/') else self.game
-        full = os.path.realpath(os.path.join(base, p))
+        if p.startswith('sfv-rollback/'):
+            full = os.path.realpath(os.path.join(self.repo, p[len('sfv-rollback/'):]))
+        else:
+            full = os.path.realpath(os.path.join(self.game, p))
         for root in (self.game, self.repo):
             if full == root or full.startswith(root + os.sep):
                 return full
@@ -445,18 +451,62 @@ def serve(agent, port):
         conn.close()
 
 
+def find_game(here):
+    # The game's Binaries/Win64 (the folder with StreetFighterV.exe): first
+    # near this script (each folder above it, and a StreetFighterV folder in
+    # each), then in every Steam library. The Steam install is
+    # .../steamapps/common/StreetFighterV/StreetFighterV/Binaries/Win64, and
+    # the scripts may sit at any depth in or beside it.
+    def win64(folder):
+        p = os.path.join(folder, 'Binaries', 'Win64')
+        return p if os.path.isfile(os.path.join(p, 'StreetFighterV.exe')) else None
+    tried = []
+    folder = here
+    for _ in range(8):
+        for candidate in (folder, os.path.join(folder, 'StreetFighterV')):
+            tried.append(candidate)
+            found = win64(candidate)
+            if found:
+                return found, tried
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            break
+        folder = parent
+    home = os.path.expanduser('~')
+    libraries = [os.path.join(home, '.local/share/Steam'), os.path.join(home, '.steam/steam')]
+    for vdf in libraries[:]:
+        try:
+            with open(os.path.join(vdf, 'steamapps', 'libraryfolders.vdf'), encoding='utf-8', errors='replace') as f:
+                libraries += re.findall(r'"path"\s+"([^"]+)"', f.read())
+        except OSError:
+            pass
+    for lib in libraries:
+        candidate = os.path.join(lib, 'steamapps', 'common', 'StreetFighterV', 'StreetFighterV')
+        tried.append(candidate)
+        found = win64(candidate)
+        if found:
+            return found, tried
+    return None, tried
+
+
 def main():
     here = os.path.dirname(os.path.realpath(__file__))
     repo = os.path.dirname(here)
     ap = argparse.ArgumentParser(description='SFVR test agent for SteamOS (scripts/remote.ps1 drives it)')
     ap.add_argument('--token', required=True)
     ap.add_argument('--port', type=int, default=47100)
-    ap.add_argument('--game', default=os.path.join(os.path.dirname(repo), 'StreetFighterV', 'Binaries', 'Win64'),
-                    help="the game's Binaries/Win64 folder (default: beside the sfv-rollback folder)")
+    ap.add_argument('--game', default='',
+                    help="the game's Binaries/Win64 folder (default: found near this script, or in Steam's libraries)")
     ap.add_argument('--repo', default=repo, help='the sfv-rollback folder (default: this script\'s parent)')
     a = ap.parse_args()
-    if not os.path.isdir(a.game):
-        sys.exit(f'no game folder at {a.game} (put sfv-rollback beside the game\'s StreetFighterV folder, or pass --game)')
+    if not a.game:
+        a.game, tried = find_game(here)
+        if not a.game:
+            sys.exit('no StreetFighterV.exe found in Binaries/Win64 under:\n  ' + '\n  '.join(tried) +
+                     '\npass --game <the game\'s Binaries/Win64 folder>')
+    elif not os.path.isdir(a.game):
+        sys.exit(f'no game folder at {a.game}')
+    say(f'game folder {os.path.realpath(a.game)}, scripts folder {os.path.realpath(a.repo)}')
     serve(Agent(a.token, a.game, a.repo), a.port)
 
 
