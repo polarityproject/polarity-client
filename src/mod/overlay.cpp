@@ -2799,6 +2799,20 @@ void SetTableSkills(int vskill, int vtrigger)
     Log("overlay: the card's pick: %s V-Skill %d V-Trigger %d", g_tables.charas[c.chara].c_str(), c.vskill, c.vtrigger);
 }
 
+// The hub's connection to the rooms server, under the player's name as it
+// is now (the server knows a member by the name it connected with).
+// g_nameSeen: the name when last looked at; g_nameChanged: changed since
+// the connection opened (the console's `rooms open` uses a test name of
+// its own, which is left alone).
+std::string g_nameSeen;
+bool g_nameChanged = false;
+void OpenHubRooms(const NetplayOptions& o)
+{
+    g_nameSeen = LocalPlayerName();
+    g_nameChanged = false;
+    RoomsOpen(o.server, g_nameSeen, o.server == kDefaultServer ? kDefaultServerAlsoPort : o.serverAlsoPort, o.keeperKey);
+}
+
 void DrawHubScreens(bool takeInput)
 {
     NetplayOptions& o = NetOptions();
@@ -2808,7 +2822,22 @@ void DrawHubScreens(bool takeInput)
         OpenRoomsScreen();
     }
     if (!RoomsOpened()) {
-        RoomsOpen(o.server, LocalPlayerName(), o.server == kDefaultServer ? kDefaultServerAlsoPort : o.serverAlsoPort, o.keeperKey);
+        OpenHubRooms(o);
+    }
+    // A new name in SFVR settings: connected again under it at once, or,
+    // in a room (or on the way into one), once the player is out of it, so
+    // the next room has it.
+    if (const std::string name = LocalPlayerName(); name != g_nameSeen) {
+        g_nameSeen = name;
+        g_nameChanged = RoomsOpened();
+    }
+    if (g_nameChanged && RoomsOpened()) {
+        using S = RoomsView::State;
+        const S now = RoomsSnapshot().state;
+        if (now != S::Room && now != S::Creating && now != S::Joining) {
+            Log("hub: the name is now %s: the rooms server again under it", LocalPlayerName().c_str());
+            OpenHubRooms(o);
+        }
     }
     const RoomsView rooms = RoomsSnapshot();
     g_hubScreen = SettingsScreenOpen()                     ? 3
@@ -2826,7 +2855,7 @@ void DrawHubScreens(bool takeInput)
         else if (now - failedSince >= 10000) {
             failedSince = 0;
             Log("hub: the rooms server again (%s)", o.server.c_str());
-            RoomsOpen(o.server, LocalPlayerName(), o.server == kDefaultServer ? kDefaultServerAlsoPort : o.serverAlsoPort, o.keeperKey);
+            OpenHubRooms(o);
         }
     }
     else failedSince = 0;
@@ -3038,7 +3067,7 @@ void DrawHubScreens(bool takeInput)
         break;
     case HubAction::RetryRooms:
         Log("hub: the rooms server again, asked for (%s)", o.server.c_str());
-        RoomsOpen(o.server, LocalPlayerName(), o.server == kDefaultServer ? kDefaultServerAlsoPort : o.serverAlsoPort, o.keeperKey);
+        OpenHubRooms(o);
         break;
     case HubAction::None:
         break;
