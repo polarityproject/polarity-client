@@ -34,6 +34,7 @@ std::atomic<bool> g_open{false};
 int g_focus = 1;        // the last entry used keeps focus (0 Play Offline, 1 Custom Rooms)
 double g_openedAt = 0;  // ImGui time, for the fade in
 bool g_fromBlack = false; // ... from black (at launch)
+float g_blackFade = 0;     // from black: seconds of the fade drawn so far
 bool g_clickedTile = false;
 
 // 0.3.0's grid (mock-up "Rooms only"): Play Offline the full height of the
@@ -244,6 +245,7 @@ void OpenHub(bool fromBlack)
     if (!g_open.exchange(true)) {
         g_openedAt = -1;
         g_fromBlack = fromBlack;
+        g_blackFade = 0;
         Log("hub: open%s", fromBlack ? " (at launch)" : "");
     }
 }
@@ -274,7 +276,17 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     BeginScreen();
     const double now = ImGui::GetTime();
     if (g_openedAt < 0) g_openedAt = now;
-    const float alpha = static_cast<float>(std::clamp((now - g_openedAt) / (g_fromBlack ? 0.4 : 0.25), 0.0, 1.0));
+    float alpha = static_cast<float>(std::clamp((now - g_openedAt) / 0.25, 0.0, 1.0));
+    if (g_fromBlack) {
+        // At launch: black until the backdrop's art is in (or 1.5 s), then a
+        // fade counted in drawn frames, each at most 1/30 s: the game's
+        // first seconds at the menu hitch (frames of 60-180 ms), which ate
+        // a fade timed by the clock.
+        const bool ready = BackdropReady() || now - g_openedAt > 1.5;
+        if (ready && g_blackFade == 0) Log("hub: fading in from black after %.0f ms", (now - g_openedAt) * 1000);
+        if (ready) g_blackFade += std::min(ImGui::GetIO().DeltaTime, 1.0f / 30);
+        alpha = std::clamp(g_blackFade / 0.6f, 0.0f, 1.0f);
+    }
     ImDrawList* d = ImGui::GetBackgroundDrawList();
     if (g_fromBlack) {
         // At launch the game's main menu is behind: black under the fade.

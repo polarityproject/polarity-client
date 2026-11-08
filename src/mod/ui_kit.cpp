@@ -542,6 +542,16 @@ void StageAt(ImDrawList* d, float x0, float y0, float x1, float y1, uint32_t pix
 
 int g_backdropEnd = -1;
 
+bool BackdropReady()
+{
+    // Backdrop's stage art (StageAt's look, 1024 px): loaded, or it never will.
+    TexLook look;
+    look.blur = 4.0f * 1024 / kStageW;
+    look.saturate = 1.1f;
+    bool failed = false;
+    return PakTexture(kStage, 1024, true, &failed, look) || failed;
+}
+
 void Backdrop(ImDrawList* d, float alpha)
 {
     const ImVec2 screen = ImGui::GetIO().DisplaySize;

@@ -26,6 +26,7 @@ const TextureView* Texture(const std::string& path);
 // stops at the top level), so a big image drawn small skips pixels and looks
 // grainy. The full size stands in until the small one has arrived.
 const TextureView* TextureSized(const std::string& path, float pixels);
+bool BackdropReady(); // Backdrop's stage art is loaded (or failed to)
 extern bool g_drawing; // false while asking ahead (not drawing): those load after what is drawn
 std::string CharaTex(const std::string& code, const char* name); // "/Game/Chara/<code>/Hud/<name>"
 std::string StageTex(const std::string& code, const char* name); // "/Game/Stage/<code>/UI/<name>"
