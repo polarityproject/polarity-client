@@ -752,11 +752,14 @@ std::mutex g_resimSkipMutex;
 // difference from a straight run (2026-10-30, 2026-11-08), and it saves
 // more there than the newest tick spends making it up: per driven tick
 // 53.6 -> 30.0 us (class 0x2C63BB8), 34.4 -> 23.2 (0x2C63E00), 17.3 -> 12.4
-// (0x2C64100), 5.3 -> 1.2 (0x3E3490), 4.3 -> 3.1 (0x4D6B40). Not here: the
-// fighters' tasks (0x37D1C0, 0x37D1B0, 0x37D170, 0x37CF60: fighter state)
-// and the phase machine's 0x3DD1B0 (s652).
+// (0x2C64100), 5.3 -> 1.2 (0x3E3490), 4.3 -> 3.1 (0x4D6B40), 21.7 -> 4.0
+// (0x37D1B0, the fighter's visual update, rva 0x3897C0). Not here: the
+// fighters' 0x37D170 (their box ring, s13092 +0x6E8..), 0x37D1C0 (s724 +0x2C8
+// differs in replayed frames, and it costs more once after many ticks than
+// once per tick: 83.7 against 35.6 us), 0x37CF60, and the phase machine's
+// 0x3DD1B0 (s652).
 const std::vector<uintptr_t> kLeanResimTasks = {0x80000000u | 0x2C63BB8, 0x80000000u | 0x2C63E00, 0x80000000u | 0x2C64100,
-                                                0x3E3490, 0x4D6B40};
+                                                0x3E3490, 0x4D6B40, 0x37D1B0};
 std::vector<uintptr_t> g_resimSkip = kLeanResimTasks;
 std::atomic<bool> g_resimSkipAny{true};
 struct TaskCost {
