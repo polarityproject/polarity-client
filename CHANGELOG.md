@@ -22,6 +22,8 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   frame is hashed once its inputs are confirmed instead of at every
   simulation, and each rollback's restore is quicker. Long rollbacks at high
   ping and low input delay drop fewer frames.
+- Random stage no longer lands on Flamenco Tavern, Skies of Honor or
+  Kanzuki Beach. They can still be picked by name.
 
 ### Fixed
 

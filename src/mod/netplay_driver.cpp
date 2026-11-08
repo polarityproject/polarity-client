@@ -2007,11 +2007,8 @@ private:
                 p.vtrigger = static_cast<uint8_t>(rng_() % 2);
                 p.comment = 0;
             }
-            std::vector<uint16_t> stages;
-            for (int i = 0; i < StageCount(); i++) {
-                if (IsSelectableStage(i)) stages.push_back(static_cast<uint16_t>(i));
-            }
-            s.stage = stages.empty() ? kKeepStage : stages[rng_() % stages.size()];
+            const int stage = RandomStage(rng_(), false);
+            s.stage = stage < 0 ? kKeepStage : static_cast<uint16_t>(stage);
         }
         else {
             MatchSetup current;
@@ -2038,12 +2035,10 @@ private:
             const uint16_t rule = StageRule();
             s.stage = rule == lobby::kAnyStage ? kKeepStage : rule;
             if (rule == lobby::kRandomStage) {
-                // The host's random stage: one its profile owns, as the game's own random would.
-                std::vector<int> playable;
-                for (int i = 0; i < StageCount(); i++) {
-                    if (IsSelectableStage(i) && OwnsEntitlement(StageAvailableCode(i))) playable.push_back(i);
-                }
-                s.stage = playable.empty() ? kKeepStage : static_cast<uint16_t>(playable[rng_() % playable.size()]);
+                // The host's random stage: one its profile owns, as the game's
+                // own random would, never one of the never-random stages.
+                const int stage = RandomStage(rng_(), true);
+                s.stage = stage < 0 ? kKeepStage : static_cast<uint16_t>(stage);
             }
         }
         // Both games load each fighter's final balance version, not whatever

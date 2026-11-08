@@ -11,6 +11,7 @@
 #include "keeper/connector.h"
 #include "keeper/sign.h"
 #include "core/rules.h"
+#include "core/random_stage.h"
 #include "core/match_code.h"
 #include "core/mux.h"
 #include "core/replay_diff.h"
@@ -32,6 +33,7 @@
 #include <thread>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <random>
 
 #include <windows.h>
@@ -1132,6 +1134,26 @@ void TestRulesFormat()
     CHECK(DescribeRules(Rules{3, 1, 30, Rotation::RoundRobin, 0}) == "First to 3 \xC2\xB7 round robin \xC2\xB7 30 seconds \xC2\xB7 one round");
 }
 
+void TestRandomStage()
+{
+    // Random never lands on Flamenco Tavern, Skies of Honor or Kanzuki Beach,
+    // nor on a setting of theirs; every other stage still comes up.
+    const std::vector<RandomStageChoice> stages = {
+        {3, "CHN", ""}, {14, "KPB", ""}, {15, "DBI", ""}, {17, "SX1", ""}, {10, "TRN", ""}, {67, "S25", "TRN"}, {70, "X01", "SX1"},
+    };
+    std::map<int, int> seen;
+    std::mt19937_64 rng{1234};
+    for (int i = 0; i < 10000; i++) seen[PickRandomStage(stages, rng())]++;
+    CHECK(seen.size() == 3 && seen.count(3) && seen.count(10) && seen.count(67));
+    for (int never : {14, 15, 17, 70, -1}) CHECK(!seen.count(never));
+    // The same roll, the same stage (the host draws once, and sends it).
+    CHECK(PickRandomStage(stages, 7) == PickRandomStage(stages, 7));
+    // Nothing left: -1 (the game keeps the stage it has prepared).
+    CHECK(PickRandomStage({{14, "KPB", ""}, {15, "DBI", ""}}, 5) == -1);
+    CHECK(PickRandomStage({}, 5) == -1);
+    CHECK(IsNeverRandomStage("SX1") && IsNeverRandomStage("DBI") && IsNeverRandomStage("KPB") && !IsNeverRandomStage("") && !IsNeverRandomStage("CHN"));
+}
+
 void TestMatchTicket()
 {
     // Direct Match: the rules it always had, the first joiner plays, a vote.
@@ -2179,6 +2201,7 @@ int main()
         {"key names", TestKeyNames},
         {"shown setup", TestShownSetup},
         {"rules format", TestRulesFormat},
+        {"random stage", TestRandomStage},
         {"match ticket", TestMatchTicket},
         {"keeper connector", TestKeeperConnector},
         {"keeper protocol", TestKeeperProtocol},

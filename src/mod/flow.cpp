@@ -1,9 +1,12 @@
 #include "mod/flow.h"
 
+#include "core/random_stage.h"
+
 #include "mod/battle_setup.h"
 #include "mod/boot.h"
 #include "mod/control.h"
 #include "mod/crash_report.h"
+#include "mod/entitlements.h"
 #include "mod/lifecycle.h"
 #include "mod/log.h"
 #include "mod/stack.h"
@@ -2169,6 +2172,17 @@ bool IsSelectableStage(int index)
     if (IsMenuStage(index)) return true;
     const int base = StageSettingBase(index);
     return base >= 0 && IsMenuStage(base) && IsPlayableStage(index);
+}
+
+int RandomStage(uint64_t roll, bool ownedOnly)
+{
+    std::vector<RandomStageChoice> stages;
+    for (int i = 0; i < StageCount(); i++) {
+        if (!IsSelectableStage(i) || (ownedOnly && !OwnsEntitlement(StageAvailableCode(i)))) continue;
+        const int base = StageSettingBase(i);
+        stages.push_back({i, StageCode(i), base >= 0 ? StageCode(base) : ""});
+    }
+    return PickRandomStage(stages, roll);
 }
 
 namespace {
