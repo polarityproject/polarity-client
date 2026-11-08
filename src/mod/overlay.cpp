@@ -856,6 +856,8 @@ void LoadTables()
     // "costume 0", V-Skills without names for the whole session).
     const std::string scene = CurrentScene();
     if (scene.empty() || scene == "BootState" || scene == "InitialState") return;
+    // Every stage's name first (Ring of Arcade's data is loaded for it).
+    if (!StageNamesReady()) return;
     {
         std::lock_guard lock(g_tablesMutex);
         if (g_readTables) {

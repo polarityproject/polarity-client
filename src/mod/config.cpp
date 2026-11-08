@@ -210,7 +210,6 @@ void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const
                                    std::wstring(loadout.begin(), loadout.end()).c_str(), path.c_str());
     }
     Write(path, L"stage", stage);
-    if (n.randomOffSaved) Write(path, L"random_stages_off", FormatStageMask(n.randomOff));
     Write(path, L"input_delay", std::to_string(n.inputDelay));
     Write(path, L"fixed_delay", n.delaySetting >= 0 ? std::to_string(n.delaySetting) : std::string("auto"));
     // ASCII as it is; anything else as hex in name_utf8 (see ReadNetplayChoices).

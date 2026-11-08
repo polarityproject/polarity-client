@@ -115,6 +115,11 @@ bool IsPlayableStage(int index);
 // as the game's DA_StageArrange has them. IsSelectableStage: a menu stage or
 // one of their settings (for random picks). The first call walks every object.
 bool IsMenuStage(int index);
+// Stage names come from each stage's personal data, which the game leaves
+// unloaded for some (Ring of Arcade, S24): the first call loads those on the
+// game thread (once, a short hitch at the menus). True once done; until then
+// such a stage has no name, and is no menu stage. Any thread.
+bool StageNamesReady();
 std::vector<int> StageSettings(int base);
 int StageSettingBase(int index); // the menu stage a setting belongs to, or -1
 bool IsSelectableStage(int index);

@@ -651,18 +651,16 @@ void DrawRandomList(ImDrawList* d, const SelectFonts& f, const SelectLive& live,
     ui::ModalSpec m;
     m.w = kCols * kTileW + (kCols - 1) * kGapX + 2 * 28;
     m.x0 = (1600 - m.w) / 2;
-    const float gridY = 44 + 58;
+    const float gridY = 44 + 22;
     m.h = gridY + rows * kTileH + (rows - 1) * kGapY + 24 + 48;
     m.y0 = std::max(8.0f, (900 - m.h) / 2);
     m.kicker = "RANDOM STAGES";
     m.aside = std::to_string(on) + " of " + std::to_string(owned) + " stages on";
     const bool noted = !g_ui.listNote.empty() && ImGui::GetTime() < g_ui.listNoteUntil && !sub;
-    m.hint = noted ? g_ui.listNote : "Stages with settings: A picks which ones random rolls.";
+    m.hint = noted ? g_ui.listNote : "Choose which stages can be chosen from at random.";
     m.hintCol = noted ? look::kGold : look::kSoft;
     m.prompts = {{"button_a", cur.variants.size() > 1 ? "Settings" : "On / off"}, {"button_y", on == owned ? "All off" : "All on"}, {"button_b", "Done"}};
-    const float top = ui::Modal(d, bold, f.text, m, nullptr);
-    Text(d, f.text, g_v.L(18), g_v.P(m.x0 + 28, top + 18), look::kSoft,
-         "Random lands only on the stages that are on: yours when you host, and when you're P1 at a table.");
+    ui::Modal(d, bold, f.text, m, nullptr);
     const float gx = m.x0 + 28, gy = m.y0 + gridY;
     for (int i = 0; i < n; i++) {
         const ListStage& l = list[i];

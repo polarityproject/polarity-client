@@ -2160,7 +2160,7 @@ bool IsMenuStage(int index)
     if (!IsPlayableStage(index) || StageSettingBase(index) >= 0) return false;
     // A stage of its own: its own personal data (story variants such as IN1
     // or NY1 reuse their base stage's) and a name (RND is random select;
-    // B00 and S24 have none).
+    // B00 has none; Ring of Arcade, S24, has one once StageNamesReady loaded it).
     int count = 0;
     const uint8_t* e = StageEntries(&count) + index * kStageEntrySize;
     const std::string code = FStringText(e);
@@ -2932,11 +2932,59 @@ std::string StageAvailableCode(int index)
     return it == codes.end() ? std::string() : it->second;
 }
 
+namespace {
+
+// Names read from stage personal data the game had not loaded (Ring of
+// Arcade's, S24: StageNamesReady), by the asset's name ("DA_S24_Personal").
+// Kept as text: the asset loaded for it is not held, and may be collected.
+std::mutex g_loadedNamesMutex;
+std::map<std::string, std::string> g_loadedNames;
+std::atomic<int> g_stageNamesState{0}; // 0 not asked, 1 loading, 2 done
+
+} // namespace
+
+bool StageNamesReady()
+{
+    int expected = 0;
+    if (g_stageNamesState.compare_exchange_strong(expected, 1)) {
+        RunOnGameThread([] {
+            int count = 0;
+            const uint8_t* entries = StageEntries(&count);
+            // StageSpec (StageAvailableCode) lists the stages the game sells
+            // and offers; story ones such as SH2 have a name but no row.
+            if (!entries || StageAvailableCode(0).empty()) {
+                g_stageNamesState = 0; // the tables are not there yet: asked again
+                return;
+            }
+            std::string loaded;
+            for (int i = 0; i < count; i++) {
+                const uint8_t* e = entries + i * kStageEntrySize;
+                const std::string code = FStringText(e), path = FStringText(e + 0x20);
+                const size_t dot = path.rfind('.');
+                if (code.size() != 3 || code == "RND" || dot == std::string::npos || path.find("/" + code + "/") == std::string::npos ||
+                    !IsPlayableStage(i) || StageAvailableCode(i).empty() || !StageName(i).empty()) {
+                    continue;
+                }
+                const auto* asset = static_cast<const uint8_t*>(LoadAsset("KWStagePersonalDataAsset", path));
+                const std::string name = asset && IsReadable(asset + 0x28, 8) ? FTextText(asset + 0x28) : "";
+                if (name.empty()) continue;
+                std::lock_guard lock(g_loadedNamesMutex);
+                g_loadedNames[path.substr(dot + 1)] = name;
+                loaded += (loaded.empty() ? "" : ", ") + code + " " + name;
+            }
+            Log("flow: stage names loaded: %s", loaded.empty() ? "none needed" : loaded.c_str());
+            g_stageNamesState = 2;
+        });
+    }
+    return g_stageNamesState == 2;
+}
+
 std::string StageName(int index)
 {
     // The stage entry's third string is its KWStagePersonalDataAsset
     // ("/Game/Stage/CHN/DA_CHN_Personal.DA_CHN_Personal"); Name (FText) at
-    // +0x28. The assets are collected once (a walk of every object).
+    // +0x28. The assets are collected once (a walk of every object); those
+    // the game had not loaded come from StageNamesReady.
     static std::mutex mutex;
     static std::map<std::string, const uint8_t*> personal;
     int count = 0;
@@ -2954,7 +3002,10 @@ std::string StageName(int index)
         });
     }
     const auto it = personal.find(path.substr(dot + 1));
-    return it == personal.end() ? "" : FTextText(it->second + 0x28);
+    if (it != personal.end()) return FTextText(it->second + 0x28);
+    std::lock_guard loadedLock(g_loadedNamesMutex);
+    const auto loaded = g_loadedNames.find(path.substr(dot + 1));
+    return loaded == g_loadedNames.end() ? "" : loaded->second;
 }
 
 std::vector<std::string> SkillNames(const std::string& charaCode, bool vtrigger)

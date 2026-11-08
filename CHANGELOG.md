@@ -36,6 +36,8 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ### Fixed
 
+- Ring of Arcade was missing from the stage select and from Random. It's
+  there now.
 - Joining a room no longer shows "SFVR left" in its chat (the room's own
   keeper, seen for a moment as a player).
 - With no character saved in My character, a table's first game loaded the

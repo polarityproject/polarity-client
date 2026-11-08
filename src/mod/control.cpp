@@ -1483,11 +1483,11 @@ void RunNetCommand(const std::string& line)
     }
     else if (cmd == "randomoff") {
         // randomoff [CHN,S25]: the Random stages list's stages left out, for
-        // the sessions hosted from now on (testing; not saved).
+        // the sessions hosted from now on (testing; not saved: the panel
+        // file keeps the player's own list).
         std::string list;
         ss >> list;
         o.randomOff = ParseStageMask(list);
-        o.randomOffSaved = true;
         Log("random stages: leaving out '%s'", FormatStageMask(o.randomOff).c_str());
     }
     else if (cmd == "randomstages") {
