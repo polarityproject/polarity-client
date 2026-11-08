@@ -80,7 +80,8 @@ struct NetplayOptions {
     bool fullRecordings = false;           // recordings keep every frame's region hashes, not only around desyncs (testing)
     bool skipSaves = true;                 // saves that can never be loaded skip their copy (netplay.h)
     bool skipLoadCallbacks = true;         // loads leave out the costliest game callbacks (DefaultSkippedLoadCallbacks)
-    bool verifyLoads = true;               // each load checked against its save's checksum (netplay.h)
+    bool verifyLoads = true;               // loads checked against their save's checksum (netplay.h)
+    unsigned int verifyLoadsEvery = 16;    // ... every this many loads (1: all)
     bool menuAfterMatch = true;            // back to the main menu when a session ends or on leave
     bool hotkeys = false;                  // F7 hosts, F8 joins (testing; capture tools bind F8)
     bool reconcileStart = true;            // joiner takes the host's values where the frozen states differ (lobby.h)

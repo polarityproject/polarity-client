@@ -43,9 +43,11 @@ struct NetplayConfig {
     // be mispredicted. Once they are confirmed (the delay covers the latency)
     // the save keeps its checksum, for desync detection, but skips the copy.
     bool skipUnloadableSaves = true;
-    // After each load, the restored state's checksum against the one taken
-    // when that frame was saved: a mismatch is a save/load bug, logged.
+    // After a load, the restored state's checksum against the one taken
+    // when that frame was saved: a mismatch is a save/load bug, logged. It
+    // costs a whole hash, so only every verifyLoadsEvery-th load (1: all).
     bool verifyLoads = true;
+    unsigned int verifyLoadsEvery = 16;
     std::function<void(const std::string&)> log;
 };
 
@@ -152,6 +154,7 @@ private:
     };
     std::array<SavedFrame, 256> saved_{};
     int loadMismatches_ = 0;
+    unsigned int loadsSeen_ = 0; // loads so far, for verifyLoadsEvery
     SaveStats saveCounts_;
     std::vector<uint64_t> frameHashes_;
     int hashedFrame_ = -2; // frame whose hashes frameHashes_ holds

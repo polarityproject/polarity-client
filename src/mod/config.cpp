@@ -318,6 +318,7 @@ Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const st
     n.skipSaves = ReadInt(path, L"netplay", L"skip_saves", 1) != 0;
     n.skipLoadCallbacks = ReadInt(path, L"netplay", L"skip_load_callbacks", 1) != 0;
     n.verifyLoads = ReadInt(path, L"netplay", L"verify_loads", 1) != 0;
+    n.verifyLoadsEvery = static_cast<unsigned int>(std::max(1, ReadInt(path, L"netplay", L"verify_loads_every", 16)));
     ReadNetplayChoices(path, n, false);
     if (!panelPath.empty()) ReadNetplayChoices(panelPath, n, true);
     n.randomSetup = ReadInt(path, L"netplay", L"random", 0) != 0;

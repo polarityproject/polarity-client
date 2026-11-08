@@ -286,7 +286,8 @@ void NetplaySession::HandleGameEvent(GekkoGameEvent* ev)
             Log("load of frame " + std::to_string(load.frame) + ", whose save was skipped: the state is wrong from here");
         }
         LoadRegions(regions, load.state);
-        if (config_.verifyLoads && was.frame == load.frame) {
+        const bool verify = config_.verifyLoads && loadsSeen_++ % std::max(1u, config_.verifyLoadsEvery) == 0;
+        if (verify && was.frame == load.frame) {
             HashRegions(regions, frameHashes_.data());
             const uint32_t sum = FoldChecksum(frameHashes_.data(), frameHashes_.size());
             if (sum != was.checksum) {

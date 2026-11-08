@@ -98,9 +98,11 @@ skip_saves=1
 ; time a load takes; the frames resimulated after it set the same state.
 ; 0: every callback runs (for comparing).
 skip_load_callbacks=1
-; 1: after each rollback's load, the state's checksum is compared with the one
+; 1: after a rollback's load, the state's checksum is compared with the one
 ; taken when that frame was saved; a mismatch is logged (a save/load bug).
 verify_loads=1
+; ... after every this many loads (each check hashes the whole state; 1: all).
+verify_loads_every=16
 ; 1: when the two games' frozen starting states differ (memory the game has
 ; not initialised yet), the joiner takes the host's values before the
 ; session starts (pointer-like values and masked words excepted).

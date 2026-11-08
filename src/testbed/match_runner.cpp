@@ -47,6 +47,7 @@ MockMatchResult RunMockMatch(const MockMatchOptions& options)
         nc.modVersion = "test";
         nc.inputDelay = options.inputDelay;
         nc.predictionWindow = options.predictionWindow;
+        nc.verifyLoadsEvery = 1; // the tests check every load
         if (options.log) nc.log = [p, log = options.log](const std::string& m) { log("P" + std::to_string(p + 1) + ": " + m); };
         sessions[p] = std::make_unique<NetplaySession>(*games[p], net.Endpoint(ids[p]), nc);
         sessions[p]->onDesync = [&result, p](const DesyncInfo&, const ReplayFile&) { result.reportsRaised[p]++; };
