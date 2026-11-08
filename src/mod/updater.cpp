@@ -47,6 +47,17 @@ void Set(UpdateView::State state, const std::string& message = "")
     g_view.message = message;
 }
 
+// A check ended (whatever came of it): UpdateCheckIfStale goes by this.
+void Checked()
+{
+    std::lock_guard lock(g_mutex);
+    g_view.checkedAtMs = static_cast<int64_t>(GetTickCount64());
+}
+
+// Checked again every so often while the game runs (when checks at start
+// are on), so a release reaches players already in the game.
+constexpr int64_t kCheckEveryMs = 15 * 60 * 1000;
+
 // GET `url` (http or https) into `out`, at most `maxBytes`; `progress` gets
 // the bytes so far.
 bool HttpGet(const std::string& url, size_t maxBytes, std::vector<uint8_t>* out, std::string* error,
@@ -144,6 +155,9 @@ bool MissingData(const UpdateFile& f)
 void Check()
 {
     ThreadGuard running;
+    struct Done {
+        ~Done() { Checked(); }
+    } done;
     // Installed in this run: nothing more to do until the next launch.
     if (UpdateViewNow().state == UpdateView::State::Ready) return;
     const std::string url = SiteUrl();
@@ -398,6 +412,18 @@ void InstallUpdater(const std::wstring& gameDir, const std::string& currentVersi
     const UpdateView v = UpdateViewNow();
     Log("update: %s", v.state == UpdateView::State::Off ? ("off: " + v.message).c_str() : ("site " + v.url).c_str());
     if (checkNow) UpdateCheck();
+    // Again every 15 minutes (with checks at start on): a release while
+    // playing shows too (rooms then ask for it).
+    if (checkNow && v.state != UpdateView::State::Off) {
+        std::thread([] {
+            for (;;) {
+                Sleep(60 * 1000);
+                const UpdateView now = UpdateViewNow();
+                const bool settled = now.state == UpdateView::State::UpToDate || now.state == UpdateView::State::Failed;
+                if (settled && static_cast<int64_t>(GetTickCount64()) - now.checkedAtMs >= kCheckEveryMs) UpdateCheck();
+            }
+        }).detach();
+    }
 }
 
 UpdateView UpdateViewNow()
@@ -416,6 +442,66 @@ void UpdateInstall()
 {
     if (UpdateViewNow().state != UpdateView::State::Available) return;
     RunInBackground(&Install);
+}
+
+bool UpdatePending(const UpdateView& v)
+{
+    using S = UpdateView::State;
+    return v.state == S::Available || v.state == S::Downloading || v.state == S::Ready;
+}
+
+bool UpdateCheckIfStale(int64_t maxAgeMs)
+{
+    const UpdateView v = UpdateViewNow();
+    using S = UpdateView::State;
+    if (v.state == S::Off || v.state == S::Checking || UpdatePending(v) || g_busy) return false;
+    if (v.checkedAtMs >= 0 && static_cast<int64_t>(GetTickCount64()) - v.checkedAtMs < maxAgeMs) return false;
+    Log("update: checking before Custom Rooms (last check %s)",
+        v.checkedAtMs < 0 ? "never" : (std::to_string((static_cast<int64_t>(GetTickCount64()) - v.checkedAtMs) / 1000) + " s ago").c_str());
+    Set(S::Checking); // at once: the hub's modal shows it this frame
+    RunInBackground(&Check);
+    return true;
+}
+
+void UpdatePretendVersion(const std::string& version)
+{
+    std::lock_guard lock(g_mutex);
+    Log("update: this build reports SFVR %s (was %s), for testing", version.c_str(), g_view.current.c_str());
+    g_view.current = version;
+    if (g_view.state != UpdateView::State::Off) g_view.state = UpdateView::State::Idle;
+    g_view.checkedAtMs = -1;
+}
+
+bool RestartGame(void* window, std::string* error)
+{
+    wchar_t exe[MAX_PATH] = {};
+    if (!GetModuleFileNameW(nullptr, exe, MAX_PATH)) {
+        if (error) *error = "cannot find the game's program";
+        return false;
+    }
+    std::wstring dir = exe;
+    dir = dir.substr(0, dir.find_last_of(L"\\/"));
+    // The same command line (Steam's arguments with it); the environment is
+    // this one's (Steam's app id: no relaunch through Steam) and the pid to
+    // wait for.
+    std::wstring command = GetCommandLineW();
+    SetEnvironmentVariableW(L"SFVR_WAIT_PID", std::to_wstring(GetCurrentProcessId()).c_str());
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    const BOOL started = CreateProcessW(exe, command.data(), nullptr, nullptr, FALSE, 0, nullptr, dir.c_str(), &si, &pi);
+    const DWORD failure = started ? 0 : GetLastError();
+    SetEnvironmentVariableW(L"SFVR_WAIT_PID", nullptr);
+    if (!started) {
+        Log("update: cannot start the game again (error %lu)", failure);
+        if (error) *error = "the game could not start again (error " + std::to_string(failure) + ")";
+        return false;
+    }
+    Log("update: started the game again (process %lu); closing this one", pi.dwProcessId);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    PostMessageW(static_cast<HWND>(window), WM_CLOSE, 0, 0);
+    return true;
 }
 
 void SetUpdateUrl(const std::string& url)

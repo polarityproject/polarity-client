@@ -339,19 +339,22 @@ void CodePanel(ImDrawList* d, const HubFonts& f, bool active, const std::string&
     *clickedKey = -1;
     if (!notice.empty()) {
         const bool full = notice == "Room full";
+        const bool version = notice.rfind("That room is on SFVR", 0) == 0;
         const ImU32 line = full ? kGold : kRed;
         const ImVec2 a = g_v.P(918, 324), b = g_v.P(1526, 470);
         d->AddRectFilled(a, b, look::kControl);
         d->AddRect(a, b, line, 0, 0, g_v.L(2));
-        Text(d, f.strong, g_v.L(16), g_v.P(944, 346), line, full ? "ROOM FULL" : "NO SUCH ROOM");
+        Text(d, f.strong, g_v.L(16), g_v.P(944, 346), line, full ? "ROOM FULL" : version ? "OTHER VERSION" : "NO SUCH ROOM");
         const std::string code = g.lastCode.empty() ? g.code : g.lastCode;
-        const bool hide = StreamerMode();
+        const bool hide = StreamerMode() || code.empty(); // no code to show: the plain wording
         Text(d, f.display, g_v.L(26), g_v.P(944, 374), kCream,
-             full ? (hide ? std::string("That room has 16 players") : code + " has 16 players")
-                  : (hide ? std::string("Nothing open on that code") : "Nothing open on " + code));
+             full      ? (hide ? std::string("That room has 16 players") : code + " has 16 players")
+             : version ? (hide ? std::string("That room is on another version") : code + " is on another version")
+                       : (hide ? std::string("Nothing open on that code") : "Nothing open on " + code));
         Text(d, f.body, g_v.L(17), g_v.P(944, 418), kSoft,
-             full ? "Rooms hold 16 players. Try again when someone leaves."
-                  : "Check the code. Rooms close once everyone leaves.");
+             full      ? std::string("Rooms hold 16 players. Try again when someone leaves.")
+             : version ? notice
+                       : std::string("Check the code. Rooms close once everyone leaves."));
         return;
     }
     const float keyW = (608 - 8 * (kKeyCols - 1)) / float(kKeyCols);
@@ -500,7 +503,8 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     const int count = static_cast<int>(rooms.size());
     if (g.focus >= count) g.focus = count ? count - 1 : kCode;
     const bool busy = v.state == S::Creating || v.state == S::Joining;
-    const bool failed = !v.notice.empty() && (v.notice == "No room on that code" || v.notice == "Room full") && g.focus == kCode;
+    const bool versionNotice = v.notice.rfind("That room is on SFVR", 0) == 0;
+    const bool failed = !v.notice.empty() && (v.notice == "No room on that code" || v.notice == "Room full" || versionNotice) && g.focus == kCode;
 
     // ---- input ----
     int barClick = -1;
@@ -646,7 +650,7 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
         prompts.push_back({"button_b", "Back"});
     }
     else if (g.focus == kCreate) {
-        if (!v.notice.empty() && v.notice != "No room on that code" && v.notice != "Room full") {
+        if (!v.notice.empty() && v.notice != "No room on that code" && v.notice != "Room full" && !versionNotice) {
             // The notice is about the room just left (the owner's removal) or
             // about a room that was asked for.
             lead = v.notice.rfind("Removed", 0) == 0 ? "REMOVED" : v.notice.rfind("Cannot join", 0) == 0 ? "NOT JOINED" : "NOT MADE";

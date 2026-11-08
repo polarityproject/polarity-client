@@ -11,7 +11,7 @@ param([string]$Server = '2.29.123.240:5555', [switch]$Testing, [switch]$Public)
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')
 $build = Join-Path $root 'build\Release'
-$version = (Select-String -Path (Join-Path $root 'src\mod\mod_main.cpp') -Pattern 'kModVersion = "([^"]+)"').Matches.Groups[1].Value
+$version = (Select-String -Path (Join-Path $root 'src\core\version.h') -Pattern 'kSfvrVersion = "([^"]+)"').Matches.Groups[1].Value
 $name = "sfvr-$version"
 $out = Join-Path $root "dist\$name"
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }

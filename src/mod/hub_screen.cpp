@@ -145,6 +145,8 @@ void DrawTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame& r, 
 
 bool g_problemOpen = false; // the Custom Rooms modal (HubLive::roomsProblem)
 int g_problemChoice = 0;    // its focused button
+bool g_updateOpen = false;  // the update modal
+int g_updateChoice = 0;
 
 // The modal: what is wrong and what can be done. While connecting it waits,
 // and Custom Rooms opens by itself once it can; a problem gone (the server
@@ -173,6 +175,16 @@ HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live
                "If they're fine, the server may be down. SFVR retries every 10 seconds.";
         primary = "Try again";
         primaryAction = HubAction::RetryRooms;
+        break;
+    case P::CheckingUpdate:
+        title = "Checking for updates...";
+        text = "Custom Rooms opens once the check is done.";
+        break;
+    case P::UpdatePending:
+        title = "Update to play online";
+        text = "SFVR " + live.update.latest + " is out. Custom Rooms need the latest version.";
+        primary = "Update now";
+        primaryAction = HubAction::UpdateInstall;
         break;
     case P::UpdateNeeded:
         title = "Update needed";
@@ -222,7 +234,118 @@ HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live
     if (Confirm() || pressed >= 0) {
         const bool primaryChosen = primary && g_problemChoice == 0;
         if (!primaryChosen || primaryAction != HubAction::RetryRooms) g_problemOpen = false; // Try again keeps it up (it opens the rooms once they answer)
+        if (primaryChosen && primaryAction == HubAction::UpdateInstall) {
+            g_updateOpen = true;
+            g_updateChoice = 0;
+        }
         return primaryChosen ? primaryAction : HubAction::None;
+    }
+    return HubAction::None;
+}
+
+// The update modal: what is out (its notes), Update now; the download's
+// progress; then Restart now, or why it failed.
+HubAction DrawUpdateModal(ImDrawList* d, const HubFonts& f, const HubLive& live)
+{
+    using S = UpdateView::State;
+    const UpdateView& u = live.update;
+    ImFont* bold = f.bold ? f.bold : f.strong;
+    std::string title, text;
+    const char* primary = nullptr;
+    HubAction primaryAction = HubAction::None;
+    const char* close = "Later";
+    float progress = -1;
+    switch (u.state) {
+    case S::Available: {
+        title = "SFVR " + u.latest + " is out";
+        // The first paragraph of the notes, cut to a few lines.
+        std::string notes = u.notes.substr(0, u.notes.find("\n\n"));
+        if (notes.size() > 360) notes = notes.substr(0, notes.rfind(' ', 357)) + "...";
+        text = notes.empty() ? "A new version is ready to download." : notes;
+        primary = "Update now";
+        primaryAction = HubAction::UpdateInstall;
+        break;
+    }
+    case S::Downloading:
+        title = "Updating to SFVR " + u.latest;
+        progress = u.total ? static_cast<float>(u.done) / static_cast<float>(u.total) : 0.0f;
+        text = "Downloading... " + std::to_string(static_cast<int>(progress * 100)) + "%. You can keep using the menus.";
+        close = "Hide";
+        break;
+    case S::Ready:
+        title = "SFVR " + u.latest + " is ready";
+        text = live.restartError.empty() ? "Restart the game to finish."
+                                         : "Couldn't restart: " + live.restartError + ". Close the game and start it again.";
+        primary = "Restart now";
+        primaryAction = HubAction::UpdateRestart;
+        break;
+    case S::Failed:
+        title = "The update failed";
+        text = u.message.empty() ? std::string("Something went wrong.") : u.message;
+        text += " Check your connection and try again.";
+        primary = "Try again";
+        primaryAction = HubAction::UpdateRetry;
+        close = "Close";
+        break;
+    case S::Checking:
+        title = "Checking for updates...";
+        text = "One moment.";
+        close = "Close";
+        break;
+    default:
+        title = "SFVR is up to date";
+        text = "You have the latest version.";
+        close = "Close";
+        break;
+    }
+    const float wrap = 544;
+    const float textH = f.body->CalcTextSizeA(TextPx(19), FLT_MAX, g_v.L(wrap), text.c_str()).y / g_v.s;
+    ModalSpec m;
+    m.w = 600;
+    m.x0 = 500;
+    m.h = 44 + 22 + 34 + 12 + textH + (progress >= 0 ? 30 : 0) + 24 + 48 + 26 + 48;
+    m.y0 = (844 - m.h) / 2;
+    m.kicker = "UPDATE";
+    m.danger = u.state == S::Failed;
+    m.prompts = {{"button_a", "Select"}, {"button_b", close}};
+    int prompt = -1;
+    float y = Modal(d, bold, f.body, m, &prompt) + 22;
+    Text(d, f.display, g_v.L(28), g_v.P(528, y), look::kCream, title);
+    y += 46;
+    d->AddText(f.body, TextPx(19), g_v.P(528, y), look::kCream, text.c_str(), nullptr, g_v.L(wrap));
+    y += textH;
+    if (progress >= 0) {
+        y += 14;
+        d->AddRectFilled(g_v.P(528, y), g_v.P(1072, y + 6), Rgba(255, 255, 255, 31));
+        d->AddRectFilled(g_v.P(528, y), g_v.P(528 + 544 * std::clamp(progress, 0.0f, 1.0f), y + 6), look::kGold);
+        y += 16;
+    }
+    y += 24;
+    const int buttons = primary ? 2 : 1;
+    if (g_updateChoice >= buttons) g_updateChoice = 0;
+    int pressed = -1;
+    if (primary) {
+        if (Button(d, bold, 528, y, 806, y + 48, primary, g_updateChoice == 0)) pressed = 0;
+        if (Button(d, bold, 822, y, 1072, y + 48, close, g_updateChoice == 1)) pressed = 1;
+    }
+    else if (Button(d, bold, 528, y, 1072, y + 48, close, true)) pressed = 0;
+    if (!g_inputOn) return HubAction::None;
+    if (buttons == 2 && (Left() || Right())) g_updateChoice = 1 - g_updateChoice;
+    if (pressed >= 0) g_updateChoice = pressed;
+    if (Back()) {
+        g_updateOpen = false;
+        Log("hub: update modal closed (%s)", close);
+        return HubAction::None;
+    }
+    if (Confirm() || pressed >= 0) {
+        const bool primaryChosen = primary && g_updateChoice == 0;
+        if (!primaryChosen) {
+            g_updateOpen = false;
+            Log("hub: update modal closed (%s)", close);
+            return HubAction::None;
+        }
+        g_updateChoice = 0;
+        return primaryAction; // the modal stays: its next state shows
     }
     return HubAction::None;
 }
@@ -256,6 +379,16 @@ void CloseHub()
 }
 
 bool HubOpen() { return g_open; }
+
+void OpenUpdateModal()
+{
+    if (!g_updateOpen) Log("hub: update modal open");
+    g_updateOpen = true;
+    g_updateChoice = 0;
+    g_problemOpen = false;
+}
+
+bool UpdateModalOpen() { return g_updateOpen; }
 
 void WarmHubTextures(const HubLive& live)
 {
@@ -304,9 +437,9 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     // Input: left and right between the column and the online tiles; the
     // mouse focuses what it is over and a click selects it.
     HubAction action = HubAction::None;
-    if (!g_problemOpen && Left()) g_focus = 0;
-    if (!g_problemOpen && Right()) g_focus = 1;
-    for (int i = 0; i < count && !g_problemOpen; i++) {
+    if (!g_problemOpen && !g_updateOpen && Left()) g_focus = 0;
+    if (!g_problemOpen && !g_updateOpen && Right()) g_focus = 1;
+    for (int i = 0; i < count && !g_problemOpen && !g_updateOpen; i++) {
         const Frame& r = kFrames[i];
         if (takeInput && MouseIn(g_v.P(r.x, r.y), g_v.P(r.x + r.w, r.y + r.h))) {
             if (ImGui::GetIO().MouseDelta.x != 0 || ImGui::GetIO().MouseDelta.y != 0) g_focus = i;
@@ -320,9 +453,11 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     DrawPanel(d, f, entries[g_focus]);
     for (int i = 0; i < count; i++) DrawTile(d, f, entries[i], kFrames[i], i == g_focus, entries[i].action == HubAction::CustomRooms ? live.roomsState : "");
     int prompt = -1;
-    PromptLine(d, f.body, f.bold ? f.bold : f.strong, "", kGold, g_problemOpen ? std::string() : entries[g_focus].text,
-               g_problemOpen ? PromptList{} : PromptList{{"button_a", "Select"}, {"button_start", "SFVR settings"}}, &prompt);
-    if (g_problemOpen) action = DrawRoomsProblem(d, f, live);
+    const bool modal = g_problemOpen || g_updateOpen;
+    PromptLine(d, f.body, f.bold ? f.bold : f.strong, "", kGold, modal ? std::string() : entries[g_focus].text,
+               modal ? PromptList{} : PromptList{{"button_a", "Select"}, {"button_start", "SFVR settings"}}, &prompt);
+    if (g_updateOpen) action = DrawUpdateModal(d, f, live);
+    else if (g_problemOpen) action = DrawRoomsProblem(d, f, live);
     else {
         if (Confirm() || std::exchange(g_clickedTile, false)) action = entries[g_focus].action;
         if (Pressed({ImGuiKey_GamepadStart}, false)) action = HubAction::Settings;
@@ -338,7 +473,7 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     d->PopClipRect();
     FadeFrom(d, from, alpha);
     if (action != HubAction::None) {
-        static const char* const kNames[] = {"none", "play offline", "custom rooms", "settings"};
+        static const char* const kNames[] = {"none", "play offline", "custom rooms", "settings", "retry rooms", "update install", "update restart", "update retry"};
         Log("hub: %s", kNames[static_cast<int>(action)]);
     }
     return action;

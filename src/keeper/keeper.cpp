@@ -463,6 +463,7 @@ void Keeper::ReadBackCustom(Room& room)
     }
     room.settings.tables = std::clamp(std::atoi(data(kTables).c_str()), 1, kMaxTables);
     room.settings.isPublic = data(kPublic) == "1";
+    room.version = data(kVersion).substr(0, kVersionMax);
     // Its title as written (an older or broken one: none).
     if (!ParseTitle(data(kTitle), &room.settings.title)) room.settings.title = RoomTitle{};
     room.owner = static_cast<uint32_t>(std::strtoul(data(kOwner).c_str(), nullptr, 10));
@@ -494,6 +495,7 @@ void Keeper::SetUpAsHost(Room& room, int64_t nowMs)
         WriteData(room, kKind, kKindCustom);
         WriteData(room, kBuild, std::to_string(o_.protocol));
         WriteData(room, kTitle, FormatTitle(room.settings.title));
+        if (!room.version.empty()) WriteData(room, kVersion, room.version);
         WriteData(room, kPublic, room.settings.isPublic ? "1" : "0");
         WriteData(room, kTables, std::to_string(room.settings.tables));
         for (int t = 0; t < room.settings.tables; t++) {
@@ -585,6 +587,12 @@ void Keeper::OnMemberData(Room& room, uint32_t id, const std::string& key, const
                         std::isupper(static_cast<unsigned char>(value[1]));
         m.country = ok ? value : std::string();
     }
+    else if (key == kVersion) {
+        m.version = value.substr(0, kVersionMax);
+        if (room.kind == Kind::Custom && !room.version.empty() && !m.version.empty() && m.version != room.version)
+            Log("keeper: room %s: %s (%u) runs SFVR %s, the room %s", room.code.c_str(), m.name.c_str(), id, m.version.c_str(),
+                room.version.c_str());
+    }
     else if (key == kAck) {
         const uint32_t seq = static_cast<uint32_t>(std::strtoul(value.c_str(), nullptr, 10));
         std::erase_if(room.outbox, [&](const Outgoing& o) { return o.to == id && o.seq <= seq; });
@@ -632,12 +640,13 @@ void Keeper::OnRequest(Room& room, Member& m, const Request& request, int64_t no
         auto r = std::make_unique<Room>();
         r->kind = Kind::Custom;
         r->settings = settings;
+        r->version = m.version;
         r->owner = m.id;
         r->requester = m.id;
         r->requestSeq = request.seq;
         r->createdMs = nowMs;
-        Log("keeper: %s (%u) asks for a room: %s, %d tables, %s", m.name.c_str(), m.id, FormatTitle(settings.title).c_str(),
-            settings.tables, settings.isPublic ? "public" : "private");
+        Log("keeper: %s (%u) asks for a room: %s, %d tables, %s, SFVR %s", m.name.c_str(), m.id, FormatTitle(settings.title).c_str(),
+            settings.tables, settings.isPublic ? "public" : "private", m.version.empty() ? "?" : m.version.c_str());
         // Made once its connect comes through (Step); a failed one answers no (Close).
         Ask(r->connecting, r->connectAskedMs, nowMs);
         stats_.roomsAsked++;
@@ -793,7 +802,17 @@ void Keeper::WriteListings(int64_t nowMs)
     DeskSummary summary;
     summary.rev = listRev_;
     summary.publicRooms = static_cast<int>(list.size());
-    for (const ListedRoom& l : list) summary.players += l.members;
+    for (const ListedRoom& l : list) {
+        summary.players += l.members;
+        if (l.version.empty()) continue;
+        auto v = std::find_if(summary.versions.begin(), summary.versions.end(), [&](const DeskSummary::Version& x) { return x.version == l.version; });
+        if (v == summary.versions.end()) v = summary.versions.insert(summary.versions.end(), {l.version, 0, 0});
+        v->publicRooms++;
+        v->players += l.members;
+    }
+    // The busiest versions first (the value is cut at 128 bytes).
+    std::stable_sort(summary.versions.begin(), summary.versions.end(),
+                     [](const DeskSummary::Version& a, const DeskSummary::Version& b) { return a.players > b.players; });
     Listing want{{kKind, kKindLobby},
                  {kBuild, std::to_string(o_.protocol)},
                  {kCount, std::to_string(Count(desk))},
@@ -816,6 +835,7 @@ std::vector<ListedRoom> Keeper::PublicList() const
         ListedRoom l;
         l.code = r->code;
         l.title = r->settings.title;
+        l.version = r->version;
         const auto owner = r->members.find(r->owner);
         l.owner = owner != r->members.end() ? ShownName(*r, r->owner) : std::string();
         l.ownerCountry = owner != r->members.end() ? owner->second.country : std::string();

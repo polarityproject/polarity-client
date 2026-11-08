@@ -589,7 +589,8 @@ void RunNetCommand(const std::string& line)
         else SendReadyReports();
     }
     else if (cmd == "update") {
-        // update [check [url]] | update install: the updater (updater.h).
+        // update [check [url]] | update install | update pretend <version> |
+        // update restart: the updater (updater.h).
         std::string what, url;
         ss >> what >> url;
         if (what == "check") {
@@ -597,6 +598,11 @@ void RunNetCommand(const std::string& line)
             UpdateCheck();
         }
         else if (what == "install") UpdateInstall();
+        else if (what == "pretend" && !url.empty()) UpdatePretendVersion(url);
+        else if (what == "restart") {
+            std::string error;
+            if (!RestartGame(FindGameWindow(), &error)) Log("update: restart: %s", error.c_str());
+        }
         const UpdateView v = UpdateViewNow();
         Log("update: state %d, this build %s, site's %s, %llu of %llu bytes%s%s", static_cast<int>(v.state), v.current.c_str(),
             v.latest.empty() ? "-" : v.latest.c_str(), static_cast<unsigned long long>(v.done),

@@ -89,8 +89,28 @@ inline DWORD WINAPI LoadMod(LPVOID)
     }
 }
 
+// After an update the mod starts the game again with SFVR_WAIT_PID set to
+// the old game's process: wait here (before the game's single-instance
+// check) until it has closed, at most a minute.
+inline void WaitForRestartedGame()
+{
+    wchar_t text[32];
+    const DWORD n = GetEnvironmentVariableW(L"SFVR_WAIT_PID", text, 32);
+    if (!n || n >= 32) return;
+    SetEnvironmentVariableW(L"SFVR_WAIT_PID", nullptr);
+    DWORD pid = 0;
+    for (DWORD i = 0; i < n && text[i] >= L'0' && text[i] <= L'9'; i++) pid = pid * 10 + (text[i] - L'0');
+    if (!pid) return;
+    if (HANDLE old = OpenProcess(SYNCHRONIZE, FALSE, pid)) {
+        WaitForSingleObject(old, 60000);
+        CloseHandle(old);
+    }
+    SetEnvironmentVariableW(L"SFVR_RESTARTED", L"1");
+}
+
 inline void Start(HMODULE self)
 {
+    WaitForRestartedGame();
     DWORD n = GetModuleFileNameW(self, g_dir, MAX_PATH);
     while (n > 0 && g_dir[n - 1] != L'\\' && g_dir[n - 1] != L'/') n--;
     g_dir[n] = 0;

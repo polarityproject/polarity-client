@@ -1,3 +1,4 @@
+#include "core/version.h"
 #include "builtin_noise.h"
 #include "core/replay_file.h"
 #include "core/state.h"
@@ -34,7 +35,7 @@ namespace sfv::mod {
 
 namespace {
 
-constexpr const char* kModVersion = "0.3.0";
+constexpr const char* kModVersion = kSfvrVersion; // core/version.h
 
 std::wstring DirectoryOf(HMODULE module)
 {
@@ -81,6 +82,10 @@ DWORD WINAPI ModMain(LPVOID self)
     const std::wstring panelPath = dir + L"\\sfv_rollback.panel" + suffix + L".ini";
     const Config config = LoadConfig(iniPath, dir, panelPath);
     Log("SFVR %s, instance %d, mode %s", kModVersion, instance, ModeName(config.mode));
+    if (GetEnvironmentVariableW(L"SFVR_RESTARTED", nullptr, 0)) {
+        SetEnvironmentVariableW(L"SFVR_RESTARTED", nullptr);
+        Log("started again by the last run's restart (after an update)");
+    }
     {
         HMODULE module = nullptr;
         GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,

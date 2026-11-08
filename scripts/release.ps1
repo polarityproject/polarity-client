@@ -4,8 +4,8 @@
 #     builds, runs the unit tests, copies the files into
 #     sfvr-site\public\releases\<version>\ (and the full package for first
 #     installs), then writes public\update.json and signs it into
-#     public\update.json.sig. The version is kModVersion in
-#     src\mod\mod_main.cpp: raise it first, and give it a section in
+#     public\update.json.sig. The version is kSfvrVersion in
+#     src\core\version.h: raise it first, and give it a section in
 #     CHANGELOG.md, whose first paragraph becomes the notes players see
 #     (-Notes overrides them).
 #   release.ps1 -Channel rooms
@@ -61,7 +61,7 @@ $ecdsa.ImportPkcs8PrivateKey([Convert]::FromBase64String((Get-Content $KeyFile -
 $built = [regex]::Matches((Get-Content $keyHeader -Raw), '0x([0-9a-fA-F]{2})') | ForEach-Object { [Convert]::ToByte($_.Groups[1].Value, 16) }
 if ((@($built) -join ',') -ne ((PublicKeyOf $ecdsa) -join ',')) { throw "src\mod\update_key.h does not hold $KeyFile's public key" }
 
-$version = (Select-String -Path (Join-Path $root 'src\mod\mod_main.cpp') -Pattern 'kModVersion = "([^"]+)"').Matches.Groups[1].Value
+$version = (Select-String -Path (Join-Path $root 'src\core\version.h') -Pattern 'kSfvrVersion = "([^"]+)"').Matches.Groups[1].Value
 $public = Join-Path (Resolve-Path $Site) 'public'
 
 # The channel: the build's own, and the versions that belong on it.
@@ -94,7 +94,7 @@ if ($Channel -eq 'rooms' -and $version -eq '0.3.0') {
 $followed = (Select-String -Path (Join-Path $root 'src\mod\updater.h') -Pattern 'kUpdateChannel = "([^"]+)"').Matches.Groups[1].Value
 if ($followed -ne $Channel) { throw "this build follows the $followed channel (kUpdateChannel in src\mod\updater.h), not $Channel" }
 $release = Join-Path $public "releases\$version"
-if ((Test-Path $release) -and -not $Force) { throw "release $version is already on the site ($release); raise kModVersion" }
+if ((Test-Path $release) -and -not $Force) { throw "release $version is already on the site ($release); raise kSfvrVersion" }
 
 # The version's changelog entry; its first paragraph is the players' notes.
 $changelog = Get-Content (Join-Path $root 'CHANGELOG.md') -Raw

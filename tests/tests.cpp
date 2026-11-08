@@ -1596,6 +1596,22 @@ void TestKeeperProtocol()
         CHECK(!ParseRoomListing(r.code, l, 17, &parsed) && !ParseRoomListing("", l, 16, &parsed));
         read.push_back(parsed);
     }
+    {
+        // A room's version goes in its kind: players list their own
+        // version's ("c16/0.3.0"); one of no version reads as "".
+        ListedRoom r = rooms[0];
+        r.version = "0.3.0";
+        const Listing l = RoomListing(r, 16);
+        CHECK(l.at(kListingKind) == "c16/0.3.0" && ListingKindValue(16, "0.3.0") == "c16/0.3.0");
+        ListedRoom parsed;
+        CHECK(ParseRoomListing(r.code, l, 16, &parsed) && parsed.version == "0.3.0");
+        CHECK(!ParseRoomListing(r.code, l, 17, &parsed));
+        CHECK(ParseRoomListing(rooms[0].code, RoomListing(rooms[0], 16), 16, &parsed) && parsed.version.empty());
+        // The version is signed with the rest: another one breaks the signature's message.
+        Listing other = l;
+        other[kListingKind] = "c16/0.3.1";
+        CHECK(ListingMessage(r.code, other) != ListingMessage(r.code, l));
+    }
     for (size_t i = 0; i < read.size(); i++) {
         CHECK(read[i].code == rooms[i].code && read[i].title == rooms[i].title && read[i].members == rooms[i].members &&
               read[i].tables == rooms[i].tables && read[i].openSeats == rooms[i].openSeats && read[i].rules == rooms[i].rules &&
@@ -1642,6 +1658,12 @@ void TestKeeperProtocol()
         DeskSummary d{1234567890123ull, 40, 160}, summary;
         CHECK(FormatDeskSummary(d) == "1234567890123|40|160" && ParseDeskSummary(FormatDeskSummary(d), &summary) && summary == d);
         CHECK(!ParseDeskSummary("x|1|2", &summary) && !ParseDeskSummary("1|2", &summary) && !ParseDeskSummary("", &summary));
+        // Per version: each player's own counts.
+        DeskSummary v{9, 5, 20, {{"0.3.0", 3, 12}, {"0.2.9", 2, 8}}};
+        CHECK(FormatDeskSummary(v) == "9|5|20|0.3.0:3:12,0.2.9:2:8" && ParseDeskSummary(FormatDeskSummary(v), &summary) && summary == v);
+        CHECK(summary.For("0.3.0").publicRooms == 3 && summary.For("0.3.0").players == 12 && summary.For("0.3.0").rev == 9);
+        CHECK(summary.For("0.4.0").publicRooms == 0 && d.For("0.3.0") == d); // none of its own; a desk of no versions: the totals
+        CHECK(!ParseDeskSummary("9|5|20|0.3.0:x:1", &summary));
         Listing desk{{kBuild, "16"}, {kCount, "3"}, {kDeskSummary, "7|1|2"}};
         CHECK(DeskMessage("ABC234", desk) == "sfvr-desk 1 ABC234\n16\n3\n7|1|2");
     }

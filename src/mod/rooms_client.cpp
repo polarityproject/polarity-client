@@ -8,6 +8,7 @@
 #include "mod/netplay_driver.h"
 #include "mod/rooms_screen.h"
 #include "mod/udp_transport.h"
+#include "mod/updater.h"
 #include "mod/weyve_service.h"
 
 #include <windows.h>
@@ -27,6 +28,17 @@
 #include <utility>
 
 namespace sfv::mod {
+
+namespace {
+
+// This game's SFVR version as rooms see it (the updater's: a test may
+// pretend another).
+std::string MyVersion() { return UpdateViewNow().current; }
+// What a player who joined another version's room is told (the rooms
+// screen's lead keys on its start).
+std::string OtherVersionNotice(const std::string& theirs) { return "That room is on SFVR " + theirs + ". You have " + MyVersion() + "."; }
+
+} // namespace
 
 namespace {
 
@@ -259,7 +271,8 @@ struct Client {
             roomsWanted = false;
             listed = Listed::Rooms;
             listedAt = now;
-            svc->ListRooms({{keeper::kListingKind, keeper::ListingKindValue(lobby::kProtocol)}});
+            // Only this version's rooms (the server filters on the kind).
+            svc->ListRooms({{keeper::kListingKind, keeper::ListingKindValue(lobby::kProtocol, MyVersion())}});
             return;
         }
         if (allListAt >= 0 && now >= allListAt) {
@@ -321,7 +334,7 @@ struct Client {
         if (saidNoLobby) Log("rooms: desk listed (revision %llu, %d public rooms)", static_cast<unsigned long long>(top.rev), top.publicRooms);
         saidNoLobby = false;
         view.otherBuild.clear();
-        view.summary = top;
+        view.summary = top.For(MyVersion()); // this version's rooms and players: the list shows only theirs
         if (!atDeskOrRoom) {
             view.keeper = true;
             if (!deskJoining) view.lobby = best;
@@ -337,6 +350,7 @@ struct Client {
         for (const WeyveListedRoom& r : svc->RoomList()) {
             keeper::ListedRoom l;
             if (!keeper::ParseRoomListing(r.code, r.listing, lobby::kProtocol, &l)) continue;
+            if (l.version != MyVersion()) continue; // another version's (or one of no version)
             if (!Signed(keeper::ListingMessage(r.code, r.listing), r.listing)) continue;
             list.push_back(std::move(l));
         }
@@ -430,6 +444,7 @@ struct Client {
             break;
         }
         case WeyveEvent::Type::RoomJoined:
+            svc->SetMemberData(keeper::kVersion, MyVersion());
             if (deskJoining || e.text == view.lobby) { // the desk (a join the screen gave up on too: left again in Run)
                 deskJoining = false;
                 Set(State::Lobby);
@@ -641,6 +656,15 @@ struct Client {
             }
         }
         // While paused the room's data is whatever a player wrote: kept as it was.
+        if (view.keeper && view.state == State::Room) {
+            // Another version's room (joined by its code): out again at once.
+            const std::string theirs = data(keeper::kVersion);
+            if (!theirs.empty() && theirs != MyVersion()) {
+                Log("rooms: %s plays SFVR %s, this game %s: leaving it", view.room.c_str(), theirs.c_str(), MyVersion().c_str());
+                BackToLobby(OtherVersionNotice(theirs), true);
+                return;
+            }
+        }
         if (view.keeper) {
             if (!keeper::ParseTitle(data(keeper::kTitle), &view.title)) view.title = keeper::RoomTitle{};
             view.isPublic = data(keeper::kPublic) == "1";

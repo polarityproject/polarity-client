@@ -12,6 +12,8 @@
 // Laid out from a list of entries and frames, so later modes are entries,
 // not a new screen. Render thread, inside an ImGui frame.
 
+#include "mod/updater.h"
+
 #include <string>
 
 struct ImFont;
@@ -38,14 +40,20 @@ struct HubLive {
     std::string offlineChara, offlineStage, roomsChara, roomsStage;
     // Why Custom Rooms cannot be used now (picking it shows this in a modal
     // instead of a screen that can do nothing), "" when it can.
-    enum class RoomsProblem { None, Connecting, Unreachable, UpdateNeeded, Offline };
+    // CheckingUpdate: the check Custom Rooms asks for first; UpdatePending:
+    // an update is out (only the latest client plays there).
+    enum class RoomsProblem { None, Connecting, Unreachable, UpdateNeeded, Offline, CheckingUpdate, UpdatePending };
     RoomsProblem roomsProblem = RoomsProblem::None;
     std::string roomsServer;  // the address, for the modal
     std::string roomsBuild;   // UpdateNeeded: the build the server runs
+    UpdateView update;        // the update modal's
+    std::string restartError; // the last restart that failed, why
 };
 
 // RetryRooms: the modal's Try again (connect to the rooms server now).
-enum class HubAction { None, PlayOffline, CustomRooms, Settings, RetryRooms };
+// UpdateInstall / UpdateRestart / UpdateRetry: the update modal's buttons
+// (download and install; start the game again; check again after a failure).
+enum class HubAction { None, PlayOffline, CustomRooms, Settings, RetryRooms, UpdateInstall, UpdateRestart, UpdateRetry };
 
 // `fromBlack`: at launch, in place of the game's main menu: it fades in
 // from black (the menu never shows), else over whatever is there.
@@ -54,6 +62,9 @@ void CloseHub();
 // Custom Rooms' modal on the hub (HubLive::roomsProblem): the rooms screen
 // lost its server, so it gave way to the hub saying why.
 void ShowRoomsProblem();
+// The update modal: the found update, its download, then Restart.
+void OpenUpdateModal();
+bool UpdateModalOpen();
 bool HubOpen();
 // Draws the hub (fading in when opened) and, with `takeInput`, returns what
 // the player chose this frame.

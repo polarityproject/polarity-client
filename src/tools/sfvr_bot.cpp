@@ -25,6 +25,7 @@
 
 #include "core/keeper_protocol.h"
 #include "core/lobby.h"
+#include "core/version.h"
 
 #include <algorithm>
 #include <functional>
@@ -351,6 +352,7 @@ struct Viewer {
 
 struct Bot {
     std::string name = "Bot";
+    std::string version = sfv::kSfvrVersion; // member data `ver` ("--version ''": none)
     std::string host = "127.0.0.1";
     uint16_t port = 5555;
     bool autoPlay = false;
@@ -430,7 +432,7 @@ struct Bot {
     void ListPublicRooms()
     {
         static std::string kind;
-        kind = ListingKindValue(lobby::kProtocol);
+        kind = ListingKindValue(lobby::kProtocol, version);
         WeyveRoomFilter filter{kListingKind, WEYVE_FILTER_EQUALS, kind.c_str()};
         weyve_list_rooms(c, &filter, 1);
         listed = Listed::Rooms;
@@ -670,6 +672,8 @@ struct Bot {
                 inLobby = code == lobby;
                 inRoom = !inLobby;
                 room = inRoom ? code : std::string();
+                // Its version, as a game's: the keeper gives a room its maker's.
+                if (!version.empty()) weyve_set_member_data(c, kVersion, version.c_str());
                 shown.clear();
                 Log(inLobby ? "in the lobby " + code : "in room " + code + " as member " + std::to_string(weyve_id(c)));
                 if (forging && inRoom) {
@@ -879,10 +883,11 @@ int main(int argc, char** argv)
         else if (a == "--browse") bot.mode = Bot::Mode::Browse;
         else if (a == "--diff") bot.diff = true;
         else if (a == "--set-ms" && v) bot.setMs = std::atoll(argv[++i]);
+        else if (a == "--version" && v) bot.version = argv[++i];
         else if (a == "--wins" && v) bot.wins = argv[++i];
         else if (a == "--script" && v) Split(argv[++i], &bot.script);
         else {
-            std::fprintf(stderr, "usage: sfvr-bot --name N [--server host:port] [--auto] [--set-ms ms] [--wins p1|p2|random] [--diff] [--hub | --browse] [--script \"...\"]\n");
+            std::fprintf(stderr, "usage: sfvr-bot --name N [--server host:port] [--auto] [--set-ms ms] [--wins p1|p2|random] [--version v] [--diff] [--hub | --browse] [--script \"...\"]\n");
             return 2;
         }
     }

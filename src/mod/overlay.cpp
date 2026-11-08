@@ -109,6 +109,7 @@ std::atomic<bool> g_voting{false};        // the post-match vote is up and takes
 std::atomic<bool> g_watchHold{false};
 std::atomic<HWND> g_inputWindow{nullptr}; // the window ImGui reads input for
 std::string g_build;                      // the mod's version (SetOverlayBuild)
+std::string g_restartError;               // the update modal's last failed restart, why
 std::atomic<float> g_fps{0};              // presented frames per second (RenderFps)
 std::atomic<bool> g_inMatch{false};       // a netplay match runs (the frame-drop log, Start held for the panel)
 std::string g_packResult;                 // render thread: what the last "Pack logs to share" did
@@ -1734,11 +1735,16 @@ void ToastReports()
 // Once per version the site offers: a toast pointing at Settings.
 void ToastUpdate()
 {
+    // At the menus only (never over a match): on the hub its modal says it;
+    // in a room the set goes on, and leaving the room brings the modal.
     static std::string toasted;
     const UpdateView u = UpdateViewNow();
     if (u.state != UpdateView::State::Available || u.latest == toasted) return;
+    if (HubOpen() && !RoomsScreenOpen()) return;
     toasted = u.latest;
-    AddToast("SFVR " + u.latest + " is out. Get it in SFVR settings.", kGold, 8);
+    const bool inRoom = RoomsScreenOpen() && RoomsSnapshot().state == RoomsView::State::Room;
+    Log("overlay: SFVR %s is out: a toast (%s)", u.latest.c_str(), inRoom ? "in a room" : "at the game's menus");
+    AddToast("SFVR " + u.latest + " is out. " + (inRoom ? "Leave the room to update." : "Press Back + Start to update."), kGold, 10);
 }
 
 void ToastChanges(const NetView& now)
@@ -2147,6 +2153,7 @@ std::vector<SettingsRow> SettingsRows()
         }
         else {
             r.value = "Restart the game to use it";
+            r.action = "Restart";
             r.hint = "";
         }
     }
@@ -2296,7 +2303,13 @@ std::vector<SettingsRow> SettingsRows()
 
 void ApplySetting(const SettingsInput& in)
 {
-    if (in.row == "install" && in.confirm) UpdateInstall();
+    if (in.row == "install" && in.confirm) {
+        if (UpdateViewNow().state == UpdateView::State::Ready) {
+            std::string error;
+            if (!RestartGame(g_window, &error)) g_packResult = "Couldn't restart: " + error + ". Close the game and start it again.";
+        }
+        else UpdateInstall();
+    }
     else if (in.row == "check" && in.confirm) UpdateCheck();
     else if (in.row == "checkstart" && in.delta) SaveMainIni(L"update", L"check", ReadMainIni(L"update", L"check", 1) ? 0 : 1);
     else if (in.row == "name" && in.typed) {
@@ -2824,6 +2837,25 @@ void DrawHubScreens(bool takeInput)
         CloseRoomsScreen();
         ShowRoomsProblem();
     }
+    // An update out: only the latest client plays in Custom Rooms. Out of
+    // the browser to the hub's modal (a room's players stay: a toast tells
+    // them, and leaving the room brings them here).
+    const UpdateView update = UpdateViewNow();
+    if (RoomsScreenOpen() && !SettingsScreenOpen() && UpdatePending(update) && rooms.state != RoomsView::State::Room &&
+        rooms.state != RoomsView::State::Creating && rooms.state != RoomsView::State::Joining) {
+        Log("hub: SFVR %s is out: the rooms screen gives way to the hub's update modal", update.latest.c_str());
+        CloseRoomsScreen();
+        OpenUpdateModal();
+    }
+    // Found while on the hub: offered at once, once a version (however it
+    // was offered: Later holds).
+    static std::string offered;
+    if (UpdateModalOpen()) offered = update.latest;
+    if (HubOpen() && !RoomsScreenOpen() && !SettingsScreenOpen() && update.state == UpdateView::State::Available &&
+        update.latest != offered && !UpdateModalOpen()) {
+        offered = update.latest;
+        OpenUpdateModal();
+    }
     HubLive live;
     live.player = LocalPlayerName();
     live.server = o.server == kDefaultServer ? "Public server" : o.server;
@@ -2842,7 +2874,11 @@ void DrawHubScreens(bool takeInput)
     // What would leave the Custom Rooms screen with nothing to do.
     using RP = HubLive::RoomsProblem;
     live.roomsServer = o.server;
-    if (rooms.state == S::Failed) live.roomsProblem = RP::Unreachable;
+    live.update = update;
+    live.restartError = g_restartError;
+    if (UpdatePending(update)) live.roomsProblem = RP::UpdatePending;
+    else if (update.state == UpdateView::State::Checking) live.roomsProblem = RP::CheckingUpdate;
+    else if (rooms.state == S::Failed) live.roomsProblem = RP::Unreachable;
     else if (!rooms.otherBuild.empty() && !rooms.keeper) live.roomsProblem = RP::UpdateNeeded, live.roomsBuild = rooms.otherBuild;
     else if (rooms.state == S::Off || rooms.state == S::Connecting || rooms.state == S::Finding) live.roomsProblem = RP::Connecting;
     else if (rooms.state == S::NoLobby || !rooms.keeper) live.roomsProblem = RP::Offline;
@@ -2970,6 +3006,12 @@ void DrawHubScreens(bool takeInput)
         RoomsClose();
         break;
     case HubAction::CustomRooms:
+        // Only the latest client plays there: a check first unless one ended
+        // in the last 5 minutes (the modal waits for it, then opens them).
+        if (UpdateCheckIfStale(5 * 60 * 1000)) {
+            ShowRoomsProblem();
+            break;
+        }
         // Before the game's lists are read (a few seconds after launch) it
         // opens once they are.
         if (!g_tables.loaded) {
@@ -2981,6 +3023,18 @@ void DrawHubScreens(bool takeInput)
         break;
     case HubAction::Settings:
         OpenSettingsScreen();
+        break;
+    case HubAction::UpdateInstall:
+        g_restartError.clear();
+        UpdateInstall(); // nothing if it is downloading or installed already
+        break;
+    case HubAction::UpdateRestart: {
+        std::string error;
+        if (!RestartGame(g_window, &error)) g_restartError = error;
+        break;
+    }
+    case HubAction::UpdateRetry:
+        UpdateCheck();
         break;
     case HubAction::RetryRooms:
         Log("hub: the rooms server again, asked for (%s)", o.server.c_str());
