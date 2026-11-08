@@ -93,6 +93,14 @@ int ReadInt(const std::wstring& path, const wchar_t* section, const wchar_t* key
 
 namespace {
 
+// The public server before 0.3.0 (159.69.32.141, kept up for 0.2.x only): a
+// choice of it saved then means the public one, which is the rooms VPS now
+// (kDefaultServer).
+bool IsOldPublicServer(const std::string& server)
+{
+    return server == "159.69.32.141" || server.rfind("159.69.32.141:", 0) == 0;
+}
+
 // The player's choices in [netplay]: pick (with its variant), stage, input delay,
 // own frame rate in the HUD; from the panel also name and spectators. With onlyPresent (the overlay's file) a missing key keeps the value
 // read before.
@@ -143,11 +151,7 @@ void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPr
     // The Debug tab's server switch, and the servers used before.
     if (onlyPresent && has(L"server")) {
         const std::string server = Ascii(ReadString(path, L"netplay", L"server", L""));
-        // The public server before 0.3.0 (159.69.32.141, kept up for 0.2.x
-        // only): a choice of it saved then means the public one, which is
-        // the rooms VPS now (kDefaultServer).
-        const bool oldPublic = server == "159.69.32.141:5555" || server == "159.69.32.141";
-        if (!server.empty() && !oldPublic) n.server = n.savedServer = server;
+        if (!server.empty() && !IsOldPublicServer(server)) n.server = n.savedServer = server;
     }
     if (onlyPresent && has(L"recent_servers")) {
         n.recentServers.clear();
@@ -156,7 +160,7 @@ void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPr
             size_t end = list.find(';', at);
             if (end == std::string::npos) end = list.size();
             const std::string one = list.substr(at, end - at);
-            if (end > at && one.rfind("159.69.32.141", 0) != 0) n.recentServers.push_back(one); // the old public server: gone
+            if (end > at && !IsOldPublicServer(one)) n.recentServers.push_back(one); // the old public server: gone
             at = end + 1;
         }
     }
@@ -295,7 +299,9 @@ Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const st
     NetplayOptions& n = c.netplay;
     n.udp = ReadString(path, L"netplay", L"transport", L"weyve") == L"udp";
     n.server = Ascii(ReadString(path, L"weyve", L"server", L""));
-    if (n.server.empty()) n.server = kDefaultServer;
+    // Updates replace the DLLs, never this file: an install from 0.2.x keeps
+    // its [weyve] server=159.69.32.141:5555, which means the public server.
+    if (n.server.empty() || IsOldPublicServer(n.server)) n.server = kDefaultServer;
     n.name = ReadUtf8(path, "weyve", "name"); // UTF-8 (Notepad's default)
     n.allowSpectators = ReadInt(path, L"netplay", L"allow_spectators", 1) != 0;
     n.uploadReports = ReadInt(path, L"netplay", L"upload_reports", 1) != 0;
