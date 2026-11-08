@@ -538,7 +538,7 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
     // The time left: the keeper's call, from when it showed here (also while
     // this game was still coming back from a battle), less a little for the
     // trip to the keeper.
-    const double total = std::max(1.0, (s.callSeconds ? s.callSeconds : 10) - kCardMarginSeconds);
+    const double total = std::max(1.0, (s.callSeconds ? s.callSeconds : 21) - kCardMarginSeconds); // 21: the keeper's call (20 on the card)
     const double left = std::clamp(total - (RoomsClockMs() - v.tableViews[t].callSeenMs) / 1000.0, 0.0, total);
     const float ty = y0 + 296;
     if (g.cardReady || s.ready[mySeat]) {

@@ -1693,7 +1693,7 @@ void TestKeeperProtocol()
         r.players = {{"Laptop", "DE", "RYU"}, {"Player 2", "", "KEN"}, {"Deck", "JP", ""}};
         const std::string one = FormatRoomListJson({r}, totals, 1);
         CHECK(one.find("{\"code\":\"ABC123\",\"title\":\"Beginners Welcome!\",\"title_id\":10,\"title_characters\":[],\"owner\":\"a\\\"b\\\\c\\u000a\xE3\x81\x82"
-                       "\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBDz\",\"members\":3,\"capacity\":16,\"tables\":2,\"open_seats\":1,"
+                       "\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBDz\",\"sfvr_version\":null,\"members\":3,\"capacity\":16,\"tables\":2,\"open_seats\":1,"
                        "\"rules\":\"r1 ft2 bo3 t99 ws3\",\"faces\":[\"RYU\",\"KEN\"],\"players\":["
                        "{\"name\":\"Laptop\",\"country\":\"DE\",\"face\":\"RYU\"},{\"name\":\"Player 2\",\"country\":null,\"face\":\"KEN\"},"
                        "{\"name\":\"Deck\",\"country\":\"JP\",\"face\":null}]}") != std::string::npos);
@@ -1703,6 +1703,10 @@ void TestKeeperProtocol()
               std::string::npos);
         r.title = RoomTitle{};
         CHECK(FormatRoomListJson({r}, totals, 1).find("\"title\":null,\"title_id\":0,\"title_characters\":[]") != std::string::npos);
+        // The room's SFVR version (players list and join only their own's).
+        r.version = "0.3.0";
+        CHECK(FormatRoomListJson({r}, totals, 1).find("\"sfvr_version\":\"0.3.0\",\"members\":3") != std::string::npos);
+        r.version.clear();
         std::vector<ListedRoom> many;
         for (int i = 0; i < 5; i++) many.insert(many.end(), rooms.begin(), rooms.end());
         const std::string all = FormatRoomListJson(many, totals, 1);
