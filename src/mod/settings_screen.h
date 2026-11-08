@@ -44,6 +44,8 @@ struct SettingsInput {
 };
 
 void OpenSettingsScreen(const std::string& focusRow = "");
+// Test (`settings <row> type <text>`): opened on that row, typing that text.
+void OpenSettingsScreenTyping(const std::string& focusRow, const std::string& text);
 void CloseSettingsScreen();
 bool SettingsScreenOpen();
 void DrawSettingsScreen(const HubFonts& fonts, const std::string& version, const std::vector<SettingsRow>& rows, bool takeInput,

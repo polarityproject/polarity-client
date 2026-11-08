@@ -33,6 +33,8 @@ struct State {
     float scroll = 0;    // design units
     bool typing = false;
     std::string text;
+    bool testType = false; // OpenSettingsScreenTyping: start typing on the focused row
+    std::string testText;
 } g;
 
 void Wrapped(ImDrawList* d, ImFont* f, float size, float x, float y, float width, ImU32 col, const std::string& t, float* bottom)
@@ -48,6 +50,13 @@ void OpenSettingsScreen(const std::string& focusRow)
     g.focusId = focusRow;
     g.typing = false;
     if (!g_open.exchange(true)) Log("settings: open");
+}
+
+void OpenSettingsScreenTyping(const std::string& focusRow, const std::string& text)
+{
+    OpenSettingsScreen(focusRow);
+    g.testText = text;
+    g.testType = true;
 }
 
 void CloseSettingsScreen()
@@ -75,6 +84,13 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
         g.focusId.clear();
     }
     g.focus = std::clamp(g.focus, 0, count - 1);
+    if (g.testType) {
+        g.testType = false;
+        if (rows[g.focus].text) {
+            g.typing = true;
+            g.text = g.testText;
+        }
+    }
     // Rows that cannot be used are skipped by the cursor.
     auto step = [&](int from, int dir) {
         for (int i = from + dir; i >= 0 && i < count; i += dir) {
@@ -176,25 +192,44 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
         const ImVec2 a = g_v.P(50, ry), b = g_v.P(946, ry + kRowH);
         if (focused) d->AddRectFilled(a, b, look::kGold);
         else d->AddLine(g_v.P(50, ry + kRowH - 0.5f), g_v.P(946, ry + kRowH - 0.5f), look::kHairline, std::max(1.0f, g_v.L(1)));
-        const ImU32 labelCol = focused ? look::kInk : r.enabled ? kCream : Rgba(244, 241, 232, 90);
         // Rows in the medium weight (the light one read faintly on the glass).
         ImFont* rowFont = focused ? bold : f.strong;
-        Text(d, rowFont, g_v.L(21), g_v.P(90, ry + 11), labelCol, r.label);
-        std::string value = r.value;
-        if (focused && g.typing) value = g.text + ((static_cast<int>(ImGui::GetTime() * 2) & 1) ? "|" : " ");
-        const ImU32 valueCol = focused ? look::kInk : !r.enabled ? Rgba(233, 196, 106, 90) : r.highlight ? kGold : kCream;
-        // A long value (a path) takes the room left of the box.
-        const float valueW = TextW(rowFont, 21, value);
-        Text(d, rowFont, g_v.L(21), g_v.P(valueW > 260 ? 896.0f : kValueX, ry + 11), valueCol, value, valueW > 260 ? 1.0f : 0.5f);
-        if (r.arrows && focused) {
-            d->AddTriangleFilled(g_v.P(kValueX - 144, ry + 19), g_v.P(kValueX - 144, ry + 31), g_v.P(kValueX - 154, ry + 25), look::kInk);
-            d->AddTriangleFilled(g_v.P(kValueX + 144, ry + 19), g_v.P(kValueX + 154, ry + 25), g_v.P(kValueX + 144, ry + 31), look::kInk);
-        }
+        // A long value (a path) takes the room left of the box; a short one
+        // sits centered in the value column. Typed text sits where the value
+        // does (it was drawn there too, dimmed under the field, with the
+        // typed copy right-aligned beside it).
+        auto valueAt = [&](float w) { return w > 260 ? 896.0f : kValueX + 0.0f; };
+        auto valueAlign = [&](float w) { return w > 260 ? 1.0f : 0.5f; };
         if (focused && g.typing) {
             d->AddRectFilled(a, b, Rgba(0, 0, 0, 140));
             Text(d, f.strong, g_v.L(21), g_v.P(90, ry + 11), kCream, r.label);
-            Text(d, f.strong, g_v.L(21), g_v.P(896, ry + 11), kCream, value, 1.0f);
+            // Longer than the room right of the label: its end shows.
+            std::string shown = g.text;
+            while (!shown.empty() && TextW(f.strong, 21, shown) > 680) {
+                size_t n = 1;
+                while (n < shown.size() && (static_cast<unsigned char>(shown[n]) & 0xC0) == 0x80) n++;
+                shown.erase(0, n);
+            }
+            const float w = TextW(f.strong, 21, shown);
+            const float x = valueAt(w), align = valueAlign(w);
+            Text(d, f.strong, g_v.L(21), g_v.P(x, ry + 11), kCream, shown, align);
+            // The caret after the text, apart from it: the text stays put as it blinks.
+            if (static_cast<int>(ImGui::GetTime() * 2) & 1) {
+                const float end = x + w * (1.0f - align);
+                Text(d, f.strong, g_v.L(21), g_v.P(end + 1, ry + 11), kCream, "|");
+            }
             d->AddRect(a, b, look::kRing, 0, 0, g_v.L(2));
+        }
+        else {
+            const ImU32 labelCol = focused ? look::kInk : r.enabled ? kCream : Rgba(244, 241, 232, 90);
+            Text(d, rowFont, g_v.L(21), g_v.P(90, ry + 11), labelCol, r.label);
+            const ImU32 valueCol = focused ? look::kInk : !r.enabled ? Rgba(233, 196, 106, 90) : r.highlight ? kGold : kCream;
+            const float w = TextW(rowFont, 21, r.value);
+            Text(d, rowFont, g_v.L(21), g_v.P(valueAt(w), ry + 11), valueCol, r.value, valueAlign(w));
+            if (r.arrows && focused) {
+                d->AddTriangleFilled(g_v.P(kValueX - 144, ry + 19), g_v.P(kValueX - 144, ry + 31), g_v.P(kValueX - 154, ry + 25), look::kInk);
+                d->AddTriangleFilled(g_v.P(kValueX + 144, ry + 19), g_v.P(kValueX + 154, ry + 25), g_v.P(kValueX + 144, ry + 31), look::kInk);
+            }
         }
         if (takeInput && !g.typing && Clicked() && MouseIn(a, b) && r.enabled) {
             if (g.focus == i) {

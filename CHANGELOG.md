@@ -51,6 +51,10 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   than on the other: the round's end waits on a mode the game keeps outside
   the rollback's state, which a load left as the later frames had set it.
   Loads now put it back with the rest.
+- Typing in a settings field (your name) showed the text off to the right
+  with a dark copy of it where it should be; the text now stays in place
+  as you type, and a long name shows its end instead of running over the
+  field's label.
 - Stage transitions (a KO that knocks the fighter into another part of the
   stage) never played in rematches or in a table's later games: a battle
   started from the last one's results lost the stage's name the fighters'
