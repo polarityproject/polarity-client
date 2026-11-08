@@ -7,6 +7,13 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-08
+
+Choose the stages Random can land on, in My character. Sounds no longer
+play twice after rollbacks, rollbacks cost about a quarter less, and stage
+transitions play in rematches and a table's later games. Ring of Arcade is
+back in the stage select. 0.3.1 plays only 0.3.1.
+
 ### Added
 
 - Random stages: in My character's Stage Select, X on Random opens the list
