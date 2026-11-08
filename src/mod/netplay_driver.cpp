@@ -1,6 +1,7 @@
 #include "mod/netplay_driver.h"
 #include "mod/entitlements.h"
 
+#include "core/display_name.h"
 #include "core/match_code.h"
 #include "core/match_ticket.h"
 #include "core/netplay.h"
@@ -504,7 +505,11 @@ public:
         v.code = code_;
         v.status = status_;
         v.server = options_.udp ? "" : options_.server;
-        for (int i = 0; i < kNumPlayers; i++) v.seats[i] = seats_[i];
+        for (int i = 0; i < kNumPlayers; i++) {
+            v.seats[i] = seats_[i];
+            // Shown without emoji (core/display_name.h); recordings and logs keep the name.
+            if (!v.seats[i].name.empty()) v.seats[i].name = core::DisplayName(v.seats[i].name);
+        }
         if (role_ == Role::Player) {
             // This side's own seat as it is now (the host's copy may lag).
             lobby::Seat& own = v.seats[host_ ? 0 : 1];
@@ -1716,13 +1721,18 @@ private:
     }
 
     // The keeper's yes: the score starts over, the next set's rules, and on
-    // as the vote said (its game, or the select screen).
+    // as the vote said (its game, or the select screen). The games played
+    // and the streaks start over too: the player bars' "(wins/played)", the
+    // results screen's Wins, Win Streak and Win Ratio are the set's, as the
+    // table shows it (the joiner and spectators take them from the host).
     void ContinueSet()
     {
         Rules rules = againRules_;
         {
             std::lock_guard lock(mutex_);
             for (auto& seat : seats_) seat.wins = 0;
+            played_ = 0;
+            for (auto& streak : streaks_) streak = 0;
             forfeitSeat_ = -1;
             ticket_.rules = rules;
         }
@@ -3014,7 +3024,7 @@ private:
     Rules againRules_;
     bool againSelect_ = false; // the vote said character select     // the next ControlTick beats at once (a select screen change)
     std::atomic<int> hostStageRule_{-1};   // host: the stage rule set in the lobby (-1: from the options)
-    uint16_t streaks_[kNumPlayers] = {};   // host: each player's current win streak this session
+    uint16_t streaks_[kNumPlayers] = {};   // host: each player's current win streak this set (session)
     uint32_t winsAtStart_[2] = {};         // the game's match win counts as the match started
     bool winsKnown_ = false;
     int spectators_ = 0;                   // guest: as the host says

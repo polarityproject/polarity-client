@@ -1,6 +1,7 @@
 // End-to-end tests of the netplay driver, the .sfvr recorder and the desync
 // tooling, using MockGame over the loopback network.
 
+#include "core/display_name.h"
 #include "core/input_delay.h"
 #include "core/lobby.h"
 #include "core/look.h"
@@ -111,6 +112,42 @@ void TestHashes()
     const char* longer = "Nobody inspects the spammish repetition";
     CHECK(Hash64(longer, std::strlen(longer)) == 0xFBCEA83C8A378BF1ull);
     CHECK(Crc32("123456789", 9) == 0xCBF43926u);
+}
+
+void TestPingTiers()
+{
+    using core::PingTier;
+    // The tier is the delay suggested, 0 to 3, then 4 once 3 frames leave
+    // more than 2 to rollback (late above 5 frames: past 166 ms, no jitter).
+    CHECK(PingTier(20, 0) == 0);
+    CHECK(PingTier(66, 0) == 0);
+    CHECK(PingTier(67, 0) == 1);
+    CHECK(PingTier(101, 0) == 2);
+    CHECK(PingTier(134, 0) == 3);
+    CHECK(PingTier(166, 0) == 3);
+    CHECK(PingTier(167, 0) == core::kPingTierHeavy);
+    CHECK(PingTier(135, 17) == core::kPingTierHeavy);
+}
+
+void TestDisplayName()
+{
+    using core::DisplayName;
+    CHECK(DisplayName("Ryu") == "Ryu");
+    CHECK(DisplayName("") == "");
+    // Emoji, their joiners and selectors go; the spaces they leave collapse.
+    CHECK(DisplayName("\xF0\x9F\x94\xA5 Kira \xF0\x9F\x94\xA5") == "Kira");
+    CHECK(DisplayName("Dad\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80\x8D\xF0\x9F\x91\xA7 Bod") == "Dad Bod");
+    CHECK(DisplayName("\xE2\x9A\xA7 Eastwood \xE2\x9A\xA7") == "Eastwood");                        // U+26A7
+    CHECK(DisplayName("\xF0\x90\x99\x9A sweetsakurastar \xF0\x90\x99\x9A") == "sweetsakurastar"); // U+1065A
+    CHECK(DisplayName("A\xE2\x9D\xA4\xEF\xB8\x8F" " B") == "A B");                                // heart + VS16
+    // Script and bold letters read plain; CJK and accents stay.
+    CHECK(DisplayName("\xF0\x9D\x93\xA2\xF0\x9D\x93\xAA\xF0\x9D\x93\xB4\xF0\x9D\x93\xBE") == "Saku");
+    CHECK(DisplayName("\xF0\x9D\x9F\x8F\xF0\x9D\x9F\x90") == "12");
+    CHECK(DisplayName("\xE6\xA1\x9C Jos\xC3\xA9") == "\xE6\xA1\x9C Jos\xC3\xA9");
+    // Nothing left: a placeholder, not an empty name.
+    CHECK(DisplayName("\xF0\x9F\x98\x80\xF0\x9F\x98\x80") == "Player");
+    // A cut-off sequence does not read past the end.
+    CHECK(DisplayName(std::string("ab\xF0\x9F", 4)) == "ab\xEF\xBF\xBD\xEF\xBF\xBD");
 }
 
 void TestInputDelaySuggestion()
@@ -2080,6 +2117,8 @@ int main()
     const Test tests[] = {
         {"hashes", TestHashes},
         {"input delay suggestion", TestInputDelaySuggestion},
+        {"display names", TestDisplayName},
+        {"ping tiers", TestPingTiers},
         {"ignore mask", TestIgnoreMask},
         {"skipped saves", TestSkippedSaves},
         {"replay file round trip", TestReplayRoundTrip},

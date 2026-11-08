@@ -396,6 +396,37 @@ void BonePositionDetour(uint8_t* fighter, const void* bone, float* out, int flag
         out[0], out[1], out[2], bits[0], bits[1], bits[2]);
 }
 
+// Research (`soundlog <count>`): the CriWare plugin's "play a cue" request
+// (rva 0xEE7F10: a player, the cue sheet, the cue id and one more int). The
+// game thread queues it (a type-0 record pushed by rva 0xEE8BE0) and the
+// plugin's sound thread plays it later (rva 0xEE8830 -> 0xEE8F40), so this is
+// where a resimulated tick asks for a sound again. Logs the next `count`
+// requests: the driven tick and whether it was a resimulation, the thread,
+// and the caller; the first ones outside driven ticks with their stacks.
+constexpr game::CodeSite kCuePlay{
+    "CriWare cue play request", 0xEE7F10,
+    {0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x55, 0x57, 0x41, 0x56, 0x48, 0x8B}};
+using CuePlayFn = uint64_t (*)(void* player, int sheet, int cue, int a, int b);
+CuePlayFn g_origCuePlay = nullptr;
+std::atomic<int> g_soundLog{0};
+std::atomic<int> g_soundStacks{0};
+
+uint64_t CuePlayDetour(void* player, int sheet, int cue, int a, int b)
+{
+    if (g_soundLog > 0) {
+        g_soundLog--;
+        const uintptr_t from = reinterpret_cast<uintptr_t>(_ReturnAddress()) - g_imageBase;
+        Log("sound: cue %d (sheet %d, %d %d) %s tick %u%s, thread %lu, from rva 0x%llX", cue, sheet, a, b,
+            g_inDriver ? "in driven" : "outside driven", DrivenTicks(), g_inDriver && g_replayingTick ? " replayed" : "",
+            GetCurrentThreadId(), static_cast<unsigned long long>(from));
+        if (g_soundStacks > 0) {
+            g_soundStacks--;
+            LogStack("sound: cue play", g_imageBase);
+        }
+    }
+    return g_origCuePlay(player, sheet, cue, a, b);
+}
+
 bool Hook(const GameImage& image, const game::CodeSite& site, void* detour, void** original)
 {
     void* target = image.At<void*>(site.rva);
@@ -535,6 +566,13 @@ void LogBonePositions(int count, uintptr_t from)
         static_cast<unsigned long long>(from));
 }
 
+void LogSoundPlays(int count)
+{
+    g_soundLog = count;
+    g_soundStacks = 6;
+    Log("sound: logging the next %d cue plays (the first 6 with stacks)", count);
+}
+
 void LogRandomDraws(int count)
 {
     g_drawLog = count;
@@ -582,6 +620,9 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game)
     }
     if (!Hook(image, kBonePosition, reinterpret_cast<void*>(&BonePositionDetour), reinterpret_cast<void**>(&g_origBonePosition))) {
         Log("battle driver: bonelog unavailable");
+    }
+    if (!Hook(image, kCuePlay, reinterpret_cast<void*>(&CuePlayDetour), reinterpret_cast<void**>(&g_origCuePlay))) {
+        Log("battle driver: soundlog unavailable");
     }
     void* gaugeStub = MakeGaugeStub();
     if (!gaugeStub || !Hook(image, kGaugeAdd, gaugeStub, reinterpret_cast<void**>(&g_origGaugeAdd))) {

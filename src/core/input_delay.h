@@ -77,4 +77,15 @@ inline int SuggestedDelay(unsigned pingMs, unsigned jitterMs)
     return std::clamp(FramesLate(pingMs, jitterMs) - kRollbackFramesAimed, 0, kMaxSuggestedDelay);
 }
 
+// A link's tier, for the color its ping shows in (user, 2026-11-08): the
+// delay suggested for it (0 to 3), or 4 when even 3 frames leave more than
+// kRollbackFramesAimed frames to rollback (late above 5 frames).
+constexpr int kPingTierHeavy = 4;
+inline int PingTier(unsigned pingMs, unsigned jitterMs)
+{
+    const int late = FramesLate(pingMs, jitterMs);
+    const int delay = std::clamp(late - kRollbackFramesAimed, 0, kMaxSuggestedDelay);
+    return late - delay > kRollbackFramesAimed ? kPingTierHeavy : delay;
+}
+
 } // namespace sfv::core

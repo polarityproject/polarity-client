@@ -73,6 +73,8 @@ struct TableHandoff {
 void SetTableHandoff(const TableHandoff& handoff);
 
 void ResetRoomScreen(); // a new room: dialogs shut, nothing typed, nobody muted
+// Testing (`rooms mute <member id>`): as A on a player's row, mute or unmute.
+void ToggleMuteForTest(uint32_t id);
 // `delaySuggestion`: the your-turn card's starting delay (SFVR settings, or
 // with Auto the suggestion for the ping to the opponent).
 void DrawRoomScreen(const HubFonts& fonts, const RoomsView& view, bool takeInput, RoomScreenInput* input);

@@ -1,5 +1,6 @@
 #include "mod/rooms_client.h"
 
+#include "core/display_name.h"
 #include "core/lobby.h"
 #include "core/match_ticket.h"
 #include "core/update_info.h"
@@ -352,6 +353,8 @@ struct Client {
             if (!keeper::ParseRoomListing(r.code, r.listing, lobby::kProtocol, &l)) continue;
             if (l.version != MyVersion()) continue; // another version's (or one of no version)
             if (!Signed(keeper::ListingMessage(r.code, r.listing), r.listing)) continue;
+            l.owner = core::DisplayName(l.owner);
+            for (auto& p : l.players) p.name = core::DisplayName(p.name);
             list.push_back(std::move(l));
         }
         if (!leftRoom.empty()) {
@@ -407,11 +410,12 @@ struct Client {
         ToBrowsing();
     }
 
-    void Line(uint32_t from, const std::string& name, const std::string& text, const std::string& realName = {})
+    void Line(uint32_t from, const std::string& shownName, const std::string& text, const std::string& realName = {})
     {
+        const std::string name = core::DisplayName(shownName);
         // Starred once, as it comes: the setting picks which is shown.
         const std::string censored = from && view.isPublic && !words.empty() ? keeper::CensorChat(text, words) : text;
-        view.chat.push_back({from, name, text, realName.empty() ? name : realName, censored});
+        view.chat.push_back({from, name, text, realName.empty() ? name : core::DisplayName(realName), censored});
         if (view.chat.size() > kChatKept) view.chat.erase(view.chat.begin());
     }
 
@@ -565,6 +569,7 @@ struct Client {
                     Log("rooms: peek %s answered: %s, %zu tables, %zu people", peekCode.c_str(), joined ? "ok" : "unreadable", d.tables.size(),
                         d.people.size());
                 }
+                for (auto& person : d.people) person.name = core::DisplayName(person.name);
                 if (joined) view.peek = std::move(d);
                 peekSeq = 0;
                 continue;
@@ -722,7 +727,8 @@ struct Client {
             // "Player 1234", the keeper's number (every viewer the same),
             // unless this player turned the word filter off.
             const std::string maskedName = MaskedName(m.id, m.name);
-            r.name = g_wordFilter ? maskedName : m.name;
+            // Shown without emoji (core/display_name.h: the fonts have none).
+            r.name = core::DisplayName(g_wordFilter ? maskedName : m.name);
             const auto ch = m.data.find("ch");
             if (ch != m.data.end()) r.chara = ch->second;
             // The rooms server's own lookup of their address (never their
@@ -763,7 +769,9 @@ struct Client {
                 }
             }
             for (const auto& [id, name] : names) {
-                if (!now.count(id)) {
+                // The keeper is listed as a member until its proof is read
+                // (a moment after joining), then left out: it never left.
+                if (!now.count(id) && id != keeperId) {
                     Line(0, "", name + " left");
                     Log("rooms: %s (%u) left %s, %zu members", name.c_str(), id, view.room.c_str(), now.size());
                 }

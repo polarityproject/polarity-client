@@ -147,6 +147,7 @@ add_library(sfvcore STATIC
   src/core/texture_package.cpp
   src/core/key_names.cpp
   src/core/look.cpp
+  src/core/display_name.cpp
   src/core/rules.cpp
   src/core/match_ticket.cpp
   src/core/keeper_protocol.cpp

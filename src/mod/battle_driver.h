@@ -61,6 +61,8 @@ void LogGameInputs(int ticks);
 // in driven ticks (rva 0x3919D0: tick, caller, result); `from` (non-zero):
 // only calls returning to that rva.
 void LogBonePositions(int count, uintptr_t from);
+// Research: logs the next `count` CriWare cue plays (tick, resimulated or not, thread).
+void LogSoundPlays(int count);
 // Logs the current battle's start probe (SfvGame::ArmStartProbe), once.
 void LogStartProbe();
 

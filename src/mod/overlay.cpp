@@ -501,12 +501,10 @@ std::string Upper(std::string text)
     return text;
 }
 
-// Latency at a glance: green under 80 ms, yellow to 149, red from 150.
-ImVec4 PingColor(unsigned ms)
+// Latency at a glance, by the delay the link suggests (ui::PingColor).
+ImVec4 PingColorVec(unsigned ms, unsigned jitterMs)
 {
-    if (ms < 80) return kGreen;
-    if (ms < 150) return Rgb(255, 210, 80);
-    return kRed;
+    return ImGui::ColorConvertU32ToFloat4(ui::PingColor(ms, jitterMs));
 }
 
 // Relayed links add the relay's detour: shown in yellow, a direct one dim.
@@ -1873,7 +1871,8 @@ void DrawPlayerBars(const NetView& v)
         std::string name = s.name.empty() ? std::string("Player") : s.name;
         const std::string you = v.you == i ? " (you)" : "";
         parts.push_back({name + you, big, color(Rgb(242, 240, 230))});
-        // The set: matches this player won of those played this session.
+        // The set: matches this player won of those played in it (a table's
+        // set; outside a table, this session).
         parts.push_back({"(" + std::to_string(s.wins) + "/" + std::to_string(v.played) + ")", big, color(detail)});
         if (s.link != lobby::Link::Unknown) parts.push_back({"", text, color(detail), Kind::Link});
         const bool relayed = v.linkPath == NetView::Path::Relayed;
@@ -1891,7 +1890,7 @@ void DrawPlayerBars(const NetView& v)
             else {
                 if (relayed) parts.push_back({"", text, color(PathColor(v)), Kind::Relay});
                 std::snprintf(line, sizeof(line), "%ums \xC2\xB1%.0f", ping, v.jitterMs);
-                parts.push_back({line, text, color(PingColor(ping))});
+                parts.push_back({line, text, color(PingColorVec(ping, static_cast<unsigned>(v.jitterMs + 0.5f)))});
             }
             if (s.fps) parts.push_back({std::to_string(SmoothedFps(i, s.fps)) + " fps", g_fontTiny, color(detail)});
             parts.push_back({std::to_string(v.recentRollback) + " RBF", g_fontTiny, color(detail)});
@@ -2382,6 +2381,7 @@ ProfileFavorites g_favorites; // read at the title's warm up
 // stage (P1's) and the delay chosen on the your-turn card.
 int g_tableDelay = -1;
 bool g_myCharacterOpen = false;
+void ApplyProfileFavorite(Choices& c);
 // A table's set took this player from the rooms: back at the menus the hub
 // comes back to them, also when the room is gone (removed mid-set: the
 // custom rooms screen says so).
@@ -2424,6 +2424,11 @@ void StartTableSession(const keeper::TableTicket& t)
     // showed the saved pick (2026-11-05, both PCs' game 1).
     LoadTables();
     InitChoices();
+    // Nothing saved: the Fighter Profile's favorite with its loadout, as the
+    // room shows it. The panel's choices always count as a pick, so they
+    // played their defaults instead: the first character in costume 1,
+    // color 1 (Abigail for a Seth player, 2026-11-07).
+    if (!NetOptions().hasPick) ApplyProfileFavorite(g_choices);
     // Kept to what this profile owns now (entitlements): moved later, in the
     // lobby, the new pick cleared Ready and the set's lobby, which has no
     // select screen, waited for good.
@@ -2431,14 +2436,9 @@ void StartTableSession(const keeper::TableTicket& t)
     NetplayOptions o = ChosenOptions();
     o.autoReady = true;
     if (g_tableDelay >= 0) o.inputDelay = static_cast<uint8_t>(g_tableDelay);
-    if (!o.hasPick) {
-        // Nobody picked yet: the Fighter Profile's favorite, as it is.
-        std::lock_guard lock(g_favoritesMutex);
-        const std::string fav = g_favorites.chara.empty() ? "RYU" : g_favorites.chara;
-        o.hasPick = true;
-        o.pick = PlayerSetup{};
-        o.pick.character = PackCode(fav.c_str());
-    }
+    // The delay boxes between games show this set's delay, not one left
+    // from an earlier session (2 from a 108 ms opponent while 0 played).
+    g_choices.delay = o.inputDelay;
     Log("overlay: table %d's set: %s (delay %u)", t.table + 1, t.host ? "opening the match room" : ("joining " + t.code).c_str(),
         o.inputDelay);
     Act([mt, o] { NetPlayTicket(mt, o); });
@@ -3224,13 +3224,15 @@ void Draw(IDXGISwapChain* swapChain)
     // Reaching a session's lobby sets this player's input delay to their
     // setting (SFVR settings), with Auto the suggestion for the ping between
     // them (once a session; it can be changed from there). A session a
-    // command started (tests) keeps the delay its commands set.
+    // command started (tests) keeps the delay its commands set, and a
+    // table's set the one chosen on its your-turn card: from its lobby
+    // between games, Auto put the first opponent's suggestion back in.
     static bool delaySet = false;
     if (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) {
         delaySet = false;
     }
     else if (!delaySet && phase == NetView::Phase::Lobby && PreferredDelay(view) >= 0 && g_choices.initialised &&
-             !view.spectator && !view.scripted) {
+             !view.spectator && !view.scripted && !view.setPlay) {
         delaySet = true;
         const int delay = PreferredDelay(view);
         g_choices.delay = delay;

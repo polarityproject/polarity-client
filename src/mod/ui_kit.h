@@ -146,7 +146,15 @@ constexpr ImU32 kControl = IM_COL32(255, 255, 255, 15);      // unfocused button
 constexpr ImU32 kEdgeControl = IM_COL32(236, 228, 206, 77);  // their 1 px frame
 constexpr ImU32 kHairline = IM_COL32(236, 228, 206, 36);
 constexpr ImU32 kSelfRow = IM_COL32(233, 196, 106, 41);
+// A ping's color by its tier (core::PingTier: the delay it suggests): blue
+// for 0 frames, green 1, yellow 2, orange 3, red for 3 frames with more than
+// 2 left to rollback.
+constexpr ImU32 kPingTiers[] = {IM_COL32(111, 195, 255, 255), IM_COL32(127, 216, 139, 255), IM_COL32(240, 214, 90, 255),
+                                IM_COL32(245, 152, 66, 255), IM_COL32(255, 107, 94, 255)};
 } // namespace look
+
+// The color for a ping (round trip, jitter in ms; 0 jitter: a typical one).
+ImU32 PingColor(unsigned pingMs, unsigned jitterMs = 0);
 
 // The stage behind every full screen (the Capcom Pro Tour arena), blurred
 // (made once on the texture threads), dimmed flat, a fine grey grain over

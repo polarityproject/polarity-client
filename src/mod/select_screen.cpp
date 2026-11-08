@@ -376,7 +376,7 @@ void DrawPlayerLine(ImDrawList* d, const SelectFonts& f, const SelectLive& live,
     const bool link = live.you >= 0 && !you;
     char ping[32] = "";
     if (link && live.pingMs) std::snprintf(ping, sizeof(ping), "%u ms", live.pingMs);
-    const float pw = (s.link ? 34.0f : 0.0f) + (link ? 34.0f : 0.0f) + (ping[0] ? TextW(f.text, 15, ping) + 18 : 0.0f);
+    const float pw = (s.link ? 34.0f : 0.0f) + (link ? 34.0f : 0.0f) + (ping[0] ? TextW(f.text, 18, ping) + 18 : 0.0f);
     // Laid out from the screen's edge inwards.
     const float dir = left ? 1.0f : -1.0f;
     float x = left ? 120.0f : 1480.0f;
@@ -399,7 +399,9 @@ void DrawPlayerLine(ImDrawList* d, const SelectFonts& f, const SelectLive& live,
         else IconLink(d, g_v.P(cx + 17, y + 13), g_v.s, icon);
         cx += 34;
     }
-    if (ping[0]) Text(d, f.text, g_v.L(15), g_v.P(cx + 4, y + 5), Rgba(127, 216, 139), ping);
+    // The ping, colored by the delay it suggests (PingColor), a size up
+    // from the pill's 15 (user: hard to see).
+    if (ping[0]) Text(d, f.text, g_v.L(18), g_v.P(cx + 4, y + 3), PingColor(live.pingMs), ping);
 }
 
 void DrawRender(ImDrawList* d, int chara, bool right)

@@ -1,5 +1,6 @@
 #include "mod/ui_kit.h"
 
+#include "core/input_delay.h"
 #include "core/key_names.h"
 #include "mod/flow.h"
 #include "mod/log.h"
@@ -808,6 +809,11 @@ bool Button(ImDrawList* d, ImFont* bold, float x0, float y0, float x1, float y1,
     Control(d, x0, y0, x1, y1, focused, danger ? kDanger : kGold);
     Text(d, bold, g_v.L(18), g_v.P((x0 + x1) / 2, (y0 + y1) / 2 - 12), focused ? kInk : kCream, label, 0.5f);
     return Clicked() && MouseIn(g_v.P(x0, y0), g_v.P(x1, y1));
+}
+
+ImU32 PingColor(unsigned pingMs, unsigned jitterMs)
+{
+    return look::kPingTiers[core::PingTier(pingMs, jitterMs ? jitterMs : core::kTypicalJitterMs)];
 }
 
 } // namespace sfv::mod::ui

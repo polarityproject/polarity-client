@@ -5,6 +5,36 @@ first paragraph is the summary players see in the game (Settings, Updates);
 `scripts/release.ps1` reads it, and refuses to publish a version that has no
 entry here. Newest first; the format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [Unreleased]
+
+### Changed
+
+- Pings are colored by the input delay they call for: blue for 0 frames,
+  green for 1, yellow for 2, orange for 3, and red where even 3 frames leave
+  more than 2 frames to rollback. The your-turn card now shows the ping to
+  your opponent under the VS, and the select screen's ping is larger.
+- Names with emoji (often from Steam) show without them instead of with "?"
+  marks; names written in script or bold letters show in plain ones.
+- The room's player list gives names more room before cutting them short
+  (shorter activity labels, such as "T2 · playing").
+
+### Fixed
+
+- Joining a room no longer shows "SFVR left" in its chat (the room's own
+  keeper, seen for a moment as a player).
+- With no character saved in My character, a table's first game loaded the
+  first character of the list (Abigail) instead of the Fighter Profile's
+  favorite the room shows.
+- A rematch into a new set started its counts over only partly: the player
+  bars' "(wins/played)", the results screen's Win Ratio and the win streak
+  now start over with each set, for spectators too.
+- The delay box between a table's games could show a delay from an earlier
+  opponent (2 while 0 was in use), and Auto could put that earlier
+  suggestion back between games of a set; it now shows and keeps the delay
+  chosen on the your-turn card.
+- "muted" in the room's player list no longer runs into the player's
+  activity.
+
 ## [0.3.0.1] - 2026-11-07
 
 Players who updated from 0.2.x reach the new server, and a new name takes

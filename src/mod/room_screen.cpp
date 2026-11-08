@@ -272,6 +272,19 @@ ImVec2 RowArtShift(const std::string& code)
     return ImVec2(0, 0);
 }
 constexpr float kRowsTop = 112, kRowH = 50, kPlayersBottom = 526, kChatTop = 538;
+// The activity column (its widest, "Watching T8" or "T8 · set over", ends
+// clear of a relayed ping's cloud); was at 1160, which cut names short.
+constexpr float kPlaceX = 1215;
+
+// A player's activity, short for the list's column: "T2 · playing",
+// "Watching T2" (the full wording elsewhere: "Table 2 · playing").
+std::string ShortPlace(std::string place)
+{
+    const std::string watching = "Watching Table ", table = "Table ";
+    if (place.rfind(watching, 0) == 0) return "Watching T" + place.substr(watching.size());
+    if (place.rfind(table, 0) == 0) return "T" + place.substr(table.size());
+    return place;
+}
 
 void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
 {
@@ -306,7 +319,11 @@ void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
         if (const float fw = DrawFlag(d, f.strong, m.country, x, ty + 4, 15)) x += fw + 8;
         ImFont* bold = f.bold ? f.bold : f.strong;
         std::string who = Upper(m.name);
-        const float room = 1150 - x - (m.id == v.self ? TextW(f.body, 18, "(you)") + 6 : 0);
+        // The name, then "(you)" and "muted" after it, all clear of the
+        // activity column (muted ran into it on most names).
+        const bool muted = g.muted.count(m.id) > 0;
+        const float after = (m.id == v.self ? TextW(f.body, 18, "(you)") + 6 : 0) + (muted ? TextW(f.body, 16, "muted") + 6 : 0);
+        const float room = kPlaceX - 10 - x - after;
         if (TextW(bold, 19, who) > room) {
             while (who.size() > 1 && TextW(bold, 19, who + "...") > room) {
                 who.pop_back();
@@ -316,14 +333,17 @@ void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
         }
         StageText(d, bold, 19, x, ty, kCream, who);
         x += TextW(bold, 19, who) + 6;
-        if (m.id == v.self) Text(d, f.body, g_v.L(18), g_v.P(x, ty + 1), kSoft, "(you)", 0, true);
-        if (g.muted.count(m.id)) Text(d, f.body, g_v.L(16), g_v.P(x, ty + 2), kSoft, "muted", 0, true);
-        const std::string place = RoomsPlace(v, m.id);
-        Text(d, f.body, g_v.L(18), g_v.P(1160, ty + 1), place == "Idle" ? kSoft : kGreen, place);
-        // The round trip to them (green under 60 ms, gold under 120, red
-        // after), with a cloud when it goes through a relay.
+        if (m.id == v.self) {
+            Text(d, f.body, g_v.L(18), g_v.P(x, ty + 1), kSoft, "(you)", 0, true);
+            x += TextW(f.body, 18, "(you)") + 6;
+        }
+        if (muted) Text(d, f.body, g_v.L(16), g_v.P(x, ty + 2), kSoft, "muted", 0, true);
+        const std::string place = ShortPlace(RoomsPlace(v, m.id));
+        Text(d, f.body, g_v.L(18), g_v.P(kPlaceX, ty + 1), place == "Idle" ? kSoft : kGreen, place);
+        // The round trip to them, colored by the delay it suggests
+        // (PingColor), with a cloud when it goes through a relay.
         if (m.pingMs >= 0) {
-            const ImU32 col = m.pingMs < 60 ? kGreen : m.pingMs < 120 ? kGold : kRed;
+            const ImU32 col = PingColor(static_cast<unsigned>(m.pingMs));
             const std::string ms = std::to_string(m.pingMs) + " ms";
             Text(d, bold, g_v.L(18), g_v.P(1428, ty + 1), col, ms, 1);
             if (m.relayed) IconCloud(d, g_v.P(1428 - TextW(bold, 18, ms) - 16, ty + 12), g_v.L(1.7f), col);
@@ -535,6 +555,15 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
         }
     }
     StageText(d, f.display, 36, x0 + w / 2, y0 + 104, Rgba(255, 255, 255), "VS", 0.5f);
+    // The round trip to the opponent under it, colored by the delay it
+    // suggests: what the Input delay row below is chosen against.
+    if (const RoomMember* other = Member(v, s.seat[1 - mySeat]); other && other->pingMs >= 0) {
+        const std::string ms = std::to_string(other->pingMs) + " ms";
+        const ImU32 col = PingColor(static_cast<unsigned>(other->pingMs));
+        Text(d, bold, g_v.L(14), g_v.P(x0 + w / 2, y0 + 150), kSoft, "PING", 0.5f);
+        StageText(d, f.strong, 22, x0 + w / 2, y0 + 168, col, ms, 0.5f);
+        if (other->relayed) IconCloud(d, g_v.P(x0 + w / 2, y0 + 208), g_v.L(1.7f), col);
+    }
     // The time left: the keeper's call, from when it showed here (also while
     // this game was still coming back from a battle), less a little for the
     // trip to the keeper.
@@ -765,6 +794,12 @@ void SetCardDelay(int frames) { g_suggestedDelay = std::clamp(frames, 0, kMaxCar
 void SetTableHandoff(const TableHandoff& handoff) { g_handoff = handoff; }
 
 void SetCardPick(const CardPick& pick) { g_cardPick = pick; }
+
+void ToggleMuteForTest(uint32_t id)
+{
+    if (!g.muted.erase(id)) g.muted.insert(id);
+    Log("room screen: member %u %s (this player's view only)", id, g.muted.count(id) ? "muted" : "unmuted");
+}
 
 void SetSkillNames(std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::string>>> names) { g_skillNames = std::move(names); }
 
