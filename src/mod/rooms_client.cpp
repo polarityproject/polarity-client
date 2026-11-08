@@ -167,6 +167,7 @@ struct Client {
     int64_t allListAt = -1;       // when to ask for it (the server takes one listing a second)
     bool abortSession = false;    // RoomsTakeAbort
     std::vector<std::pair<uint32_t, int64_t>> callSeen; // per table: the call, when it showed
+    std::vector<std::string> tableLogged;                // per table: its state as last logged
 
     void Set(State s)
     {
@@ -196,6 +197,7 @@ struct Client {
         if (proofs.size() > 256) proofs.clear();
         proofs[key] = ok;
         if (ok) Log("rooms: member %u is the keeper of %s", id, room.c_str());
+        else Log("rooms: member %u's keeper proof for %s does not verify against this build's keeper key", id, room.c_str());
         return ok;
     }
 
@@ -230,6 +232,7 @@ struct Client {
             }
         }
         if (signatures.size() > 1024) signatures.clear();
+        if (!ok) Log("rooms: a listing's signature does not verify against this build's keeper key; ignored");
         signatures[key] = ok;
         return ok;
     }
@@ -363,6 +366,7 @@ struct Client {
         playing = {};
         tickets.clear();
         callSeen.clear();
+        tableLogged.clear();
         if (watchTable >= 0) Log("rooms: out of the room: no longer watching table %d", watchTable + 1);
         if (watchSession && NetViewNow().spectator) abortSession = true;
         watchTable = -1;
@@ -660,6 +664,14 @@ struct Client {
                             tv.s.ready[tv.s.seat[0] == view.self ? 0 : 1] ? ", already ready" : "");
                 }
                 tv.callSeenMs = callSeen[t].second;
+                // Each table's state as it changes (seats, phase, ready, games,
+                // queue, rules): what the room did around a problem.
+                if (tableLogged.size() <= static_cast<size_t>(t)) tableLogged.resize(t + 1);
+                std::string state = keeper::FormatTable(tv.s) + " q=" + keeper::FormatIds(tv.queue) + " rules=" + tv.rules;
+                if (state != tableLogged[t]) {
+                    Log("rooms: table %d: %s", t + 1, state.c_str());
+                    tableLogged[t] = std::move(state);
+                }
                 view.tableViews.push_back(std::move(tv));
             }
         }
@@ -714,19 +726,27 @@ struct Client {
             if (r.masked && m.id == v.self && !toldMasked) {
                 toldMasked = true;
                 Line(0, "", "Your name shows as " + maskedName + " in public rooms.");
+                Log("rooms: this player's name is masked as %s (the word filter)", maskedName.c_str());
             }
             members.push_back(r);
             now[m.id] = r.name;
         }
         if (joinedAt < 0) {
             for (const auto& [id, name] : now) {
-                if (!names.count(id) && !names.empty()) Line(0, "", name + " joined");
+                if (!names.count(id) && !names.empty()) {
+                    Line(0, "", name + " joined");
+                    Log("rooms: %s (%u) joined %s, %zu members", name.c_str(), id, view.room.c_str(), now.size());
+                }
             }
             for (const auto& [id, name] : names) {
-                if (!now.count(id)) Line(0, "", name + " left");
+                if (!now.count(id)) {
+                    Line(0, "", name + " left");
+                    Log("rooms: %s (%u) left %s, %zu members", name.c_str(), id, view.room.c_str(), now.size());
+                }
             }
             if (view.owner && view.owner != lastOwner && lastOwner) {
                 const auto it = now.find(view.owner);
+                Log("rooms: %s (%u) owns %s now", it != now.end() ? it->second.c_str() : "?", view.owner, view.room.c_str());
                 Line(0, "", (view.owner == v.self ? std::string("You own") : (it != now.end() ? it->second : "?") + " owns") +
                                 " the room now");
             }
@@ -1029,7 +1049,10 @@ struct Client {
                 std::lock_guard lock(mutex);
                 view.server = v.serverText;
                 if (v.server == WeyveRoomView::Server::Connecting) Set(State::Connecting);
-                else if (v.server != WeyveRoomView::Server::Connected) Set(State::Failed);
+                else if (v.server != WeyveRoomView::Server::Connected) {
+                    if (view.state != State::Failed) Log("rooms: the server connection failed: %s", v.serverText.empty() ? "-" : v.serverText.c_str());
+                    Set(State::Failed);
+                }
                 else if (view.state == State::Connecting) ToBrowsing();
                 wantDesk = RoomsScreenOpen();
                 view.wordFilter = g_wordFilter;
@@ -1038,6 +1061,8 @@ struct Client {
                 if (view.state != State::Failed) {
                     Answers();
                     if (pendingSeq && NowMs() > pendingUntil) {
+                        Log("rooms: no answer from the keeper to #%u in time (link to it: %s)", pendingSeq,
+                            svc->PeerPath(KeeperOf(v)) == WeyveService::LinkPath::None ? "none" : "up");
                         pendingSeq = 0;
                         view.notice = "The rooms server didn't respond. Try again.";
                         Set(State::Lobby);

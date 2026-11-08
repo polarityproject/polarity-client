@@ -2,6 +2,7 @@
 
 #include "core/keeper_protocol.h"
 #include "core/rules.h"
+#include "mod/log.h"
 #include "mod/rooms_screen.h"
 #include "mod/ui_kit.h"
 #include "mod/weyve_service.h"
@@ -962,6 +963,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
             const uint32_t who = players.empty() ? 0 : players[g.player].id;
             if (Confirm() && who && who != v.self) {
                 if (!g.muted.erase(who)) g.muted.insert(who);
+                Log("room screen: member %u %s (this player's view only)", who, g.muted.count(who) ? "muted" : "unmuted");
             }
             if (Pressed({ImGuiKey_GamepadFaceLeft}, false) && who && who != v.self && v.owner == v.self && !paused) {
                 g.removing = who;

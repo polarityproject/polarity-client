@@ -2943,7 +2943,10 @@ void DrawHubScreens(bool takeInput)
         }
         if (in.clearNotice) RoomsClearNotice();
         else if (g_myCharacterOpen) DrawMyCharacter(rooms, takeInput);
-        if (!in.chat.empty() && !RoomsChat(in.chat)) AddToast("Slow down. One message per second.", ImVec4(1, 0.8f, 0.4f, 1), 2);
+        if (!in.chat.empty() && !RoomsChat(in.chat)) {
+            Log("rooms: a chat line held back (one a second)");
+            AddToast("Slow down. One message per second.", ImVec4(1, 0.8f, 0.4f, 1), 2);
+        }
         if (in.copiedCode) AddToast("Room code copied", ImVec4(1, 1, 1, 1), 2);
         if (in.leave) RoomsLeave();
         return;
