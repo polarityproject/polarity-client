@@ -56,7 +56,7 @@ enum class ReplayControl {
     Pause,
     Play,
     Toggle,
-    Step,  // arg frames (negative: back), paused after
+    Step,  // arg frames (negative: back, silent, never past backLimit), paused after
     Seek,  // to frame arg (the state after frame arg - 1)
     Round, // arg > 0 the next round's start, else this round's (or the one before)
     Fast,  // arg frames per rendered frame (0 or 1: as played)
@@ -72,6 +72,9 @@ struct ReplayView {
     int frames = 0; // in the recording
     int round = 0;  // 1 from the first round's FIGHT; 0 before it
     int fast = 0;
+    // The earliest frame a step back reaches: one a keyframe of this round
+    // loads (going back further restarts the battle, which steps never do).
+    int backLimit = 0;
     int mismatches = 0; // frames that differed from the recording (testing)
     int seeks = 0;      // keyframe loads (testing)
     bool benchmark = false; // the benchmark's run (benchmark.h), not a viewed replay

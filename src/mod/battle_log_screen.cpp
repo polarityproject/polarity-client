@@ -107,7 +107,9 @@ std::vector<Entry> g_merged;     // the screen's copy (Merge)
 
 constexpr float kListX0 = 48, kListX1 = 868, kListY0 = 142, kListY1 = 832;
 constexpr float kDetailX0 = 892, kDetailX1 = 1552;
-constexpr float kRowsTop = kListY0 + 38, kRowsBottom = kListY1 - 10;
+// The rows: 10 inside the header strip (kListY0 + 32) and the pane's 2 px
+// border on every side but the scroll bar's.
+constexpr float kRowsTop = kListY0 + 42, kRowsBottom = kListY1 - 12;
 
 const ImU32 kCream = look::kCream;
 const ImU32 kMuted = look::kMuted;
@@ -344,9 +346,13 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
     float y = 0;
     std::vector<int> selectable;
     for (size_t i = 0; i < rows.size(); i++) {
-        rows[i].h = RowHeight(rows[i].kind);
+        // The first day is the list's header strip's (topDay): no row of
+        // its own, so the first match sits as far from the strip as from
+        // the pane's sides.
+        const bool headerDay = i == 0 && rows[i].kind == RowKind::Day;
+        rows[i].h = headerDay ? 0 : RowHeight(rows[i].kind);
         rows[i].y = y;
-        y += rows[i].h + (rows[i].kind == RowKind::Day ? 2 : 6);
+        y += headerDay ? 0 : rows[i].h + (rows[i].kind == RowKind::Day ? 2 : 6);
         if (rows[i].kind != RowKind::Day) selectable.push_back(static_cast<int>(i));
     }
     const float total = y;
@@ -828,7 +834,8 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
     }
     if (takeInput) {
         if (Confirm()) ControlReplay(ReplayControl::Toggle);
-        if (Left()) ControlReplay(ReplayControl::Step, -1);
+        // A step back plays no sound, the menu's cue included.
+        if (Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}) && v.frame > v.backLimit) ControlReplay(ReplayControl::Step, -1);
         if (Right()) ControlReplay(ReplayControl::Step, 1);
         if (Pressed({ImGuiKey_GamepadL1}, false)) PlayUi(UiSound::Step), ControlReplay(ReplayControl::Round, -1);
         if (Pressed({ImGuiKey_GamepadR1}, false)) PlayUi(UiSound::Step), ControlReplay(ReplayControl::Round, 1);
@@ -854,12 +861,14 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
     char frame[64];
     std::snprintf(frame, sizeof(frame), " \xC2\xB7 Frame %d / %d", v.frame, std::max(0, v.frames - 1));
     Text(d, bold, g_v.L(18), g_v.P(48 + TextW(bold, 16, state) + 18, y0 + 11), look::kCream, v.title + frame);
-    PromptList prompts = {{"button_a", v.paused ? "Play" : "Pause"}, {"button_lb", "Round"}, {"button_rb", ""}, {"button_b", "Leave"}};
+    PromptList prompts = {{"button_a", v.paused ? "Play" : "Pause"}, {"button_lb", "Round"}, {"button_rb", ""}, {"button_rt", "Hold to fast forward"}, {"button_b", "Leave"}};
     int clicked = -1;
     const float left = PromptRow(d, f.body, 17, prompts, 1564, y0 + 8, 28, false, &clicked);
-    // Frame steps: the d-pad's left and right, drawn as triangles.
+    // Frame steps: the d-pad's left and right, drawn as triangles; back dims
+    // at the earliest frame a step reaches (ReplayView::backLimit).
     const float tx = left - 120;
-    d->AddTriangleFilled(g_v.P(tx, y0 + 22), g_v.P(tx + 12, y0 + 14), g_v.P(tx + 12, y0 + 30), look::kCream);
+    const bool canBack = v.frame > v.backLimit && !v.seeking;
+    d->AddTriangleFilled(g_v.P(tx, y0 + 22), g_v.P(tx + 12, y0 + 14), g_v.P(tx + 12, y0 + 30), canBack ? look::kCream : Rgba(236, 228, 206, 70));
     d->AddTriangleFilled(g_v.P(tx + 30, y0 + 14), g_v.P(tx + 42, y0 + 22), g_v.P(tx + 30, y0 + 30), look::kCream);
     Text(d, bold, g_v.L(17), g_v.P(tx + 52, y0 + 12), look::kCream, "Frame");
     if (clicked >= 0) ClickPad(PadKeyOfGlyph(prompts[clicked].first));

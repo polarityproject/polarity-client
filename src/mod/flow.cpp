@@ -1395,6 +1395,7 @@ uint8_t* RoundDirector() { return LiveRoundDirector(); }
 void ResetRoundFlow()
 {
     g_roundFlow = {};
+    g_roundCall = false;       // a battle left during its round call
     g_roundDirector = nullptr; // the old battle's; its task points to the new one
 }
 

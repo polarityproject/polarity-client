@@ -173,17 +173,47 @@ public:
 
 private:
     // ---- the viewer -------------------------------------------------------
-    // Keyframes every kKeyEvery frames as the replay first gets there (the
-    // regions and what a load needs beside them, flow.h OutsideState): a
-    // step or a jump back loads the nearest one at or before the frame before
-    // the target, runs the frames between as a rollback runs them (lean,
-    // muted), and the last one as it played, so the picture is that frame's.
-    // A jump forward runs on from where the replay is.
+    // Keyframes every kKeyEvery frames as the replay first gets there, and one
+    // just after each round's FIGHT (the regions and what a load needs beside
+    // them, flow.h OutsideState): a step or a jump back loads the nearest one
+    // at or before the frame before the target, runs the frames between as a
+    // rollback runs them (lean, muted), and the last one as it played, so the
+    // picture is that frame's. A jump forward runs on from where the replay is.
     static constexpr int kKeyEvery = 60;
     struct Keyframe {
+        int frame = 0;      // the state before this frame
+        bool fight = false; // taken in a round's fight (after FIGHT, before its end)
         std::vector<uint8_t> regions;
         OutsideState outside;
     };
+
+    // The keyframe a jump back to `target` loads (the last at or before
+    // target - 1), or -1 when that jump restarts the battle instead. Only
+    // keys taken in a round's fight load, and only within that round: one
+    // from the battle's opening (its start events, the intro run once), from
+    // a round's end on (KO to the next FIGHT: a load there runs the next
+    // round's reset differently, frame 3851 of the step test) or from before
+    // a round's end (the round over leaves things outside the snapshot)
+    // came out different (seek and step tests, 2026-11-09).
+    int LoadableKey(int target) const
+    {
+        auto it = std::upper_bound(keys_.begin(), keys_.end(), target - 1, [](int f, const Keyframe& k) { return f < k.frame; });
+        if (it == keys_.begin()) return -1;
+        const int k = static_cast<int>(it - keys_.begin()) - 1;
+        const int keyFrame = keys_[k].frame;
+        const bool sameRound = std::none_of(roundEnds_.begin(), roundEnds_.end(), [&](int e) { return e >= keyFrame && e < frame_; });
+        return keys_[k].fight && sameRound ? k : -1;
+    }
+
+    // The earliest frame on screen a step back reaches (Publish): the first
+    // loadable keyframe's frame, or the frame on screen when there is none.
+    int BackLimit() const
+    {
+        for (const Keyframe& k : keys_) {
+            if (k.frame < frame_ && LoadableKey(k.frame + 1) >= 0) return k.frame;
+        }
+        return std::max(0, frame_ - 1);
+    }
 
     bool ViewerFrame(SfvGame& game)
     {
@@ -220,21 +250,21 @@ private:
             const ULONGLONG until = GetTickCount64() + 40;
             while (frame_ < target_ - 1 && frame_ <= last_ && GetTickCount64() < until) Simulate(game, true);
             if (frame_ >= target_ - 1 || frame_ > last_) {
-                MuteGameSounds(false);
+                if (!quiet_) MuteGameSounds(false);
                 if (frame_ == target_ - 1 && frame_ <= last_) Simulate(game, false);
                 Log("replay: at frame %d (seek done)", frame_ - 1);
                 target_ = -1;
             }
         }
         else if (findRound_) {
-            // The next round's start, not reached yet: on until it is.
+            // The next round's call, not reached yet: on until it is.
             const ULONGLONG until = GetTickCount64() + 40;
             while (findRound_ && frame_ <= last_ && GetTickCount64() < until) {
-                const size_t known = roundStarts_.size();
+                const size_t known = roundCalls_.size();
                 Simulate(game, true);
-                if (roundStarts_.size() > known) {
+                if (roundCalls_.size() > known) {
                     findRound_ = false;
-                    Seek(game, roundStarts_.back() + 1);
+                    Seek(game, roundCalls_.back() + 1);
                     if (restarting_) {
                         Finish(game);
                         return false;
@@ -260,8 +290,11 @@ private:
     // One frame of the recording, a keyframe first where one is due.
     void Simulate(SfvGame& game, bool lean)
     {
-        if (frame_ % kKeyEvery == 0 && static_cast<int>(keys_.size()) == frame_ / kKeyEvery) {
+        const bool due = frame_ % kKeyEvery == 0 || (!roundStarts_.empty() && frame_ == roundStarts_.back() + 1);
+        if (due && (keys_.empty() || keys_.back().frame < frame_)) {
             Keyframe k;
+            k.frame = frame_;
+            k.fight = wasFight_;
             k.regions.resize(StateSize(game.Regions()));
             SaveRegions(game.Regions(), k.regions.data());
             if (!SaveOutsideState(&k.outside, keys_.empty() ? nullptr : &keys_.back().outside) && keyWarnings_++ < 3) {
@@ -278,6 +311,9 @@ private:
         if (fight && !wasFight_ && (roundStarts_.empty() || roundStarts_.back() < frame_)) {
             roundStarts_.push_back(frame_);
         }
+        const bool call = RoundCallRunning();
+        if (call && !wasCall_ && (roundCalls_.empty() || roundCalls_.back() < frame_)) roundCalls_.push_back(frame_);
+        wasCall_ = call;
         // A round's end: the fight over (KO or time). Keyframes from before
         // one are not loaded past it (Seek).
         if (!fight && wasFight_ && (roundEnds_.empty() || roundEnds_.back() < frame_)) roundEnds_.push_back(frame_);
@@ -286,40 +322,42 @@ private:
     }
 
     // Shows the state after frame target - 1 (target 0: before frame 0).
-    void Seek(SfvGame& game, int target)
+    // `quiet` (a step back): the target frame plays muted too, and the game's
+    // sounds stay muted until the replay plays or moves on (EndQuiet).
+    void Seek(SfvGame& game, int target, bool quiet = false)
     {
         target = std::clamp(target, 1, last_ + 1);
         if (target == frame_ || keys_.empty()) return;
         MuteGameSounds(true);
+        quiet_ = quiet;
         if (target < frame_) {
-            // The keyframe at or before the frame before the target. Loaded
-            // only within a round: not from before the first round's FIGHT
-            // (the battle's opening runs once: its start events, the intro)
-            // nor across a round's end (the round over leaves things outside
-            // the snapshot a keyframe does not hold): a load there came out
-            // different (seek tests, 2026-11-09). Those jumps start the
-            // battle again and run to the target instead.
-            const int k = std::min((target - 1) / kKeyEvery, static_cast<int>(keys_.size()) - 1);
-            const int keyFrame = k * kKeyEvery;
-            const bool afterFight = !roundStarts_.empty() && keyFrame > roundStarts_.front();
-            const bool sameRound = std::none_of(roundEnds_.begin(), roundEnds_.end(), [&](int e) { return e >= keyFrame && e < frame_; });
-            if (!afterFight || !sameRound) {
+            // The keyframe at or before the frame before the target, where
+            // one loads (LoadableKey); other jumps start the battle again and
+            // run to the target instead.
+            const int k = LoadableKey(target);
+            if (k < 0) {
                 RestartAt(game, target);
                 return;
             }
             const Keyframe& key = keys_[k];
             LoadRegions(game.Regions(), key.regions.data());
             RestoreOutsideState(key.outside);
-            game.OnStateLoaded(k * kKeyEvery - 1);
-            frame_ = k * kKeyEvery;
+            game.OnStateLoaded(key.frame - 1);
+            frame_ = key.frame;
             wasFight_ = RoundInFight();
             seeks_++;
         }
         target_ = target;
         if (target_ == frame_) {
-            MuteGameSounds(false);
+            if (!quiet_) MuteGameSounds(false);
             target_ = -1;
         }
+    }
+    void EndQuiet()
+    {
+        if (!quiet_) return;
+        quiet_ = false;
+        MuteGameSounds(false);
     }
 
     // The battle again from the recording's start, then on to `target`
@@ -339,28 +377,43 @@ private:
         case ReplayControl::Pause: paused_ = true; break;
         case ReplayControl::Play:
             paused_ = false;
+            EndQuiet();
             if (frame_ > last_) Seek(game, 0); // from the end: again from the start
             break;
         case ReplayControl::Toggle: Control(game, paused_ ? ReplayControl::Play : ReplayControl::Pause, 0); break;
         case ReplayControl::Step:
             paused_ = true;
+            if (arg < 0) {
+                // Back: silent, and only as far as a keyframe of this round
+                // loads (a restart is for round jumps, not steps).
+                if (target_ >= 0 || findRound_) break;
+                const int to = std::max(frame_ + arg, BackLimit() + 1);
+                if (to < frame_) Seek(game, to, true);
+                break;
+            }
+            EndQuiet();
             Seek(game, frame_ + (arg == 0 ? 1 : arg));
             break;
-        case ReplayControl::Seek: Seek(game, arg); break;
+        case ReplayControl::Seek: EndQuiet(); Seek(game, arg); break;
         case ReplayControl::Round:
-            // Next: the first round start after the frame on screen; previous:
-            // the start of this round, or the one before when just past it.
+            EndQuiet();
+            // A round starts at its call ("ROUND 2"), which then plays as it
+            // did: a seek run through the call in a frame or two left its
+            // banner (then "FIGHT!") over the fight (UI checks, 2026-11-09).
+            // Next: the first round call after the frame on screen; previous:
+            // this round's call, or the one before when just past it (before
+            // the first: the replay's start).
             if (arg > 0) {
-                auto next = std::upper_bound(roundStarts_.begin(), roundStarts_.end(), shown);
-                if (next != roundStarts_.end()) Seek(game, *next + 1);
+                auto next = std::upper_bound(roundCalls_.begin(), roundCalls_.end(), shown);
+                if (next != roundCalls_.end()) Seek(game, *next + 1);
                 else if (frame_ <= last_) {
                     findRound_ = true;
                     MuteGameSounds(true);
                 }
             }
             else {
-                auto it = std::lower_bound(roundStarts_.begin(), roundStarts_.end(), shown - kKeyEvery);
-                Seek(game, it == roundStarts_.begin() ? 0 : *std::prev(it) + 1); // the first round: its FIGHT (Seek)
+                auto it = std::lower_bound(roundCalls_.begin(), roundCalls_.end(), shown - kKeyEvery);
+                Seek(game, it == roundCalls_.begin() ? 0 : *std::prev(it) + 1);
             }
             break;
         case ReplayControl::Fast: fast_ = std::clamp(arg, 0, 4); break;
@@ -378,6 +431,7 @@ private:
         g_view.frame = std::max(0, frame_ - 1);
         g_view.frames = last_ + 1;
         g_view.fast = fast_;
+        g_view.backLimit = BackLimit();
         g_view.round = static_cast<int>(std::upper_bound(roundStarts_.begin(), roundStarts_.end(), frame_ - 1) - roundStarts_.begin());
         g_view.mismatches = mismatchFrames_;
         g_view.seeks = seeks_;
@@ -390,9 +444,12 @@ private:
     std::string title_;
     std::vector<Keyframe> keys_;
     std::vector<int> roundStarts_; // frames whose tick began a round's fight
+    std::vector<int> roundCalls_;  // frames whose tick began a round's call (Round jumps land there)
+    bool wasCall_ = false;
     bool wasFight_ = false;
     bool paused_ = false;
     bool findRound_ = false;
+    bool quiet_ = false; // a step back's mute, kept while paused there (Seek)
     int target_ = -1; // seeking: the frame to simulate next once there
     int fast_ = 0;    // frames a rendered frame while playing (0, 1: as played)
     int keyWarnings_ = 0;
