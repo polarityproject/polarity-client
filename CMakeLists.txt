@@ -147,6 +147,7 @@ add_library(sfvcore STATIC
   src/core/texture_package.cpp
   src/core/key_names.cpp
   src/core/look.cpp
+  src/core/battle_log.cpp
   src/core/display_name.cpp
   src/core/rules.cpp
   src/core/match_ticket.cpp
@@ -239,6 +240,8 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/ui_kit.cpp
     src/mod/ui_sound.cpp
     src/mod/hub_screen.cpp
+    src/mod/battle_log_screen.cpp
+    src/mod/benchmark.cpp
     src/mod/rooms_screen.cpp
     src/mod/room_screen.cpp
     src/mod/watch_panel.cpp
@@ -267,6 +270,18 @@ if(SFV_BUILD_MOD AND WIN32)
   string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," SFV_NOISE_BYTES "${SFV_NOISE_HEX}")
   file(CONFIGURE OUTPUT ${CMAKE_BINARY_DIR}/generated/builtin_noise.h
        CONTENT "#pragma once\n// Generated from data/sfv_noise.txt by CMakeLists.txt.\nnamespace sfv::mod {\ninline constexpr unsigned char kBuiltinNoise[] = {${SFV_NOISE_BYTES}};\n}\n")
+  # The benchmark's round (data/benchmark.sfvr, made with `sfvr cut`), the same
+  # way; a build without the file has an empty one (the benchmark says so).
+  set(SFV_BENCH_FILE ${CMAKE_SOURCE_DIR}/data/benchmark.sfvr)
+  if(EXISTS ${SFV_BENCH_FILE})
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SFV_BENCH_FILE})
+    file(READ ${SFV_BENCH_FILE} SFV_BENCH_HEX HEX)
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," SFV_BENCH_BYTES "${SFV_BENCH_HEX}")
+  else()
+    set(SFV_BENCH_BYTES "0")
+  endif()
+  file(CONFIGURE OUTPUT ${CMAKE_BINARY_DIR}/generated/builtin_benchmark.h
+       CONTENT "#pragma once\n// Generated from data/benchmark.sfvr by CMakeLists.txt.\nnamespace sfv::mod {\ninline constexpr unsigned char kBenchmarkRound[] = {${SFV_BENCH_BYTES}};\n}\n")
   # The Steam app -> entitlement code table (data/steam_grants.txt), the same way.
   set(SFV_GRANTS_FILE ${CMAKE_SOURCE_DIR}/data/steam_grants.txt)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SFV_GRANTS_FILE})

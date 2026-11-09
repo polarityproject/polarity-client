@@ -1,6 +1,8 @@
 build/
 dist/
 *.sfvr
+# ... but the benchmark's round, built into the DLL
+!data/benchmark.sfvr
 sfv_rollback.ini
 sfv_rollback.log
 sfv_statemap.bin

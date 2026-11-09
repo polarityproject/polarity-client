@@ -576,9 +576,10 @@ public:
         SetRoundDirectorPerTick(false, false);
         // Left mid-match (leave, a new host/join, a reload): keep the recording.
         if (session_) {
-            const ReplayFile rf = session_->Recording();
+            const ReplayFile rf = WithSummary(session_->Recording(), true);
             const auto rb = session_->RollbackStats();
             const std::string path = SaveReport(rf, "match");
+            SaveToBattleLog(rf);
             Log("netplay: left at frame %d; recording %s", session_->NextFrame(), path.c_str());
             char summary[160];
             std::snprintf(summary, sizeof(summary), "left at frame %d: %u rollbacks (max %u), %d desync events",
@@ -2106,6 +2107,31 @@ private:
 
     void BeginJump()
     {
+        // The Battle Log's set (core/replay_file.h MatchSummary): its key is
+        // its first match's id, the same on both sides. A table's set starts
+        // with its first game (no game played in it yet: the host's count,
+        // which the joiner has from its session state); a Direct Match set
+        // with each match from the lobby (the session's first, and after
+        // character select).
+        {
+            const bool table = ticket_.after == AfterMatch::Set;
+            int played = 0;
+            {
+                std::lock_guard lock(mutex_);
+                played = played_;
+            }
+            const bool fresh = setKey_ == 0 || (table ? played == 0 : GetState() == State::Lobby);
+            if (fresh) {
+                setKey_ = matchId_.load();
+                setGame_ = 0;
+                setWins_[0] = setWins_[1] = 0;
+                setRule_ = table && ticket_.rules.firstTo > 0 ? "First to " + std::to_string(ticket_.rules.firstTo) : "";
+            }
+            setGame_++;
+            matchWinner_ = -1;
+            matchRounds_.clear();
+            matchRoundWins_[0] = matchRoundWins_[1] = 0;
+        }
         switchNow_ = false;
         switchesAtJump_ = BattleSceneSwitches(); // EndAfterJumpTick: has this jump's battle scene come?
         ReleaseResults();
@@ -2442,6 +2468,9 @@ private:
                     }
                 }
             }
+            matchWinner_ = winner;
+            if (winner >= 0) setWins_[winner]++;
+            ReadRoundResults(&matchRounds_, matchRoundWins_);
             if (winner >= 0) Log("netplay: P%d won the match", winner + 1);
             else Log("netplay: the match's winner is not known (win counts %s)", counted ? "unchanged" : "not found");
             if (host_) {
@@ -2809,9 +2838,10 @@ private:
         SetScriptedPad(0, false);
         ClearPendingSetup();
         if (session_) {
-            const auto rf = session_->Recording();
+            const auto rf = WithSummary(session_->Recording(), false);
             const auto rb = session_->RollbackStats();
             const std::string path = SaveReport(rf, "match");
+            SaveToBattleLog(rf);
             char summary[160];
             std::snprintf(summary, sizeof(summary), "%d frames, %u rollbacks (max %u), %d desync events",
                           session_->NextFrame(), rb.total_count, rb.max_frames, session_->DesyncCount());
@@ -2833,6 +2863,58 @@ private:
         SetFrameDriver(nullptr);
         matchLive_ = false;
         SetMatchRunning(false);
+    }
+
+    // The Battle Log's summary of the match: names, its result and rounds,
+    // the set (BeginJump). leftEarly: the session ended before the match did.
+    ReplayFile WithSummary(ReplayFile rf, bool leftEarly)
+    {
+        MatchSummary& s = rf.summary;
+        s.present = true;
+        {
+            std::lock_guard lock(mutex_);
+            for (int i = 0; i < kNumPlayers; i++) s.names[i] = seats_[i].name;
+        }
+        s.winner = static_cast<int8_t>(leftEarly ? -1 : matchWinner_);
+        s.ending = leftEarly || matchWinner_ < 0 ? 1 : 0;
+        s.rounds = matchRounds_;
+        for (int i = 0; i < kNumPlayers; i++) {
+            s.roundWins[i] = matchRoundWins_[i];
+            s.setWins[i] = setWins_[i];
+        }
+        s.setKey = setKey_;
+        s.setGame = setGame_;
+        s.setRule = setRule_;
+        s.seconds = static_cast<uint32_t>(std::max(0, rf.FrameCount()) / 60);
+        return rf;
+    }
+
+    // A player's matches also go to SFVR\replays (the Battle Log), named
+    //   <date>_<time>_<P1 name>-<P1 character>_vs_<P2 name>-<P2 character>_<match id>.sfvr
+    // compact, kept for good (the player removes them).
+    void SaveToBattleLog(const ReplayFile& rf)
+    {
+        if (role_ == Role::Spectator || rf.FrameCount() < 60) return;
+        const std::wstring dir = ReplaysDir();
+        EnsureDirectory(dir);
+        const std::time_t t = static_cast<std::time_t>(rf.createdUnix ? rf.createdUnix : std::time(nullptr));
+        std::tm tm;
+        localtime_s(&tm, &t);
+        char when[32];
+        std::snprintf(when, sizeof(when), "%04d-%02d-%02d_%02d-%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min);
+        std::string name = when;
+        for (int i = 0; i < kNumPlayers; i++) {
+            name += (i == 0 ? "_" : "_vs_") + FileSafe(rf.summary.names[i], 20, i == 0 ? "P1" : "P2") + "-" +
+                    FileSafe(UnpackCode(rf.setup.players[i].character), 8, "unknown");
+        }
+        name += "_" + Hex64(rf.matchId).substr(0, 8) + ".sfvr";
+        const std::string path = Utf8Path(dir) + "\\" + name;
+        std::thread([path, file = rf] {
+            ThreadGuard running;
+            std::string error;
+            if (SaveReplay(file, path, &error, ReplayDetail::Compact)) Log("netplay: battle log %s", path.c_str());
+            else Log("netplay: cannot save the battle log copy %s: %s", path.c_str(), error.c_str());
+        }).detach();
     }
 
     // Recordings go to SFVR\matches (files.h) as
@@ -3024,6 +3106,14 @@ private:
     std::atomic<int> hostStageRule_{-1};   // host: the stage rule set in the lobby (-1: from the options)
     uint16_t streaks_[kNumPlayers] = {};   // host: each player's current win streak this set (session)
     uint32_t winsAtStart_[2] = {};         // the game's match win counts as the match started
+    // The Battle Log's set and this match's result (BeginJump, WithSummary).
+    uint64_t setKey_ = 0;
+    uint16_t setGame_ = 0;
+    uint8_t setWins_[2] = {};
+    std::string setRule_;
+    int matchWinner_ = -1;
+    std::vector<RoundResult> matchRounds_;
+    uint8_t matchRoundWins_[2] = {};
     bool winsKnown_ = false;
     int spectators_ = 0;                   // guest: as the host says
     uint16_t stageRule_ = lobby::kAnyStage;
@@ -3767,5 +3857,7 @@ NetView NetViewNow()
     last = v;
     return v;
 }
+
+std::string GameBuildId() { return g_game ? g_game->BuildId() : std::string(); }
 
 } // namespace sfv::mod

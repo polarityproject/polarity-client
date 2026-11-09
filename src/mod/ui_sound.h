@@ -58,6 +58,12 @@ void SetUiSoundSet(UiSoundSet set);
 void NoteModalDrawn();
 // The render thread, once a frame after every screen drew: plays what came.
 void FlushUiSounds();
+// The game's sounds but its music silenced (true) or back to the player's
+// settings (false): for a replay's fast runs, whose ticks would play every
+// hit and voice. Mutes the CriWare categories M_SE, M_VOICE, M_SYS_VOICE and
+// M_EXTRA_VOICE; unmuting runs the game's own apply of its Sound options
+// (rva 0x79BDE0), so the player's volumes come back exactly. Game thread.
+void MuteGameSounds(bool mute);
 // Research and tests (`uisound <name|cue number>`): plays now, logs the cue.
 bool PlayUiNamed(const std::string& name);
 

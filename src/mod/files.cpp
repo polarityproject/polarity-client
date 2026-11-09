@@ -93,6 +93,7 @@ void SetDataDir(const std::wstring& dir) { g_dataDir = dir; }
 std::wstring DataDir() { return g_dataDir; }
 std::wstring LogsDir() { return g_dataDir + L"\\logs"; }
 std::wstring MatchesDir() { return g_dataDir + L"\\matches"; }
+std::wstring ReplaysDir() { return g_dataDir + L"\\replays"; }
 std::wstring CrashesDir() { return g_dataDir + L"\\crashes"; }
 
 bool EnsureDirectory(const std::wstring& path)

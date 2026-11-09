@@ -58,6 +58,30 @@ struct StateDump {
     std::vector<uint8_t> bytes;
 };
 
+// What the Battle Log lists (the INFO chunk, written uncompressed right after
+// the setup, so a list reads only a file's first bytes: LoadReplayHeader).
+// Files from before it have none (present false).
+struct RoundResult {
+    int32_t endFrame = -1; // the frame the round's end was decided on
+    int8_t winner = -1;    // 0, 1, or -1 (a draw)
+};
+struct MatchSummary {
+    bool present = false;
+    std::string names[kNumPlayers];      // as the players typed them
+    uint8_t roundWins[kNumPlayers] = {}; // rounds each side won
+    int8_t winner = -1;                  // the match's: 0, 1, or -1 (not decided: someone left)
+    uint8_t ending = 0;                  // 0 played out, 1 left early
+    std::vector<RoundResult> rounds;
+    // The set: the match id of its first match (both players' files carry the
+    // same), this match's number in it (1..), its rule ("First to 3", or
+    // empty for a Direct Match session) and the score after this match.
+    uint64_t setKey = 0;
+    uint16_t setGame = 0;
+    std::string setRule;
+    uint8_t setWins[kNumPlayers] = {};
+    uint32_t seconds = 0; // how long the match ran
+};
+
 struct ReplayFile {
     std::string modVersion;
     std::string gameBuild;
@@ -81,6 +105,7 @@ struct ReplayFile {
     std::vector<uint32_t> checksums;
     std::vector<ReplayEvent> events;
     std::vector<StateDump> dumps;
+    MatchSummary summary;
 
     int FrameCount() const { return static_cast<int>(inputs.size()); }
     size_t RegionCount() const { return regions.size(); }
@@ -100,5 +125,9 @@ bool DeserializeReplay(const uint8_t* data, size_t len, ReplayFile* out, std::st
 bool SaveReplay(const ReplayFile& replay, const std::string& path, std::string* error,
                 ReplayDetail detail = ReplayDetail::Full);
 bool LoadReplay(const std::string& path, ReplayFile* out, std::string* error);
+// Only the file's start: META, the setup and the summary (no inputs, no
+// checksum check). For lists.
+bool LoadReplayHeader(const std::string& path, ReplayFile* out, std::string* error);
+bool DeserializeReplayHeader(const uint8_t* data, size_t len, ReplayFile* out, std::string* error);
 
 } // namespace sfv

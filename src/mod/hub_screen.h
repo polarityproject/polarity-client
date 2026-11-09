@@ -34,6 +34,7 @@ struct HubLive {
     int serverState = 0;    // 0 not connected, 1 connecting, 2 connected, 3 failed
     std::string version;    // "SFVR 0.3.0-rooms.1"
     std::string roomsInfo;  // Custom Rooms' live line ("3 public rooms")
+    std::string logInfo;    // the Battle Log's ("214 matches")
     std::string roomsState; // on the Custom Rooms tile's strip: "9 public rooms · 31 players", or what is wrong
     // The pictures: Play Offline shows the player's favorite (Fighter
     // Profile), Custom Rooms its own.
@@ -53,7 +54,7 @@ struct HubLive {
 // RetryRooms: the modal's Try again (connect to the rooms server now).
 // UpdateInstall / UpdateRestart / UpdateRetry: the update modal's buttons
 // (download and install; start the game again; check again after a failure).
-enum class HubAction { None, PlayOffline, CustomRooms, Settings, RetryRooms, UpdateInstall, UpdateRestart, UpdateRetry };
+enum class HubAction { None, PlayOffline, CustomRooms, Settings, RetryRooms, UpdateInstall, UpdateRestart, UpdateRetry, BattleLog };
 
 // `fromBlack`: at launch, in place of the game's main menu: it fades in
 // from black (the menu never shows), else over whatever is there.

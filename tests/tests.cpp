@@ -1,6 +1,7 @@
 // End-to-end tests of the netplay driver, the .sfvr recorder and the desync
 // tooling, using MockGame over the loopback network.
 
+#include "core/battle_log.h"
 #include "core/display_name.h"
 #include "core/input_delay.h"
 #include "core/lobby.h"
@@ -262,6 +263,104 @@ void TestSkippedSaves()
     for (int p = 0; p < kNumPlayers; p++) {
         CHECK(z.saves[p].skipped < z.saves[p].saves / 2 && z.saves[p].loadMismatches == 0);
     }
+}
+
+// The Battle Log's summary chunk and list: the header alone reads it, a file
+// without one still lists, both players' copies of a match list once (the
+// player's own kept), sets group and score, filters pick.
+void TestBattleLog()
+{
+    auto make = [](uint64_t id, int local, uint64_t created, uint32_t c0, uint32_t c1, const char* n0, const char* n1, int winner,
+                   uint64_t setKey, uint16_t game, uint8_t w0, uint8_t w1) {
+        ReplayFile rf;
+        rf.modVersion = "0.3.2";
+        rf.gameBuild = "mockfighter-1";
+        rf.matchId = id;
+        rf.localPlayer = local;
+        rf.createdUnix = created;
+        rf.setup.players[0].character = c0;
+        rf.setup.players[1].character = c1;
+        rf.regions = {{"a", 16, {}}};
+        rf.initialHashes = {1};
+        for (int f = 0; f < 50; f++) {
+            const uint64_t h[1] = {static_cast<uint64_t>(f)};
+            rf.SetFrame(f, FrameInputs{}, h);
+        }
+        rf.finalThrough = 49;
+        MatchSummary& s = rf.summary;
+        s.present = true;
+        s.names[0] = n0;
+        s.names[1] = n1;
+        s.winner = static_cast<int8_t>(winner);
+        s.roundWins[winner & 1] = 2;
+        s.roundWins[1 - (winner & 1)] = 1;
+        s.rounds = {{1200, 0}, {2400, 1}, {3600, static_cast<int8_t>(winner)}};
+        s.setKey = setKey;
+        s.setGame = game;
+        s.setRule = setKey ? "First to 3" : "";
+        s.setWins[0] = w0;
+        s.setWins[1] = w1;
+        s.seconds = 171;
+        return rf;
+    };
+    // The header: summary and setup without the inputs.
+    const ReplayFile one = make(7, 0, 1000, 1, 2, "POLARITYDEV", "KANZUKI", 0, 7, 1, 1, 0);
+    const std::vector<uint8_t> bytes = SerializeReplay(one, ReplayDetail::Compact);
+    ReplayFile head;
+    std::string error;
+    CHECK(DeserializeReplayHeader(bytes.data(), std::min<size_t>(bytes.size(), 16384), &head, &error));
+    CHECK(head.matchId == 7 && head.inputs.empty() && head.setup == one.setup);
+    CHECK(head.summary.present && head.summary.names[1] == "KANZUKI" && head.summary.rounds.size() == 3);
+    CHECK(head.summary.rounds[1].endFrame == 2400 && head.summary.rounds[1].winner == 1 && head.summary.setRule == "First to 3");
+    CHECK(head.summary.setWins[0] == 1 && head.summary.seconds == 171 && head.summary.winner == 0);
+    ReplayFile full;
+    CHECK(DeserializeReplay(bytes.data(), bytes.size(), &full, &error) && full.summary.setGame == 1 && full.FrameCount() == 50);
+    // A file without a summary still has a header.
+    ReplayFile old = one;
+    old.summary = MatchSummary{};
+    const std::vector<uint8_t> oldBytes = SerializeReplay(old);
+    CHECK(DeserializeReplayHeader(oldBytes.data(), oldBytes.size(), &head, &error) && !head.summary.present && head.matchId == 7);
+
+    using namespace battlelog;
+    std::vector<Entry> entries;
+    auto add = [&](const ReplayFile& rf, const char* path) {
+        Entry e;
+        e.path = path;
+        e.header = rf;
+        entries.push_back(std::move(e));
+    };
+    // A set of three against KANZUKI (match 7 also as their copy), a single
+    // match against RED (where POLARITYDEV is P2), and one more set game later.
+    add(make(7, 1, 1000, 1, 2, "POLARITYDEV", "KANZUKI", 0, 7, 1, 1, 0), "their-7");
+    add(one, "mine-7");
+    add(make(8, 0, 1100, 1, 2, "POLARITYDEV", "KANZUKI", 1, 7, 2, 1, 1), "mine-8");
+    add(make(9, 1, 1200, 3, 4, "Red", "polaritydev", 1, 0, 0, 0, 0), "mine-9");
+    add(make(10, 0, 1300, 1, 5, "POLARITYDEV", "KANZUKI", 0, 7, 3, 2, 1), "mine-10");
+    const std::vector<Entry> merged = Merge(entries, "POLARITYDEV");
+    CHECK(merged.size() == 4);
+    CHECK(merged[0].header.matchId == 10 && merged[3].header.matchId == 7 && merged[3].path == "mine-7");
+    CHECK(MySide(merged[1], "POLARITYDEV") == 1); // match 9: POLARITYDEV was P2 (any case)
+    std::vector<const Entry*> all;
+    for (const Entry& e : merged) all.push_back(&e);
+    const std::vector<Set> sets = GroupSets(all);
+    CHECK(sets.size() == 2);
+    CHECK(sets[0].key == 7 && sets[0].games.size() == 3 && sets[0].games[0]->header.matchId == 7 && sets[0].rule == "First to 3");
+    CHECK(sets[0].wins[0] == 2 && sets[0].wins[1] == 1);
+    CHECK(sets[1].key == 0 && sets[1].games.size() == 1);
+    // Filters: POLARITYDEV's character 1 (three matches), the opponent's 5 (one), RED by name.
+    Filter f;
+    f.mine = 1;
+    CHECK(std::count_if(merged.begin(), merged.end(), [&](const Entry& e) { return Passes(e, f, "POLARITYDEV"); }) == 3);
+    f = Filter{};
+    f.theirs = 5;
+    CHECK(std::count_if(merged.begin(), merged.end(), [&](const Entry& e) { return Passes(e, f, "POLARITYDEV"); }) == 1);
+    f = Filter{};
+    f.opponent = "red";
+    CHECK(std::count_if(merged.begin(), merged.end(), [&](const Entry& e) { return Passes(e, f, "POLARITYDEV"); }) == 1);
+    const auto mine = Characters(merged, "POLARITYDEV", false);
+    CHECK(mine.size() == 2 && mine[0].first == 1 && mine[0].second == 3);
+    const auto opponents = Opponents(merged, "POLARITYDEV");
+    CHECK(opponents.size() == 2 && opponents[0].first == "KANZUKI" && opponents[0].second == 3);
 }
 
 void TestReplayRoundTrip()
@@ -2223,6 +2322,7 @@ int main()
         {"shown setup", TestShownSetup},
         {"rules format", TestRulesFormat},
         {"random stage", TestRandomStage},
+        {"battle log", TestBattleLog},
         {"match ticket", TestMatchTicket},
         {"keeper connector", TestKeeperConnector},
         {"keeper protocol", TestKeeperProtocol},

@@ -18,6 +18,10 @@
 #include "mod/log.h"
 #include "mod/netplay_driver.h"
 #include "mod/select_screen.h"
+#include "mod/battle_log_screen.h"
+#include "mod/benchmark.h"
+#include "mod/benchmark.h"
+#include "mod/replay_driver.h"
 #include "mod/fight_ui.h"
 #include "core/key_names.h"
 #include "mod/hub_screen.h"
@@ -137,6 +141,7 @@ std::wstring g_panelPath;
 struct PadState {
     std::atomic<uint16_t> buttons{0};
     std::atomic<int16_t> lx{0}, ly{0};
+    std::atomic<uint8_t> lt{0}, rt{0}; // the triggers (the Battle Log's filters, fast forward)
 };
 PadState g_pads[XUSER_MAX_COUNT];
 
@@ -179,9 +184,11 @@ void LoadKeyboardMap()
 void FeedPads(ImGuiIO& io)
 {
     uint16_t buttons = 0;
-    int lx = 0, ly = 0;
+    int lx = 0, ly = 0, lt = 0, rt = 0;
     for (const PadState& p : g_pads) {
         buttons |= p.buttons.load();
+        lt = std::max<int>(lt, p.lt.load());
+        rt = std::max<int>(rt, p.rt.load());
         if (std::abs(p.lx.load()) > std::abs(lx)) lx = p.lx;
         if (std::abs(p.ly.load()) > std::abs(ly)) ly = p.ly;
     }
@@ -217,6 +224,9 @@ void FeedPads(ImGuiIO& io)
         if (keys & k.key) game |= k.button;
     }
     buttons |= game;
+    // LT and RT as the game's keys (a keyboard, a pad read past XInput).
+    if (keys & 0x400) lt = 255;
+    if (keys & 0x800) rt = 255;
     // Back + Start (or F1): at the game's menus the hub; in a match the
     // leave modal (again: it closes); watching, the watch panel.
     constexpr uint16_t kChord = XINPUT_GAMEPAD_BACK | XINPUT_GAMEPAD_START;
@@ -265,6 +275,9 @@ void FeedPads(ImGuiIO& io)
     axis(ImGuiKey_GamepadLStickRight, static_cast<float>(lx));
     axis(ImGuiKey_GamepadLStickUp, static_cast<float>(ly));
     axis(ImGuiKey_GamepadLStickDown, -static_cast<float>(ly));
+    // The triggers: down past XINPUT_GAMEPAD_TRIGGER_THRESHOLD.
+    io.AddKeyAnalogEvent(ImGuiKey_GamepadL2, lt > 30, lt / 255.0f);
+    io.AddKeyAnalogEvent(ImGuiKey_GamepadR2, rt > 30, rt / 255.0f);
 }
 
 void ReleaseTarget()
@@ -2270,6 +2283,33 @@ std::vector<SettingsRow> SettingsRows()
         r.title = ServerLabel(NetOptions().server);
         r.lines = {"Custom Rooms and Direct Match use this server.", "Other servers appear here once you've used them."};
     }
+    // The benchmark (benchmark.h).
+    {
+        SettingsRow& r = row("bench", "BENCHMARK", "Run benchmark");
+        r.highlight = true;
+        r.value = "Run";
+        r.action = "Run";
+        r.hint = "Plays one round with a rollback on every frame.";
+    }
+    {
+        const BenchmarkResult b = LastBenchmark();
+        SettingsRow& r = row("benchlast", "BENCHMARK", "Last result");
+        if (b.valid) {
+            const std::time_t t = static_cast<std::time_t>(b.when);
+            std::tm tm{};
+            localtime_s(&tm, &t);
+            static const char* const kMon[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+            char v[64];
+            std::snprintf(v, sizeof(v), "%s \xC2\xB7 %.1f fps \xC2\xB7 %s %d", b.Pass() ? "Pass" : "Fail", b.averageFps, kMon[tm.tm_mon], tm.tm_mday);
+            r.value = v;
+            r.action = "Show";
+            r.hint = "Your last run.";
+        }
+        else {
+            r.value = "None yet";
+            r.enabled = false;
+        }
+    }
     // Reports.
     {
         SettingsRow& r = row("reports", "REPORTS", "Send reports");
@@ -2321,6 +2361,146 @@ std::vector<SettingsRow> SettingsRows()
     return rows;
 }
 
+// The benchmark's modals over SFVR settings: before a run, and a result.
+enum class BenchModal { None, Confirm, Result };
+BenchModal g_benchModal = BenchModal::None;
+int g_benchChoice = 0;
+BenchmarkResult g_benchShown;
+bool g_benchReturn = false; // a run is on: settings and its result again at the menus
+
+void OpenBenchmarkModal(bool result)
+{
+    g_benchChoice = 0;
+    if (result) {
+        g_benchShown = LastBenchmark();
+        g_benchModal = g_benchShown.valid ? BenchModal::Result : BenchModal::None;
+    }
+    else {
+        g_benchModal = BenchModal::Confirm;
+    }
+}
+
+void StartBenchmarkRun()
+{
+    g_benchModal = BenchModal::None;
+    if (!StartBenchmark(g_build.rfind("SFVR ", 0) == 0 ? g_build.substr(5) : g_build)) {
+        AddToast("The benchmark can't start now.", kRed, 4);
+        return;
+    }
+    g_benchReturn = true;
+    CloseSettingsScreen();
+    CloseHub();
+}
+
+void DrawBenchmarkModal(const HubFonts& f, bool takeInput)
+{
+    using namespace ui;
+    ImDrawList* d = ImGui::GetForegroundDrawList();
+    ImFont* bold = f.bold ? f.bold : f.strong;
+    g_inputOn = takeInput;
+    SetUiSoundSet(UiSoundSet::Menu);
+    int clicked = -1;
+    if (g_benchModal == BenchModal::Confirm) {
+        ModalSpec m;
+        m.x0 = 480, m.y0 = 250, m.w = 640, m.h = 330;
+        m.kicker = "BENCHMARK";
+        m.prompts = {{"button_a", "Choose"}, {"button_b", "Back"}};
+        float y = Modal(d, bold, f.body, m, &clicked);
+        Text(d, f.display, g_v.L(28), g_v.P(m.x0 + 28, y), look::kCream, "Run the benchmark?");
+        y += 50;
+        ImGui::PushFont(f.body);
+        const float wrap = g_v.L(m.w - 56);
+        d->AddText(f.body, TextPx(19), g_v.P(m.x0 + 28, y), look::kCream,
+                   "You watch one round played with a rollback on every frame, the most a match can have. It takes about a minute.",
+                   nullptr, wrap);
+        d->AddText(f.body, TextPx(19), g_v.P(m.x0 + 28, y + 62), look::kSoft, "Close other programs for a fair result.", nullptr, wrap);
+        ImGui::PopFont();
+        const float by = m.y0 + m.h - 46 - 22 - 48;
+        const bool run = Button(d, bold, m.x0 + 28, by, m.x0 + m.w / 2 - 6, by + 48, "Run", g_benchChoice == 0);
+        const bool later = Button(d, bold, m.x0 + m.w / 2 + 6, by, m.x0 + m.w - 28, by + 48, "Not now", g_benchChoice == 1);
+        if (takeInput) {
+            if (Left() || Right()) g_benchChoice = 1 - g_benchChoice;
+            if ((Confirm() && g_benchChoice == 0) || run) StartBenchmarkRun();
+            else if ((Confirm() && g_benchChoice == 1) || later || Back()) g_benchModal = BenchModal::None;
+        }
+    }
+    else if (g_benchModal == BenchModal::Result) {
+        const BenchmarkResult& b = g_benchShown;
+        const bool pass = b.Pass();
+        ModalSpec m;
+        m.x0 = 350, m.y0 = 120, m.w = 900, m.h = b.matched ? (pass ? 470 : 510) : 510;
+        const std::time_t t = static_cast<std::time_t>(b.when);
+        std::tm tm{};
+        localtime_s(&tm, &t);
+        static const char* const kMon[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
+        char kick[64];
+        std::snprintf(kick, sizeof(kick), "BENCHMARK \xC2\xB7 %s %d, %02d:%02d", kMon[tm.tm_mon], tm.tm_mday, tm.tm_hour, tm.tm_min);
+        m.kicker = kick;
+        m.aside = "SFVR " + b.version;
+        m.danger = !b.matched;
+        m.prompts = {{"button_a", "Choose"}, {"button_b", "Back"}};
+        float y = Modal(d, bold, f.body, m, &clicked);
+        const ImU32 verdict = pass ? look::kOk : !b.matched ? look::kDanger : look::kGold;
+        Text(d, f.display, g_v.L(64), g_v.P(m.x0 + 28, y - 4), verdict, pass ? "PASS" : "FAIL");
+        const float vx = m.x0 + 28 + TextW(f.display, 64, pass ? "PASS" : "FAIL") + 28;
+        char avg[48];
+        std::snprintf(avg, sizeof(avg), "%.1f fps average", b.averageFps);
+        Text(d, f.display, g_v.L(28), g_v.P(vx, y + 6), look::kCream, avg);
+        Text(d, f.body, g_v.L(19), g_v.P(vx, y + 44), look::kSoft, "A pass needs 59 or more.");
+        y += 92;
+        // Three figures.
+        char a[32], s2[32], c[48];
+        std::snprintf(a, sizeof(a), "%.1f fps", b.lowFps);
+        std::snprintf(s2, sizeof(s2), "%.1f ms", b.slowestMs);
+        std::snprintf(c, sizeof(c), "%d of %d", b.slowFrames, b.frames);
+        const std::pair<const char*, std::string> figures[] = {{"1% low", a}, {"Slowest frame", s2}, {"Frames over 20 ms", c}};
+        const float fw = (m.w - 56 - 24) / 3;
+        for (int i = 0; i < 3; i++) {
+            const float x0 = m.x0 + 28 + i * (fw + 12);
+            Control(d, x0, y, x0 + fw, y + 80, false);
+            Text(d, bold, g_v.L(17), g_v.P(x0 + 18, y + 12), look::kMuted, figures[i].first);
+            Text(d, f.display, g_v.L(26), g_v.P(x0 + 18, y + 38), look::kCream, figures[i].second);
+        }
+        y += 98;
+        char times[128];
+        std::snprintf(times, sizeof(times), "Each frame: rollbacks %.1f ms \xC2\xB7 presenting %.1f ms \xC2\xB7 %.1f ms in all", b.rollbackMs + b.gameMs,
+                      b.drawMs, b.seconds * 1000.0 / std::max(1, b.frames));
+        Text(d, bold, g_v.L(19), g_v.P(m.x0 + 28, y), look::kSoft, times);
+        y += 40;
+        d->AddLine(g_v.P(m.x0 + 28, y), g_v.P(m.x0 + m.w - 28, y), Rgba(236, 228, 206, 36), std::max(1.0f, g_v.L(1)));
+        y += 14;
+        if (b.matched) {
+            d->AddLine(g_v.P(m.x0 + 30, y + 13), g_v.P(m.x0 + 36, y + 19), look::kOk, g_v.L(2.4f));
+            d->AddLine(g_v.P(m.x0 + 36, y + 19), g_v.P(m.x0 + 46, y + 7), look::kOk, g_v.L(2.4f));
+            Text(d, bold, g_v.L(19), g_v.P(m.x0 + 56, y), look::kCream, "The round played exactly as recorded.");
+            if (!pass) {
+                const bool rollbacks = b.rollbackMs + b.gameMs >= b.drawMs;
+                Text(d, f.body, g_v.L(19), g_v.P(m.x0 + 56, y + 30), look::kSoft,
+                     rollbacks ? "Rollbacks took the most time. With 1 or 2 frames of input delay, a match rolls back less."
+                               : "Drawing the game took the most time. Lower graphics settings may help.");
+            }
+        }
+        else {
+            d->AddLine(g_v.P(m.x0 + 30, y + 7), g_v.P(m.x0 + 44, y + 21), look::kDanger, g_v.L(2.4f));
+            d->AddLine(g_v.P(m.x0 + 44, y + 7), g_v.P(m.x0 + 30, y + 21), look::kDanger, g_v.L(2.4f));
+            Text(d, bold, g_v.L(19), g_v.P(m.x0 + 56, y), look::kCream,
+                 "The round played differently from frame " + std::to_string(b.firstDiffer) + ".");
+            Text(d, f.body, g_v.L(19), g_v.P(m.x0 + 56, y + 30), look::kSoft,
+                 "This PC would fall out of sync online. Pack logs in SFVR settings and send them in.");
+        }
+        const float by = m.y0 + m.h - 46 - 22 - 48;
+        const bool done = Button(d, bold, m.x0 + 28, by, m.x0 + m.w / 2 - 6, by + 48, "Done", g_benchChoice == 0);
+        const bool again = Button(d, bold, m.x0 + m.w / 2 + 6, by, m.x0 + m.w - 28, by + 48, "Run again", g_benchChoice == 1);
+        if (takeInput) {
+            if (Left() || Right()) g_benchChoice = 1 - g_benchChoice;
+            if ((Confirm() && g_benchChoice == 1) || again) StartBenchmarkRun();
+            else if ((Confirm() && g_benchChoice == 0) || done || Back()) g_benchModal = BenchModal::None;
+        }
+    }
+    if (clicked >= 0) ClickPad(PadKeyOfGlyph(clicked == 0 ? "button_a" : "button_b"));
+    g_inputOn = false;
+}
+
 void ApplySetting(const SettingsInput& in)
 {
     if (in.row == "install" && in.confirm) {
@@ -2331,6 +2511,8 @@ void ApplySetting(const SettingsInput& in)
         else UpdateInstall();
     }
     else if (in.row == "check" && in.confirm) UpdateCheck();
+    else if (in.row == "bench" && in.confirm) OpenBenchmarkModal(false);
+    else if (in.row == "benchlast" && in.confirm) OpenBenchmarkModal(true);
     else if (in.row == "checkstart" && in.delta) SaveMainIni(L"update", L"check", ReadMainIni(L"update", L"check", 1) ? 0 : 1);
     else if (in.row == "name" && in.typed) {
         std::snprintf(g_choices.name, sizeof(g_choices.name), "%s", in.text.c_str());
@@ -2872,6 +3054,23 @@ void OpenHubRooms(const NetplayOptions& o)
     RoomsOpen(o.server, g_nameSeen, o.server == kDefaultServer ? kDefaultServerAlsoPort : o.serverAlsoPort, o.keeperKey);
 }
 
+// Leaving a watched replay: the Battle Log again once the menus are back.
+std::atomic<bool> g_reopenLog{false};
+
+std::string StageLabelOf(uint16_t stage)
+{
+    const std::string code = StageCode(stage);
+    for (size_t i = 0; i < g_tables.stages.size(); i++) {
+        if (g_tables.stages[i] == code) return i < g_tables.stageLabels.size() ? g_tables.stageLabels[i] : "";
+        for (size_t k = 0; i < g_tables.settings.size() && k < g_tables.settings[i].size(); k++) {
+            if (g_tables.settings[i][k] == code && i < g_tables.settingLabels.size() && k < g_tables.settingLabels[i].size()) {
+                return g_tables.settingLabels[i][k];
+            }
+        }
+    }
+    return "";
+}
+
 void DrawHubScreens(bool takeInput)
 {
     NetplayOptions& o = NetOptions();
@@ -2971,6 +3170,7 @@ void DrawHubScreens(bool takeInput)
     else if (rooms.state == S::Off || rooms.state == S::Connecting || rooms.state == S::Finding) live.roomsProblem = RP::Connecting;
     else if (rooms.state == S::NoLobby || !rooms.keeper) live.roomsProblem = RP::Offline;
     live.roomsInfo = "Browse, create or join with a code";
+    live.logInfo = BattleLogInfo();
     {
         std::lock_guard lock(g_favoritesMutex);
         live.offlineChara = g_favorites.chara.empty() ? "RYU" : g_favorites.chara;
@@ -2995,11 +3195,30 @@ void DrawHubScreens(bool takeInput)
         WarmHubTextures(live);
     }
     const HubFonts fonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold};
+    if (BattleLogOpen()) {
+        BattleLogLive bl;
+        bl.myName = LocalPlayerName();
+        bl.buildId = GameBuildId();
+        bl.charaName = [](uint32_t c) { return CharaLabel(UnpackCode(c)); };
+        bl.stageName = [](uint16_t s) { return StageLabelOf(s); };
+        BattleLogInput in;
+        DrawBattleLog(fonts, bl, takeInput, &in);
+        if (in.back) CloseBattleLog();
+        if (!in.watch.empty()) {
+            Log("battle log: watching %s", in.watch.c_str());
+            CloseBattleLog();
+            CloseHub();
+            RequestReplayView(in.watch, in.watchTitle, [] { g_reopenLog = true; });
+        }
+        return;
+    }
     if (SettingsScreenOpen()) {
         SettingsInput in;
-        DrawSettingsScreen(fonts, g_build.rfind("SFVR ", 0) == 0 ? g_build.substr(5) : g_build, SettingsRows(), takeInput, &in);
+        const bool modal = g_benchModal != BenchModal::None;
+        DrawSettingsScreen(fonts, g_build.rfind("SFVR ", 0) == 0 ? g_build.substr(5) : g_build, SettingsRows(), takeInput && !modal, &in);
         if (!in.row.empty()) ApplySetting(in);
-        if (in.back) CloseSettingsScreen();
+        if (in.back && !modal) CloseSettingsScreen();
+        if (modal) DrawBenchmarkModal(fonts, takeInput);
         return;
     }
     // In a room: its screen (leaving comes back to the custom rooms screen).
@@ -3111,6 +3330,9 @@ void DrawHubScreens(bool takeInput)
         break;
     case HubAction::Settings:
         OpenSettingsScreen();
+        break;
+    case HubAction::BattleLog:
+        OpenBattleLog();
         break;
     case HubAction::UpdateInstall:
         g_restartError.clear();
@@ -3454,6 +3676,24 @@ void Draw(IDXGISwapChain* swapChain)
     if (HubOpen() && !atMenus) {
         CloseHub();
         CloseRoomsScreen();
+        CloseBattleLog();
+    }
+    if (g_benchReturn && atMenus && !ReplayViewNow().active) {
+        g_benchReturn = false;
+        OpenHub();
+        OpenSettingsScreen("bench");
+        BenchmarkResult r;
+        if (TakeBenchmarkResult(&r)) {
+            g_benchShown = r;
+            g_benchChoice = 0;
+            g_benchModal = BenchModal::Result;
+        }
+    }
+    if (g_reopenLog && atMenus && g_tables.loaded && !ReplayViewNow().active) {
+        g_reopenLog = false;
+        OpenHub();
+        OpenBattleLog();
+        RefreshBattleLog();
     }
     // A table's ticket starts its set; after it, back at the menus, the
     // room screen comes back.
@@ -3472,6 +3712,7 @@ void Draw(IDXGISwapChain* swapChain)
         }
     }
     if (HubOpen()) DrawHubFrame(!g_visible);
+    if (ReplayViewNow().active) DrawReplayStripe(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, !g_visible);
     if (preview) {
         DrawSelectPreview(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold});
     }
@@ -3557,7 +3798,8 @@ void Draw(IDXGISwapChain* swapChain)
     }
     // The menu sounds this frame's screens asked for (ui_sound.h).
     FlushUiSounds();
-    const bool draw = visible || preview || liveAlpha > 0 || session || hint || HubOpen() || !g_toasts.empty() || g_preview.Any() || texture;
+    const bool draw = visible || preview || liveAlpha > 0 || session || hint || HubOpen() || !g_toasts.empty() || g_preview.Any() || texture ||
+                      ReplayViewNow().active;
     if (!draw || (!g_rtv && !CreateTarget(swapChain))) {
         ImGui::EndFrame();
         return;
@@ -4093,6 +4335,8 @@ void OverlayPad(unsigned user, const XINPUT_GAMEPAD& pad)
     g_pads[user].buttons = pad.wButtons;
     g_pads[user].lx = pad.sThumbLX;
     g_pads[user].ly = pad.sThumbLY;
+    g_pads[user].lt = pad.bLeftTrigger;
+    g_pads[user].rt = pad.bRightTrigger;
 }
 
 } // namespace sfv::mod

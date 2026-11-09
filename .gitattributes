@@ -4,3 +4,4 @@
 *.patch -text
 *.ttf binary
 *.ttc binary
+*.sfvr binary

@@ -12,6 +12,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <vector>
 
 namespace sfv::mod::hitch {
 
@@ -38,6 +39,17 @@ void AddTick(bool replayed); // a battle tick the driver ran; replayed: a rollba
 // smooth); null elsewhere (loading screens and the game's menus take long
 // frames by design; the parts are reset but nothing is logged).
 void FramePresented(int64_t frameMicros, const char* where);
+
+// The benchmark's capture: every presented frame from BeginCapture until
+// EndCapture, its time and where it went (microseconds).
+struct CapturedFrame {
+    int64_t micros = 0;
+    int64_t net = 0;    // the driver's frame: its ticks and rollbacks
+    int64_t battle = 0; // the game's battle frame outside the driver
+    int64_t draw = 0;   // the overlay and Present (render thread)
+};
+void BeginCapture();
+std::vector<CapturedFrame> EndCapture();
 
 // Adds the time from construction to destruction to a part.
 class Scope {

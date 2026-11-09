@@ -3,6 +3,8 @@
 #include "mod/log.h"
 
 #include <atomic>
+#include <mutex>
+#include <vector>
 #include <cstring>
 #include <cstdio>
 #include <string>
@@ -61,6 +63,25 @@ void AddTick(bool replayed)
     if (replayed) g_replayed.fetch_add(1, std::memory_order_relaxed);
 }
 
+std::atomic<bool> g_capturing{false};
+std::mutex g_captureMutex;
+std::vector<CapturedFrame> g_captured;
+
+void BeginCapture()
+{
+    std::lock_guard lock(g_captureMutex);
+    g_captured.clear();
+    g_captured.reserve(4096);
+    g_capturing = true;
+}
+
+std::vector<CapturedFrame> EndCapture()
+{
+    g_capturing = false;
+    std::lock_guard lock(g_captureMutex);
+    return std::move(g_captured);
+}
+
 void FramePresented(int64_t frameMicros, const char* where)
 {
     Frame f;
@@ -68,6 +89,15 @@ void FramePresented(int64_t frameMicros, const char* where)
     for (int i = 0; i < kParts; i++) f.parts[i] = g_parts[i].exchange(0, std::memory_order_relaxed);
     f.ticks = g_ticks.exchange(0, std::memory_order_relaxed);
     f.replayed = g_replayed.exchange(0, std::memory_order_relaxed);
+    if (g_capturing) {
+        CapturedFrame c;
+        c.micros = frameMicros;
+        c.net = f.parts[static_cast<int>(Part::NetFrame)];
+        c.battle = f.parts[static_cast<int>(Part::BattleFrame)];
+        c.draw = f.parts[static_cast<int>(Part::Overlay)] + f.parts[static_cast<int>(Part::Present)];
+        std::lock_guard lock(g_captureMutex);
+        g_captured.push_back(c);
+    }
     const ULONGLONG now = GetTickCount64();
     if (!where || frameMicros > 2'000'000) return; // a pause (loading, a breakpoint), not a drop
     const bool menus = std::strcmp(where, "menus") == 0;

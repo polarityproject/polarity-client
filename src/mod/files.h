@@ -25,6 +25,7 @@ void SetDataDir(const std::wstring& dir);
 std::wstring DataDir();                   // ...\Win64\SFVR
 std::wstring LogsDir();                   // ...\SFVR\logs
 std::wstring MatchesDir();                // ...\SFVR\matches
+std::wstring ReplaysDir();                // ...\SFVR\replays: the Battle Log (kept, never pruned)
 std::wstring CrashesDir();                // ...\SFVR\crashes
 
 // Creates the folder and any missing parents.

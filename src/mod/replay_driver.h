@@ -25,6 +25,7 @@
 // The result goes to the log ("replay: PASS / FAIL ..."), with the first
 // differing frames and regions.
 
+#include <functional>
 #include <string>
 
 namespace sfv::mod {
@@ -45,7 +46,42 @@ namespace sfv::mod {
 void RequestReplay(const std::string& path, int stressDistance, int watchFrom = -1, int watchTo = -1,
                    const std::string& watchRegion = "", int keepFrom = -1, int keepTo = -1, bool preload = true,
                    const std::string& traps = "", int holdAt = -1, int holdSeconds = 0, int mispredictDelay = 0,
-                   int remote = -1);
+                   int remote = -1, const std::string& viewTitle = "", bool jumpNow = false, bool benchmark = false);
+
+// The Battle Log's playback of a recording: as played, with the controls
+// below; the game goes back to the menus when it is left, then onLeave runs
+// (on the game thread).
+void RequestReplayView(const std::string& path, const std::string& title, std::function<void()> onLeave);
+enum class ReplayControl {
+    Pause,
+    Play,
+    Toggle,
+    Step,  // arg frames (negative: back), paused after
+    Seek,  // to frame arg (the state after frame arg - 1)
+    Round, // arg > 0 the next round's start, else this round's (or the one before)
+    Fast,  // arg frames per rendered frame (0 or 1: as played)
+    Leave,
+};
+// Any thread; taken at the replay's next frame.
+void ControlReplay(ReplayControl c, int arg = 0);
+struct ReplayView {
+    bool active = false;
+    bool paused = false;
+    bool seeking = false;
+    int frame = 0;  // on screen
+    int frames = 0; // in the recording
+    int round = 0;  // 1 from the first round's FIGHT; 0 before it
+    int fast = 0;
+    int mismatches = 0; // frames that differed from the recording (testing)
+    int seeks = 0;      // keyframe loads (testing)
+    bool benchmark = false; // the benchmark's run (benchmark.h), not a viewed replay
+    std::string title;
+};
+ReplayView ReplayViewNow();
+// The benchmark's run of its round (benchmark.h): a stress replay with an
+// 8-frame rollback every frame, its FIGHT to its end measured; back to the
+// menus after, the result to FinishBenchmark. B (ReplayControl::Leave) stops.
+bool RequestBenchmark(const std::string& path);
 // The pad latch of the next replay (research): 1 latches after every tick
 // (SfvGame::latchEachTick), 0 keeps the game's once-per-rendered-frame latch,
 // -1 (the default) picks by the recording's build and the replay's mode.

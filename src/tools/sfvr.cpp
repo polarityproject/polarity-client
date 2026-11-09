@@ -19,6 +19,7 @@
 #include "core/verifier.h"
 #include "testbed/match_runner.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
@@ -122,6 +123,16 @@ int CmdInfo(int argc, char** argv)
     std::printf("match           stage %u.%u | rounds %u | timer %u | seed %016" PRIx64 "\n", rf.setup.stage,
                 rf.setup.stageVariant, rf.setup.roundsToWin, rf.setup.timerSeconds, rf.setup.seed);
     std::printf("frames          %d recorded, confirmed through %d\n", rf.FrameCount(), rf.finalThrough);
+    if (rf.summary.present) {
+        const MatchSummary& s = rf.summary;
+        std::string rounds;
+        for (const auto& r : s.rounds) rounds += r.winner == 0 ? " P1" : r.winner == 1 ? " P2" : " draw";
+        std::printf("summary         %s vs %s | rounds %u-%u (%s ) | winner %s%s | %u s\n", s.names[0].c_str(), s.names[1].c_str(),
+                    s.roundWins[0], s.roundWins[1], rounds.c_str(), s.winner == 0 ? "P1" : s.winner == 1 ? "P2" : "none",
+                    s.ending ? ", left early" : "", s.seconds);
+        std::printf("set             %016" PRIx64 " game %u, %s, score %u-%u\n", s.setKey, s.setGame,
+                    s.setRule.empty() ? "Direct Match" : s.setRule.c_str(), s.setWins[0], s.setWins[1]);
+    }
     std::printf("state           %zu regions, %" PRIu64 " bytes\n", rf.RegionCount(), stateBytes);
     int kept = 0;
     for (int f = 0; f < rf.FrameCount(); f++) kept += rf.HasRegionHashes(f) ? 1 : 0;
@@ -228,6 +239,39 @@ int CmdCompact(int argc, char** argv)
     std::printf("wrote %s: %d frames, region hashes kept for %d, %d checksum mismatches\n", argv[1], rf.FrameCount(),
                 kept, mismatches);
     return mismatches ? 1 : 0;
+}
+
+// cut <in> <out> <frames>: the first <frames> frames as a compact recording
+// (the benchmark's round, data/benchmark.sfvr).
+int CmdCut(int argc, char** argv)
+{
+    if (argc < 3) return Usage();
+    ReplayFile rf;
+    if (!Load(argv[0], rf)) return 1;
+    const int n = std::atoi(argv[2]);
+    if (n <= 0 || n > rf.FrameCount()) {
+        std::fprintf(stderr, "%d frames: the file has %d\n", n, rf.FrameCount());
+        return 1;
+    }
+    std::vector<uint32_t> sums;
+    for (int f = 0; f < n; f++) sums.push_back(rf.FrameChecksum(f));
+    const size_t regions = rf.regions.size();
+    rf.inputs.resize(n);
+    rf.checksums = sums;
+    if (!rf.hashes.empty()) rf.hashes.resize(static_cast<size_t>(n) * regions);
+    if (!rf.hashesKept.empty()) rf.hashesKept.resize(n);
+    rf.finalThrough = std::min(rf.finalThrough, n - 1);
+    rf.events.erase(std::remove_if(rf.events.begin(), rf.events.end(), [n](const ReplayEvent& e) { return e.frame >= n; }), rf.events.end());
+    // Only the state before frame 0 (a replay starts from it).
+    rf.dumps.erase(std::remove_if(rf.dumps.begin(), rf.dumps.end(), [](const StateDump& d) { return d.frame >= 0; }), rf.dumps.end());
+    rf.summary = MatchSummary{};
+    std::string error;
+    if (!SaveReplay(rf, argv[1], &error, ReplayDetail::Compact)) {
+        std::fprintf(stderr, "%s\n", error.c_str());
+        return 1;
+    }
+    std::printf("wrote %s: %d frames\n", argv[1], n);
+    return 0;
 }
 
 int CmdDiff(int argc, char** argv)
@@ -756,6 +800,7 @@ int main(int argc, char** argv)
     if (cmd == "images") return CmdImagePointers(argc - 2, argv + 2);
     if (cmd == "region") return CmdRegion(argc - 2, argv + 2);
     if (cmd == "compact") return CmdCompact(argc - 2, argv + 2);
+    if (cmd == "cut") return CmdCut(argc - 2, argv + 2);
     if (cmd == "export") return CmdExport(argc - 2, argv + 2);
     if (cmd == "verify") return CmdVerify(argc - 2, argv + 2);
     if (cmd == "demo") return CmdDemo(argc - 2, argv + 2);

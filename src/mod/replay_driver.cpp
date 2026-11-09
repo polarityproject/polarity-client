@@ -7,12 +7,15 @@
 #include "core/transport.h"
 #include "mod/battle_driver.h"
 #include "mod/battle_setup.h"
+#include "mod/benchmark.h"
+#include "mod/hitch.h"
 #include "mod/control.h"
 #include "mod/files.h"
 #include "mod/flow.h"
 #include "mod/lifecycle.h"
 #include "mod/log.h"
 #include "mod/sfv_game.h"
+#include "mod/ui_sound.h"
 #include "mod/ue4.h"
 #include "mod/watch.h"
 
@@ -23,6 +26,7 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <string>
@@ -41,6 +45,21 @@ int AdapterOf(const std::string& build)
 }
 
 std::atomic<bool> g_stop{false}; // `replay stop`: end the running replay at the next frame
+
+// The viewer's controls (ReplayControl), from the UI or the control file;
+// the driver takes them at its next frame.
+std::mutex g_viewMutex;
+std::vector<std::pair<ReplayControl, int>> g_viewCommands;
+ReplayView g_view;                 // as the driver last published it
+std::function<void()> g_viewLeave; // what leaving a viewed replay does after the battle
+// A viewer restarting (a jump back across a round's end): what the next
+// driver takes on (its target, paused, fast forward).
+struct RestartPending {
+    int target = -1;
+    bool paused = false;
+    int fast = 0;
+};
+RestartPending g_restartPending;
 std::atomic<int> g_latch{-1};    // `latch tick|game`: the pad latch the next replay uses (-1: by recording)
 
 class NoTransport : public ITransport {
@@ -72,6 +91,22 @@ public:
           watchFrom_(watchFrom), watchTo_(watchTo), watchRegion_(std::move(watchRegion))
     {
         last_ = rf_.finalThrough >= 0 ? std::min(rf_.finalThrough, rf_.FrameCount() - 1) : rf_.FrameCount() - 1;
+    }
+
+    // The Battle Log's playback: played as it was, with pause, frame steps
+    // both ways, round jumps and fast forward (ReplayControl).
+    void SetViewer(std::string title, std::string path)
+    {
+        viewer_ = true;
+        title_ = std::move(title);
+        path_ = std::move(path);
+    }
+    void SetBenchmark() { bench_ = true; }
+    void StartAt(int target, bool paused, int fast)
+    {
+        startAt_ = target;
+        paused_ = paused;
+        fast_ = fast;
     }
 
     void Keep(int from, int to)
@@ -116,6 +151,9 @@ public:
         }
         // The battle we jumped from runs until the new one is created.
         if (!jumped_) {
+            // A viewer restarted from inside a fight: its jump waits in the
+            // game-thread queue, which nothing else runs there.
+            if (viewer_ || bench_) PumpGameThread();
             if (BattleCreationCount() == creationsAtJump_) return false;
             jumped_ = true;
             game.ForgetBattleObjects();
@@ -127,12 +165,243 @@ public:
             if (GetTickCount64() < holdUntil_) return true;
             holdUntil_ = 0;
         }
+        if (viewer_) return ViewerFrame(game);
         if (stress_ > 0) return StressFrame(game);
         if (delay_ > 0) return MispredictFrame(game);
         return StraightFrame(game);
     }
 
 private:
+    // ---- the viewer -------------------------------------------------------
+    // Keyframes every kKeyEvery frames as the replay first gets there (the
+    // regions and what a load needs beside them, flow.h OutsideState): a
+    // step or a jump back loads the nearest one at or before the frame before
+    // the target, runs the frames between as a rollback runs them (lean,
+    // muted), and the last one as it played, so the picture is that frame's.
+    // A jump forward runs on from where the replay is.
+    static constexpr int kKeyEvery = 60;
+    struct Keyframe {
+        std::vector<uint8_t> regions;
+        OutsideState outside;
+    };
+
+    bool ViewerFrame(SfvGame& game)
+    {
+        if (!Valid(game)) return false;
+        if (frame_ == 0 && keys_.empty()) {
+            Log("replay: viewing %s, %d frames%s", title_.c_str(), last_ + 1, startAt_ > 0 ? " (restarted)" : "");
+            if (startAt_ > 0) {
+                MuteGameSounds(true);
+                target_ = startAt_;
+                startAt_ = -1;
+            }
+        }
+        std::vector<std::pair<ReplayControl, int>> commands;
+        {
+            std::lock_guard lock(g_viewMutex);
+            commands.swap(g_viewCommands);
+        }
+        for (const auto& [c, arg] : commands) {
+            if (c == ReplayControl::Leave) {
+                Log("replay: left the replay at frame %d", frame_ - 1);
+                Finish(game);
+                return false;
+            }
+            Control(game, c, arg);
+            if (restarting_) break;
+        }
+        if (restarting_) {
+            Finish(game);
+            return false;
+        }
+        if (target_ >= 0) {
+            // Seeking: the frames before the target lean and muted, the last as
+            // played; ~40 ms of them a rendered frame, so the screen goes on.
+            const ULONGLONG until = GetTickCount64() + 40;
+            while (frame_ < target_ - 1 && frame_ <= last_ && GetTickCount64() < until) Simulate(game, true);
+            if (frame_ >= target_ - 1 || frame_ > last_) {
+                MuteGameSounds(false);
+                if (frame_ == target_ - 1 && frame_ <= last_) Simulate(game, false);
+                Log("replay: at frame %d (seek done)", frame_ - 1);
+                target_ = -1;
+            }
+        }
+        else if (findRound_) {
+            // The next round's start, not reached yet: on until it is.
+            const ULONGLONG until = GetTickCount64() + 40;
+            while (findRound_ && frame_ <= last_ && GetTickCount64() < until) {
+                const size_t known = roundStarts_.size();
+                Simulate(game, true);
+                if (roundStarts_.size() > known) {
+                    findRound_ = false;
+                    Seek(game, roundStarts_.back() + 1);
+                    if (restarting_) {
+                        Finish(game);
+                        return false;
+                    }
+                }
+            }
+            if (findRound_ && frame_ > last_) {
+                findRound_ = false;
+                MuteGameSounds(false);
+            }
+        }
+        else if (!paused_ && frame_ <= last_) {
+            for (int k = 0; k < std::max(1, fast_) && frame_ <= last_; k++) Simulate(game, false);
+        }
+        if (frame_ > last_ && target_ < 0 && !findRound_) paused_ = true; // the end: it stays there
+        Publish();
+        // The game-thread queue does not run in a driven fight (its pumps are
+        // the scene tick and the pad poll): tasks asked for meanwhile run here.
+        PumpGameThread();
+        return true;
+    }
+
+    // One frame of the recording, a keyframe first where one is due.
+    void Simulate(SfvGame& game, bool lean)
+    {
+        if (frame_ % kKeyEvery == 0 && static_cast<int>(keys_.size()) == frame_ / kKeyEvery) {
+            Keyframe k;
+            k.regions.resize(StateSize(game.Regions()));
+            SaveRegions(game.Regions(), k.regions.data());
+            if (!SaveOutsideState(&k.outside, keys_.empty() ? nullptr : &keys_.back().outside) && keyWarnings_++ < 3) {
+                Log("replay: keyframe at frame %d without the phase machine", frame_);
+            }
+            keys_.push_back(std::move(k));
+        }
+        // Lean only in a round's fight, as rollbacks run: the intro, the round
+        // call and the KO count presentation work a lean tick leaves out (a
+        // seek into the intro ran its round call a frame late without it).
+        game.Advance(rf_.inputs[frame_], lean && wasFight_);
+        CheckFrame(game, frame_);
+        const bool fight = RoundInFight();
+        if (fight && !wasFight_ && (roundStarts_.empty() || roundStarts_.back() < frame_)) {
+            roundStarts_.push_back(frame_);
+        }
+        // A round's end: the fight over (KO or time). Keyframes from before
+        // one are not loaded past it (Seek).
+        if (!fight && wasFight_ && (roundEnds_.empty() || roundEnds_.back() < frame_)) roundEnds_.push_back(frame_);
+        wasFight_ = fight;
+        frame_++;
+    }
+
+    // Shows the state after frame target - 1 (target 0: before frame 0).
+    void Seek(SfvGame& game, int target)
+    {
+        target = std::clamp(target, 1, last_ + 1);
+        if (target == frame_ || keys_.empty()) return;
+        MuteGameSounds(true);
+        if (target < frame_) {
+            // The keyframe at or before the frame before the target. Loaded
+            // only within a round: not from before the first round's FIGHT
+            // (the battle's opening runs once: its start events, the intro)
+            // nor across a round's end (the round over leaves things outside
+            // the snapshot a keyframe does not hold): a load there came out
+            // different (seek tests, 2026-11-09). Those jumps start the
+            // battle again and run to the target instead.
+            const int k = std::min((target - 1) / kKeyEvery, static_cast<int>(keys_.size()) - 1);
+            const int keyFrame = k * kKeyEvery;
+            const bool afterFight = !roundStarts_.empty() && keyFrame > roundStarts_.front();
+            const bool sameRound = std::none_of(roundEnds_.begin(), roundEnds_.end(), [&](int e) { return e >= keyFrame && e < frame_; });
+            if (!afterFight || !sameRound) {
+                RestartAt(game, target);
+                return;
+            }
+            const Keyframe& key = keys_[k];
+            LoadRegions(game.Regions(), key.regions.data());
+            RestoreOutsideState(key.outside);
+            game.OnStateLoaded(k * kKeyEvery - 1);
+            frame_ = k * kKeyEvery;
+            wasFight_ = RoundInFight();
+            seeks_++;
+        }
+        target_ = target;
+        if (target_ == frame_) {
+            MuteGameSounds(false);
+            target_ = -1;
+        }
+    }
+
+    // The battle again from the recording's start, then on to `target`
+    // (muted), paused or not as now: a new driver, the same view.
+    void RestartAt(SfvGame& game, int target)
+    {
+        Log("replay: restarting the battle to reach frame %d (from %d)", target - 1, frame_ - 1);
+        startAt_ = target;
+        restarting_ = true; // ViewerFrame finishes this driver once its frame's work is done
+        (void)game;
+    }
+
+    void Control(SfvGame& game, ReplayControl c, int arg)
+    {
+        const int shown = frame_ - 1; // the frame on screen
+        switch (c) {
+        case ReplayControl::Pause: paused_ = true; break;
+        case ReplayControl::Play:
+            paused_ = false;
+            if (frame_ > last_) Seek(game, 0); // from the end: again from the start
+            break;
+        case ReplayControl::Toggle: Control(game, paused_ ? ReplayControl::Play : ReplayControl::Pause, 0); break;
+        case ReplayControl::Step:
+            paused_ = true;
+            Seek(game, frame_ + (arg == 0 ? 1 : arg));
+            break;
+        case ReplayControl::Seek: Seek(game, arg); break;
+        case ReplayControl::Round:
+            // Next: the first round start after the frame on screen; previous:
+            // the start of this round, or the one before when just past it.
+            if (arg > 0) {
+                auto next = std::upper_bound(roundStarts_.begin(), roundStarts_.end(), shown);
+                if (next != roundStarts_.end()) Seek(game, *next + 1);
+                else if (frame_ <= last_) {
+                    findRound_ = true;
+                    MuteGameSounds(true);
+                }
+            }
+            else {
+                auto it = std::lower_bound(roundStarts_.begin(), roundStarts_.end(), shown - kKeyEvery);
+                Seek(game, it == roundStarts_.begin() ? 0 : *std::prev(it) + 1); // the first round: its FIGHT (Seek)
+            }
+            break;
+        case ReplayControl::Fast: fast_ = std::clamp(arg, 0, 4); break;
+        default: break;
+        }
+    }
+
+    void Publish()
+    {
+        std::lock_guard lock(g_viewMutex);
+        g_view.active = true;
+        g_view.title = title_;
+        g_view.paused = paused_ && target_ < 0 && !findRound_;
+        g_view.seeking = target_ >= 0 || findRound_;
+        g_view.frame = std::max(0, frame_ - 1);
+        g_view.frames = last_ + 1;
+        g_view.fast = fast_;
+        g_view.round = static_cast<int>(std::upper_bound(roundStarts_.begin(), roundStarts_.end(), frame_ - 1) - roundStarts_.begin());
+        g_view.mismatches = mismatchFrames_;
+        g_view.seeks = seeks_;
+    }
+
+    bool viewer_ = false;
+    bool bench_ = false;
+    bool benchCapturing_ = false, benchMeasured_ = false, benchStopped_ = false;
+    std::vector<hitch::CapturedFrame> benchCaptured_;
+    std::string title_;
+    std::vector<Keyframe> keys_;
+    std::vector<int> roundStarts_; // frames whose tick began a round's fight
+    bool wasFight_ = false;
+    bool paused_ = false;
+    bool findRound_ = false;
+    int target_ = -1; // seeking: the frame to simulate next once there
+    int fast_ = 0;    // frames a rendered frame while playing (0, 1: as played)
+    int keyWarnings_ = 0;
+    int seeks_ = 0;   // loads of a keyframe (testing)
+    std::vector<int> roundEnds_; // frames whose tick ended a round's fight
+    std::string path_;           // the file, for a restart
+    int startAt_ = -1;           // a restart's target (RestartAt)
+    bool restarting_ = false;
+
     // Neutral ticks until the battle's objects exist, then frozen at frame 0
     // as a netplay session is (SfvGame::WarmupStep).
     bool Warmup(SfvGame& game)
@@ -326,6 +595,40 @@ private:
     bool StressFrame(SfvGame& game)
     {
         if (!Valid(game)) return false;
+        if (bench_) {
+            // B stops it; the fight (FIGHT to the end) is measured.
+            bool stop = false;
+            {
+                std::lock_guard lock(g_viewMutex);
+                for (const auto& [c, arg] : g_viewCommands) stop = stop || c == ReplayControl::Leave;
+                g_viewCommands.clear();
+            }
+            if (stop) {
+                benchStopped_ = true;
+                Finish(game);
+                return false;
+            }
+            const bool fight = RoundInFight();
+            if (fight && !benchCapturing_ && !benchMeasured_) {
+                hitch::BeginCapture();
+                benchCapturing_ = true;
+                Log("replay: benchmark measuring from frame %d", session_->NextFrame());
+            }
+            if (benchCapturing_ && !fight) {
+                benchCaptured_ = hitch::EndCapture();
+                benchCapturing_ = false;
+                benchMeasured_ = true;
+                Log("replay: benchmark measured to frame %d (the fight ended)", session_->NextFrame());
+                Finish(game);
+                return false;
+            }
+            std::lock_guard lock(g_viewMutex);
+            g_view.active = true;
+            g_view.benchmark = true;
+            g_view.frame = std::max(0, session_->NextFrame() - 1);
+            g_view.frames = last_ + 1;
+            g_view.title = "Benchmark";
+        }
         if (session_->NextFrame() > last_) {
             Finish(game);
             return false;
@@ -752,6 +1055,41 @@ private:
         game.inputOverride = nullptr;
         game.exclusiveTicks = false;
         game.latchEachTick = true;
+        if (bench_) {
+            CapturedRun run;
+            if (benchCapturing_) benchCaptured_ = hitch::EndCapture();
+            for (const auto& c : benchCaptured_) {
+                run.micros.push_back(c.micros);
+                run.net.push_back(c.net);
+                run.battle.push_back(c.battle);
+                run.draw.push_back(c.draw);
+            }
+            run.matched = firstMismatch_ < 0 && stressFrames_.empty();
+            run.firstDiffer = firstMismatch_ >= 0 ? firstMismatch_ : stressFrames_.empty() ? -1 : *stressFrames_.begin();
+            run.stopped = benchStopped_;
+            FinishBenchmark(run);
+            std::lock_guard lock(g_viewMutex);
+            g_view = ReplayView{};
+            g_viewCommands.clear();
+        }
+        std::function<void()> leave;
+        if (viewer_ && !restarting_) {
+            MuteGameSounds(false);
+            std::lock_guard lock(g_viewMutex);
+            g_view = ReplayView{};
+            g_viewCommands.clear();
+            leave = std::move(g_viewLeave);
+        }
+        else if (viewer_) {
+            std::lock_guard lock(g_viewMutex);
+            g_view.seeking = true;
+            g_view.paused = false;
+        }
+        const std::string restartPath = path_, restartTitle = title_;
+        const int restartTarget = startAt_;
+        const bool restartPaused = paused_;
+        const int restartFast = fast_;
+        const bool restart = viewer_ && restarting_;
         SetRoundDirectorPerTick(false, false);
         SetPadIsolation(false);
         // Stress: frames whose resimulation differed outside the presentation clocks.
@@ -786,8 +1124,19 @@ private:
             top += (top.empty() ? "" : ", ") + byCount[i].second + " " + std::to_string(byCount[i].first);
         }
         if (!top.empty()) Log("replay:   resimulated differently (frames): %s", top.c_str());
+        const bool viewer = viewer_ || bench_;
         SetFrameDriver(nullptr);
         delete this;
+        if (restart) {
+            g_restartPending = {restartTarget, restartPaused, restartFast};
+            RequestReplay(restartPath, 0, -1, -1, "", -1, -1, false, "", -1, 0, 0, -1, restartTitle, true);
+        }
+        else if (viewer) {
+            // Straight to the menus (this is the game thread; the queue a
+            // later return goes through does not run mid-fight).
+            ChangeScene("MainMenuState");
+            if (leave) leave();
+        }
     }
 
     ReplayFile rf_;
@@ -838,9 +1187,50 @@ private:
 
 void SetReplayLatch(int latch) { g_latch = latch; }
 
+void RequestReplayView(const std::string& path, const std::string& title, std::function<void()> onLeave)
+{
+    {
+        std::lock_guard lock(g_viewMutex);
+        g_viewCommands.clear();
+        g_viewLeave = std::move(onLeave);
+    }
+    RequestReplay(path, 0, -1, -1, "", -1, -1, true, "", -1, 0, 0, -1, title.empty() ? path : title);
+}
+
+bool RequestBenchmark(const std::string& path)
+{
+    if (CurrentFrameDriver()) {
+        Log("benchmark: another driver is active");
+        return false;
+    }
+    {
+        std::lock_guard lock(g_viewMutex);
+        g_viewCommands.clear();
+        g_viewLeave = nullptr;
+        g_view = ReplayView{};
+        g_view.active = true;
+        g_view.benchmark = true;
+        g_view.title = "Benchmark";
+    }
+    RequestReplay(path, 8, -1, -1, "", -1, -1, true, "", -1, 0, 0, -1, "", false, true);
+    return CurrentFrameDriver() != nullptr;
+}
+
+void ControlReplay(ReplayControl c, int arg)
+{
+    std::lock_guard lock(g_viewMutex);
+    if (g_view.active || c == ReplayControl::Leave) g_viewCommands.push_back({c, arg});
+}
+
+ReplayView ReplayViewNow()
+{
+    std::lock_guard lock(g_viewMutex);
+    return g_view;
+}
+
 void RequestReplay(const std::string& path, int stressDistance, int watchFrom, int watchTo, const std::string& watchRegion,
                    int keepFrom, int keepTo, bool preload, const std::string& traps, int holdAt, int holdSeconds,
-                   int mispredictDelay, int remote)
+                   int mispredictDelay, int remote, const std::string& viewTitle, bool jumpNow, bool benchmark)
 {
     if (path == "stop") {
         g_stop = CurrentFrameDriver() != nullptr;
@@ -879,6 +1269,14 @@ void RequestReplay(const std::string& path, int stressDistance, int watchFrom, i
     SetPendingStage(rf.setup.stage == kKeepStage ? "" : StageCode(rf.setup.stage));
     Log("replay: stage %s", rf.setup.stage == kKeepStage ? "as prepared" : StageCode(rf.setup.stage).c_str());
     auto* driver = new ReplayDriver(std::move(rf), name, stressDistance, watchFrom, watchTo, watchRegion);
+    if (benchmark) driver->SetBenchmark();
+    if (!viewTitle.empty()) {
+        driver->SetViewer(viewTitle, full);
+        if (g_restartPending.target > 0) {
+            driver->StartAt(g_restartPending.target, g_restartPending.paused, g_restartPending.fast);
+            g_restartPending = {};
+        }
+    }
     driver->Keep(keepFrom, keepTo);
     driver->Hold(holdAt, holdSeconds);
     if (mispredictDelay > 0 && stressDistance == 0) driver->Mispredict(std::clamp(mispredictDelay, 1, 8), remote);
@@ -886,6 +1284,12 @@ void RequestReplay(const std::string& path, int stressDistance, int watchFrom, i
     ReplayDriver::Trap t;
     while (ts >> t.frame >> t.region >> std::hex >> t.offset >> std::dec >> t.bytes) driver->AddTrap(t);
     SetFrameDriver(driver);
+    if (jumpNow) {
+        // A viewer's restart, on the game thread from inside the battle (where
+        // the game-thread queue does not run): the characters are loaded.
+        JumpToBattle();
+        return;
+    }
     if (!preload) picks.clear();
     PreloadCharacters(std::move(picks), [] { JumpToBattle(); });
 }

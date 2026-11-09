@@ -37,6 +37,7 @@ constexpr uint32_t kHashWindows = Tag("HWIN");
 constexpr uint32_t kPack = Tag("PACK");
 constexpr uint32_t kEvents = Tag("EVNT");
 constexpr uint32_t kDump = Tag("DUMP");
+constexpr uint32_t kInfo = Tag("INFO");
 constexpr uint32_t kEnd = Tag("END ");
 
 class Writer {
@@ -282,6 +283,29 @@ bool ReadHashWindows(Reader& r, ReplayFile& rf, std::string* error)
     return r.ok();
 }
 
+bool ReadSummary(Reader& c, MatchSummary& s)
+{
+    if (c.Get<uint32_t>() < 1) return false;
+    for (auto& n : s.names) n = c.Str();
+    for (uint8_t& v : s.roundWins) v = c.Get<uint8_t>();
+    s.winner = static_cast<int8_t>(c.Get<uint8_t>());
+    s.ending = c.Get<uint8_t>();
+    const uint32_t n = c.Get<uint32_t>();
+    if (n > 64) return false;
+    s.rounds.resize(n);
+    for (auto& r : s.rounds) {
+        r.endFrame = c.Get<int32_t>();
+        r.winner = static_cast<int8_t>(c.Get<uint8_t>());
+    }
+    s.setKey = c.Get<uint64_t>();
+    s.setGame = c.Get<uint16_t>();
+    s.setRule = c.Str();
+    for (uint8_t& v : s.setWins) v = c.Get<uint8_t>();
+    s.seconds = c.Get<uint32_t>();
+    s.present = c.ok();
+    return c.ok();
+}
+
 // A chunk written from `body`, compressed (in a PACK chunk: the tag, the
 // size before compression, the compressed bytes) when that saves a tenth.
 void PutChunk(Writer& out, uint32_t tag, const Writer& body)
@@ -367,6 +391,30 @@ std::vector<uint8_t> SerializeReplay(const ReplayFile& rf, ReplayDetail detail)
     b = {};
     WriteSetup(b, rf.setup);
     PutChunk(w, kSetup, b);
+
+    if (rf.summary.present) {
+        // Never compressed: lists read it from the file's start.
+        const MatchSummary& s = rf.summary;
+        b = {};
+        b.U32(1); // the chunk's own version
+        for (const auto& n : s.names) b.Str(n);
+        for (uint8_t v : s.roundWins) b.U8(v);
+        b.U8(static_cast<uint8_t>(s.winner));
+        b.U8(s.ending);
+        b.U32(static_cast<uint32_t>(s.rounds.size()));
+        for (const auto& r : s.rounds) {
+            b.I32(r.endFrame);
+            b.U8(static_cast<uint8_t>(r.winner));
+        }
+        b.U64(s.setKey);
+        b.U16(s.setGame);
+        b.Str(s.setRule);
+        for (uint8_t v : s.setWins) b.U8(v);
+        b.U32(s.seconds);
+        const size_t at = w.BeginChunk(kInfo);
+        w.Raw(b.buf.data(), b.buf.size());
+        w.EndChunk(at);
+    }
 
     b = {};
     b.U32(static_cast<uint32_t>(rf.regions.size()));
@@ -456,6 +504,9 @@ bool DeserializeReplay(const uint8_t* data, size_t len, ReplayFile* out, std::st
             break;
         case kSetup:
             ReadSetup(c, rf.setup);
+            break;
+        case kInfo:
+            if (!ReadSummary(c, rf.summary)) return fail("bad summary");
             break;
         case kRegions: {
             const uint32_t n = c.Get<uint32_t>();
@@ -596,6 +647,65 @@ bool SaveReplay(const ReplayFile& replay, const std::string& path, std::string* 
         return false;
     }
     return true;
+}
+
+bool DeserializeReplayHeader(const uint8_t* data, size_t len, ReplayFile* out, std::string* error)
+{
+    auto fail = [&](const char* msg) {
+        if (error) *error = msg;
+        return false;
+    };
+    Reader r(data, len);
+    if (r.Get<uint32_t>() != kMagic) return fail("not an .sfvr file");
+    const uint32_t version = r.Get<uint32_t>();
+    if (version != 2 && version != kReplayFormatVersion) return fail("unsupported .sfvr format version");
+    ReplayFile rf;
+    bool meta = false;
+    // META, SETP and INFO come first and uncompressed; the region table after
+    // them ends the header.
+    while (r.ok() && r.left() >= 8) {
+        const uint32_t tag = r.Get<uint32_t>();
+        const uint32_t size = r.Get<uint32_t>();
+        if (!r.ok() || r.left() < size) break;
+        Reader c(r.pos(), size);
+        r.Skip(size);
+        if (tag == kMeta) {
+            rf.modVersion = c.Str();
+            rf.gameBuild = c.Str();
+            rf.matchId = c.Get<uint64_t>();
+            rf.localPlayer = c.Get<int32_t>();
+            rf.createdUnix = c.Get<uint64_t>();
+            rf.inputDelay = c.Get<uint32_t>();
+            rf.predictionWindow = c.Get<uint32_t>();
+            rf.finalThrough = c.Get<int32_t>();
+            meta = c.ok();
+        }
+        else if (tag == kSetup) {
+            ReadSetup(c, rf.setup);
+        }
+        else if (tag == kInfo) {
+            ReadSummary(c, rf.summary);
+        }
+        else {
+            break;
+        }
+    }
+    if (!meta) return fail("no header");
+    *out = std::move(rf);
+    return true;
+}
+
+bool LoadReplayHeader(const std::string& path, ReplayFile* out, std::string* error)
+{
+    FILE* f = OpenFile(path, "rb");
+    if (!f) {
+        if (error) *error = "cannot open " + path;
+        return false;
+    }
+    std::vector<uint8_t> bytes(16384);
+    bytes.resize(std::fread(bytes.data(), 1, bytes.size(), f));
+    std::fclose(f);
+    return DeserializeReplayHeader(bytes.data(), bytes.size(), out, error);
 }
 
 bool LoadReplay(const std::string& path, ReplayFile* out, std::string* error)

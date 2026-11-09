@@ -107,6 +107,9 @@ void InstallNetplay(SfvGame* game, const std::wstring& reportDir, const std::str
 NetplayOptions& NetOptions();
 // The name others see: [netplay] name, else the Steam persona name ("" without Steam).
 std::string LocalPlayerName();
+// The game's and the mod's build (SfvGame::BuildId): replays of another
+// build cannot be played.
+std::string GameBuildId();
 // With [netplay] hotkeys=1: F7 hosts, F8 joins with the code on the clipboard
 // (game window focused, no session running).
 void NetPollHotkeys();

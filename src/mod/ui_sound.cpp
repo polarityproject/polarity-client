@@ -34,6 +34,15 @@ uintptr_t g_base = 0;
 // these. Research only (`uisound volume=<0..1>`): the test of that.
 constexpr uint32_t kCategoryVolumeByName = 0x39C10D8;
 using CategoryVolumeFn = void (*)(const char* category, float volume);
+// The game's apply of KWOptionSettingsSave's sound volumes to the categories
+// (M_BGM, M_SE x 0.9, M_VOICE, M_SYS_VOICE, M_EXTRA_VOICE), and how its
+// options menu finds that save: game instance (rva 0x521690) -> system save
+// (0x68E0D0) -> +0x60.
+constexpr uint32_t kApplySoundOptions = 0x79BDE0;
+constexpr uint32_t kGameInstance = 0x521690;
+constexpr uint32_t kSystemSave = 0x68E0D0;
+constexpr uint32_t kOptionsOfSystemSave = 0x60;
+bool g_muted = false;
 
 // GameSoundSECue (enuminfo GameSoundSECue): the values used here.
 enum Cue : uint8_t {
@@ -122,6 +131,37 @@ void InstallUiSound(const GameImage& image)
     }
     g_play = reinterpret_cast<PlayFn>(image.base + kPlayGameSe.rva);
     g_base = image.base;
+}
+
+void MuteGameSounds(bool mute)
+{
+    if (!g_base || mute == g_muted) return;
+    auto setVolume = *reinterpret_cast<CategoryVolumeFn*>(g_base + kCategoryVolumeByName);
+    if (!setVolume) return;
+    if (mute) {
+        for (const char* category : {"M_SE", "M_VOICE", "M_SYS_VOICE", "M_EXTRA_VOICE"}) setVolume(category, 0.0f);
+        g_muted = true;
+        Log("ui sound: the game's sounds muted (music stays)");
+        return;
+    }
+    using GetFn = void* (*)();
+    using OfFn = void* (*)(void*);
+    void* instance = reinterpret_cast<GetFn>(g_base + kGameInstance)();
+    void* system = instance ? reinterpret_cast<OfFn>(g_base + kSystemSave)(instance) : nullptr;
+    void* options = system && IsReadable(static_cast<uint8_t*>(system) + kOptionsOfSystemSave, 8)
+                        ? *reinterpret_cast<void**>(static_cast<uint8_t*>(system) + kOptionsOfSystemSave)
+                        : nullptr;
+    if (!options) {
+        // Without the save, the categories at full: better than silent.
+        for (const char* category : {"M_SE", "M_VOICE", "M_SYS_VOICE", "M_EXTRA_VOICE"}) setVolume(category, 1.0f);
+        Log("ui sound: the options save not found; sounds unmuted at full volume");
+    }
+    else {
+        using ApplyFn = void (*)(void*);
+        reinterpret_cast<ApplyFn>(g_base + kApplySoundOptions)(options);
+        Log("ui sound: the game's sounds back at the player's volumes");
+    }
+    g_muted = false;
 }
 
 void PlayUi(UiSound sound)

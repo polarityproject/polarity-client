@@ -6,10 +6,12 @@
 // to a scene state class (a UClass); LaunchNextGameScene (rva 0x56C100) moves
 // to the next game scene. Both are logged with the class names.
 
+#include "core/replay_file.h"
 #include "mod/image.h"
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -206,6 +208,26 @@ constexpr uint16_t kKeepStage = 0xFFFF; // MatchSetup::stage: whatever the game 
 // objects are not in the snapshot, so netplay keeps rollbacks out of it.
 // The state lives in a snapshot region of its own, so a rollback restores it.
 bool RoundInFight();
+// A replay's keyframe of what a load needs beside the snapshot regions: the
+// battle phase machine and its phases, the round end wait, the input
+// recorder's head (the per-tick copies a rollback restores from reach only
+// 64 ticks back) and the battle context's round history (what the round over
+// writes, ~480 KB; shared with the previous keyframe while unchanged).
+// Game thread, in a driven battle.
+struct OutsideState {
+    std::vector<uint8_t> director; // the round director's state, timers and counts
+    std::vector<uint8_t> machine;
+    std::shared_ptr<const std::vector<uint8_t>> rounds;
+};
+bool SaveOutsideState(OutsideState* out, const OutsideState* previous);
+// After the regions were loaded, before SfvGame::OnStateLoaded (whose fix-ups
+// then see the director as it was).
+void RestoreOutsideState(const OutsideState& s);
+// Research (`roundinfo`): the battle context's round state and round history.
+void LogRoundInfo();
+// The match's rounds as the battle has them now (at its end): each round's
+// winner, and the rounds each side won. False when they cannot be read.
+bool ReadRoundResults(std::vector<RoundResult>* rounds, uint8_t wins[2]);
 // The round call ("ROUND 1"): from its flow event (5) until "FIGHT!" (6).
 bool RoundCallRunning();
 // After a snapshot load: makes the battle frame's stop bit (KO and other

@@ -14,6 +14,20 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   lines, players coming and going in a room, Ready, and your turn at a
   table with its last seconds counting down. They follow the game's SE
   volume (Options, Sound) as its own menus do.
+- **Battle Log**, on the hub under Play Offline: every online match you
+  play is kept in SFVR\replays, newest first, with both players' names,
+  characters and round wins. LB/RB shows them grouped by set (a table's
+  set, or a Direct Match session until character select), LT filters by
+  your character and your opponent's, RT by opponent. A watches a match:
+  pause and play (A), frame by frame both ways (left and right), the next
+  or previous round (RB, LB), fast forward (hold RT), leave (B). Y opens
+  the folder: copy replays out, or drop others' in. A replay plays on the
+  SFVR version that recorded it.
+- **Benchmark**, in SFVR settings: one recorded round played with an
+  8-frame rollback on every frame, the most a match can have, measured from
+  its FIGHT on. 59 fps or more on average passes; it also checks the round
+  played exactly as recorded, as a PC that plays it differently would
+  desync online. The last result shows under it.
 
 ## [0.3.1] - 2026-11-08
 

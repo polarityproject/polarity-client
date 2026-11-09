@@ -16,7 +16,7 @@ namespace {
 
 using namespace ui;
 
-enum class Icon { Pad, Rooms };
+enum class Icon { Pad, Rooms, Log };
 
 struct Entry {
     HubAction action;
@@ -32,15 +32,16 @@ struct Frame {
 };
 
 std::atomic<bool> g_open{false};
-int g_focus = 1;        // the last entry used keeps focus (0 Play Offline, 1 Custom Rooms)
+int g_focus = 1;        // the last entry used keeps focus (0 Play Offline, 1 Custom Rooms, 2 Battle Log)
+int g_column = 0;       // the left column's entry right comes back to (0 or 2)
 double g_openedAt = 0;  // ImGui time, for the fade in
 bool g_fromBlack = false; // ... from black (at launch)
 float g_blackFade = 0;     // from black: seconds of the fade drawn so far
 bool g_clickedTile = false;
 
-// 0.3.0's grid (mock-up "Rooms only"): Play Offline the full height of the
-// left column, Custom Rooms the wide tile under the panel.
-const Frame kFrames[] = {{60, 118, 470, 706}, {546, 464, 994, 360}};
+// The grid: the left column this PC's own (Play Offline over the Battle
+// Log), Custom Rooms the wide tile under the panel.
+const Frame kFrames[] = {{60, 118, 470, 345}, {546, 464, 994, 360}, {60, 479, 470, 345}};
 constexpr Frame kPanel{546, 118, 994, 330};
 
 const ImU32 kGold = IM_COL32(233, 196, 106, 255);
@@ -57,6 +58,9 @@ std::vector<Entry> Entries(const HubLive& live)
         {HubAction::CustomRooms, "CUSTOM ROOMS", Icon::Rooms, live.roomsInfo,
          "Play online in rooms of up to 16 players.",
          live.roomsChara, live.roomsStage},
+        {HubAction::BattleLog, "BATTLE LOG", Icon::Log, live.logInfo,
+         "Your online matches, to watch again.",
+         live.offlineChara, live.offlineStage},
     };
 }
 
@@ -96,6 +100,13 @@ void DrawIcon(ImDrawList* d, Icon icon, float cx, float cy, float size, ImU32 co
         d->AddLine(at(6, 12), at(9, 12), col, stroke);
         d->AddCircleFilled(at(15.5f, 11.2f), g_v.L(0.9f * k), col);
         d->AddCircleFilled(at(17.3f, 13), g_v.L(0.9f * k), col);
+    }
+    else if (icon == Icon::Log) {
+        // A list: three lines, a play mark before the first.
+        d->AddTriangleFilled(at(3, 4.5f), at(3, 9.5f), at(7, 7), col);
+        d->AddLine(at(9.5f, 7), at(21, 7), col, stroke);
+        d->AddLine(at(3, 12.5f), at(21, 12.5f), col, stroke);
+        d->AddLine(at(3, 18), at(21, 18), col, stroke);
     }
     else {
         for (const ImVec2& o : {ImVec2(3, 3), ImVec2(13.5f, 3), ImVec2(3, 13.5f), ImVec2(13.5f, 13.5f)}) {
@@ -439,8 +450,12 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     // Input: left and right between the column and the online tiles; the
     // mouse focuses what it is over and a click selects it.
     HubAction action = HubAction::None;
-    if (!g_problemOpen && !g_updateOpen && Left()) g_focus = 0;
+    // Left and right between the column and the online tile, up and down in
+    // the column (it remembers which of its two right left).
+    if (!g_problemOpen && !g_updateOpen && Left()) g_focus = g_column;
     if (!g_problemOpen && !g_updateOpen && Right()) g_focus = 1;
+    if (!g_problemOpen && !g_updateOpen && g_focus != 1 && (Up() || Down())) g_focus = g_focus == 0 ? 2 : 0;
+    if (g_focus != 1) g_column = g_focus;
     for (int i = 0; i < count && !g_problemOpen && !g_updateOpen; i++) {
         const Frame& r = kFrames[i];
         if (takeInput && MouseIn(g_v.P(r.x, r.y), g_v.P(r.x + r.w, r.y + r.h))) {
@@ -475,7 +490,7 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     d->PopClipRect();
     FadeFrom(d, from, alpha);
     if (action != HubAction::None) {
-        static const char* const kNames[] = {"none", "play offline", "custom rooms", "settings", "retry rooms", "update install", "update restart", "update retry"};
+        static const char* const kNames[] = {"none", "play offline", "custom rooms", "settings", "retry rooms", "update install", "update restart", "update retry", "battle log"};
         Log("hub: %s", kNames[static_cast<int>(action)]);
     }
     return action;
