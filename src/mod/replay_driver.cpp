@@ -313,8 +313,19 @@ private:
                 Finish(game);
                 return false;
             }
+            if (c == ReplayControl::Takeover || c == ReplayControl::TakeoverStop) {
+                TakeoverControl(game, c, arg);
+                continue;
+            }
+            if (tk_.phase != TakeoverPhase::None) continue; // the replay's own controls wait
             Control(game, c, arg);
             if (restarting_) break;
+        }
+        if (tk_.phase != TakeoverPhase::None) {
+            TakeoverFrame(game);
+            Publish();
+            PumpGameThread();
+            return true;
         }
         if (restarting_) {
             Finish(game);
@@ -388,6 +399,125 @@ private:
         // the scene tick and the pad poll): tasks asked for meanwhile run here.
         PumpGameThread();
         return true;
+    }
+
+    // ---- Replay Takeover ----------------------------------------------------
+    // From a frame in a round's fight: its state kept (as a keyframe is), a
+    // 3 s countdown, then ticks with one side's input from the local pad
+    // (MappedLocalInput: pad 0 and the keyboard, with this player's Button
+    // Settings) and the other side's as recorded, until the fight ends (KO
+    // or time); the KO screen gets kKoScreenMs, then the kept state is
+    // loaded (a fight key in the same round, from the KO's own frame: loads
+    // that came out right in the step tests) and the replay waits there,
+    // paused. Nothing of the takeover is checked against the recording or
+    // kept as keyframes; its sounds are stopped at the rewind.
+    enum class TakeoverPhase { None, Countdown, Live, KoScreen };
+    static constexpr ULONGLONG kTakeoverCountdownMs = 3000;
+    struct Takeover {
+        TakeoverPhase phase = TakeoverPhase::None;
+        int side = 0;
+        ULONGLONG until = 0;
+        Keyframe start;
+        PackedInput lastInput = 0;
+        int inputLogs = 0;
+    };
+
+    void TakeoverControl(SfvGame& game, ReplayControl c, int arg)
+    {
+        if (c == ReplayControl::TakeoverStop) {
+            if (tk_.phase == TakeoverPhase::Countdown) {
+                Log("replay: takeover called off in its countdown");
+                tk_ = Takeover{};
+            }
+            else if (tk_.phase != TakeoverPhase::None) {
+                Log("replay: takeover stopped at frame %d", frame_ - 1);
+                TakeoverRewind(game);
+            }
+            return;
+        }
+        if (tk_.phase != TakeoverPhase::None) return;
+        // Only in a round's fight, the replay at rest there (a fight key loads
+        // back from its KO; a start in the presentation would not).
+        if (!wasFight_ || target_ >= 0 || findRound_ || runToFight_ >= 0 || frame_ > last_) {
+            Log("replay: no takeover here (frame %d, %s)", frame_ - 1, wasFight_ ? "the replay is moving" : "not in a fight");
+            return;
+        }
+        EndQuiet();
+        Takeover t;
+        t.phase = TakeoverPhase::Countdown;
+        t.side = arg & 1;
+        t.until = GetTickCount64() + kTakeoverCountdownMs;
+        t.start.frame = frame_;
+        t.start.fight = true;
+        t.start.regions.resize(StateSize(game.Regions()));
+        SaveRegions(game.Regions(), t.start.regions.data());
+        SaveOutsideState(&t.start.outside, keys_.empty() ? nullptr : &keys_.back().outside);
+        tk_ = std::move(t);
+        paused_ = true;
+        Log("replay: takeover of P%d from frame %d", tk_.side + 1, frame_ - 1);
+    }
+
+    void TakeoverFrame(SfvGame& game)
+    {
+        const ULONGLONG now = GetTickCount64();
+        switch (tk_.phase) {
+        case TakeoverPhase::Countdown:
+            if (now >= tk_.until) {
+                tk_.phase = TakeoverPhase::Live;
+                BeginSoundCapture(); // the takeover's sounds, stopped at the rewind
+                Log("replay: takeover of P%d playing", tk_.side + 1);
+            }
+            break;
+        case TakeoverPhase::Live: {
+            FrameInputs in = frame_ <= last_ ? rf_.inputs[frame_] : FrameInputs{};
+            in.p[tk_.side] = MappedLocalInput(0) & ~static_cast<PackedInput>(kStart);
+            if (in.p[tk_.side] != tk_.lastInput && tk_.inputLogs++ < 12) {
+                Log("replay: takeover input %08X at frame %d", static_cast<unsigned>(in.p[tk_.side]), frame_);
+            }
+            tk_.lastInput = in.p[tk_.side];
+            game.Advance(in, false);
+            frame_++;
+            wasFight_ = RoundInFight();
+            if (!wasFight_) {
+                tk_.phase = TakeoverPhase::KoScreen;
+                tk_.until = now + kKoScreenMs;
+                Log("replay: takeover's fight over at frame %d", frame_ - 1);
+            }
+            break;
+        }
+        case TakeoverPhase::KoScreen:
+            if (now >= tk_.until) TakeoverRewind(game);
+            break;
+        default: break;
+        }
+    }
+
+    // Back to where the takeover began as a step back gets there: the round's
+    // last keyframe before it loaded and the recording run on to it, its last
+    // frame as played (a load alone left the takeover's last picture up).
+    // Without such a keyframe: the kept state itself.
+    void TakeoverRewind(SfvGame& game)
+    {
+        const int stopped = StopCapturedSounds();
+        const int start = tk_.start.frame;
+        const int k = LoadableKey(start);
+        if (k >= 0) {
+            tk_ = Takeover{};
+            paused_ = true;
+            Seek(game, start); // muted on the way; the last frame as played
+        }
+        else {
+            const Keyframe& kept = tk_.start;
+            LoadRegions(game.Regions(), kept.regions.data());
+            RestoreOutsideState(kept.outside);
+            game.OnStateLoaded(kept.frame - 1);
+            frame_ = kept.frame;
+            wasFight_ = RoundInFight();
+            paused_ = true;
+            tk_ = Takeover{};
+        }
+        Log("replay: back to frame %d after the takeover (%d of its sounds stopped%s)", start - 1, stopped,
+            k >= 0 ? ", from a keyframe" : ", the kept state");
     }
 
     // One frame of the recording, a keyframe first where one is due.
@@ -587,6 +717,10 @@ private:
         g_view.seeking = target_ >= 0 || findRound_ || runToFight_ >= 0;
         g_view.handled += static_cast<uint32_t>(handledNow_);
         handledNow_ = 0;
+        g_view.takeover = tk_.phase == TakeoverPhase::None ? -1 : tk_.side;
+        g_view.takeoverCountdown =
+            tk_.phase == TakeoverPhase::Countdown ? std::max(0.0f, static_cast<float>(tk_.until - std::min(tk_.until, GetTickCount64())) / 1000.0f) : 0.0f;
+        g_view.takeoverEnding = tk_.phase == TakeoverPhase::KoScreen;
         g_view.frame = std::max(0, frame_ - 1);
         g_view.frames = last_ + 1;
         g_view.fast = fast_;
@@ -639,6 +773,7 @@ private:
     bool findRound_ = false;
     bool quiet_ = false; // a step back's mute, kept while paused there (Seek)
     int runToFight_ = -1; // a jump back waiting for a fight to load from (Seek)
+    Takeover tk_;         // Replay Takeover (TakeoverControl)
     int handledNow_ = 0; // controls taken since the last Publish (ReplayView::handled)
     // A jump's run waits for the KO screen (Simulate): it plays in real time
     // from the KO, about this long (UI checks, 2026-11-09).

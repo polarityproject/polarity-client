@@ -61,6 +61,11 @@ enum class ReplayControl {
     Round, // arg > 0 the next round's start, else this round's (or the one before)
     Fast,  // arg frames per rendered frame (0 or 1: as played) through action frames
     Leave,
+    // Replay Takeover: in a round's fight, side arg (0 P1, 1 P2) is played
+    // with the local pad (MappedLocalInput) after a 3 s countdown, until the
+    // round's fight ends (KO or time); then back to where it began, paused.
+    Takeover,
+    TakeoverStop, // early: back to where it began (or the countdown called off)
 };
 // Any thread; taken at the replay's next frame. Returns the command's number:
 // ReplayView::handled reaches it once the replay has taken it (0: no replay).
@@ -88,6 +93,12 @@ struct ReplayView {
     int roundFrame = -1;
     int roundFrames = 0;
     float roundProgress = 0;
+    // Replay Takeover: the side played with the local pad (-1: none), the
+    // countdown's seconds left (0 once it plays), and whether the fight has
+    // ended and the replay is about to go back to where it began.
+    int takeover = -1;
+    float takeoverCountdown = 0;
+    bool takeoverEnding = false;
     // Controls the replay has taken so far, published with their effect (a
     // seek they started shows as seeking from then on): the UI's fades wait on it.
     uint32_t handled = 0;

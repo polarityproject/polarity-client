@@ -1486,11 +1486,13 @@ void RunNetCommand(const std::string& line)
                 v.active ? "active" : "none", v.frame, v.frames, v.round, v.paused ? "paused" : "playing", v.seeking ? " (seeking)" : "",
                 v.fast, v.seeks, v.mismatches, v.backLimit, v.roundFrame, v.roundFrames, v.canStepForward ? 1 : 0,
                 static_cast<double>(v.roundProgress));
+            Log("rview: takeover %d, countdown %.1f, ending %d", v.takeover, static_cast<double>(v.takeoverCountdown), v.takeoverEnding ? 1 : 0);
             return;
         }
         const ReplayControl c = what == "pause" ? ReplayControl::Pause : what == "play" ? ReplayControl::Play
                               : what == "step" ? ReplayControl::Step : what == "seek" ? ReplayControl::Seek
                               : what == "round" ? ReplayControl::Round : what == "fast" ? ReplayControl::Fast
+                              : what == "takeover" ? ReplayControl::Takeover : what == "takeoverstop" ? ReplayControl::TakeoverStop
                               : what == "leave" ? ReplayControl::Leave : ReplayControl::Toggle;
         ControlReplay(c, arg);
     }

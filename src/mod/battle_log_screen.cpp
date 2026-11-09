@@ -892,15 +892,51 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
         if (clicked >= 0) ControlReplay(ReplayControl::Leave);
         return;
     }
+    // Replay Takeover: the pad plays a side, so the stripe takes none of it
+    // but Start (no use in a fight), which stops it; a big countdown first.
+    if (v.takeover >= 0) {
+        if (takeInput && Pressed({ImGuiKey_GamepadStart}, false)) {
+            PlayUi(UiSound::Cancel);
+            ControlReplay(ReplayControl::TakeoverStop);
+        }
+        g_inputOn = false;
+        if (v.takeoverCountdown > 0) {
+            const int n = std::clamp(static_cast<int>(std::ceil(v.takeoverCountdown)), 1, 3);
+            StageText(d, f.display, 220, 800, 300, look::kCream, std::to_string(n), 0.5f);
+            StageText(d, bold, 26, 800, 560, look::kGold, v.takeover == 0 ? "YOU ARE PLAYER 1" : "YOU ARE PLAYER 2", 0.5f);
+        }
+        const float y0 = 856, y1 = 900;
+        d->AddRectFilled(g_v.P(0, y0), g_v.P(1600, y1), Rgba(10, 12, 16, 184));
+        d->AddLine(g_v.P(0, y0), g_v.P(1600, y0), Rgba(236, 228, 206, 115), std::max(1.0f, g_v.L(1)));
+        if (v.roundProgress > 0) d->AddRectFilled(g_v.P(0, y0 - 1), g_v.P(1600 * v.roundProgress, y0 + 2), look::kGold);
+        const char* state = v.takeover == 0 ? "CONTROL P1" : "CONTROL P2";
+        Text(d, bold, g_v.L(16), g_v.P(48, y0 + 13), look::kGold, state);
+        int clicked = -1;
+        const PromptList prompts = {{"button_start", v.takeoverEnding ? "Back to the start" : "Stop"}};
+        const float left = PromptRow(d, f.body, 17, prompts, 1564, y0 + 8, 28, false, &clicked);
+        const float textX = 48 + TextW(bold, 16, state) + 18;
+        const std::string line = v.takeoverCountdown > 0 ? "Get ready" : v.takeoverEnding ? "Round over: back to where you took control" : "Until the round's KO";
+        Text(d, bold, g_v.L(18), g_v.P(textX, y0 + 11), look::kCream, Fit(bold, 18, v.title + " \xC2\xB7 " + line, left - 24 - textX));
+        if (clicked >= 0) ControlReplay(ReplayControl::TakeoverStop);
+        return;
+    }
     // While a round jump fades, only B (leave) is taken.
     const bool fading = g_jump.phase != JumpFade::None;
+    const bool canTakeOver = v.roundFrame >= 0 && !v.seeking && !fading;
     if (takeInput && fading && Back()) ControlReplay(ReplayControl::Leave);
     if (takeInput && !fading) {
+        if (canTakeOver) {
+            const int side = Pressed({ImGuiKey_GamepadFaceLeft}, false) ? 0 : Pressed({ImGuiKey_GamepadFaceUp}, false) ? 1 : -1;
+            if (side >= 0) {
+                PlayUi(UiSound::Decide);
+                ControlReplay(ReplayControl::Takeover, side);
+            }
+        }
         if (Confirm()) ControlReplay(ReplayControl::Toggle);
         // A step back plays no sound, the menu's cue included.
         if (Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}) && v.frame > v.backLimit) ControlReplay(ReplayControl::Step, -1);
         if (Pressed({ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight}) && v.canStepForward) {
-            PlayUi(UiSound::Step);
+            PlayUi(UiSound::Cursor); // the directions' sound (ui_kit Left/Right)
             ControlReplay(ReplayControl::Step, 1);
         }
         // A round jump fades the picture out, jumps behind the black (a run
@@ -938,6 +974,8 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
     if (action && v.roundFrames > 0) std::snprintf(frame, sizeof(frame), " \xC2\xB7 Frame %d / %d", v.roundFrame, v.roundFrames - 1);
     else if (action) std::snprintf(frame, sizeof(frame), " \xC2\xB7 Frame %d", v.roundFrame);
     PromptList prompts = {{"button_a", v.paused ? "Play" : "Pause"}, {"button_lb", "Round"}, {"button_rb", ""}, {"button_rt", "Hold to fast forward"}, {"button_b", "Leave"}};
+    // Replay Takeover, in a round's fight.
+    if (canTakeOver) prompts.insert(prompts.begin() + 1, {{"button_x", "Control P1"}, {"button_y", "Control P2"}});
     int clicked = -1;
     const float left = PromptRow(d, f.body, 17, prompts, 1564, y0 + 8, 28, false, &clicked);
     // Frame steps: the d-pad's left and right, drawn as triangles; back dims

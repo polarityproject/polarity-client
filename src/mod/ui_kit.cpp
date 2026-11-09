@@ -262,8 +262,10 @@ bool Sounded(bool pressed, UiSound sound)
     return pressed;
 }
 } // namespace
-bool Left() { return Sounded(Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}), UiSound::Step); }
-bool Right() { return Sounded(Pressed({ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight}), UiSound::Step); }
+// Every direction plays the menus' up/down cursor sound (the left/right
+// one, UiSound::Step, sounded wrong for moving between the hub's tiles).
+bool Left() { return Sounded(Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}), UiSound::Cursor); }
+bool Right() { return Sounded(Pressed({ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight}), UiSound::Cursor); }
 bool Up() { return Sounded(Pressed({ImGuiKey_GamepadDpadUp, ImGuiKey_GamepadLStickUp}), UiSound::Cursor); }
 bool Down() { return Sounded(Pressed({ImGuiKey_GamepadDpadDown, ImGuiKey_GamepadLStickDown}), UiSound::Cursor); }
 bool Confirm() { return Sounded(Pressed({ImGuiKey_GamepadFaceDown}, false), UiSound::Decide); }
