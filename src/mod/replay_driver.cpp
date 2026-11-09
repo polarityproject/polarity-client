@@ -254,6 +254,7 @@ private:
         if (!Valid(game)) return false;
         if (frame_ == 0 && keys_.empty()) {
             roundEndsSeen_ = RoundEndEvents();
+            RecordBattleSounds(true); // for a restart to stop (Finish)
             Log("replay: viewing %s, %d frames%s", title_.c_str(), last_ + 1, startAt_ > 0 ? " (restarted)" : "");
             if (startAt_ > 0) {
                 MuteGameSounds(true);
@@ -1243,6 +1244,7 @@ private:
         std::function<void()> leave;
         if (viewer_ && !restarting_) {
             MuteGameSounds(false);
+            RecordBattleSounds(false);
             std::lock_guard lock(g_viewMutex);
             g_view = ReplayView{};
             g_viewCommands.clear();
@@ -1250,6 +1252,11 @@ private:
             leave = std::move(g_viewLeave);
         }
         else if (viewer_) {
+            // Started again (a jump back): everything this battle still has
+            // playing (its loops, its ambience: never ended by the game here)
+            // is stopped before it goes, or it plays on over the new one.
+            const int stopped = StopBattleSounds();
+            Log("replay: the battle's %d sounds stopped for the restart", stopped);
             std::lock_guard lock(g_viewMutex);
             g_view.seeking = true;
             g_view.paused = false;

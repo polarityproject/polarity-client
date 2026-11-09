@@ -228,6 +228,17 @@ bool PlayUiNamed(const std::string& name)
             return true;
         }
     }
+    // Research: `uisound cat=M_BGM:0` sets one CriWare category's volume.
+    if (name.rfind("cat=", 0) == 0 && g_base) {
+        const size_t colon = name.find(':');
+        auto fn = *reinterpret_cast<CategoryVolumeFn*>(g_base + kCategoryVolumeByName);
+        if (!fn || colon == std::string::npos) return false;
+        const std::string category = name.substr(4, colon - 4);
+        const float volume = std::strtof(name.c_str() + colon + 1, nullptr);
+        fn(category.c_str(), volume);
+        Log("ui sound: category %s volume %.2f", category.c_str(), volume);
+        return true;
+    }
     if (name.rfind("volume=", 0) == 0 && g_base) {
         const float setting = std::strtof(name.c_str() + 7, nullptr);
         auto fn = *reinterpret_cast<CategoryVolumeFn*>(g_base + kCategoryVolumeByName);

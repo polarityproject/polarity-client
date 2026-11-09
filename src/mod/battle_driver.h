@@ -75,6 +75,11 @@ void SetSoundCaptureExempt(bool exempt);
 // are left playing (a round call's first tick, run muted as a jump found it).
 size_t SoundCaptureMark();
 void KeepCapturedFrom(size_t mark);
+// A viewed replay's battle: its sounds are kept track of (on), so that
+// StopBattleSounds can stop every one still playing (loops, ambience) before
+// the battle is started again; returns how many it had. Off forgets them.
+void RecordBattleSounds(bool on);
+int StopBattleSounds();
 // Logs the current battle's start probe (SfvGame::ArmStartProbe), once.
 void LogStartProbe();
 

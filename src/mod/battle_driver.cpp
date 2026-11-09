@@ -426,10 +426,21 @@ std::mutex g_captureMutex;
 std::atomic<bool> g_capturing{false}; // read unlocked: battle job threads ask for sounds too
 std::vector<std::pair<void*, int>> g_captured; // player, handle
 thread_local bool t_captureExempt = false;
+constexpr int kAmbienceSheet = 58;
+// A viewed replay's battle (RecordBattleSounds): every sound it asked for,
+// the newest kBattleSoundsKept, for stopping all of it when the battle is
+// started again (its loops would play on: a jump back's leftover sound).
+constexpr size_t kBattleSoundsKept = 16384;
+std::atomic<bool> g_recordBattle{false};
+std::vector<std::pair<void*, int>> g_battleSounds; // player, handle (under g_captureMutex)
 
 uint64_t CuePlayDetour(void* player, int sheet, int cue, int a, int b)
 {
-    const bool capture = g_capturing && !t_captureExempt;
+    // Sheet 58 is the stage's ambience (a loop started at the battle's start
+    // and again at each round's set-up): a landing keeps it, as it is meant
+    // to go on (stopped, the paused bed went from rms 0.0085 to 0.0018).
+    const bool capture = g_capturing && !t_captureExempt && sheet != kAmbienceSheet;
+    const bool keepForBattle = g_recordBattle && !t_captureExempt;
     if (g_soundLog > 0) {
         g_soundLog--;
         const uintptr_t from = reinterpret_cast<uintptr_t>(_ReturnAddress()) - g_imageBase;
@@ -442,10 +453,13 @@ uint64_t CuePlayDetour(void* player, int sheet, int cue, int a, int b)
         }
     }
     const uint64_t handle = g_origCuePlay(player, sheet, cue, a, b);
-    if (capture) {
-        const int id = static_cast<int>(handle); // -1: nothing started
+    if (const int id = static_cast<int>(handle); id != -1 && (capture || keepForBattle)) { // -1: nothing started
         std::lock_guard lock(g_captureMutex);
-        if (g_capturing && id != -1 && g_captured.size() < 4096) g_captured.push_back({player, id});
+        if (capture && g_capturing && g_captured.size() < 4096) g_captured.push_back({player, id});
+        if (keepForBattle && g_recordBattle) {
+            if (g_battleSounds.size() >= kBattleSoundsKept) g_battleSounds.erase(g_battleSounds.begin(), g_battleSounds.begin() + kBattleSoundsKept / 2);
+            g_battleSounds.push_back({player, id});
+        }
     }
     return handle;
 }
@@ -610,6 +624,30 @@ int StopCapturedSounds()
 }
 
 void SetSoundCaptureExempt(bool exempt) { t_captureExempt = exempt; }
+
+void RecordBattleSounds(bool on)
+{
+    std::lock_guard lock(g_captureMutex);
+    g_recordBattle = on;
+    g_battleSounds.clear();
+}
+
+int StopBattleSounds()
+{
+    std::vector<std::pair<void*, int>> sounds, captured;
+    {
+        std::lock_guard lock(g_captureMutex);
+        sounds.swap(g_battleSounds);
+        // The capture's are the battle's too: stopped now, while their
+        // players exist, not after the battle is gone.
+        captured.swap(g_captured);
+    }
+    if (g_cueStop) {
+        for (const auto& [player, handle] : sounds) g_cueStop(player, handle, true);
+        for (const auto& [player, handle] : captured) g_cueStop(player, handle, true);
+    }
+    return static_cast<int>(sounds.size());
+}
 
 size_t SoundCaptureMark()
 {

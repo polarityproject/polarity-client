@@ -1,5 +1,7 @@
 #include "mod/overlay.h"
 
+#include "mod/battle_driver.h"
+
 #include "core/random_stage.h"
 #include "mod/pak_textures.h"
 #include "mod/ui_sound.h"
@@ -3056,6 +3058,18 @@ void OpenHubRooms(const NetplayOptions& o)
 
 // Leaving a watched replay: the Battle Log again once the menus are back.
 std::atomic<bool> g_reopenLog{false};
+// Watching a replay from the Battle Log: the screen stays (no input) while
+// the replay preloads and jumps, as a match's select screen does, until the
+// jump switches to the battle scene; then black (kLaunchToBlack, held
+// kLaunchBlackHeld while the game's own screen goes black) and it closes.
+// Gone at once, the main menu showed for the seconds of the preload.
+struct LogLaunch {
+    bool active = false;
+    uint64_t switchesAt = 0;
+    double since = 0, blackFrom = -1;
+};
+LogLaunch g_logLaunch;
+constexpr double kLaunchToBlack = 0.3, kLaunchBlackHeld = 0.6, kLaunchGiveUp = 45;
 
 std::string StageLabelOf(uint16_t stage)
 {
@@ -3201,14 +3215,36 @@ void DrawHubScreens(bool takeInput)
         bl.buildId = GameBuildId();
         bl.charaName = [](uint32_t c) { return CharaLabel(UnpackCode(c)); };
         bl.stageName = [](uint16_t s) { return StageLabelOf(s); };
+        bl.launching = g_logLaunch.active;
         BattleLogInput in;
-        DrawBattleLog(fonts, bl, takeInput, &in);
+        DrawBattleLog(fonts, bl, takeInput && !g_logLaunch.active, &in);
         if (in.back) CloseBattleLog();
-        if (!in.watch.empty()) {
+        if (!in.watch.empty() && !g_logLaunch.active) {
             Log("battle log: watching %s", in.watch.c_str());
-            CloseBattleLog();
-            CloseHub();
+            g_logLaunch = {true, BattleSceneSwitches(), ImGui::GetTime(), -1};
             RequestReplayView(in.watch, in.watchTitle, [] { g_reopenLog = true; });
+            if (!CurrentFrameDriver()) {
+                // Not started (the file unreadable, another driver): the log stays.
+                g_logLaunch = {};
+                AddToast("This replay can't be played.", kRed, 4);
+            }
+        }
+        if (g_logLaunch.active) {
+            // Black over it once the battle scene is switched to (LogLaunch).
+            const double now = ImGui::GetTime();
+            if (g_logLaunch.blackFrom < 0 && BattleSceneSwitches() != g_logLaunch.switchesAt) g_logLaunch.blackFrom = now;
+            const double black = g_logLaunch.blackFrom < 0 ? 0 : std::min(1.0, (now - g_logLaunch.blackFrom) / kLaunchToBlack);
+            if (black > 0) {
+                ImGui::GetForegroundDrawList()->AddRectFilled(ImVec2(0, 0), ImGui::GetIO().DisplaySize,
+                                                              IM_COL32(0, 0, 0, static_cast<int>(black * 255)));
+            }
+            const bool done = g_logLaunch.blackFrom >= 0 && now - g_logLaunch.blackFrom >= kLaunchToBlack + kLaunchBlackHeld;
+            if (done || now - g_logLaunch.since > kLaunchGiveUp) {
+                if (!done) Log("battle log: no battle scene %.0f s after Watch: closing", kLaunchGiveUp);
+                g_logLaunch = {};
+                CloseBattleLog();
+                CloseHub();
+            }
         }
         return;
     }
@@ -3673,7 +3709,7 @@ void Draw(IDXGISwapChain* swapChain)
         hubBooted = true;
         OpenHub(true);
     }
-    if (HubOpen() && !atMenus) {
+    if (HubOpen() && !atMenus && !g_logLaunch.active) { // (a replay's launch closes it itself)
         CloseHub();
         CloseRoomsScreen();
         CloseBattleLog();

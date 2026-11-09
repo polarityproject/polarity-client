@@ -19,6 +19,7 @@ struct BattleLogLive {
     std::string buildId; // this game and mod's build: replays of another can't be played
     std::function<std::string(uint32_t packedCode)> charaName;
     std::function<std::string(uint16_t stage)> stageName;
+    bool launching = false; // Watch pressed: the replay loads (the screen stays until the battle's loading)
 };
 
 struct BattleLogInput {

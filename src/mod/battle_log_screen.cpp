@@ -426,7 +426,10 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         StageText(d, bold, 20, 1552, 34, kCream, info, 1);
     }
     // The filters (LT, RT) and the view (LB / RB).
+    // On the stage, not in a pane: each on a pane's glass first, as opaque
+    // as the panels below (the control alone was too see-through).
     auto filterButton = [&](float x0, float x1, const char* glyph, const std::string& label, const std::string& value) {
+        Pane(d, x0, 84, x1, 128);
         Control(d, x0, 84, x1, 128, false);
         Glyph(d, glyph, g_v.P(x0 + 10, 92), g_v.P(x0 + 38, 120));
         Text(d, bold, g_v.L(18), g_v.P(x0 + 48, 94), kMuted, label);
@@ -439,6 +442,7 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
     {
         const float w0 = TextW(bold, 17, "Timeline") + 28, w1 = TextW(bold, 17, "Sets") + 28;
         const float x1 = 1552, x0 = x1 - (6 + 36 + 6 + w0 + 6 + w1 + 6 + 36 + 6);
+        Pane(d, x0, 84, x1, 128);
         Control(d, x0, 84, x1, 128, false);
         Glyph(d, "button_lb", g_v.P(x0 + 6, 92), g_v.P(x0 + 42, 120));
         float tx = x0 + 48;
@@ -635,6 +639,10 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
     if (g_bySets && focused && focused->set) prompts.push_back({"button_x", g_expanded == focused->set->key ? "Close set" : "Open set"});
     prompts.push_back({"button_y", "Open folder"});
     prompts.push_back({"button_b", "Back"});
+    if (live.launching) {
+        hint = "Loading the match...";
+        prompts.clear();
+    }
     int clicked = -1;
     PromptLine(d, f.body, bold, "", kGold, g_modal == LogModal::None ? hint : std::string(), g_modal == LogModal::None ? prompts : PromptList{}, &clicked);
     if (clicked >= 0 && g_modal == LogModal::None) ClickPad(PadKeyOfGlyph(prompts[clicked].first));
