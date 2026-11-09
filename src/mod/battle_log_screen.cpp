@@ -1,4 +1,5 @@
 #include "mod/battle_log_screen.h"
+#include "mod/hitbox_display.h"
 
 #include "core/battle_log.h"
 #include "core/display_name.h"
@@ -939,6 +940,10 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
             }
         }
         if (Confirm()) ControlReplay(ReplayControl::Toggle);
+        if (Pressed({ImGuiKey_GamepadBack}, false)) {
+            PlayUi(UiSound::Decide);
+            SetHitboxesInReplays(!HitboxesInReplays());
+        }
         // A step back plays no sound, the menu's cue included.
         if (Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}) && v.frame > v.backLimit) ControlReplay(ReplayControl::Step, -1);
         if (Pressed({ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight}) && v.canStepForward) {
@@ -979,7 +984,8 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
     char frame[64] = "";
     if (action && v.roundFrames > 0) std::snprintf(frame, sizeof(frame), " \xC2\xB7 Frame %d / %d", v.roundFrame, v.roundFrames - 1);
     else if (action) std::snprintf(frame, sizeof(frame), " \xC2\xB7 Frame %d", v.roundFrame);
-    PromptList prompts = {{"button_a", v.paused ? "Play" : "Pause"}, {"button_lb", "Round"}, {"button_rb", ""}, {"button_rt", "Hold to fast forward"}, {"button_b", "Leave"}};
+    PromptList prompts = {{"button_a", v.paused ? "Play" : "Pause"}, {"button_lb", "Round"}, {"button_rb", ""}, {"button_rt", "Hold to fast forward"},
+                          {"button_back", HitboxesInReplays() ? "Hide hitboxes" : "Show hitboxes"}, {"button_b", "Leave"}};
     // Replay Takeover, in a round's fight.
     if (canTakeOver) prompts.insert(prompts.begin() + 1, {{"button_x", "Control P1"}, {"button_y", "Control P2"}});
     int clicked = -1;

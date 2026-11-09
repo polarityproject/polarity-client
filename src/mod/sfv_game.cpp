@@ -186,6 +186,7 @@ void SfvGame::OnInputUnit(uint8_t* inputUnit)
             Log("inputlog: pads %d, values %08X %08X %08X %08X", pads, sampled_[0], sampled_[1], sampled_[2], sampled_[3]);
         }
     }
+    ActorLogTick();
     if (injecting_) {
         values[0] = inject_[0];
         values[1] = inject_[1];

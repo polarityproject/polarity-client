@@ -6,6 +6,7 @@
 #include "mod/settings_screen.h"
 #include "mod/room_screen.h"
 #include "mod/battle_driver.h"
+#include "mod/hitbox_display.h"
 #include "mod/crash_report.h"
 #include "mod/files.h"
 #include "mod/pacing.h"
@@ -346,11 +347,113 @@ std::string TestName()
     return g_testName.empty() ? "Player " + std::to_string(StatusInstance() + 1) : g_testName;
 }
 
+// Research commands of the box display work (hitbox_display.h, battle_driver.h
+// region research): kept out of RunNetCommand's chain, which is at the
+// compiler's nesting limit. Returns whether `cmd` was one of them.
+bool RunResearchCommand(const std::string& cmd, std::stringstream& ss)
+{
+    if (cmd == "actorlog") {
+        // actorlog <ticks>: research (script runners' move, frame; position regions)
+        int ticks = 120;
+        ss >> ticks;
+        RunOnGameThread([ticks] { LogActors(ticks); });
+    }
+    else if (cmd == "rcmp") {
+        // rcmp <a> <b> <hex from, - allowed> <hex to>: research
+        std::string a, b, f, t;
+        ss >> a >> b >> f >> t;
+        auto hex = [](const std::string& s) { return s.rfind('-', 0) == 0 ? -std::stoll(s.substr(1), nullptr, 16) : std::stoll(s, nullptr, 16); };
+        const long long from = hex(f), to = hex(t);
+        RunOnGameThread([=] { CompareRegions(a, b, from, to); });
+    }
+    else if (cmd == "rpeek") {
+        // rpeek <region> <hex offset, - allowed> [qwords]: research
+        std::string name, off;
+        int qwords = 4;
+        ss >> name >> off >> qwords;
+        const long long offset = off.rfind('-', 0) == 0 ? -std::stoll(off.substr(1), nullptr, 16) : std::stoll(off, nullptr, 16);
+        RunOnGameThread([=] { PeekRegion(name, offset, qwords); });
+    }
+    else if (cmd == "ptrscan") {
+        // ptrscan <from region> <hex before> <hex after> <to region>: research
+        std::string from, to;
+        size_t before = 0, after = 0;
+        ss >> from >> std::hex >> before >> after >> std::dec >> to;
+        RunOnGameThread([=] { ScanForPointers(from, before, after, to); });
+    }
+    else if (cmd == "rsnap") {
+        RunOnGameThread([] { SnapRegions(); });
+    }
+    else if (cmd == "boxlog") {
+        int ticks = 60;
+        ss >> ticks;
+        LogHitboxes(ticks);
+    }
+    else if (cmd == "winsize") {
+        // winsize <client width> <client height>: research (the game window resized)
+        int w = 0, h = 0;
+        ss >> w >> h;
+        if (HWND win = FindGameWindow(); win && w > 0 && h > 0) {
+            RECT r{0, 0, w, h};
+            AdjustWindowRectEx(&r, static_cast<DWORD>(GetWindowLongPtrW(win, GWL_STYLE)), FALSE, static_cast<DWORD>(GetWindowLongPtrW(win, GWL_EXSTYLE)));
+            SetWindowPos(win, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+            RECT c{};
+            GetClientRect(win, &c);
+            Log("winsize: client %ldx%ld", c.right, c.bottom);
+        }
+    }
+    else if (cmd == "freeze") {
+        // freeze 1|0: research (the battle held on its frame)
+        int on = 1;
+        ss >> on;
+        SetBattleFreeze(on != 0);
+    }
+    else if (cmd == "hitboxes") {
+        // hitboxes 0|1: research (the box display in any battle)
+        int on = 1;
+        ss >> on;
+        SetHitboxesForced(on != 0);
+    }
+    else if (cmd == "rdump") {
+        // rdump <region> <tag>: research (region bytes to SFVR\research\<tag>.bin)
+        std::string name, tag;
+        ss >> name >> tag;
+        RunOnGameThread([=] { DumpRegion(name, tag); });
+    }
+    else if (cmd == "rdiff") {
+        // rdiff side|all [region name prefix]: research (snapshot region words changed since rsnap)
+        std::string mode = "side", prefix;
+        ss >> mode >> prefix;
+        RunOnGameThread([mode, prefix] { DiffRegions(mode, prefix); });
+    }
+    else if (cmd == "dumpbac") {
+        // dumpbac <BAC_RYU|BCH_RYU|...>: research (the loaded move file to SFVR\research)
+        std::string name;
+        ss >> name;
+        RunOnGameThread([name] { DumpMoveFile(name); });
+    }
+    else if (cmd == "rfind") {
+        // rfind f <float> | i <int> | bac <KWBAC name>: research (in the snapshot regions)
+        std::string kind, a, b;
+        ss >> kind >> a >> b;
+        RunOnGameThread([kind, a, b] { FindInRegions(kind, a, b); });
+    }
+    else if (cmd == "uobj") {
+        // uobj <name>: research (objects of that name, their class and owner)
+        std::string name, how;
+        ss >> name >> how;
+        RunOnGameThread([name, dump = how == "dump"] { LogObjectsNamed(name, dump); });
+    }
+    else return false;
+    return true;
+}
+
 void RunNetCommand(const std::string& line)
 {
     std::stringstream ss(line);
     std::string cmd;
     ss >> cmd;
+    if (RunResearchCommand(cmd, ss)) return;
     NetplayOptions& o = NetOptions();
     if (cmd == "host") {
         // host [random [costumes]] [manual]: manual is not ready by itself in
@@ -1791,7 +1894,7 @@ bool Parse(const std::string& line, Step& step)
         return !ss.fail();
     }
     if (cmd == "host" || cmd == "join" || cmd == "matchchat" || cmd == "shot" || cmd == "warmupsleep" || cmd == "warmupextra" || cmd == "watchcamera" || cmd == "emptystage" || cmd == "spectate" || cmd == "ticket" || cmd == "presence" || cmd == "rooms" || cmd == "settings" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "crash" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
-        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "randomstages" || cmd == "randomoff" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "wordfilter" || cmd == "countryflag" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "rview" || cmd == "roundinfo" || cmd == "ufunc" || cmd == "functrace" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "soundlog" || cmd == "uisound" || cmd == "soundrollback" || cmd == "kowaitmode" || cmd == "frameids" || cmd == "leanresim" || cmd == "startprobe" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
+        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "randomstages" || cmd == "randomoff" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "wordfilter" || cmd == "countryflag" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "rview" || cmd == "roundinfo" || cmd == "ufunc" || cmd == "uobj" || cmd == "rfind" || cmd == "dumpbac" || cmd == "actorlog" || cmd == "rsnap" || cmd == "ptrscan" || cmd == "rpeek" || cmd == "rcmp" || cmd == "rdump" || cmd == "hitboxes" || cmd == "freeze" || cmd == "winsize" || cmd == "boxlog" || cmd == "rdiff" || cmd == "functrace" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "soundlog" || cmd == "uisound" || cmd == "soundrollback" || cmd == "kowaitmode" || cmd == "frameids" || cmd == "leanresim" || cmd == "startprobe" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
         step.kind = Step::Net;
         step.line = line;
         return true;

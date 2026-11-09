@@ -38,6 +38,30 @@ IFrameDriver* CurrentFrameDriver();
 // Research (`regions <size>`): logs the snapshot regions of that size with
 // their addresses and owners; size 0: every owner with the sizes it holds.
 void LogRegionsOfSize(size_t size);
+// Research (`rfind f <float>` | `i <int>` | `bac <KWBAC name>`): where the
+// snapshot regions hold that float, int32, or a pointer into that move file.
+void FindInRegions(const std::string& kind, const std::string& a, const std::string& b);
+// Research (`dumpbac <name>`): a loaded move file's bytes to SFVR\research\<name>.bin.
+void DumpMoveFile(const std::string& name);
+// Research (`actorlog <ticks>`): per tick, each script runner's move file,
+// script offset and frame, and the position regions' floats.
+void LogActors(int ticks);
+void ActorLogTick();
+// Research (`rsnap`, `rdiff side|all [prefix]`): copies every snapshot region,
+// then logs the words that changed since (side: flips between 1.0/-1.0 or 0/1).
+void SnapRegions();
+void DiffRegions(const std::string& mode, const std::string& prefix = "");
+// Research (`freeze 1|0`): the battle runs no ticks (held on its frame) / runs again.
+void SetBattleFreeze(bool on);
+// Research (`rpeek <region> <hex offset, may be negative> [qwords]`).
+void PeekRegion(const std::string& name, long long offset, int qwords);
+// Research (`rdump <region> <tag>`): its bytes, from 0x40 before it, to SFVR\research\<tag>.bin.
+void DumpRegion(const std::string& name, const std::string& tag);
+// Research (`rcmp <a> <b> <hex from> <hex to>`): small u32 values that differ.
+void CompareRegions(const std::string& a, const std::string& b, long long from, long long to);
+// Research (`ptrscan <from> <before> <after> <to>`): pointers to region `to`'s
+// owner in the memory around region `from`.
+void ScanForPointers(const std::string& from, size_t before, size_t after, const std::string& to);
 // Research: the object a region lies in, as "vtable rva 0x... at -0x..." (the
 // nearest vtable pointer at or before it), or "unknown".
 std::string RegionOwner(const void* region);

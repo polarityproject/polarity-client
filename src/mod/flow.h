@@ -229,6 +229,9 @@ void LogRoundInfo();
 // code pointers in it; (`functrace <name> [owner] <offset hex>`): hooks the
 // native at that UFunction offset and logs the calls (one at a time).
 void LogFunction(const std::string& name);
+// Research (`uobj <name> [dump]`): every object of that name, its class and
+// owner; dump: its first 0x100 bytes, and text where its words point.
+void LogObjectsNamed(const std::string& name, bool dump = false);
 void TraceFunction(const std::string& name, const std::string& owner, uint32_t offset);
 // The match's rounds as the battle has them now (at its end): each round's
 // winner, and the rounds each side won. False when they cannot be read.

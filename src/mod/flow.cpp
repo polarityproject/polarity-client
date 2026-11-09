@@ -1332,6 +1332,33 @@ void LogFunction(const std::string& name)
     if (!found) Log("ufunc: no function %s", name.c_str());
 }
 
+void LogObjectsNamed(const std::string& name, bool dump)
+{
+    if (!ue4::EnsureObjects(g_base)) return Log("uobj: no object array");
+    int found = 0;
+    ue4::ForEachObject([&](const void* object) {
+        if (ue4::ObjectName(object) != name) return;
+        found++;
+        const void* outer = ue4::OuterOf(object);
+        Log("uobj: %s at %p, class %s, outer %s (%s), size %zu", name.c_str(), object, ue4::ObjectName(ue4::ClassOf(object)).c_str(),
+            ue4::ObjectName(outer).c_str(), outer ? ue4::ObjectName(ue4::ClassOf(outer)).c_str() : "-", ue4::ObjectSize(object));
+        if (!dump) return;
+        // Its words, and where a word points into readable memory: the first
+        // bytes there as text (a "#BAC" file, a name).
+        const auto* o = static_cast<const uint8_t*>(object);
+        for (size_t at = 0; at < 0x100 && IsReadable(o + at, 8); at += 8) {
+            const uint64_t v = *reinterpret_cast<const uint64_t*>(o + at);
+            std::string text;
+            if (v > 0x10000 && IsReadable(reinterpret_cast<const void*>(v), 16)) {
+                const auto* p = reinterpret_cast<const uint8_t*>(v);
+                for (int i = 0; i < 16; i++) text += p[i] >= 0x20 && p[i] < 0x7F ? static_cast<char>(p[i]) : '.';
+            }
+            Log("uobj:   +0x%02zX %016llX %s", at, static_cast<unsigned long long>(v), text.c_str());
+        }
+    });
+    if (!found) Log("uobj: nothing named %s", name.c_str());
+}
+
 void TraceFunction(const std::string& name, const std::string& owner, uint32_t offset)
 {
     if (g_tracedOrig) return Log("functrace: %s is traced already (one at a time)", g_tracedName.c_str());

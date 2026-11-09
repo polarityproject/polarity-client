@@ -228,6 +228,7 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/sfv_game.cpp
     src/mod/status.cpp
     src/mod/replay_driver.cpp
+    src/mod/hitbox_display.cpp
     src/mod/stress_driver.cpp
     src/mod/synctest.cpp
     src/mod/tracer.cpp

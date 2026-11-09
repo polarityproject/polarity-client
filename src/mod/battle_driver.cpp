@@ -1,9 +1,11 @@
 #include "mod/battle_driver.h"
+#include "mod/ue4.h"
 
 #include "mod/battle_setup.h"
 #include "mod/crash_report.h"
 #include "mod/flow.h"
 #include "mod/hitch.h"
+#include "mod/hitbox_display.h"
 #include "mod/lifecycle.h"
 #include "mod/log.h"
 #include "mod/stack.h"
@@ -14,6 +16,7 @@
 #include <atomic>
 #include <iterator>
 #include <map>
+#include <mutex>
 #include <utility>
 #include <set>
 #include <string>
@@ -268,9 +271,12 @@ void BattleFrameDetour(uint8_t* battleFrame)
         g_inDriver = false;
     }
     g_frameThread = 0;
-    if (handled) return;
-    hitch::Scope timed(hitch::Part::BattleFrame);
-    g_origBattleFrame(battleFrame);
+    if (!handled) {
+        hitch::Scope timed(hitch::Part::BattleFrame);
+        g_origBattleFrame(battleFrame);
+    }
+    // The boxes of the frame about to be drawn (Training, replays).
+    CollectHitboxes(*g_game);
 }
 
 int g_strayRecords = 0;
@@ -793,6 +799,306 @@ std::string RegionOwner(const void* region)
         return b;
     }
     return "unknown";
+}
+
+// Research: a region by name, or "v<owner vtable rva hex>.<n>": the n-th
+// region whose owner (RegionOwner) has that vtable (names shift between runs).
+const StateRegion* FindRegion(const std::string& name)
+{
+    if (!g_game) return nullptr;
+    const size_t dot = name.find('.');
+    if (name.size() > 1 && name[0] == 'v' && dot != std::string::npos) {
+        const std::string want = "vtable rva 0x" + name.substr(1, dot - 1) + " ";
+        int n = std::atoi(name.c_str() + dot + 1);
+        for (const StateRegion& r : g_game->Regions()) {
+            if (RegionOwner(r.ptr).rfind(want, 0) == 0 && n-- == 0) return &r;
+        }
+        return nullptr;
+    }
+    for (const StateRegion& r : g_game->Regions()) {
+        if (r.name == name) return &r;
+    }
+    return nullptr;
+}
+
+void FindInRegions(const std::string& kind, const std::string& a, const std::string& b)
+{
+    if (!g_game) return;
+    // The match: a float (within 1e-4), an int32, or a pointer into [lo, hi).
+    uintptr_t lo = 0, hi = 0;
+    if (kind == "bac") {
+        // The loaded move file of that name (KWBAC +0x28: its bytes, +0x30 count).
+        void* object = ue4::EnsureObjects(g_imageBase) ? ue4::FindObject(a, "KWBAC") : nullptr;
+        if (!object || !IsReadable(static_cast<uint8_t*>(object) + 0x28, 0x10)) return Log("rfind: no KWBAC %s", a.c_str());
+        lo = *reinterpret_cast<const uintptr_t*>(static_cast<uint8_t*>(object) + 0x28);
+        hi = lo + *reinterpret_cast<const uint32_t*>(static_cast<uint8_t*>(object) + 0x30);
+        Log("rfind: %s data at %p..%p", a.c_str(), reinterpret_cast<void*>(lo), reinterpret_cast<void*>(hi));
+    }
+    else if (kind == "near") {
+        // Pointers into that region or the 0x1000 bytes before it (its owner object).
+        const StateRegion* r = FindRegion(a);
+        if (!r) return Log("rfind: no region %s", a.c_str());
+        lo = reinterpret_cast<uintptr_t>(r->ptr) - 0x1000;
+        hi = reinterpret_cast<uintptr_t>(r->ptr) + r->size;
+    }
+    const float f = kind == "f" ? std::strtof(a.c_str(), nullptr) : 0;
+    const int32_t n = kind == "i" ? static_cast<int32_t>(std::strtol(a.c_str(), nullptr, 0)) : 0;
+    int hits = 0;
+    for (const StateRegion& r : g_game->Regions()) {
+        const size_t step = kind == "bac" || kind == "near" ? 8 : 4;
+        for (size_t at = 0; at + step <= r.size && hits < 60; at += step) {
+            bool match = false;
+            if (kind == "f") match = std::fabs(*reinterpret_cast<const float*>(r.ptr + at) - f) < 1e-4f;
+            else if (kind == "i") match = *reinterpret_cast<const int32_t*>(r.ptr + at) == n;
+            else if (kind == "bac" || kind == "near") {
+                const uintptr_t v = *reinterpret_cast<const uintptr_t*>(r.ptr + at);
+                match = v >= lo && v < hi;
+            }
+            if (!match) continue;
+            hits++;
+            const uint64_t word = *reinterpret_cast<const uint64_t*>(r.ptr + (at & ~size_t{7}));
+            Log("rfind: %s +0x%zX (%p): %016llX%s", r.name.c_str(), at, static_cast<const void*>(r.ptr + at), static_cast<unsigned long long>(word),
+                kind == "bac" ? (" = data +0x" + [&] { char t[16]; std::snprintf(t, sizeof(t), "%llX", static_cast<unsigned long long>(*reinterpret_cast<const uintptr_t*>(r.ptr + at) - lo)); return std::string(t); }()).c_str() : "");
+        }
+    }
+    Log("rfind: %d hits", hits);
+    (void)b;
+}
+
+void DumpMoveFile(const std::string& name)
+{
+    // A loaded move file (KWBAC/KWBCH/KWBCM: +0x28 its bytes, +0x30 count) to SFVR\research.
+    void* object = ue4::EnsureObjects(g_imageBase) ? ue4::FindObject(name, "") : nullptr;
+    if (!object || !IsReadable(static_cast<uint8_t*>(object) + 0x28, 0x10)) return Log("dumpbac: no %s", name.c_str());
+    const auto* data = *reinterpret_cast<const uint8_t* const*>(static_cast<uint8_t*>(object) + 0x28);
+    const uint32_t size = *reinterpret_cast<const uint32_t*>(static_cast<uint8_t*>(object) + 0x30);
+    if (!data || !size || !IsReadable(data, size)) return Log("dumpbac: %s has no readable data", name.c_str());
+    wchar_t exe[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    std::wstring dir(exe);
+    dir = dir.substr(0, dir.find_last_of(L"\\/")) + L"\\SFVR\\research";
+    CreateDirectoryW(dir.c_str(), nullptr);
+    const std::wstring path = dir + L"\\" + std::wstring(name.begin(), name.end()) + L".bin";
+    if (FILE* f = _wfopen(path.c_str(), L"wb")) {
+        std::fwrite(data, 1, size, f);
+        std::fclose(f);
+        Log("dumpbac: %s, %u bytes, to SFVR\\research", name.c_str(), size);
+    }
+}
+
+namespace {
+struct MoveFileRange { std::string name; uintptr_t lo = 0, hi = 0; };
+std::vector<MoveFileRange> g_moveFiles;
+std::atomic<int> g_actorLog{0};
+const uint8_t* g_cameraManager = nullptr; // research: the drawn PlayerCameraManager
+} // namespace
+
+void LogActors(int ticks)
+{
+    g_moveFiles.clear();
+    if (ue4::EnsureObjects(g_imageBase)) {
+        ue4::ForEachObject([](const void* object) {
+            const std::string d = ue4::Describe(object);
+            if (d.rfind("KWBAC ", 0) != 0 || !IsReadable(static_cast<const uint8_t*>(object) + 0x28, 0x10)) return;
+            const uintptr_t lo = *reinterpret_cast<const uintptr_t*>(static_cast<const uint8_t*>(object) + 0x28);
+            const uint32_t size = *reinterpret_cast<const uint32_t*>(static_cast<const uint8_t*>(object) + 0x30);
+            if (lo && size) g_moveFiles.push_back({d.substr(6), lo, lo + size});
+        });
+    }
+    // The camera drawn (as replay_driver.cpp CameraText): the PlayerCameraManager
+    // (+0x390) of the controller with a local player (+0x360); POV at +0x370.
+    g_cameraManager = nullptr;
+    ue4::ForEachObject([](const void* object) {
+        if (g_cameraManager || ue4::ObjectName(ue4::ClassOf(object)).find("PlayerController") == std::string::npos) return;
+        const auto* p = static_cast<const uint8_t*>(object);
+        if (!IsReadable(p + 0x390, 8) || !*reinterpret_cast<const void* const*>(p + 0x360)) return;
+        const auto* manager = *reinterpret_cast<const uint8_t* const*>(p + 0x390);
+        if (manager && ue4::ObjectName(ue4::ClassOf(manager)).find("CameraManager") != std::string::npos) g_cameraManager = manager;
+    });
+    g_actorLog = ticks;
+    Log("actorlog: %zu move files, camera %s, the next %d ticks", g_moveFiles.size(),
+        g_cameraManager ? ue4::Describe(g_cameraManager).c_str() : "none", ticks);
+}
+
+void ActorLogTick()
+{
+    // Each actor (fighters: owner vtable rva 0x2C4F220, effects: 0x2C6E6D8,
+    // 0x18 before their 15808-byte region R): R+0 its script runner
+    // (+0x40 script, +0x48 index, +0x4C frame 16.16), R-0x40 its position
+    // block (+0x790 x, +0x794 y), R+0x3DB8 its side.
+    if (g_actorLog <= 0 || !g_game) return;
+    const int left = --g_actorLog;
+    std::string line;
+    for (const StateRegion& r : g_game->Regions()) {
+        if (r.size != 15808 || !IsReadable(r.ptr - 0x40, 0x48)) continue;
+        const uintptr_t vt = *reinterpret_cast<const uintptr_t*>(r.ptr - 0x18) - g_imageBase;
+        if (vt != 0x2C4F220 && vt != 0x2C6E6D8) continue;
+        const auto* runner = *reinterpret_cast<const uint8_t* const*>(r.ptr);
+        if (!runner || !IsReadable(runner, 0x60)) continue;
+        const uintptr_t script = *reinterpret_cast<const uintptr_t*>(runner + 0x40);
+        const MoveFileRange* file = nullptr;
+        for (const MoveFileRange& m : g_moveFiles) {
+            if (script >= m.lo && script < m.hi) file = &m;
+        }
+        if (!file) continue;
+        const auto* pos = *reinterpret_cast<const uint8_t* const*>(r.ptr - 0x40);
+        const bool hasPos = pos && IsReadable(pos + 0x790, 8);
+        char b[200];
+        std::snprintf(b, sizeof(b), " | %s %s %s+%llX #%u f%.2f side %u pos %s %.3f %.3f", vt == 0x2C4F220 ? "F" : "E", r.name.c_str(),
+                      file->name.c_str(), static_cast<unsigned long long>(script - file->lo),
+                      *reinterpret_cast<const uint32_t*>(runner + 0x48), *reinterpret_cast<const int32_t*>(runner + 0x4C) / 65536.0,
+                      *reinterpret_cast<const uint32_t*>(r.ptr + 0x3DB8),
+                      hasPos ? "ok" : "none", hasPos ? *reinterpret_cast<const float*>(pos + 0x790) : 0.0f,
+                      hasPos ? *reinterpret_cast<const float*>(pos + 0x794) : 0.0f);
+        line += b;
+    }
+    if (g_cameraManager && left % 30 == 0 && IsReadable(g_cameraManager + 0x370, 0x1C)) {
+        const auto* v = reinterpret_cast<const float*>(g_cameraManager + 0x370);
+        char b[160];
+        std::snprintf(b, sizeof(b), " | cam %.1f %.1f %.1f r %.2f %.2f %.2f fov %.2f", v[0], v[1], v[2], v[3], v[4], v[5], v[6]);
+        line += b;
+    }
+    Log("actorlog %d:%s", left, line.c_str());
+}
+
+namespace {
+std::map<std::string, std::vector<uint8_t>> g_regionSnap;
+
+} // namespace
+
+void SetBattleFreeze(bool on)
+{
+    // A driver that runs no ticks: the battle holds its frame, drawn on.
+    struct Freeze : IFrameDriver {
+        bool OnFrame(SfvGame&) override { return true; }
+    };
+    static Freeze freeze;
+    SetFrameDriver(on ? &freeze : nullptr);
+    Log("freeze: %s", on ? "on" : "off");
+}
+
+
+void CompareRegions(const std::string& a, const std::string& b, long long from, long long to)
+{
+    // The u32 words that differ between two regions' memory, from..to
+    // relative to each (negative: their owner objects).
+    if (!g_game) return;
+    const StateRegion *ra = FindRegion(a), *rb = FindRegion(b);
+    if (!ra || !rb) return Log("rcmp: no region %s or %s", a.c_str(), b.c_str());
+    int hits = 0;
+    for (long long at = from; at + 4 <= to && hits < 120; at += 4) {
+        if (!IsReadable(ra->ptr + at, 4) || !IsReadable(rb->ptr + at, 4)) continue;
+        const uint32_t x = *reinterpret_cast<const uint32_t*>(ra->ptr + at), y = *reinterpret_cast<const uint32_t*>(rb->ptr + at);
+        if (x == y || (x > 0x10000 && x < 0xFFFF0000 && y > 0x10000 && y < 0xFFFF0000)) continue; // small values only
+        hits++;
+        Log("rcmp: %+lld (0x%llX): %08X vs %08X", at, static_cast<unsigned long long>(at < 0 ? -at : at), x, y);
+    }
+    Log("rcmp: %d hits", hits);
+}
+
+void DumpRegion(const std::string& name, const std::string& tag)
+{
+    // A region's bytes (and the 0x40 before it) to SFVR\research\<tag>.bin.
+    const StateRegion* r = FindRegion(name);
+    if (!r || !IsReadable(r->ptr - 0x40, r->size + 0x40)) return Log("rdump: no region %s", name.c_str());
+    wchar_t exe[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    std::wstring dir(exe);
+    dir = dir.substr(0, dir.find_last_of(L"\\/")) + L"\\SFVR\\research";
+    CreateDirectoryW(dir.c_str(), nullptr);
+    const std::wstring path = dir + L"\\" + std::wstring(tag.begin(), tag.end()) + L".bin";
+    if (FILE* f = _wfopen(path.c_str(), L"wb")) {
+        std::fwrite(r->ptr - 0x40, 1, r->size + 0x40, f);
+        std::fclose(f);
+        Log("rdump: %s (%s, %zu bytes) to SFVR\\research\\%s.bin", name.c_str(), r->name.c_str(), r->size, tag.c_str());
+    }
+}
+
+void PeekRegion(const std::string& name, long long offset, int qwords)
+{
+    // Words at region `name` + offset (negative: the owner object before it).
+    if (!g_game) return;
+    if (const StateRegion* found = FindRegion(name)) {
+        const StateRegion& r = *found;
+        for (int i = 0; i < qwords && i < 64; i++) {
+            const uint8_t* p = r.ptr + offset + 8 * i;
+            if (!IsReadable(p, 8)) break;
+            const uint64_t v = *reinterpret_cast<const uint64_t*>(p);
+            std::string note;
+            for (const StateRegion& o : g_game->Regions()) {
+                const auto at = static_cast<long long>(v - reinterpret_cast<uintptr_t>(o.ptr));
+                if (at >= -0x2000 && at < static_cast<long long>(o.size)) { note = " = " + o.name + (at < 0 ? " -" : " +") + std::to_string(at < 0 ? -at : at); break; }
+            }
+            if (note.empty() && v >= g_imageBase && v < g_imageBase + 0x5000000) {
+                char b[32];
+                std::snprintf(b, sizeof(b), " (rva 0x%llX)", static_cast<unsigned long long>(v - g_imageBase));
+                note = b;
+            }
+            Log("rpeek: %s %+lld: %016llX%s", name.c_str(), offset + 8 * i, static_cast<unsigned long long>(v), note.c_str());
+        }
+        return;
+    }
+    Log("rpeek: no region %s", name.c_str());
+}
+
+void ScanForPointers(const std::string& from, size_t before, size_t after, const std::string& to)
+{
+    // Memory around region `from` (its owner object) holding pointers to
+    // region `to`'s owner (the 0x1000 bytes before it) or into it.
+    if (!g_game) return;
+    const StateRegion *f = FindRegion(from), *t = FindRegion(to);
+    if (!f || !t) return Log("ptrscan: no region %s or %s", from.c_str(), to.c_str());
+    const uintptr_t lo = reinterpret_cast<uintptr_t>(t->ptr) - 0x20000, hi = reinterpret_cast<uintptr_t>(t->ptr) + t->size;
+    const uint8_t* begin = reinterpret_cast<const uint8_t*>(reinterpret_cast<uintptr_t>(f->ptr - before) & ~uintptr_t{7});
+    const uint8_t* end = f->ptr + f->size + after;
+    int hits = 0;
+    for (const uint8_t* p = begin; p + 8 <= end && hits < 40; p += 8) {
+        if (!IsReadable(p, 8)) { p = reinterpret_cast<const uint8_t*>((reinterpret_cast<uintptr_t>(p) | 0xFFF)) - 7; continue; }
+        const uintptr_t v = *reinterpret_cast<const uintptr_t*>(p);
+        if (v < lo || v >= hi) continue;
+        hits++;
+        Log("ptrscan: %s %+lld holds %s %+lld", from.c_str(), static_cast<long long>(p - f->ptr), to.c_str(),
+            static_cast<long long>(v - reinterpret_cast<uintptr_t>(t->ptr)));
+    }
+    Log("ptrscan: %d hits", hits);
+}
+
+void SnapRegions()
+{
+    g_regionSnap.clear();
+    if (!g_game) return;
+    for (const StateRegion& r : g_game->Regions()) g_regionSnap[r.name].assign(r.ptr, r.ptr + r.size);
+    Log("rsnap: %zu regions", g_regionSnap.size());
+}
+
+void DiffRegions(const std::string& mode, const std::string& prefix)
+{
+    // side: words that went 1.0 <-> -1.0, or 0 <-> 1 (u32 or byte); all: every changed u32 (first 200).
+    if (!g_game) return;
+    int hits = 0;
+    for (const StateRegion& r : g_game->Regions()) {
+        if (!prefix.empty() && r.name.rfind(prefix, 0) != 0) continue;
+        const auto it = g_regionSnap.find(r.name);
+        if (it == g_regionSnap.end() || it->second.size() != r.size) continue;
+        const uint8_t* old = it->second.data();
+        for (size_t at = 0; at + 4 <= r.size && hits < 200; at += 4) {
+            const uint32_t a = *reinterpret_cast<const uint32_t*>(old + at), b = *reinterpret_cast<const uint32_t*>(r.ptr + at);
+            if (a == b) continue;
+            bool show = mode == "all";
+            if (mode == "side") {
+                const float fa = *reinterpret_cast<const float*>(&a), fb = *reinterpret_cast<const float*>(&b);
+                show = (fa == 1.0f && fb == -1.0f) || (fa == -1.0f && fb == 1.0f) || (a <= 1 && b <= 1);
+                for (int k = 0; k < 4 && !show; k++) {
+                    const uint8_t x = old[at + k], y = r.ptr[at + k];
+                    show = x != y && x <= 1 && y <= 1;
+                }
+            }
+            if (!show) continue;
+            hits++;
+            Log("rdiff: %s +0x%zX %08X -> %08X", r.name.c_str(), at, a, b);
+        }
+    }
+    Log("rdiff: %d hits", hits);
 }
 
 void LogRegionsOfSize(size_t size)
