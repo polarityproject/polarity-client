@@ -838,8 +838,10 @@ void RoundJumpFade(ImDrawList* d, const ReplayView& v)
         alpha = static_cast<float>((now - g_jump.since) / kFadeOut);
         if (alpha >= 1) {
             alpha = 1;
-            g_jump.handledAt = ControlReplay(ReplayControl::Round, g_jump.dir);
-            g_jump.phase = g_jump.handledAt ? JumpFade::Black : JumpFade::In;
+            // dir 0: a fade the replay itself asked for (a takeover's end):
+            // no command, black until it is done seeking.
+            g_jump.handledAt = g_jump.dir != 0 ? ControlReplay(ReplayControl::Round, g_jump.dir) : v.handled;
+            g_jump.phase = g_jump.handledAt || g_jump.dir == 0 ? JumpFade::Black : JumpFade::In;
             g_jump.since = now;
         }
         break;
@@ -900,6 +902,10 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
             ControlReplay(ReplayControl::TakeoverStop);
         }
         g_inputOn = false;
+        // The KO screen over: to black, back to the start point behind it,
+        // the picture back there (RoundJumpFade with no jump of its own).
+        if (v.takeoverFading && g_jump.phase == JumpFade::None) g_jump = {JumpFade::Out, 0, ImGui::GetTime(), 0};
+        RoundJumpFade(d, v);
         if (v.takeoverCountdown > 0) {
             const int n = std::clamp(static_cast<int>(std::ceil(v.takeoverCountdown)), 1, 3);
             StageText(d, f.display, 220, 800, 300, look::kCream, std::to_string(n), 0.5f);

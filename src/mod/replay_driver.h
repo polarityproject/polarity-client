@@ -99,6 +99,7 @@ struct ReplayView {
     int takeover = -1;
     float takeoverCountdown = 0;
     bool takeoverEnding = false;
+    bool takeoverFading = false; // the KO screen over: to black, back to the start behind it
     // Controls the replay has taken so far, published with their effect (a
     // seek they started shows as seeking from then on): the UI's fades wait on it.
     uint32_t handled = 0;
