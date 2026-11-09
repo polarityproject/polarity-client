@@ -270,6 +270,7 @@ public:
     void Advance(const FrameInputs& inputs, bool rollingBack) override;
     void OnStateLoaded(int frame) override;
     bool OutcomeDecided() override;
+    uint8_t FrameFlags() override;
 
 private:
     const uint8_t* FindBattleCamera() const;

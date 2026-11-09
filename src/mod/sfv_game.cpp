@@ -1013,6 +1013,8 @@ void SfvGame::RunBattleTick(bool replayed)
 
 bool SfvGame::OutcomeDecided() { return MatchDecided(); }
 
+uint8_t SfvGame::FrameFlags() { return RoundInFight() ? kFrameFight : 0; }
+
 bool SfvGame::MatchWins(uint32_t& left, uint32_t& right) const
 {
     // The battle's round state is the one 228-byte region: +0xb4 the round,

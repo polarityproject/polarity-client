@@ -294,7 +294,7 @@ void TestBattleLog()
         s.winner = static_cast<int8_t>(winner);
         s.roundWins[winner & 1] = 2;
         s.roundWins[1 - (winner & 1)] = 1;
-        s.rounds = {{1200, 0}, {2400, 1}, {3600, static_cast<int8_t>(winner)}};
+        s.rounds = {{1200, 0, 920}, {2400, 1, 1500}, {3600, static_cast<int8_t>(winner), 2700}};
         s.setKey = setKey;
         s.setGame = game;
         s.setRule = setKey ? "First to 3" : "";
@@ -313,6 +313,16 @@ void TestBattleLog()
     CHECK(head.summary.present && head.summary.names[1] == "KANZUKI" && head.summary.rounds.size() == 3);
     CHECK(head.summary.rounds[1].endFrame == 2400 && head.summary.rounds[1].winner == 1 && head.summary.setRule == "First to 3");
     CHECK(head.summary.setWins[0] == 1 && head.summary.seconds == 171 && head.summary.winner == 0);
+    CHECK(head.summary.rounds[0].fightFrame == 920 && head.summary.rounds[2].fightFrame == 2700);
+    // The rounds' action frames from a session's per-frame fight flags: on
+    // after frame 3's tick, off after frame 7's (the KO); on again after 10,
+    // still on at the end.
+    {
+        const std::vector<uint8_t> flags = {0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1};
+        const std::vector<RoundResult> r = RoundsFromFrameFlags(flags);
+        CHECK(r.size() == 2 && r[0].fightFrame == 4 && r[0].endFrame == 7 && r[1].fightFrame == 11 && r[1].endFrame == -1);
+        CHECK(RoundsFromFrameFlags({}).empty());
+    }
     ReplayFile full;
     CHECK(DeserializeReplay(bytes.data(), bytes.size(), &full, &error) && full.summary.setGame == 1 && full.FrameCount() == 50);
     // A file without a summary still has a header.

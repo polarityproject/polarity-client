@@ -1463,9 +1463,11 @@ void RunNetCommand(const std::string& line)
         ss >> what >> arg;
         if (what == "status") {
             const ReplayView v = ReplayViewNow();
-            Log("rview: %s frame %d of %d, round %d, %s%s, fast %d, %d keyframe loads, %d frames differ, back to %d",
+            Log("rview: %s frame %d of %d, round %d, %s%s, fast %d, %d keyframe loads, %d frames differ, back to %d, "
+                "round frame %d of %d, forward %d, progress %.3f",
                 v.active ? "active" : "none", v.frame, v.frames, v.round, v.paused ? "paused" : "playing", v.seeking ? " (seeking)" : "",
-                v.fast, v.seeks, v.mismatches, v.backLimit);
+                v.fast, v.seeks, v.mismatches, v.backLimit, v.roundFrame, v.roundFrames, v.canStepForward ? 1 : 0,
+                static_cast<double>(v.roundProgress));
             return;
         }
         const ReplayControl c = what == "pause" ? ReplayControl::Pause : what == "play" ? ReplayControl::Play

@@ -285,7 +285,8 @@ bool ReadHashWindows(Reader& r, ReplayFile& rf, std::string* error)
 
 bool ReadSummary(Reader& c, MatchSummary& s)
 {
-    if (c.Get<uint32_t>() < 1) return false;
+    const uint32_t version = c.Get<uint32_t>();
+    if (version < 1) return false;
     for (auto& n : s.names) n = c.Str();
     for (uint8_t& v : s.roundWins) v = c.Get<uint8_t>();
     s.winner = static_cast<int8_t>(c.Get<uint8_t>());
@@ -302,6 +303,9 @@ bool ReadSummary(Reader& c, MatchSummary& s)
     s.setRule = c.Str();
     for (uint8_t& v : s.setWins) v = c.Get<uint8_t>();
     s.seconds = c.Get<uint32_t>();
+    if (version >= 2) {
+        for (auto& r : s.rounds) r.fightFrame = c.Get<int32_t>();
+    }
     s.present = c.ok();
     return c.ok();
 }
@@ -326,6 +330,25 @@ void PutChunk(Writer& out, uint32_t tag, const Writer& body)
 }
 
 } // namespace
+
+std::vector<RoundResult> RoundsFromFrameFlags(const std::vector<uint8_t>& flags)
+{
+    // A fight runs from the frame after the one whose tick turned it on to
+    // the one whose tick turned it off (the KO).
+    std::vector<RoundResult> rounds;
+    bool on = false;
+    for (size_t f = 0; f < flags.size(); f++) {
+        const bool fight = (flags[f] & IGame::kFrameFight) != 0;
+        if (fight && !on) {
+            RoundResult r;
+            r.fightFrame = static_cast<int32_t>(f + 1);
+            rounds.push_back(r);
+        }
+        if (!fight && on) rounds.back().endFrame = static_cast<int32_t>(f);
+        on = fight;
+    }
+    return rounds;
+}
 
 bool ReplayFile::HasRegionHashes(int frame) const
 {
@@ -396,7 +419,7 @@ std::vector<uint8_t> SerializeReplay(const ReplayFile& rf, ReplayDetail detail)
         // Never compressed: lists read it from the file's start.
         const MatchSummary& s = rf.summary;
         b = {};
-        b.U32(1); // the chunk's own version
+        b.U32(2); // the chunk's own version (2: each round's first action frame, at the end)
         for (const auto& n : s.names) b.Str(n);
         for (uint8_t v : s.roundWins) b.U8(v);
         b.U8(static_cast<uint8_t>(s.winner));
@@ -411,6 +434,7 @@ std::vector<uint8_t> SerializeReplay(const ReplayFile& rf, ReplayDetail detail)
         b.Str(s.setRule);
         for (uint8_t v : s.setWins) b.U8(v);
         b.U32(s.seconds);
+        for (const auto& r : s.rounds) b.I32(r.fightFrame);
         const size_t at = w.BeginChunk(kInfo);
         w.Raw(b.buf.data(), b.buf.size());
         w.EndChunk(at);

@@ -185,6 +185,12 @@ void NetplaySession::HandleGameEvent(GekkoGameEvent* ev)
 
         auto t = CostClock::now();
         game_.Advance(in, adv.rolling_back);
+        if (adv.frame >= 0) {
+            // A rollback's resimulation overwrites the frame's: the last one stands.
+            auto& flags = recording_.frameFlags;
+            if (flags.size() <= size_t(adv.frame)) flags.resize(size_t(adv.frame) + 1, 0);
+            flags[size_t(adv.frame)] = game_.FrameFlags();
+        }
         (adv.rolling_back ? costs_.replayTick : costs_.tick) += MicrosSince(t);
         (adv.rolling_back ? costs_.replayed : costs_.ticks)++;
         // On predicted inputs: hashed once confirmed (SettleConfirmed), from its save.

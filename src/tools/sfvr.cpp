@@ -126,7 +126,10 @@ int CmdInfo(int argc, char** argv)
     if (rf.summary.present) {
         const MatchSummary& s = rf.summary;
         std::string rounds;
-        for (const auto& r : s.rounds) rounds += r.winner == 0 ? " P1" : r.winner == 1 ? " P2" : " draw";
+        for (const auto& r : s.rounds) {
+            rounds += r.winner == 0 ? " P1" : r.winner == 1 ? " P2" : s.ending ? " ?" : " draw";
+            if (r.fightFrame >= 0) rounds += " [" + std::to_string(r.fightFrame) + "-" + (r.endFrame >= 0 ? std::to_string(r.endFrame) : "") + "]";
+        }
         std::printf("summary         %s vs %s | rounds %u-%u (%s ) | winner %s%s | %u s\n", s.names[0].c_str(), s.names[1].c_str(),
                     s.roundWins[0], s.roundWins[1], rounds.c_str(), s.winner == 0 ? "P1" : s.winner == 1 ? "P2" : "none",
                     s.ending ? ", left early" : "", s.seconds);

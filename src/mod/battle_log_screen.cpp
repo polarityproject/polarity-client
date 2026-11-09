@@ -573,7 +573,9 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         }
         d->AddLine(g_v.P(kDetailX0 + 2, ay1), g_v.P(kDetailX1 - 2, ay1), Rgba(236, 228, 206, 36), std::max(1.0f, g_v.L(1)));
         float ry = ay1 + 16;
-        if (!s.rounds.empty()) {
+        // Round winners come from a decided match only (a match left early
+        // keeps its rounds' frames for playback, not who won them).
+        if (!s.rounds.empty() && s.ending == 0) {
             Text(d, bold, g_v.L(16), g_v.P(kDetailX0 + 24, ry), kGold, "ROUNDS");
             ry += 28;
             for (size_t i = 0; i < s.rounds.size() && i < 7; i++) {
@@ -836,7 +838,10 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
         if (Confirm()) ControlReplay(ReplayControl::Toggle);
         // A step back plays no sound, the menu's cue included.
         if (Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}) && v.frame > v.backLimit) ControlReplay(ReplayControl::Step, -1);
-        if (Right()) ControlReplay(ReplayControl::Step, 1);
+        if (Pressed({ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight}) && v.canStepForward) {
+            PlayUi(UiSound::Step);
+            ControlReplay(ReplayControl::Step, 1);
+        }
         if (Pressed({ImGuiKey_GamepadL1}, false)) PlayUi(UiSound::Step), ControlReplay(ReplayControl::Round, -1);
         if (Pressed({ImGuiKey_GamepadR1}, false)) PlayUi(UiSound::Step), ControlReplay(ReplayControl::Round, 1);
         static bool fast = false;
@@ -852,24 +857,31 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
     const float y0 = 856, y1 = 900;
     d->AddRectFilled(g_v.P(0, y0), g_v.P(1600, y1), Rgba(10, 12, 16, 184));
     d->AddLine(g_v.P(0, y0), g_v.P(1600, y0), Rgba(236, 228, 206, 115), std::max(1.0f, g_v.L(1)));
-    if (v.frames > 0) {
-        const float done = static_cast<float>(v.frame + 1) / static_cast<float>(v.frames);
-        d->AddRectFilled(g_v.P(0, y0 - 1), g_v.P(1600 * done, y0 + 2), look::kGold);
-    }
-    const char* state = v.seeking ? "SEEKING" : v.paused ? "PAUSED" : v.fast > 1 ? "FAST" : "PLAYING";
+    // The round's progress: its action frames, from "FIGHT!" to the KO.
+    if (v.roundProgress > 0) d->AddRectFilled(g_v.P(0, y0 - 1), g_v.P(1600 * v.roundProgress, y0 + 2), look::kGold);
+    const bool action = v.roundFrame >= 0;
+    const char* state = v.seeking ? "SEEKING" : v.paused ? "PAUSED" : v.fast > 1 && action ? "FAST" : "PLAYING";
     Text(d, bold, g_v.L(16), g_v.P(48, y0 + 13), look::kGold, state);
-    char frame[64];
-    std::snprintf(frame, sizeof(frame), " \xC2\xB7 Frame %d / %d", v.frame, std::max(0, v.frames - 1));
-    Text(d, bold, g_v.L(18), g_v.P(48 + TextW(bold, 16, state) + 18, y0 + 11), look::kCream, v.title + frame);
+    // The frame counter: per round, 0 on its first action frame, its last on
+    // the KO's; none outside the action (intro, round call, KO, win poses).
+    char frame[64] = "";
+    if (action && v.roundFrames > 0) std::snprintf(frame, sizeof(frame), " \xC2\xB7 Frame %d / %d", v.roundFrame, v.roundFrames - 1);
+    else if (action) std::snprintf(frame, sizeof(frame), " \xC2\xB7 Frame %d", v.roundFrame);
     PromptList prompts = {{"button_a", v.paused ? "Play" : "Pause"}, {"button_lb", "Round"}, {"button_rb", ""}, {"button_rt", "Hold to fast forward"}, {"button_b", "Leave"}};
     int clicked = -1;
     const float left = PromptRow(d, f.body, 17, prompts, 1564, y0 + 8, 28, false, &clicked);
     // Frame steps: the d-pad's left and right, drawn as triangles; back dims
     // at the earliest frame a step reaches (ReplayView::backLimit).
     const float tx = left - 120;
+    // The title gives way (cut short) before the frame counter does, so long
+    // names never run into the controls.
+    const float textX = 48 + TextW(bold, 16, state) + 18;
+    const float titleRoom = std::max(60.0f, tx - 24 - textX - TextW(bold, 18, frame));
+    Text(d, bold, g_v.L(18), g_v.P(textX, y0 + 11), look::kCream, Fit(bold, 18, v.title, titleRoom) + frame);
     const bool canBack = v.frame > v.backLimit && !v.seeking;
     d->AddTriangleFilled(g_v.P(tx, y0 + 22), g_v.P(tx + 12, y0 + 14), g_v.P(tx + 12, y0 + 30), canBack ? look::kCream : Rgba(236, 228, 206, 70));
-    d->AddTriangleFilled(g_v.P(tx + 30, y0 + 14), g_v.P(tx + 42, y0 + 22), g_v.P(tx + 30, y0 + 30), look::kCream);
+    d->AddTriangleFilled(g_v.P(tx + 30, y0 + 14), g_v.P(tx + 42, y0 + 22), g_v.P(tx + 30, y0 + 30),
+                         v.canStepForward ? look::kCream : Rgba(236, 228, 206, 70));
     Text(d, bold, g_v.L(17), g_v.P(tx + 52, y0 + 12), look::kCream, "Frame");
     if (clicked >= 0) ClickPad(PadKeyOfGlyph(prompts[clicked].first));
 }

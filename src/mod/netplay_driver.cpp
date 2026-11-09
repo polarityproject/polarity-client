@@ -2869,6 +2869,8 @@ private:
     // the set (BeginJump). leftEarly: the session ended before the match did.
     ReplayFile WithSummary(ReplayFile rf, bool leftEarly)
     {
+        // Left after the match was decided (its win screens): played out.
+        if (matchWinner_ >= 0) leftEarly = false;
         MatchSummary& s = rf.summary;
         s.present = true;
         {
@@ -2877,7 +2879,16 @@ private:
         }
         s.winner = static_cast<int8_t>(leftEarly ? -1 : matchWinner_);
         s.ending = leftEarly || matchWinner_ < 0 ? 1 : 0;
+        // The winners from the battle's round history, each round's action
+        // frames from the session's per-frame fight flags (the replay
+        // viewer's frame counter and steps).
         s.rounds = matchRounds_;
+        const std::vector<RoundResult> fights = RoundsFromFrameFlags(rf.frameFlags);
+        if (s.rounds.size() < fights.size()) s.rounds.resize(fights.size());
+        for (size_t i = 0; i < fights.size(); i++) {
+            s.rounds[i].fightFrame = fights[i].fightFrame;
+            s.rounds[i].endFrame = fights[i].endFrame;
+        }
         for (int i = 0; i < kNumPlayers; i++) {
             s.roundWins[i] = matchRoundWins_[i];
             s.setWins[i] = setWins_[i];

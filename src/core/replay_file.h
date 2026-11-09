@@ -61,10 +61,17 @@ struct StateDump {
 // What the Battle Log lists (the INFO chunk, written uncompressed right after
 // the setup, so a list reads only a file's first bytes: LoadReplayHeader).
 // Files from before it have none (present false).
+// A round's action frames: the frames whose tick ran with its fight on,
+// from the one after "FIGHT!" to its KO (or time over), both included; -1
+// when not known (files before the chunk's version 2, a match left mid-round).
 struct RoundResult {
-    int32_t endFrame = -1; // the frame the round's end was decided on
-    int8_t winner = -1;    // 0, 1, or -1 (a draw)
+    int32_t endFrame = -1;   // the last action frame: the KO's
+    int8_t winner = -1;      // 0, 1, or -1 (a draw)
+    int32_t fightFrame = -1; // the first action frame
 };
+// The rounds' action frames from a session's per-frame flags
+// (ReplayFile::frameFlags), in order; a round still on at the end has endFrame -1.
+std::vector<RoundResult> RoundsFromFrameFlags(const std::vector<uint8_t>& flags);
 struct MatchSummary {
     bool present = false;
     std::string names[kNumPlayers];      // as the players typed them
@@ -106,6 +113,9 @@ struct ReplayFile {
     std::vector<ReplayEvent> events;
     std::vector<StateDump> dumps;
     MatchSummary summary;
+    // A live session's: per frame, IGame::FrameFlags of its last simulation
+    // (for the summary's rounds). Not saved.
+    std::vector<uint8_t> frameFlags;
 
     int FrameCount() const { return static_cast<int>(inputs.size()); }
     size_t RegionCount() const { return regions.size(); }

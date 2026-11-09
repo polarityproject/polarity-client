@@ -58,6 +58,9 @@ struct RestartPending {
     int target = -1;
     bool paused = false;
     int fast = 0;
+    // The rounds' starts, ends and calls seen so far (a file without its
+    // rounds' action frames: the counter and the jumps keep them).
+    std::vector<int> starts, ends, calls;
 };
 RestartPending g_restartPending;
 std::atomic<int> g_latch{-1};    // `latch tick|game`: the pad latch the next replay uses (-1: by recording)
@@ -102,11 +105,14 @@ public:
         path_ = std::move(path);
     }
     void SetBenchmark() { bench_ = true; }
-    void StartAt(int target, bool paused, int fast)
+    void StartAt(const RestartPending& r)
     {
-        startAt_ = target;
-        paused_ = paused;
-        fast_ = fast;
+        startAt_ = r.target;
+        paused_ = r.paused;
+        fast_ = r.fast;
+        roundStarts_ = r.starts;
+        roundEnds_ = r.ends;
+        roundCalls_ = r.calls;
     }
 
     void Keep(int from, int to)
@@ -194,15 +200,42 @@ private:
     // a round's end on (KO to the next FIGHT: a load there runs the next
     // round's reset differently, frame 3851 of the step test) or from before
     // a round's end (the round over leaves things outside the snapshot)
-    // came out different (seek and step tests, 2026-11-09).
+    // came out different (seek and step tests, 2026-11-09). On the KO's own
+    // frame (the director just stopped, as a netplay rollback undoing a
+    // predicted KO sees it) a load back is fine.
     int LoadableKey(int target) const
     {
         auto it = std::upper_bound(keys_.begin(), keys_.end(), target - 1, [](int f, const Keyframe& k) { return f < k.frame; });
         if (it == keys_.begin()) return -1;
         const int k = static_cast<int>(it - keys_.begin()) - 1;
         const int keyFrame = keys_[k].frame;
-        const bool sameRound = std::none_of(roundEnds_.begin(), roundEnds_.end(), [&](int e) { return e >= keyFrame && e < frame_; });
+        const bool sameRound =
+            std::none_of(roundEnds_.begin(), roundEnds_.end(), [&](int e) { return e >= keyFrame && e < frame_ - 1; });
         return keys_[k].fight && sameRound ? k : -1;
+    }
+
+    // Each round's action frames (RoundResult: the frame after "FIGHT!" to
+    // the KO's): from the file's summary, else (and for what it lacks) as
+    // this replay has seen them; last -1 while not known.
+    struct ActionRange {
+        int first = -1, last = -1;
+    };
+    std::vector<ActionRange> ActionRanges() const
+    {
+        std::vector<ActionRange> out;
+        for (const RoundResult& r : rf_.summary.rounds) {
+            if (r.fightFrame >= 0) out.push_back({r.fightFrame, r.endFrame});
+        }
+        for (size_t i = 0; i < roundStarts_.size(); i++) {
+            const int first = roundStarts_[i] + 1;
+            auto end = std::lower_bound(roundEnds_.begin(), roundEnds_.end(), first);
+            const int last = end != roundEnds_.end() && (i + 1 == roundStarts_.size() || *end <= roundStarts_[i + 1]) ? *end : -1;
+            if (i < out.size()) {
+                if (out[i].last < 0) out[i].last = last;
+            }
+            else out.push_back({first, last});
+        }
+        return out;
     }
 
     // The earliest frame on screen a step back reaches (Publish): the first
@@ -277,7 +310,9 @@ private:
             }
         }
         else if (!paused_ && frame_ <= last_) {
-            for (int k = 0; k < std::max(1, fast_) && frame_ <= last_; k++) Simulate(game, false);
+            // Fast forward only through action frames: the presentation
+            // (intro, round call, KO, win poses) plays at normal speed.
+            for (int k = 0; k < std::max(1, fast_) && frame_ <= last_ && (k == 0 || wasFight_); k++) Simulate(game, false);
         }
         if (frame_ > last_ && target_ < 0 && !findRound_) paused_ = true; // the end: it stays there
         Publish();
@@ -290,7 +325,8 @@ private:
     // One frame of the recording, a keyframe first where one is due.
     void Simulate(SfvGame& game, bool lean)
     {
-        const bool due = frame_ % kKeyEvery == 0 || (!roundStarts_.empty() && frame_ == roundStarts_.back() + 1);
+        // (roundStarts_ may hold later rounds already: a restart keeps them.)
+        const bool due = frame_ % kKeyEvery == 0 || std::binary_search(roundStarts_.begin(), roundStarts_.end(), frame_ - 1);
         if (due && (keys_.empty() || keys_.back().frame < frame_)) {
             Keyframe k;
             k.frame = frame_;
@@ -391,8 +427,19 @@ private:
                 if (to < frame_) Seek(game, to, true);
                 break;
             }
-            EndQuiet();
-            Seek(game, frame_ + (arg == 0 ? 1 : arg));
+            // Forward: only through a round's action frames, never past its
+            // KO (the KO's own frame is the last): the round's end, its win
+            // pose and the next round's call play as they did, or a round
+            // jump skips them.
+            if (target_ >= 0 || findRound_ || !CanStepForward()) break;
+            {
+                int to = frame_ + std::max(1, arg);
+                for (const ActionRange& r : ActionRanges()) {
+                    if (r.first <= shown + 1 && r.last >= shown + 1) to = std::min(to, r.last + 1);
+                }
+                EndQuiet();
+                Seek(game, to);
+            }
             break;
         case ReplayControl::Seek: EndQuiet(); Seek(game, arg); break;
         case ReplayControl::Round:
@@ -432,10 +479,38 @@ private:
         g_view.frames = last_ + 1;
         g_view.fast = fast_;
         g_view.backLimit = BackLimit();
+        g_view.canStepForward = CanStepForward() && target_ < 0 && !findRound_;
         g_view.round = static_cast<int>(std::upper_bound(roundStarts_.begin(), roundStarts_.end(), frame_ - 1) - roundStarts_.begin());
         g_view.mismatches = mismatchFrames_;
         g_view.seeks = seeks_;
+        // The per-round counter and the stripe: 0 on a round's first action
+        // frame, its last on the KO's; empty before a round's action (and
+        // from the next round's call on), full after its KO. A round whose
+        // end is not known yet (a file without the ranges) runs against the
+        // round timer's length.
+        const int shown = frame_ - 1;
+        g_view.roundFrame = -1;
+        g_view.roundFrames = 0;
+        g_view.roundProgress = 0;
+        for (const ActionRange& r : ActionRanges()) {
+            if (shown < r.first) break;
+            const int frames = r.last >= r.first ? r.last - r.first + 1 : 0;
+            if (r.last < 0 || shown <= r.last) {
+                g_view.roundFrame = shown - r.first;
+                g_view.roundFrames = frames;
+                const int span = frames > 1 ? frames - 1 : std::max(1, int(rf_.setup.timerSeconds) * 60);
+                g_view.roundProgress = std::clamp(static_cast<float>(g_view.roundFrame) / static_cast<float>(span), 0.0f, 1.0f);
+            }
+            else {
+                const bool nextCall = std::any_of(roundCalls_.begin(), roundCalls_.end(), [&](int c) { return c > r.last && c <= shown; });
+                g_view.roundProgress = nextCall ? 0.0f : 1.0f;
+            }
+        }
     }
+
+    // A frame step forward runs an action frame: the state on screen has a
+    // round's fight on (from "FIGHT!" to the frame before its KO).
+    bool CanStepForward() const { return wasFight_ && frame_ <= last_; }
 
     bool viewer_ = false;
     bool bench_ = false;
@@ -1143,9 +1218,7 @@ private:
             g_view.paused = false;
         }
         const std::string restartPath = path_, restartTitle = title_;
-        const int restartTarget = startAt_;
-        const bool restartPaused = paused_;
-        const int restartFast = fast_;
+        const RestartPending restartWith{startAt_, paused_, fast_, roundStarts_, roundEnds_, roundCalls_};
         const bool restart = viewer_ && restarting_;
         SetRoundDirectorPerTick(false, false);
         SetPadIsolation(false);
@@ -1185,7 +1258,7 @@ private:
         SetFrameDriver(nullptr);
         delete this;
         if (restart) {
-            g_restartPending = {restartTarget, restartPaused, restartFast};
+            g_restartPending = restartWith;
             RequestReplay(restartPath, 0, -1, -1, "", -1, -1, false, "", -1, 0, 0, -1, restartTitle, true);
         }
         else if (viewer) {
@@ -1330,7 +1403,7 @@ void RequestReplay(const std::string& path, int stressDistance, int watchFrom, i
     if (!viewTitle.empty()) {
         driver->SetViewer(viewTitle, full);
         if (g_restartPending.target > 0) {
-            driver->StartAt(g_restartPending.target, g_restartPending.paused, g_restartPending.fast);
+            driver->StartAt(g_restartPending);
             g_restartPending = {};
         }
     }
