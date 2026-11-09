@@ -65,6 +65,9 @@ enum class ReplayControl {
 // Any thread; taken at the replay's next frame. Returns the command's number:
 // ReplayView::handled reaches it once the replay has taken it (0: no replay).
 uint32_t ControlReplay(ReplayControl c, int arg = 0);
+// Research (`rview callkeys|crossrounds 0|1`): round jumps load the keyframe
+// before a round's call; keyframe loads across round ends.
+void SetReplayExperiment(const std::string& what, bool on);
 struct ReplayView {
     bool active = false;
     bool paused = false;

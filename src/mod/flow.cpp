@@ -1279,6 +1279,81 @@ bool SaveOutsideState(OutsideState* out, const OutsideState* previous)
     return true;
 }
 
+namespace {
+// Research (`ufunc`, `functrace`): a blueprint-callable function's native
+// code, found from its UFunction; one traced at a time.
+using ExecFn = void (*)(void* context, void* stack, void* result);
+ExecFn g_tracedOrig = nullptr;
+std::string g_tracedName;
+std::atomic<int> g_traceCalls{0};
+
+void TraceDetour(void* context, void* stack, void* result)
+{
+    if (g_traceCalls++ < 200) {
+        const uintptr_t from = reinterpret_cast<uintptr_t>(_ReturnAddress()) - g_base;
+        Log("functrace: %s on %s (tick %u), from rva 0x%llX", g_tracedName.c_str(), ue4::Describe(context).c_str(), TickNow(),
+            static_cast<unsigned long long>(from));
+    }
+    g_tracedOrig(context, stack, result);
+}
+
+// The code pointers in a UFunction (its native thunk among them).
+std::vector<std::pair<size_t, uintptr_t>> CodePointers(const uint8_t* fn)
+{
+    std::vector<std::pair<size_t, uintptr_t>> out;
+    for (size_t at = 0x30; at < 0x140; at += 8) {
+        if (!IsReadable(fn + at, 8)) break;
+        const uintptr_t v = *reinterpret_cast<const uintptr_t*>(fn + at);
+        if (v > g_base + 0x1000 && v < g_base + 0x2800000) out.push_back({at, v - g_base});
+    }
+    return out;
+}
+} // namespace
+
+void LogFunction(const std::string& name)
+{
+    if (!ue4::EnsureObjects(g_base)) return Log("ufunc: no object array");
+    int found = 0;
+    // "*Class": every function of that class.
+    const bool ofClass = !name.empty() && name[0] == '*';
+    ue4::ForEachObject([&](const void* object) {
+        if (ue4::ObjectName(ue4::ClassOf(object)) != "Function") return;
+        if (ofClass ? ue4::ObjectName(ue4::OuterOf(object)) != name.substr(1) : ue4::ObjectName(object) != name) return;
+        found++;
+        std::string pointers;
+        for (const auto& [at, rva] : CodePointers(static_cast<const uint8_t*>(object))) {
+            char b[48];
+            std::snprintf(b, sizeof(b), " +0x%zX=0x%llX", at, static_cast<unsigned long long>(rva));
+            pointers += b;
+        }
+        Log("ufunc: %s.%s at %p, code pointers:%s", ue4::ObjectName(ue4::OuterOf(object)).c_str(), ue4::ObjectName(object).c_str(), object,
+            pointers.c_str());
+    });
+    if (!found) Log("ufunc: no function %s", name.c_str());
+}
+
+void TraceFunction(const std::string& name, const std::string& owner, uint32_t offset)
+{
+    if (g_tracedOrig) return Log("functrace: %s is traced already (one at a time)", g_tracedName.c_str());
+    if (!ue4::EnsureObjects(g_base)) return Log("functrace: no object array");
+    void* target = nullptr;
+    ue4::ForEachObject([&](const void* object) {
+        if (target || ue4::ObjectName(object) != name || ue4::ObjectName(ue4::ClassOf(object)) != "Function") return;
+        if (!owner.empty() && ue4::ObjectName(ue4::OuterOf(object)) != owner) return;
+        const auto* fn = static_cast<const uint8_t*>(object);
+        if (IsReadable(fn + offset, 8)) target = *reinterpret_cast<void* const*>(fn + offset);
+    });
+    if (!target) return Log("functrace: %s%s%s not found", owner.c_str(), owner.empty() ? "" : ".", name.c_str());
+    g_tracedName = owner.empty() ? name : owner + "." + name;
+    g_traceCalls = 0;
+    if (MH_CreateHook(target, reinterpret_cast<void*>(&TraceDetour), reinterpret_cast<void**>(&g_tracedOrig)) != MH_OK ||
+        MH_EnableHook(target) != MH_OK) {
+        g_tracedOrig = nullptr;
+        return Log("functrace: hook at rva 0x%llX failed", static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(target) - g_base));
+    }
+    Log("functrace: tracing %s (native rva 0x%llX)", g_tracedName.c_str(), static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(target) - g_base));
+}
+
 void LogRoundInfo()
 {
     uint8_t* d = LiveRoundDirector();

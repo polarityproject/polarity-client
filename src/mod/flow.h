@@ -225,6 +225,11 @@ bool SaveOutsideState(OutsideState* out, const OutsideState* previous);
 void RestoreOutsideState(const OutsideState& s);
 // Research (`roundinfo`): the battle context's round state and round history.
 void LogRoundInfo();
+// Research (`ufunc <name>`): every UFunction of that name, its owner and the
+// code pointers in it; (`functrace <name> [owner] <offset hex>`): hooks the
+// native at that UFunction offset and logs the calls (one at a time).
+void LogFunction(const std::string& name);
+void TraceFunction(const std::string& name, const std::string& owner, uint32_t offset);
 // The match's rounds as the battle has them now (at its end): each round's
 // winner, and the rounds each side won. False when they cannot be read.
 bool ReadRoundResults(std::vector<RoundResult>* rounds, uint8_t wins[2]);

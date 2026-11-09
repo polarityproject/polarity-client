@@ -64,6 +64,11 @@ struct RestartPending {
     std::vector<int> starts, ends, calls;
 };
 RestartPending g_restartPending;
+// Round jumps back within a round load the keyframe taken just before its
+// call (on; `rview callkeys 0` for tests). Research (`rview crossrounds 1`):
+// loads across round ends, which still diverge (60 frames of a jump from
+// the match's end into round 3's fight, 2026-11-09).
+std::atomic<bool> g_callKeys{true}, g_crossRounds{false};
 std::atomic<int> g_latch{-1};    // `latch tick|game`: the pad latch the next replay uses (-1: by recording)
 
 class NoTransport : public ITransport {
@@ -190,6 +195,7 @@ private:
     struct Keyframe {
         int frame = 0;      // the state before this frame
         bool fight = false; // taken in a round's fight (after FIGHT, before its end)
+        bool call = false;  // taken just before a round's call: a round jump back within the round loads it
         std::vector<uint8_t> regions;
         OutsideState outside;
     };
@@ -203,7 +209,10 @@ private:
     // a round's end (the round over leaves things outside the snapshot)
     // came out different (seek and step tests, 2026-11-09). On the KO's own
     // frame (the director just stopped, as a netplay rollback undoing a
-    // predicted KO sees it) a load back is fine.
+    // predicted KO sees it) a load back is fine. The key just before a
+    // round's call (after the round's reset) loads too, within its round:
+    // LB to the round's start is a load, the music and ambience untouched
+    // (a restart starts the battle's music over), 0 frames differing.
     int LoadableKey(int target) const
     {
         auto it = std::upper_bound(keys_.begin(), keys_.end(), target - 1, [](int f, const Keyframe& k) { return f < k.frame; });
@@ -212,7 +221,8 @@ private:
         const int keyFrame = keys_[k].frame;
         const bool sameRound =
             std::none_of(roundEnds_.begin(), roundEnds_.end(), [&](int e) { return e >= keyFrame && e < frame_ - 1; });
-        return keys_[k].fight && sameRound ? k : -1;
+        const bool kind = keys_[k].fight || (g_callKeys && keys_[k].call);
+        return kind && (sameRound || g_crossRounds) ? k : -1;
     }
 
     // Each round's action frames (RoundResult: the frame after "FIGHT!" to
@@ -244,7 +254,7 @@ private:
     int BackLimit() const
     {
         for (const Keyframe& k : keys_) {
-            if (k.frame < frame_ && LoadableKey(k.frame + 1) >= 0) return k.frame;
+            if (k.fight && k.frame < frame_ && LoadableKey(k.frame + 1) >= 0) return k.frame; // steps stay in the action
         }
         return std::max(0, frame_ - 1);
     }
@@ -353,6 +363,15 @@ private:
             }
             keys_.push_back(std::move(k));
         }
+        // Outside a fight, the state before this tick, in case it turns out
+        // to be a round's call (a key of its own: round jumps load it).
+        const bool firstPass = keys_.empty() || keys_.back().frame <= frame_;
+        if (!wasFight_ && firstPass) {
+            scratch_.regions.resize(StateSize(game.Regions()));
+            SaveRegions(game.Regions(), scratch_.regions.data());
+            SaveOutsideState(&scratch_.outside, keys_.empty() ? nullptr : &keys_.back().outside);
+            scratch_.frame = frame_;
+        }
         // Lean only in a round's fight, as rollbacks run: the intro, the round
         // call and the KO count presentation work a lean tick leaves out (a
         // seek into the intro ran its round call a frame late without it).
@@ -364,6 +383,18 @@ private:
         }
         const bool call = RoundCallRunning();
         if (call && !wasCall_ && (roundCalls_.empty() || roundCalls_.back() < frame_)) roundCalls_.push_back(frame_);
+        if (call && !wasCall_ && scratch_.frame == frame_) {
+            // The state before the call's tick: a keyframe (a round jump loads
+            // it and plays the call from its start).
+            if (!keys_.empty() && keys_.back().frame == frame_) keys_.back().call = true;
+            else if (keys_.empty() || keys_.back().frame < frame_) {
+                scratch_.call = true;
+                scratch_.fight = false;
+                keys_.push_back(std::move(scratch_));
+            }
+            scratch_ = Keyframe{};
+            scratch_.frame = -1;
+        }
         wasCall_ = call;
         // A round's end: the fight over (KO or time). Keyframes from before
         // one are not loaded past it (Seek).
@@ -550,6 +581,7 @@ private:
     std::vector<int> roundStarts_; // frames whose tick began a round's fight
     std::vector<int> roundCalls_;  // frames whose tick began a round's call (Round jumps land there)
     bool wasCall_ = false;
+    Keyframe scratch_{-1};       // the state before the last tick outside a fight (a call key in waiting)
     bool wasFight_ = false;
     bool paused_ = false;
     bool findRound_ = false;
@@ -1392,6 +1424,14 @@ bool RequestBenchmark(const std::string& path)
     }
     RequestReplay(path, 8, -1, -1, "", -1, -1, true, "", -1, 0, 0, -1, "", false, true);
     return CurrentFrameDriver() != nullptr;
+}
+
+void SetReplayExperiment(const std::string& what, bool on)
+{
+    if (what == "callkeys") g_callKeys = on;
+    else if (what == "crossrounds") g_crossRounds = on;
+    else return Log("rview: no experiment %s", what.c_str());
+    Log("rview: %s %s", what.c_str(), on ? "on" : "off");
 }
 
 uint32_t ControlReplay(ReplayControl c, int arg)

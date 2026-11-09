@@ -1455,12 +1455,30 @@ void RunNetCommand(const std::string& line)
     else if (cmd == "roundinfo") {
         RunOnGameThread([] { LogRoundInfo(); });
     }
+    else if (cmd == "ufunc") {
+        // ufunc <name>: research (a UFunction's owner and native code)
+        std::string name;
+        ss >> name;
+        RunOnGameThread([name] { LogFunction(name); });
+    }
+    else if (cmd == "functrace") {
+        // functrace <name> <owner|-> <offset hex>: research (log a UFunction's native calls)
+        std::string name, owner;
+        uint32_t offset = 0;
+        ss >> name >> owner >> std::hex >> offset;
+        if (owner == "-") owner.clear();
+        RunOnGameThread([name, owner, offset] { TraceFunction(name, owner, offset); });
+    }
     else if (cmd == "rview") {
         // rview pause|play|toggle|step <n>|seek <frame>|round <1|-1>|fast <n>|leave|status:
         // the viewed replay's controls (tests)
         std::string what;
         int arg = 0;
         ss >> what >> arg;
+        if (what == "callkeys" || what == "crossrounds") {
+            SetReplayExperiment(what, arg != 0);
+            return;
+        }
         if (what == "status") {
             const ReplayView v = ReplayViewNow();
             Log("rview: %s frame %d of %d, round %d, %s%s, fast %d, %d keyframe loads, %d frames differ, back to %d, "
@@ -1771,7 +1789,7 @@ bool Parse(const std::string& line, Step& step)
         return !ss.fail();
     }
     if (cmd == "host" || cmd == "join" || cmd == "matchchat" || cmd == "shot" || cmd == "warmupsleep" || cmd == "warmupextra" || cmd == "watchcamera" || cmd == "emptystage" || cmd == "spectate" || cmd == "ticket" || cmd == "presence" || cmd == "rooms" || cmd == "settings" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "crash" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
-        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "randomstages" || cmd == "randomoff" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "wordfilter" || cmd == "countryflag" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "rview" || cmd == "roundinfo" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "soundlog" || cmd == "uisound" || cmd == "soundrollback" || cmd == "kowaitmode" || cmd == "frameids" || cmd == "leanresim" || cmd == "startprobe" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
+        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "randomstages" || cmd == "randomoff" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "wordfilter" || cmd == "countryflag" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "rview" || cmd == "roundinfo" || cmd == "ufunc" || cmd == "functrace" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "soundlog" || cmd == "uisound" || cmd == "soundrollback" || cmd == "kowaitmode" || cmd == "frameids" || cmd == "leanresim" || cmd == "startprobe" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
         step.kind = Step::Net;
         step.line = line;
         return true;
