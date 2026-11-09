@@ -165,6 +165,8 @@ constexpr uintptr_t kFlowEventType = 0x2C5F8F8;
 // match's end. Other codes leave the phase alone.
 constexpr int32_t kFightStarts = 6;
 constexpr int32_t kRoundCall = 5;
+constexpr int32_t kRoundEnd = 7; // after the KO's stop (or time over)
+std::atomic<uint32_t> g_roundEnds{0};
 // Between the round call (5) and "FIGHT!" (6). The presentation runs in
 // lockstep (never rolled back), so a plain flag follows it.
 std::atomic<bool> g_roundCall{false};
@@ -443,6 +445,7 @@ uint64_t EventDetour(void* node, void* event, void* a3, void* a4)
         }
         if (vtable - g_base == kFlowEventType) {
             g_roundCall = code == kRoundCall;
+            if (code == kRoundEnd) g_roundEnds++;
             if (code == kFightStarts || EndsFight(code) || code == kResults) {
                 g_roundFlow.lastCode = code;
                 g_roundFlow.inFight = code == kFightStarts;
@@ -1148,6 +1151,7 @@ void PumpGameThread()
 }
 
 bool RoundCallRunning() { return g_roundCall; }
+uint32_t RoundEndEvents() { return g_roundEnds; }
 
 bool RoundInFight()
 {

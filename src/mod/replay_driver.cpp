@@ -51,6 +51,7 @@ std::atomic<bool> g_stop{false}; // `replay stop`: end the running replay at the
 std::mutex g_viewMutex;
 std::vector<std::pair<ReplayControl, int>> g_viewCommands;
 ReplayView g_view;                 // as the driver last published it
+uint32_t g_viewTaken = 0;          // commands the driver took from g_viewCommands (published later as g_view.handled)
 std::function<void()> g_viewLeave; // what leaving a viewed replay does after the battle
 // A viewer restarting (a jump back across a round's end): what the next
 // driver takes on (its target, paused, fast forward).
@@ -252,6 +253,7 @@ private:
     {
         if (!Valid(game)) return false;
         if (frame_ == 0 && keys_.empty()) {
+            roundEndsSeen_ = RoundEndEvents();
             Log("replay: viewing %s, %d frames%s", title_.c_str(), last_ + 1, startAt_ > 0 ? " (restarted)" : "");
             if (startAt_ > 0) {
                 MuteGameSounds(true);
@@ -263,7 +265,9 @@ private:
         {
             std::lock_guard lock(g_viewMutex);
             commands.swap(g_viewCommands);
+            g_viewTaken += static_cast<uint32_t>(commands.size());
         }
+        handledNow_ += static_cast<int>(commands.size()); // published with their effect (Publish, Finish)
         for (const auto& [c, arg] : commands) {
             if (c == ReplayControl::Leave) {
                 Log("replay: left the replay at frame %d", frame_ - 1);
@@ -277,12 +281,13 @@ private:
             Finish(game);
             return false;
         }
+        const auto koScreenOver = [&] { return GetTickCount64() >= koHoldUntil_; }; // (Simulate)
         if (target_ >= 0) {
             // Seeking: the frames before the target lean and muted, the last as
             // played; ~40 ms of them a rendered frame, so the screen goes on.
             const ULONGLONG until = GetTickCount64() + 40;
-            while (frame_ < target_ - 1 && frame_ <= last_ && GetTickCount64() < until) Simulate(game, true);
-            if (frame_ >= target_ - 1 || frame_ > last_) {
+            while (frame_ < target_ - 1 && frame_ <= last_ && GetTickCount64() < until && koScreenOver()) Simulate(game, true);
+            if ((frame_ >= target_ - 1 || frame_ > last_) && koScreenOver()) {
                 if (!quiet_) MuteGameSounds(false);
                 if (frame_ == target_ - 1 && frame_ <= last_) Simulate(game, false);
                 Log("replay: at frame %d (seek done)", frame_ - 1);
@@ -292,12 +297,21 @@ private:
         else if (findRound_) {
             // The next round's call, not reached yet: on until it is.
             const ULONGLONG until = GetTickCount64() + 40;
-            while (findRound_ && frame_ <= last_ && GetTickCount64() < until) {
+            while (findRound_ && frame_ <= last_ && GetTickCount64() < until && koScreenOver()) {
                 const size_t known = roundCalls_.size();
+                const size_t soundMark = SoundCaptureMark();
                 Simulate(game, true);
                 if (roundCalls_.size() > known) {
                     findRound_ = false;
-                    Seek(game, roundCalls_.back() + 1);
+                    // Found as it ran (here already, the usual case: Seek
+                    // returns early then, sounds still muted from the run).
+                    // The call's own tick's sounds play on; the run's before
+                    // it are stopped as the volumes come back.
+                    if (roundCalls_.back() + 1 == frame_) {
+                        KeepCapturedFrom(soundMark);
+                        MuteGameSounds(false);
+                    }
+                    else Seek(game, roundCalls_.back() + 1);
                     if (restarting_) {
                         Finish(game);
                         return false;
@@ -353,6 +367,17 @@ private:
         // A round's end: the fight over (KO or time). Keyframes from before
         // one are not loaded past it (Seek).
         if (!fight && wasFight_ && (roundEnds_.empty() || roundEnds_.back() < frame_)) roundEnds_.push_back(frame_);
+        // A run (a jump behind the black) that passes a round's end waits
+        // there until the KO screen, which plays in real time, is over:
+        // else it was still on screen over the next round's call.
+        if (!fight && wasFight_) {
+            koMs_ = GetTickCount64();
+            if (lean) Log("replay: a run passed the KO at frame %d", frame_);
+        }
+        if (const uint32_t ends = RoundEndEvents(); ends != roundEndsSeen_) {
+            roundEndsSeen_ = ends;
+            if (lean && koMs_) koHoldUntil_ = koMs_ + kKoScreenMs;
+        }
         wasFight_ = fight;
         frame_++;
     }
@@ -444,6 +469,7 @@ private:
         case ReplayControl::Seek: EndQuiet(); Seek(game, arg); break;
         case ReplayControl::Round:
             EndQuiet();
+            Log("replay: round jump %+d from frame %d", arg, shown);
             // A round starts at its call ("ROUND 2"), which then plays as it
             // did: a seek run through the call in a frame or two left its
             // banner (then "FIGHT!") over the fight (UI checks, 2026-11-09).
@@ -475,6 +501,8 @@ private:
         g_view.title = title_;
         g_view.paused = paused_ && target_ < 0 && !findRound_;
         g_view.seeking = target_ >= 0 || findRound_;
+        g_view.handled += static_cast<uint32_t>(handledNow_);
+        handledNow_ = 0;
         g_view.frame = std::max(0, frame_ - 1);
         g_view.frames = last_ + 1;
         g_view.fast = fast_;
@@ -525,6 +553,13 @@ private:
     bool paused_ = false;
     bool findRound_ = false;
     bool quiet_ = false; // a step back's mute, kept while paused there (Seek)
+    int handledNow_ = 0; // controls taken since the last Publish (ReplayView::handled)
+    // A jump's run waits for the KO screen (Simulate): it plays in real time
+    // from the KO, about this long (UI checks, 2026-11-09).
+    static constexpr ULONGLONG kKoScreenMs = 1500;
+    ULONGLONG koMs_ = 0;          // when the last KO was simulated
+    ULONGLONG koHoldUntil_ = 0;   // a run waits until then
+    uint32_t roundEndsSeen_ = 0;  // RoundEndEvents as of the last tick
     int target_ = -1; // seeking: the frame to simulate next once there
     int fast_ = 0;    // frames a rendered frame while playing (0, 1: as played)
     int keyWarnings_ = 0;
@@ -1203,6 +1238,7 @@ private:
             std::lock_guard lock(g_viewMutex);
             g_view = ReplayView{};
             g_viewCommands.clear();
+            g_viewTaken = 0;
         }
         std::function<void()> leave;
         if (viewer_ && !restarting_) {
@@ -1210,12 +1246,15 @@ private:
             std::lock_guard lock(g_viewMutex);
             g_view = ReplayView{};
             g_viewCommands.clear();
+            g_viewTaken = 0;
             leave = std::move(g_viewLeave);
         }
         else if (viewer_) {
             std::lock_guard lock(g_viewMutex);
             g_view.seeking = true;
             g_view.paused = false;
+            g_view.handled += static_cast<uint32_t>(handledNow_);
+            handledNow_ = 0;
         }
         const std::string restartPath = path_, restartTitle = title_;
         const RestartPending restartWith{startAt_, paused_, fast_, roundStarts_, roundEnds_, roundCalls_};
@@ -1322,6 +1361,7 @@ void RequestReplayView(const std::string& path, const std::string& title, std::f
     {
         std::lock_guard lock(g_viewMutex);
         g_viewCommands.clear();
+        g_viewTaken = g_view.handled;
         g_viewLeave = std::move(onLeave);
     }
     RequestReplay(path, 0, -1, -1, "", -1, -1, true, "", -1, 0, 0, -1, title.empty() ? path : title);
@@ -1338,6 +1378,7 @@ bool RequestBenchmark(const std::string& path)
         g_viewCommands.clear();
         g_viewLeave = nullptr;
         g_view = ReplayView{};
+        g_viewTaken = 0;
         g_view.active = true;
         g_view.benchmark = true;
         g_view.title = "Benchmark";
@@ -1346,10 +1387,14 @@ bool RequestBenchmark(const std::string& path)
     return CurrentFrameDriver() != nullptr;
 }
 
-void ControlReplay(ReplayControl c, int arg)
+uint32_t ControlReplay(ReplayControl c, int arg)
 {
     std::lock_guard lock(g_viewMutex);
-    if (g_view.active || c == ReplayControl::Leave) g_viewCommands.push_back({c, arg});
+    if (!g_view.active && c != ReplayControl::Leave) return 0;
+    g_viewCommands.push_back({c, arg});
+    // Taken in order: this one is in once `handled` (as published) reaches
+    // the count of those taken plus those waiting.
+    return g_viewTaken + static_cast<uint32_t>(g_viewCommands.size());
 }
 
 ReplayView ReplayViewNow()

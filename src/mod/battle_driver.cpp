@@ -411,20 +411,43 @@ CuePlayFn g_origCuePlay = nullptr;
 std::atomic<int> g_soundLog{0};
 std::atomic<int> g_soundStacks{0};
 
+// The plugin's stop request for one sound (rva 0xEE8710: a player, the
+// handle its play request returned, then 1 to stop without release time):
+// queues a type-2 command; its handler (rva 0xEE9080) finds the handle's
+// playback in the player's table and stops just that one (stable in the
+// 2026-11-08 sound tests, docs/sound-dedupe-stop.patch).
+constexpr game::CodeSite kCueStop{
+    "CriWare playback stop request", 0xEE8710,
+    {0x40, 0x57, 0x48, 0x83, 0xEC, 0x40, 0x48, 0x83, 0x39, 0x00, 0x48, 0x8B, 0xF9, 0x0F, 0x84, 0xEA}};
+using CueStopFn = void (*)(void* player, int handle, bool withoutRelease);
+CueStopFn g_cueStop = nullptr;
+// The sound capture (BeginSoundCapture): the sounds asked for meanwhile.
+std::mutex g_captureMutex;
+std::atomic<bool> g_capturing{false}; // read unlocked: battle job threads ask for sounds too
+std::vector<std::pair<void*, int>> g_captured; // player, handle
+thread_local bool t_captureExempt = false;
+
 uint64_t CuePlayDetour(void* player, int sheet, int cue, int a, int b)
 {
+    const bool capture = g_capturing && !t_captureExempt;
     if (g_soundLog > 0) {
         g_soundLog--;
         const uintptr_t from = reinterpret_cast<uintptr_t>(_ReturnAddress()) - g_imageBase;
-        Log("sound: cue %d (sheet %d, %d %d) %s tick %u%s, thread %lu, from rva 0x%llX", cue, sheet, a, b,
+        Log("sound: cue %d (sheet %d, %d %d) %s tick %u%s%s, thread %lu, from rva 0x%llX", cue, sheet, a, b,
             g_inDriver ? "in driven" : "outside driven", DrivenTicks(), g_inDriver && g_replayingTick ? " replayed" : "",
-            GetCurrentThreadId(), static_cast<unsigned long long>(from));
+            capture ? " (captured)" : "", GetCurrentThreadId(), static_cast<unsigned long long>(from));
         if (g_soundStacks > 0) {
             g_soundStacks--;
             LogStack("sound: cue play", g_imageBase);
         }
     }
-    return g_origCuePlay(player, sheet, cue, a, b);
+    const uint64_t handle = g_origCuePlay(player, sheet, cue, a, b);
+    if (capture) {
+        const int id = static_cast<int>(handle); // -1: nothing started
+        std::lock_guard lock(g_captureMutex);
+        if (g_capturing && id != -1 && g_captured.size() < 4096) g_captured.push_back({player, id});
+    }
+    return handle;
 }
 
 bool Hook(const GameImage& image, const game::CodeSite& site, void* detour, void** original)
@@ -566,6 +589,40 @@ void LogBonePositions(int count, uintptr_t from)
         static_cast<unsigned long long>(from));
 }
 
+void BeginSoundCapture()
+{
+    std::lock_guard lock(g_captureMutex);
+    g_captured.clear();
+    g_capturing = g_cueStop != nullptr;
+}
+
+int StopCapturedSounds()
+{
+    std::vector<std::pair<void*, int>> captured;
+    {
+        std::lock_guard lock(g_captureMutex);
+        g_capturing = false;
+        captured.swap(g_captured);
+    }
+    // A handle whose sound has ended finds nothing in its player's table.
+    for (const auto& [player, handle] : captured) g_cueStop(player, handle, true);
+    return static_cast<int>(captured.size());
+}
+
+void SetSoundCaptureExempt(bool exempt) { t_captureExempt = exempt; }
+
+size_t SoundCaptureMark()
+{
+    std::lock_guard lock(g_captureMutex);
+    return g_captured.size();
+}
+
+void KeepCapturedFrom(size_t mark)
+{
+    std::lock_guard lock(g_captureMutex);
+    if (mark < g_captured.size()) g_captured.resize(mark);
+}
+
 void LogSoundPlays(int count)
 {
     g_soundLog = count;
@@ -623,6 +680,12 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game)
     }
     if (!Hook(image, kCuePlay, reinterpret_cast<void*>(&CuePlayDetour), reinterpret_cast<void**>(&g_origCuePlay))) {
         Log("battle driver: soundlog unavailable");
+    }
+    else if (void* stop = image.At<void*>(kCueStop.rva); std::memcmp(stop, kCueStop.bytes, sizeof(kCueStop.bytes)) == 0) {
+        g_cueStop = reinterpret_cast<CueStopFn>(stop);
+    }
+    else {
+        Log("battle driver: signature mismatch at %s: sounds from muted runs may be heard after", kCueStop.name);
     }
     void* gaugeStub = MakeGaugeStub();
     if (!gaugeStub || !Hook(image, kGaugeAdd, gaugeStub, reinterpret_cast<void**>(&g_origGaugeAdd))) {

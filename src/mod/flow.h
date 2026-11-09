@@ -230,6 +230,8 @@ void LogRoundInfo();
 bool ReadRoundResults(std::vector<RoundResult>* rounds, uint8_t wins[2]);
 // The round call ("ROUND 1"): from its flow event (5) until "FIGHT!" (6).
 bool RoundCallRunning();
+// Round end flow events (7: after a KO's stop, or time over) seen so far.
+uint32_t RoundEndEvents();
 // After a snapshot load: makes the battle frame's stop bit (KO and other
 // stops) agree with the round director, which is not in the snapshot.
 void MatchStopToDirector(uint8_t* battleFrame);

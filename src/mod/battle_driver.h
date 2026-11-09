@@ -63,6 +63,18 @@ void LogGameInputs(int ticks);
 void LogBonePositions(int count, uintptr_t from);
 // Research: logs the next `count` CriWare cue plays (tick, resimulated or not, thread).
 void LogSoundPlays(int count);
+// The sounds the game asks for between BeginSoundCapture and
+// StopCapturedSounds (a muted run: ui_sound.h MuteGameSounds) are stopped by
+// the latter (what is left of them, which unmuting would make heard); it
+// returns how many were asked for. A thread marked exempt (the mod's own
+// menu sounds) is not captured.
+void BeginSoundCapture();
+int StopCapturedSounds();
+void SetSoundCaptureExempt(bool exempt);
+// How many are captured now; KeepCapturedFrom: those captured since the mark
+// are left playing (a round call's first tick, run muted as a jump found it).
+size_t SoundCaptureMark();
+void KeepCapturedFrom(size_t mark);
 // Logs the current battle's start probe (SfvGame::ArmStartProbe), once.
 void LogStartProbe();
 

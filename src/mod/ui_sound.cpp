@@ -1,5 +1,6 @@
 #include "mod/ui_sound.h"
 
+#include "mod/battle_driver.h"
 #include "mod/image.h"
 #include "mod/log.h"
 
@@ -117,7 +118,9 @@ void PlayCue(uint8_t cue)
 {
     if (!g_play || cue >= kCueCount) return;
     const uint8_t mode = 0;
+    SetSoundCaptureExempt(true); // a menu sound of the mod's: never stopped as a muted run's
     g_play(&cue, &mode);
+    SetSoundCaptureExempt(false);
 }
 
 } // namespace
@@ -141,9 +144,17 @@ void MuteGameSounds(bool mute)
     if (mute) {
         for (const char* category : {"M_SE", "M_VOICE", "M_SYS_VOICE", "M_EXTRA_VOICE"}) setVolume(category, 0.0f);
         g_muted = true;
+        BeginSoundCapture();
         Log("ui sound: the game's sounds muted (music stays)");
         return;
     }
+    // What the muted stretch started and is still playing (a jump's run: the
+    // last round's end, the new round's set-up) is stopped, not heard as the
+    // volumes come back.
+    const int stopped = StopCapturedSounds();
+    // The stops go through the plugin's queue to its sound thread while the
+    // volumes apply at once: a moment for them first, or a tail slips out.
+    if (stopped > 0) Sleep(35);
     using GetFn = void* (*)();
     using OfFn = void* (*)(void*);
     void* instance = reinterpret_cast<GetFn>(g_base + kGameInstance)();
@@ -159,7 +170,7 @@ void MuteGameSounds(bool mute)
     else {
         using ApplyFn = void (*)(void*);
         reinterpret_cast<ApplyFn>(g_base + kApplySoundOptions)(options);
-        Log("ui sound: the game's sounds back at the player's volumes");
+        Log("ui sound: the game's sounds back at the player's volumes (%d asked for while muted, stopped)", stopped);
     }
     g_muted = false;
 }

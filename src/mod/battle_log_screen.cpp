@@ -807,10 +807,60 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
     d->PopClipRect();
 }
 
+// A round jump's fade (DrawReplayStripe): out over kFadeOut, the jump asked
+// once black, black until the replay has taken it and its seek (or restart)
+// is done, then in over kFadeIn on the round's call as it plays.
+enum class JumpFade { None, Out, Black, In };
+struct JumpState {
+    JumpFade phase = JumpFade::None;
+    int dir = 0;
+    double since = 0;
+    uint32_t handledAt = 0; // ReplayView::handled once the jump is taken
+};
+JumpState g_jump;
+constexpr double kFadeOut = 0.25, kFadeIn = 0.35, kJumpGiveUp = 30;
+
+void RoundJumpFade(ImDrawList* d, const ReplayView& v)
+{
+    const double now = ImGui::GetTime();
+    float alpha = 0;
+    switch (g_jump.phase) {
+    case JumpFade::None: return;
+    case JumpFade::Out:
+        alpha = static_cast<float>((now - g_jump.since) / kFadeOut);
+        if (alpha >= 1) {
+            alpha = 1;
+            g_jump.handledAt = ControlReplay(ReplayControl::Round, g_jump.dir);
+            g_jump.phase = g_jump.handledAt ? JumpFade::Black : JumpFade::In;
+            g_jump.since = now;
+        }
+        break;
+    case JumpFade::Black:
+        alpha = 1;
+        if ((v.handled >= g_jump.handledAt && !v.seeking) || now - g_jump.since > kJumpGiveUp) {
+            g_jump.phase = JumpFade::In;
+            g_jump.since = now;
+        }
+        break;
+    case JumpFade::In:
+        alpha = 1 - static_cast<float>((now - g_jump.since) / kFadeIn);
+        if (alpha <= 0) {
+            g_jump = {};
+            return;
+        }
+        break;
+    }
+    // Over the game's picture and HUD; the stripe draws on top.
+    d->AddRectFilled(ImVec2(0, 0), ImGui::GetIO().DisplaySize, Rgba(0, 0, 0, static_cast<int>(255 * std::clamp(alpha, 0.0f, 1.0f))));
+}
+
 void DrawReplayStripe(const HubFonts& f, bool takeInput)
 {
     const ReplayView v = ReplayViewNow();
-    if (!v.active) return;
+    if (!v.active) {
+        g_jump = {}; // left mid-fade
+        return;
+    }
     BeginScreen();
     ImDrawList* d = ImGui::GetForegroundDrawList();
     ImFont* bold = f.bold ? f.bold : f.strong;
@@ -834,7 +884,10 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
         if (clicked >= 0) ControlReplay(ReplayControl::Leave);
         return;
     }
-    if (takeInput) {
+    // While a round jump fades, only B (leave) is taken.
+    const bool fading = g_jump.phase != JumpFade::None;
+    if (takeInput && fading && Back()) ControlReplay(ReplayControl::Leave);
+    if (takeInput && !fading) {
         if (Confirm()) ControlReplay(ReplayControl::Toggle);
         // A step back plays no sound, the menu's cue included.
         if (Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}) && v.frame > v.backLimit) ControlReplay(ReplayControl::Step, -1);
@@ -842,8 +895,16 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
             PlayUi(UiSound::Step);
             ControlReplay(ReplayControl::Step, 1);
         }
-        if (Pressed({ImGuiKey_GamepadL1}, false)) PlayUi(UiSound::Step), ControlReplay(ReplayControl::Round, -1);
-        if (Pressed({ImGuiKey_GamepadR1}, false)) PlayUi(UiSound::Step), ControlReplay(ReplayControl::Round, 1);
+        // A round jump fades the picture out, jumps behind the black (a run
+        // or the battle started again: nothing to watch) and fades back in
+        // on the round's call (RoundJumpFade).
+        if (g_jump.phase == JumpFade::None) {
+            const int dir = Pressed({ImGuiKey_GamepadL1}, false) ? -1 : Pressed({ImGuiKey_GamepadR1}, false) ? 1 : 0;
+            if (dir != 0) {
+                PlayUi(UiSound::Step);
+                g_jump = {JumpFade::Out, dir, ImGui::GetTime(), 0};
+            }
+        }
         static bool fast = false;
         const bool held = ImGui::IsKeyDown(ImGuiKey_GamepadR2);
         if (held != fast) {
@@ -853,13 +914,14 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
         if (Back()) ControlReplay(ReplayControl::Leave);
     }
     g_inputOn = false;
+    RoundJumpFade(d, v);
     // The stripe: 44 high along the bottom, glass over the fight.
     const float y0 = 856, y1 = 900;
     d->AddRectFilled(g_v.P(0, y0), g_v.P(1600, y1), Rgba(10, 12, 16, 184));
     d->AddLine(g_v.P(0, y0), g_v.P(1600, y0), Rgba(236, 228, 206, 115), std::max(1.0f, g_v.L(1)));
     // The round's progress: its action frames, from "FIGHT!" to the KO.
     if (v.roundProgress > 0) d->AddRectFilled(g_v.P(0, y0 - 1), g_v.P(1600 * v.roundProgress, y0 + 2), look::kGold);
-    const bool action = v.roundFrame >= 0;
+    const bool action = v.roundFrame >= 0 && !fading; // a jump's black: no stale counter
     const char* state = v.seeking ? "SEEKING" : v.paused ? "PAUSED" : v.fast > 1 && action ? "FAST" : "PLAYING";
     Text(d, bold, g_v.L(16), g_v.P(48, y0 + 13), look::kGold, state);
     // The frame counter: per round, 0 on its first action frame, its last on
@@ -878,10 +940,10 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
     const float textX = 48 + TextW(bold, 16, state) + 18;
     const float titleRoom = std::max(60.0f, tx - 24 - textX - TextW(bold, 18, frame));
     Text(d, bold, g_v.L(18), g_v.P(textX, y0 + 11), look::kCream, Fit(bold, 18, v.title, titleRoom) + frame);
-    const bool canBack = v.frame > v.backLimit && !v.seeking;
+    const bool canBack = v.frame > v.backLimit && !v.seeking && !fading;
     d->AddTriangleFilled(g_v.P(tx, y0 + 22), g_v.P(tx + 12, y0 + 14), g_v.P(tx + 12, y0 + 30), canBack ? look::kCream : Rgba(236, 228, 206, 70));
     d->AddTriangleFilled(g_v.P(tx + 30, y0 + 14), g_v.P(tx + 42, y0 + 22), g_v.P(tx + 30, y0 + 30),
-                         v.canStepForward ? look::kCream : Rgba(236, 228, 206, 70));
+                         v.canStepForward && !fading ? look::kCream : Rgba(236, 228, 206, 70));
     Text(d, bold, g_v.L(17), g_v.P(tx + 52, y0 + 12), look::kCream, "Frame");
     if (clicked >= 0) ClickPad(PadKeyOfGlyph(prompts[clicked].first));
 }

@@ -62,8 +62,9 @@ enum class ReplayControl {
     Fast,  // arg frames per rendered frame (0 or 1: as played) through action frames
     Leave,
 };
-// Any thread; taken at the replay's next frame.
-void ControlReplay(ReplayControl c, int arg = 0);
+// Any thread; taken at the replay's next frame. Returns the command's number:
+// ReplayView::handled reaches it once the replay has taken it (0: no replay).
+uint32_t ControlReplay(ReplayControl c, int arg = 0);
 struct ReplayView {
     bool active = false;
     bool paused = false;
@@ -84,6 +85,9 @@ struct ReplayView {
     int roundFrame = -1;
     int roundFrames = 0;
     float roundProgress = 0;
+    // Controls the replay has taken so far, published with their effect (a
+    // seek they started shows as seeking from then on): the UI's fades wait on it.
+    uint32_t handled = 0;
     int mismatches = 0; // frames that differed from the recording (testing)
     int seeks = 0;      // keyframe loads (testing)
     bool benchmark = false; // the benchmark's run (benchmark.h), not a viewed replay
