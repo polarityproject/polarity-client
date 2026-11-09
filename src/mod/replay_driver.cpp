@@ -64,10 +64,10 @@ struct RestartPending {
     std::vector<int> starts, ends, calls;
 };
 RestartPending g_restartPending;
-// Round jumps back within a round load the keyframe taken just before its
-// call (on; `rview callkeys 0` for tests). Research (`rview crossrounds 1`):
-// loads across round ends, which still diverge (60 frames of a jump from
-// the match's end into round 3's fight, 2026-11-09).
+// Round jumps back load the keyframe taken just before a round's call, also
+// across round ends until the match is decided (on; `rview callkeys 0` for
+// tests). Research (`rview crossrounds 1`): any key across round ends (a
+// fight key from the match's end diverged, 60 frames, 2026-11-09).
 std::atomic<bool> g_callKeys{true}, g_crossRounds{false};
 std::atomic<int> g_latch{-1};    // `latch tick|game`: the pad latch the next replay uses (-1: by recording)
 
@@ -221,8 +221,36 @@ private:
         const int keyFrame = keys_[k].frame;
         const bool sameRound =
             std::none_of(roundEnds_.begin(), roundEnds_.end(), [&](int e) { return e >= keyFrame && e < frame_ - 1; });
-        const bool kind = keys_[k].fight || (g_callKeys && keys_[k].call);
-        return kind && (sameRound || g_crossRounds) ? k : -1;
+        // A round call's key loads from a fight, in its round or across round
+        // ends (round 3's fight to round 1's call, played on to the match's
+        // end: 0 frames differing), never from between fights: after a KO,
+        // after the next round's reset, after the final KO, all diverged
+        // (4100-4600 frames; cross-test3/4, 2026-11-09). From there a jump
+        // runs on to the next fight first (RunToFight).
+        const bool call = g_callKeys && keys_[k].call && wasFight_;
+        return (keys_[k].fight && sameRound) || call || (g_crossRounds && (keys_[k].fight || keys_[k].call)) ? k : -1;
+    }
+
+    // The key a jump back to `target` would load if the state now were in a
+    // fight: a round call's (else -1).
+    int CallKeyFor(int target) const
+    {
+        auto it = std::upper_bound(keys_.begin(), keys_.end(), target - 1, [](int f, const Keyframe& k) { return f < k.frame; });
+        if (it == keys_.begin() || !g_callKeys) return -1;
+        return std::prev(it)->call ? static_cast<int>(it - keys_.begin()) - 1 : -1;
+    }
+
+    // A round's fight still to come (as known: the file's rounds, or those
+    // seen; not known yet: unless the match is decided).
+    bool FightAhead() const
+    {
+        if (MatchDecided()) return false;
+        const int shown = frame_ - 1;
+        for (const ActionRange& r : ActionRanges()) {
+            if (r.first > shown) return true;
+        }
+        const bool fileHasRounds = std::any_of(rf_.summary.rounds.begin(), rf_.summary.rounds.end(), [](const RoundResult& r) { return r.fightFrame >= 0; });
+        return !fileHasRounds; // the file's rounds all behind: none ahead
     }
 
     // Each round's action frames (RoundResult: the frame after "FIGHT!" to
@@ -305,6 +333,21 @@ private:
                 target_ = -1;
             }
         }
+        else if (runToFight_ >= 0) {
+            // A jump back from between fights (Seek): on to the next fight
+            // (waiting out a KO screen on the way), then the load.
+            const ULONGLONG until = GetTickCount64() + 40;
+            while (!wasFight_ && frame_ <= last_ && GetTickCount64() < until && koScreenOver() && !MatchDecided()) Simulate(game, true);
+            if (wasFight_ || frame_ > last_ || MatchDecided()) {
+                const int target = std::exchange(runToFight_, -1);
+                if (wasFight_) Seek(game, target);
+                else RestartAt(game, target); // no fight came: the battle again
+                if (restarting_) {
+                    Finish(game);
+                    return false;
+                }
+            }
+        }
         else if (findRound_) {
             // The next round's call, not reached yet: on until it is.
             const ULONGLONG until = GetTickCount64() + 40;
@@ -339,7 +382,7 @@ private:
             // (intro, round call, KO, win poses) plays at normal speed.
             for (int k = 0; k < std::max(1, fast_) && frame_ <= last_ && (k == 0 || wasFight_); k++) Simulate(game, false);
         }
-        if (frame_ > last_ && target_ < 0 && !findRound_) paused_ = true; // the end: it stays there
+        if (frame_ > last_ && target_ < 0 && !findRound_ && runToFight_ < 0) paused_ = true; // the end: it stays there
         Publish();
         // The game-thread queue does not run in a driven fight (its pumps are
         // the scene tick and the pad poll): tasks asked for meanwhile run here.
@@ -392,6 +435,7 @@ private:
                 scratch_.fight = false;
                 keys_.push_back(std::move(scratch_));
             }
+            Log("replay: round call keyframe at frame %d", frame_);
             scratch_ = Keyframe{};
             scratch_.frame = -1;
         }
@@ -428,6 +472,14 @@ private:
             // one loads (LoadableKey); other jumps start the battle again and
             // run to the target instead.
             const int k = LoadableKey(target);
+            if (k < 0 && !wasFight_ && CallKeyFor(target) >= 0 && FightAhead()) {
+                // A round call's key, but between fights now (it would not
+                // load the same): on to the next fight first, muted, then it
+                // loads (the music plays on; a restart starts it over).
+                Log("replay: on to the next fight before loading frame %d's round call", target - 1);
+                runToFight_ = target;
+                return;
+            }
             if (k < 0) {
                 RestartAt(game, target);
                 return;
@@ -479,7 +531,7 @@ private:
             if (arg < 0) {
                 // Back: silent, and only as far as a keyframe of this round
                 // loads (a restart is for round jumps, not steps).
-                if (target_ >= 0 || findRound_) break;
+                if (target_ >= 0 || findRound_ || runToFight_ >= 0) break;
                 const int to = std::max(frame_ + arg, BackLimit() + 1);
                 if (to < frame_) Seek(game, to, true);
                 break;
@@ -488,7 +540,7 @@ private:
             // KO (the KO's own frame is the last): the round's end, its win
             // pose and the next round's call play as they did, or a round
             // jump skips them.
-            if (target_ >= 0 || findRound_ || !CanStepForward()) break;
+            if (target_ >= 0 || findRound_ || runToFight_ >= 0 || !CanStepForward()) break;
             {
                 int to = frame_ + std::max(1, arg);
                 for (const ActionRange& r : ActionRanges()) {
@@ -531,15 +583,15 @@ private:
         std::lock_guard lock(g_viewMutex);
         g_view.active = true;
         g_view.title = title_;
-        g_view.paused = paused_ && target_ < 0 && !findRound_;
-        g_view.seeking = target_ >= 0 || findRound_;
+        g_view.paused = paused_ && target_ < 0 && !findRound_ && runToFight_ < 0;
+        g_view.seeking = target_ >= 0 || findRound_ || runToFight_ >= 0;
         g_view.handled += static_cast<uint32_t>(handledNow_);
         handledNow_ = 0;
         g_view.frame = std::max(0, frame_ - 1);
         g_view.frames = last_ + 1;
         g_view.fast = fast_;
         g_view.backLimit = BackLimit();
-        g_view.canStepForward = CanStepForward() && target_ < 0 && !findRound_;
+        g_view.canStepForward = CanStepForward() && target_ < 0 && !findRound_ && runToFight_ < 0;
         g_view.round = static_cast<int>(std::upper_bound(roundStarts_.begin(), roundStarts_.end(), frame_ - 1) - roundStarts_.begin());
         g_view.mismatches = mismatchFrames_;
         g_view.seeks = seeks_;
@@ -586,6 +638,7 @@ private:
     bool paused_ = false;
     bool findRound_ = false;
     bool quiet_ = false; // a step back's mute, kept while paused there (Seek)
+    int runToFight_ = -1; // a jump back waiting for a fight to load from (Seek)
     int handledNow_ = 0; // controls taken since the last Publish (ReplayView::handled)
     // A jump's run waits for the KO screen (Simulate): it plays in real time
     // from the KO, about this long (UI checks, 2026-11-09).
