@@ -5,6 +5,7 @@
 #include "mod/flow.h"
 #include "mod/log.h"
 #include "mod/pak_textures.h"
+#include "mod/ui_sound.h"
 
 #include <unknwn.h>
 
@@ -252,12 +253,21 @@ bool Pressed(std::initializer_list<ImGuiKey> keys, bool repeat)
 }
 // The keyboard's keys come as the pad's (SetKeyboardMap): no keys of the
 // mod's own beside them, so a keyboard works as in the game's menus.
-bool Left() { return Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}); }
-bool Right() { return Pressed({ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight}); }
-bool Up() { return Pressed({ImGuiKey_GamepadDpadUp, ImGuiKey_GamepadLStickUp}); }
-bool Down() { return Pressed({ImGuiKey_GamepadDpadDown, ImGuiKey_GamepadLStickDown}); }
-bool Confirm() { return Pressed({ImGuiKey_GamepadFaceDown}, false); }
-bool Back() { return Pressed({ImGuiKey_GamepadFaceRight}, false); }
+// Each also notes the game's menu sound for it (ui_sound.h), played once at
+// the end of the frame.
+namespace {
+bool Sounded(bool pressed, UiSound sound)
+{
+    if (pressed) PlayUi(sound);
+    return pressed;
+}
+} // namespace
+bool Left() { return Sounded(Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}), UiSound::Step); }
+bool Right() { return Sounded(Pressed({ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight}), UiSound::Step); }
+bool Up() { return Sounded(Pressed({ImGuiKey_GamepadDpadUp, ImGuiKey_GamepadLStickUp}), UiSound::Cursor); }
+bool Down() { return Sounded(Pressed({ImGuiKey_GamepadDpadDown, ImGuiKey_GamepadLStickDown}), UiSound::Cursor); }
+bool Confirm() { return Sounded(Pressed({ImGuiKey_GamepadFaceDown}, false), UiSound::Decide); }
+bool Back() { return Sounded(Pressed({ImGuiKey_GamepadFaceRight}, false), UiSound::Cancel); }
 // Y: the stage's next setting.
 bool NextSetting()
 {
@@ -782,6 +792,7 @@ void PromptLine(ImDrawList* d, ImFont* /*body*/, ImFont* bold, const std::string
 
 float Modal(ImDrawList* d, ImFont* bold, ImFont* body, const ModalSpec& m, int* clicked)
 {
+    NoteModalDrawn();
     const ImVec2 screen = ImGui::GetIO().DisplaySize;
     d->AddRectFilled(ImVec2(0, 0), screen, IM_COL32(4, 5, 7, 153));
     const float x1 = m.x0 + m.w, y1 = m.y0 + m.h;

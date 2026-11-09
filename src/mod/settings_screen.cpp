@@ -2,6 +2,7 @@
 
 #include "mod/log.h"
 #include "mod/ui_kit.h"
+#include "mod/ui_sound.h"
 
 #include <imgui.h>
 #include <imgui_internal.h> // ImTextCharToUtf8
@@ -116,12 +117,14 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
             g.text.erase(n);
         }
         if (Pressed({ImGuiKey_Enter, ImGuiKey_KeypadEnter}, false)) {
+            PlayUi(UiSound::Decide);
             in->row = on.id;
             in->typed = true;
             in->text = g.text;
             g.typing = false;
         }
         else if (Pressed({ImGuiKey_Escape, ImGuiKey_GamepadFaceRight}, false)) {
+            PlayUi(UiSound::Cancel);
             g.typing = false;
         }
     }

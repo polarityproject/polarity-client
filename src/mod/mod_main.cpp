@@ -25,6 +25,7 @@
 #include "mod/rooms_client.h"
 #include "mod/rooms_screen.h"
 #include "mod/weyve_service.h"
+#include "mod/ui_sound.h"
 
 #include <windows.h>
 
@@ -145,6 +146,7 @@ DWORD WINAPI ModMain(LPVOID self)
     HookProcessEnd();
     InstallControl(dir + L"\\sfv_cmd" + suffix + L".txt", config.virtualPads, config.alwaysActive);
     InstallOverlay(panelPath);
+    InstallUiSound(image);
     SetOverlayBuild(std::string("SFVR ") + kModVersion);
     InstallUpdater(dir, kModVersion, Narrow(config.updateUrl), config.updateCheck);
     InstallBattleSetup(image);

@@ -3,6 +3,7 @@
 #include "core/keeper_protocol.h"
 #include "core/rules.h"
 #include "mod/log.h"
+#include "mod/ui_sound.h"
 #include "mod/rooms_screen.h"
 #include "mod/ui_kit.h"
 #include "mod/weyve_service.h"
@@ -50,6 +51,11 @@ struct State {
     float chatScroll = 0;      // design px up from the newest line
     uint32_t chatSeenFrom = 0; // the newest line seen at the bottom (unseen ones count after it)
     std::string chatSeenText;
+    // The chat's newest line as last heard (a new one plays its sound once).
+    bool chatHeard = false;
+    uint32_t chatHeardFrom = 0;
+    std::string chatHeardText;
+    int cardTick = -1;         // the countdown's last second ticked on the card
     int choice = 0;            // a confirm's focused button (0 the first)
     int seatSide = 0;          // the seat A takes when both are open (left/right)
     bool onPlayers = false;    // RB: the cursor in the player list
@@ -376,6 +382,20 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
         if (Pressed({ImGuiKey_PageUp})) g.chatScroll += 160;
         if (Pressed({ImGuiKey_PageDown})) g.chatScroll -= 160;
     }
+    // A new line: the chat sound for someone else's (not muted), the room's
+    // enter and leave sounds for its own joined and left lines. Lines there
+    // when the room opened make none.
+    if (!v.chat.empty()) {
+        const ChatLine& last = v.chat.back();
+        if (g.chatHeard && (last.from != g.chatHeardFrom || last.text != g.chatHeardText)) {
+            if (last.from && last.from != v.self && !g.muted.count(last.from)) PlayUi(UiSound::ChatPost);
+            else if (!last.from && last.text.size() > 7 && last.text.compare(last.text.size() - 7, 7, " joined") == 0) PlayUi(UiSound::Joined);
+            else if (!last.from && last.text.size() > 5 && last.text.compare(last.text.size() - 5, 5, " left") == 0) PlayUi(UiSound::Left);
+        }
+        g.chatHeard = true;
+        g.chatHeardFrom = last.from;
+        g.chatHeardText = last.text;
+    }
     // How many lines arrived since the view last sat at the bottom.
     int unseen = 0;
     if (!v.chat.empty()) {
@@ -570,6 +590,10 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
     const double total = std::max(1.0, (s.callSeconds ? s.callSeconds : 21) - kCardMarginSeconds); // 21: the keeper's call (20 on the card)
     const double left = std::clamp(total - (RoomsClockMs() - v.tableViews[t].callSeenMs) / 1000.0, 0.0, total);
     const float ty = y0 + 296;
+    // The last five seconds tick, until this player is ready.
+    const int second = static_cast<int>(std::ceil(left));
+    if (!g.cardReady && !s.ready[mySeat] && second > 0 && second <= 5 && second != g.cardTick) PlayUi(UiSound::Countdown);
+    g.cardTick = second;
     if (g.cardReady || s.ready[mySeat]) {
         Text(d, f.display, g_v.L(28), g_v.P(x0 + w / 2, ty + 40), kGreen, "READY", 0.5f);
         Text(d, f.body, g_v.L(19), g_v.P(x0 + w / 2, ty + 86), kCream, "Waiting for " + NameOf(v, s.seat[1 - mySeat]) + ".", 0.5f);
@@ -866,6 +890,8 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         // A new call, also the same table calling the same two again: Ready
         // as the keeper has it (it keeps a Ready across a call again).
         if (callTable != g.cardTable) g.cardDelay = g_suggestedDelay;
+        if (callTable >= 0) PlayUi(UiSound::YourTurn);
+        g.cardTick = -1;
         g.cardTable = callTable;
         g.cardCall = callNumber;
         g.cardSince = ImGui::GetTime();

@@ -2,6 +2,7 @@
 
 #include "mod/log.h"
 #include "mod/ui_kit.h"
+#include "mod/ui_sound.h"
 
 #include <imgui.h>
 
@@ -430,6 +431,7 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     Backdrop(d);
     d->PushClipRect(g_v.P(0, 0), g_v.P(1600, 900), true);
     g_inputOn = takeInput;
+    if (takeInput) SetUiSoundSet(UiSoundSet::MainMenu); // the hub stands for the main menu
     const std::vector<Entry> entries = Entries(live);
     const int count = static_cast<int>(entries.size());
     g_focus = std::clamp(g_focus, 0, count - 1);
@@ -460,7 +462,7 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     else if (g_problemOpen) action = DrawRoomsProblem(d, f, live);
     else {
         if (Confirm() || std::exchange(g_clickedTile, false)) action = entries[g_focus].action;
-        if (Pressed({ImGuiKey_GamepadStart}, false)) action = HubAction::Settings;
+        if (Pressed({ImGuiKey_GamepadStart}, false)) action = HubAction::Settings, PlayUi(UiSound::Decide);
         // Custom Rooms that cannot be used: why, in a modal, not a dead screen.
         if (action == HubAction::CustomRooms && live.roomsProblem != HubLive::RoomsProblem::None) {
             action = HubAction::None;

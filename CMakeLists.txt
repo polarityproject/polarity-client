@@ -237,6 +237,7 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/udp_transport.cpp
     src/mod/rooms_client.cpp
     src/mod/ui_kit.cpp
+    src/mod/ui_sound.cpp
     src/mod/hub_screen.cpp
     src/mod/rooms_screen.cpp
     src/mod/room_screen.cpp

@@ -7,6 +7,14 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+
+- SFVR's screens make the game's own menu sounds: moving the cursor,
+  changing a value, choosing, going back, windows opening, notices, chat
+  lines, players coming and going in a room, Ready, and your turn at a
+  table with its last seconds counting down. They follow the game's SE
+  volume (Options, Sound) as its own menus do.
+
 ## [0.3.1] - 2026-11-08
 
 Choose the stages Random can land on, in My character. Sounds no longer

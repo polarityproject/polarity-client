@@ -2,6 +2,7 @@
 
 #include "core/random_stage.h"
 #include "mod/pak_textures.h"
+#include "mod/ui_sound.h"
 #include "mod/profile.h"
 #include "mod/textures.h"
 
@@ -1720,6 +1721,9 @@ std::vector<Toast> g_toasts; // render thread
 
 void AddToast(const std::string& text, ImVec4 color = ImVec4(1, 1, 1, 1), int seconds = 4)
 {
+    // The game's notice sound (the error one for a red toast), out of a match:
+    // in a fight the toasts are small notes and the fight has its own sounds.
+    if (!g_inMatch) PlayUi(color.x > 0.9f && color.y < 0.5f ? UiSound::NoticeError : UiSound::Notice);
     if (g_toasts.size() >= 5) g_toasts.erase(g_toasts.begin());
     g_toasts.push_back({text, color, GetTickCount64() + seconds * 1000ull, GetTickCount64()});
 }
@@ -3551,6 +3555,8 @@ void Draw(IDXGISwapChain* swapChain)
         std::lock_guard lock(g_textureMutex);
         texture = g_texture != nullptr;
     }
+    // The menu sounds this frame's screens asked for (ui_sound.h).
+    FlushUiSounds();
     const bool draw = visible || preview || liveAlpha > 0 || session || hint || HubOpen() || !g_toasts.empty() || g_preview.Any() || texture;
     if (!draw || (!g_rtv && !CreateTarget(swapChain))) {
         ImGui::EndFrame();
