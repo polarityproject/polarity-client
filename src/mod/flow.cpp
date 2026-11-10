@@ -3343,6 +3343,8 @@ void LogWorldContext()
     });
 }
 
+int SchedulerPhaseNow() { return g_schedPhase; }
+
 void SetSchedulerPhase(int phase, bool replaying)
 {
     g_schedPhase = phase;

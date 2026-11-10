@@ -291,6 +291,8 @@ void TaskCensus(int calls);
 // Research (`phasecost`): the scheduler phase now running (0: none), and
 // per-task timing by phase, logged when turned off (over `ticks` driven ticks).
 void SetSchedulerPhase(int phase, bool replaying = false);
+// The scheduler phase running now (1, 2, 4, 8; 0 outside one).
+int SchedulerPhaseNow();
 // Experiment (`resimtasks`): task functions (rvas) that replayed ticks leave
 // out in scheduler phases 4 and 8.
 void SetResimTaskSkip(std::vector<uintptr_t> rvas);

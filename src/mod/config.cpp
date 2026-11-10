@@ -332,6 +332,7 @@ Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const st
     n.verifyLoads = ReadInt(path, L"netplay", L"verify_loads", 1) != 0;
     n.verifyLoadsEvery = static_cast<unsigned int>(std::max(1, ReadInt(path, L"netplay", L"verify_loads_every", 16)));
     n.leanResim = ReadInt(path, L"netplay", L"lean_resim", 1) != 0;
+    n.cameraRollback = ReadInt(path, L"netplay", L"camera_rollback", 1) != 0;
     n.hashOnConfirm = ReadInt(path, L"netplay", L"hash_on_confirm", 1) != 0;
     ReadNetplayChoices(path, n, false);
     if (!panelPath.empty()) ReadNetplayChoices(panelPath, n, true);

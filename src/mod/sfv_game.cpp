@@ -2,6 +2,7 @@
 
 #include "core/state.h"
 #include "mod/battle_driver.h"
+#include "mod/camera_rollback.h"
 #include "mod/frame_meter.h"
 #include "mod/flow.h"
 #include "mod/hitch.h"
@@ -188,6 +189,8 @@ void SfvGame::OnInputUnit(uint8_t* inputUnit)
         }
     }
     ActorLogTick();
+    CineLogTick();
+    CamTraceRecord(0);
     FrameMeterTick(*this);
     FtraceTick();
     if (injecting_) {
@@ -523,6 +526,7 @@ bool SfvGame::RefreshRegions()
     }
 
     regions_ = std::move(fresh);
+    CameraJournalReset();
     ArmPendingRegionWatch(regions_, image_.base);
     SetStateMap(stateMap_);
     return true;
@@ -864,6 +868,8 @@ void SfvGame::RunPostRestoreCallbacks(const game::FrameId& gameId, const game::F
         uintptr_t target = ctx ? *static_cast<const uintptr_t*>(ctx) : 0;
         target = target > image_.base && target < image_.base + 0x8000000 ? target - image_.base : 0;
         const uint64_t key = ((reinterpret_cast<uintptr_t>(fn) - image_.base) << 32) | target;
+        // Its reset of the camera views, replaced (camera_rollback.h).
+        if (target == kCameraResetCallback && CameraRollbackOn()) continue;
         if (g_skipAny) {
             std::lock_guard lock(g_skipMutex);
             if (std::find(g_skipCallbacks.begin(), g_skipCallbacks.end(), key) != g_skipCallbacks.end()) continue;
@@ -933,7 +939,9 @@ void SfvGame::Advance(const FrameInputs& inputs, bool rollingBack)
     injecting_ = true;
     BeginDrivenTick();
     SeedTickRandom();
+    CameraTickBegin();
     RunBattleTick(rollingBack);
+    CameraTickEnd();
     injecting_ = false;
     // The round director's check for this tick, and its state into the snapshot.
     RunRoundDirector();
@@ -1278,6 +1286,7 @@ void SfvGame::OnStateLoaded(int frame)
         }
     }
     RunPostRestoreCallbacks(gameId, oldId);
+    CameraLoaded(DrivenTicks());
     QueryPerformanceCounter(&b);
     RoundDirectorFromSnapshot();
     MatchStopToDirector(battleFrame_);

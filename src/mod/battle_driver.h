@@ -26,6 +26,8 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game);
 void SetFrameDriver(IFrameDriver* driver);
 // The driven tick about to run is a replay of a rolled-back frame (SfvGame::Advance).
 void SetReplayingTick(bool replaying);
+// Whether the tick being run is a resimulation (inside the frame driver).
+bool InReplayedTick();
 // Research (`phasecost 0|1`): logs the battle update's parts' cost per tick.
 void SetPhaseTiming(bool on);
 // Experiment (`resimskip 0|1`): replayed ticks leave out the presentation phases.
@@ -47,6 +49,15 @@ void DumpMoveFile(const std::string& name);
 // script offset and frame, and the position regions' floats.
 void LogActors(int ticks);
 void ActorLogTick();
+// Research (`cinelog 2|1|0`): the fighters' cinematic flags and scripts per
+// tick (replayed ticks marked), the drawn camera per frame while one plays.
+void LogCinematics(int mode);
+void CineLogTick();
+void CineLogFrame();
+// Research (`camtrace <from> <to> [class text]`): camera objects' bytes per
+// tick and frame to SFVR\research\camtrace.bin.
+void TraceCameraObjects(uint32_t from, uint32_t to, const std::string& text);
+void CamTraceRecord(int kind);
 // Research (`rsnap`, `rdiff side|all [prefix]`): copies every snapshot region,
 // then logs the words that changed since (side: flips between 1.0/-1.0 or 0/1).
 void SnapRegions();

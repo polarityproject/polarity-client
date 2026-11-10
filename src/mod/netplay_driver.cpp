@@ -2420,7 +2420,8 @@ private:
 
         // Mashing stops with the match's outcome: the post-match menu reads
         // the pads.
-        if (options_.mashSeed && s == State::Running) Mash(session_->NextFrame());
+        if (!options_.inputLoop.empty() && s == State::Running) PlayInputLoop(session_->NextFrame());
+        else if (options_.mashSeed && s == State::Running) Mash(session_->NextFrame());
         UpdatePredictionWindow();
 
         // Time sync: the side that runs ahead stretches its frame period a
@@ -2484,7 +2485,7 @@ private:
             decidedAt_ = Clock::now();
             SetState(State::PostMatch);
             SetHoldResults(true);
-            if (options_.mashSeed) SetScriptedPad(0, true, 0);
+            if (options_.mashSeed || !options_.inputLoop.empty()) SetScriptedPad(0, true, 0);
             Log("netplay: the match is decided at frame %d", session_->NextFrame());
         }
         if (host_) Stream();
@@ -2798,6 +2799,31 @@ private:
         const int frames = static_cast<int>(std::ceil((rttMs / 2 + net.jitter) * 60 / 1000)) + 1;
         return static_cast<uint8_t>(std::clamp(frames, static_cast<int>(options_.inputDelay), kMaxLockstepDelay));
     }
+
+    void PlayInputLoop(int frame)
+    {
+        int period = 0;
+        for (const auto& [b, n] : options_.inputLoop) period += n;
+        if (period <= 0) return;
+        const int at = frame - options_.mashFrom;
+        uint16_t buttons = 0;
+        if (at >= 0) {
+            int pos = at % period;
+            if (pos == 0 && frame != loopLoggedAt_ && loopsLogged_ < 200) {
+                loopLoggedAt_ = frame;
+                Log("netplay: input loop %d starts at frame %d", ++loopsLogged_, frame);
+            }
+            for (const auto& [b, n] : options_.inputLoop) {
+                if (pos < n) {
+                    buttons = b;
+                    break;
+                }
+                pos -= n;
+            }
+        }
+        SetScriptedPad(0, true, buttons, 0);
+    }
+    int loopsLogged_ = 0, loopLoggedAt_ = -1;
 
     void Mash(int frame)
     {

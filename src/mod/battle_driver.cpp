@@ -1,7 +1,10 @@
 #include "mod/battle_driver.h"
 #include "mod/ue4.h"
 
+#include "mod/battle_actors.h"
 #include "mod/battle_setup.h"
+#include "mod/camera_rollback.h"
+#include "mod/replay_driver.h"
 #include "mod/crash_report.h"
 #include "mod/flow.h"
 #include "mod/hitch.h"
@@ -272,6 +275,8 @@ void BattleFrameDetour(uint8_t* battleFrame)
         g_inDriver = false;
     }
     g_frameThread = 0;
+    // Camera requests the frame's resimulation dropped, undone before it is drawn.
+    CameraFrameEnd();
     if (!handled) {
         hitch::Scope timed(hitch::Part::BattleFrame);
         g_origBattleFrame(battleFrame);
@@ -279,6 +284,8 @@ void BattleFrameDetour(uint8_t* battleFrame)
     // The boxes of the frame about to be drawn (Training, replays).
     CollectHitboxes(*g_game);
     FrameMeterFrame(*g_game);
+    CineLogFrame();
+    CamTraceRecord(2);
 }
 
 int g_strayRecords = 0;
@@ -751,6 +758,8 @@ void SetReplayingTick(bool replaying)
     CountPhaseTick();
 }
 
+bool InReplayedTick() { return g_inDriver && g_replayingTick; }
+
 void SetResimPresentationSkip(bool on)
 {
     g_skipResimPresentation = on;
@@ -895,7 +904,7 @@ std::atomic<int> g_actorLog{0};
 const uint8_t* g_cameraManager = nullptr; // research: the drawn PlayerCameraManager
 } // namespace
 
-void LogActors(int ticks)
+void RefreshActorObjects()
 {
     g_moveFiles.clear();
     if (ue4::EnsureObjects(g_imageBase)) {
@@ -917,6 +926,11 @@ void LogActors(int ticks)
         const auto* manager = *reinterpret_cast<const uint8_t* const*>(p + 0x390);
         if (manager && ue4::ObjectName(ue4::ClassOf(manager)).find("CameraManager") != std::string::npos) g_cameraManager = manager;
     });
+}
+
+void LogActors(int ticks)
+{
+    RefreshActorObjects();
     g_actorLog = ticks;
     Log("actorlog: %zu move files, camera %s, the next %d ticks", g_moveFiles.size(),
         g_cameraManager ? ue4::Describe(g_cameraManager).c_str() : "none", ticks);
@@ -961,6 +975,207 @@ void ActorLogTick()
         line += b;
     }
     Log("actorlog %d:%s", left, line.c_str());
+}
+
+namespace {
+// Research (`cinelog 1|0`): the fighters' cinematics and scripts per tick,
+// and the drawn camera per rendered frame while one plays.
+std::atomic<int> g_cineLog{0}; // 1: changes and cinematics, 2: every tick and frame
+struct CineSeen { uint32_t script = ~0u, cine = ~0u; };
+CineSeen g_cineSeen[4];
+int g_cineAfter = 0;      // rendered frames to keep logging the camera after a cinematic
+float g_cineCam[7] = {};  // the last camera logged
+} // namespace
+
+// A script's name from its move file's tables (the header sfvfile reads:
+// '#BAC', u16 tables at +12, their offsets from u32 +16; a table: i16,
+// u16 count, u32 scripts, u32 names, each from the table).
+std::string ScriptName(uintptr_t script)
+{
+    for (const MoveFileRange& m : g_moveFiles) {
+        if (script < m.lo || script >= m.hi || m.hi - m.lo < 24) continue;
+        const auto* b = reinterpret_cast<const uint8_t*>(m.lo);
+        const size_t size = m.hi - m.lo;
+        auto u16 = [&](size_t o) { return o + 2 <= size ? *reinterpret_cast<const uint16_t*>(b + o) : uint16_t{0}; };
+        auto u32 = [&](size_t o) { return o + 4 <= size ? *reinterpret_cast<const uint32_t*>(b + o) : 0u; };
+        if (std::memcmp(b, "#BAC", 4) != 0) return m.name + "?";
+        const uint16_t tables = u16(12);
+        const uint32_t list = u32(16);
+        for (uint16_t t = 0; t < tables; t++) {
+            const uint32_t at = u32(list + 4 * t);
+            if (!at) continue;
+            const uint16_t count = u16(at + 2);
+            const uint32_t moves = u32(at + 4), names = u32(at + 8);
+            for (uint16_t i = 0; i < count; i++) {
+                const uint32_t s = u32(at + moves + 4 * i);
+                if (!s || m.lo + at + s != script) continue;
+                const uint32_t n = u32(at + names + 4 * i);
+                std::string name;
+                for (size_t o = at + n; n && o < size && b[o] && name.size() < 48; o++) name += static_cast<char>(b[o]);
+                return m.name + ":" + name;
+            }
+        }
+        return m.name + "+" + std::to_string(script - m.lo);
+    }
+    return "?";
+}
+
+void LogCinematics(int mode)
+{
+    // The move files and the camera are looked up again once a battle has them.
+    for (CineSeen& s : g_cineSeen) s = {};
+    g_cineAfter = 0;
+    g_cineLog = mode;
+    Log("cinelog: %s", mode >= 2 ? "every tick's fighters, every frame's camera"
+                       : mode ? "the fighters' cinematics and scripts per tick, the camera per frame while one plays" : "off");
+}
+
+void CineLogTick()
+{
+    if (!g_cineLog || !g_game) return;
+    // Every fighter region (the two in play and the spares), in the regions'
+    // order: during a throw both may stand on one side.
+    struct Fighter { const char* name; uint32_t side, script, cine; float frame, speed, x, y; uintptr_t scriptPtr; };
+    Fighter f[4] = {};
+    int found = 0;
+    for (const StateRegion& r : g_game->Regions()) {
+        if (found == 4) break;
+        if (r.size != actor::kRegionSize || !IsReadable(r.ptr - actor::kPosition, 0x48)) continue;
+        if (*reinterpret_cast<const uintptr_t*>(r.ptr - actor::kVtableAt) - g_imageBase != actor::kFighterVtable) continue;
+        const auto* runner = *reinterpret_cast<const uint8_t* const*>(r.ptr + actor::kRunner);
+        if (!runner || !IsReadable(runner, 0x68)) continue;
+        Fighter& g = f[found++];
+        g.name = r.name.c_str();
+        g.side = *reinterpret_cast<const uint32_t*>(r.ptr + actor::kSide);
+        g.scriptPtr = *reinterpret_cast<const uintptr_t*>(runner + actor::kRunnerScript);
+        g.script = *reinterpret_cast<const uint32_t*>(runner + actor::kRunnerIndex);
+        g.frame = *reinterpret_cast<const int32_t*>(runner + actor::kRunnerFrame) / 65536.0f;
+        g.speed = *reinterpret_cast<const int32_t*>(runner + actor::kRunnerSpeed) / 65536.0f;
+        g.cine = *reinterpret_cast<const uint32_t*>(r.ptr + actor::kCinematic);
+        const auto* pos = *reinterpret_cast<const uint8_t* const*>(r.ptr - actor::kPosition);
+        if (pos && IsReadable(pos + actor::kFighterXY, 8)) {
+            g.x = *reinterpret_cast<const float*>(pos + actor::kFighterXY);
+            g.y = *reinterpret_cast<const float*>(pos + actor::kFighterXY + 4);
+        }
+    }
+    if (found < 2) return;
+    // The battle's move files (loaded with it) and its camera: looked up once
+    // the battle has them (a walk over every object: a stall of up to
+    // seconds, so not for live sessions), then when a script is in none
+    // known, at most every 60 s.
+    static ULONGLONG lookedUp = 0;
+    const bool known = ScriptName(f[0].scriptPtr) != "?" && ScriptName(f[1].scriptPtr) != "?";
+    const ULONGLONG since = GetTickCount64() - lookedUp;
+    if ((g_moveFiles.empty() && since > 2000) || ((!known || !g_cameraManager) && since > 60000)) {
+        lookedUp = GetTickCount64();
+        RefreshActorObjects();
+        Log("cinelog: %zu move files, camera %s", g_moveFiles.size(), g_cameraManager ? ue4::Describe(g_cameraManager).c_str() : "none");
+    }
+    bool changed = false, cine = false;
+    for (int i = 0; i < found; i++) {
+        changed |= f[i].script != g_cineSeen[i].script || f[i].cine != g_cineSeen[i].cine;
+        cine |= f[i].cine != 0;
+    }
+    if (!changed && !cine && g_cineLog < 2) return;
+    std::string line;
+    for (int i = 0; i < found; i++) {
+        char b[220];
+        std::snprintf(b, sizeof(b), " | %s s%u %s #%u f%.2f cine %u speed %.2f pos %.3f %.3f", f[i].name, f[i].side,
+                      ScriptName(f[i].scriptPtr).c_str(), f[i].script, f[i].frame, f[i].cine, f[i].speed, f[i].x, f[i].y);
+        line += b;
+        g_cineSeen[i].script = f[i].script;
+        g_cineSeen[i].cine = f[i].cine;
+    }
+    Log("cinelog tick %u%s%s", DrivenTicks(), g_inDriver && g_replayingTick ? " replayed" : "", line.c_str());
+}
+
+void CineLogFrame()
+{
+    if (!g_cineLog || !g_cameraManager || !IsReadable(g_cameraManager + 0x370, 0x1C)) return;
+    bool cine = g_cineLog >= 2;
+    for (const CineSeen& s : g_cineSeen) cine |= s.cine == 1;
+    if (cine) g_cineAfter = 30;
+    else if (g_cineAfter > 0) g_cineAfter--;
+    else return;
+    const auto* v = reinterpret_cast<const float*>(g_cameraManager + 0x370);
+    float jump = 0;
+    for (int i = 0; i < 3; i++) jump = std::max(jump, std::fabs(v[i] - g_cineCam[i]));
+    std::memcpy(g_cineCam, v, sizeof(g_cineCam));
+    Log("cinelog frame: tick %u cam %.1f %.1f %.1f r %.2f %.2f %.2f fov %.2f%s", DrivenTicks(), v[0], v[1], v[2], v[3], v[4], v[5], v[6],
+        jump > 60 ? " CUT" : "");
+}
+
+namespace {
+// Research (`camtrace <from tick> <to tick> [class text]`): the bytes of every
+// object whose class name holds the text ("Camera" by default), at each tick
+// end (replayed or not) and each rendered frame, for driven ticks from..to,
+// to SFVR\research\camtrace.bin.
+struct TracedObject { const uint8_t* p; size_t size; std::string name; };
+std::vector<TracedObject> g_camObjects;
+FILE* g_camFile = nullptr;
+uint32_t g_camFrom = 0, g_camTo = 0;
+} // namespace
+
+void TraceCameraObjects(uint32_t from, uint32_t to, const std::string& text)
+{
+    if (g_camFile) std::fclose(g_camFile), g_camFile = nullptr;
+    g_camObjects.clear();
+    if (!ue4::EnsureObjects(g_imageBase)) return Log("camtrace: no object table");
+    ue4::ForEachObject([&](const void* object) {
+        const std::string cls = ue4::ObjectName(ue4::ClassOf(object));
+        if (cls.find(text) == std::string::npos || ue4::ObjectName(object).rfind("Default__", 0) == 0) return;
+        size_t size = ue4::ObjectSize(object);
+        if (size == 0 || size > 0x4000) size = 0x1000;
+        if (!IsReadable(object, size)) return;
+        g_camObjects.push_back({static_cast<const uint8_t*>(object), size, ue4::Describe(object)});
+    });
+    wchar_t exe[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    std::wstring dir(exe);
+    dir = dir.substr(0, dir.find_last_of(L"\\/")) + L"\\SFVR\\research";
+    CreateDirectoryW(dir.c_str(), nullptr);
+    g_camFile = _wfopen((dir + L"\\camtrace.bin").c_str(), L"wb");
+    if (!g_camFile) return;
+    // Header: count, then each object's name (u16 length, bytes), address (u64), size (u32).
+    const uint32_t n = static_cast<uint32_t>(g_camObjects.size());
+    std::fwrite(&n, 4, 1, g_camFile);
+    for (const TracedObject& o : g_camObjects) {
+        const uint16_t len = static_cast<uint16_t>(o.name.size());
+        const uint64_t at = reinterpret_cast<uintptr_t>(o.p);
+        const uint32_t size = static_cast<uint32_t>(o.size);
+        std::fwrite(&len, 2, 1, g_camFile);
+        std::fwrite(o.name.data(), 1, len, g_camFile);
+        std::fwrite(&at, 8, 1, g_camFile);
+        std::fwrite(&size, 4, 1, g_camFile);
+        Log("camtrace: %s at %p, %zu bytes", o.name.c_str(), static_cast<const void*>(o.p), o.size);
+    }
+    g_camFrom = from;
+    g_camTo = to;
+    Log("camtrace: %u objects, ticks %u..%u", n, from, to);
+}
+
+// kind: 0 a tick (1 when replayed), 2 a rendered frame.
+void CamTraceRecord(int kind)
+{
+    if (!g_camFile) return;
+    if (kind == 0 && g_inDriver && g_replayingTick) kind = 1;
+    const uint32_t tick = DrivenTicks();
+    if (tick > g_camTo + 2) {
+        std::fclose(g_camFile);
+        g_camFile = nullptr;
+        Log("camtrace: done");
+        return;
+    }
+    if (tick < g_camFrom) return;
+    const uint32_t head[2] = {tick, static_cast<uint32_t>(kind)};
+    std::fwrite(head, 4, 2, g_camFile);
+    for (const TracedObject& o : g_camObjects) {
+        if (IsReadable(o.p, o.size)) std::fwrite(o.p, 1, o.size, g_camFile);
+        else {
+            const std::vector<uint8_t> zero(o.size);
+            std::fwrite(zero.data(), 1, o.size, g_camFile);
+        }
+    }
 }
 
 namespace {

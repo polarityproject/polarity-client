@@ -80,6 +80,9 @@ struct NetplayOptions {
     NetConditions conditions;              // simulated latency/jitter/loss on what this side sends
     uint64_t mashSeed = 0;                 // testing: the local player mashes random inputs
     int mashFrom = 0;                      // testing: ... from this session frame on
+    // testing (`mash loop <buttons>:<frames>...`): the local player plays these
+    // inputs in a loop instead, frame by frame (from mashFrom).
+    std::vector<std::pair<uint16_t, uint16_t>> inputLoop;
     int dumpEvery = 600;                   // full state dumps in match recordings: every N confirmed frames
     int maxDumps = 24;                     // ... at most this many
     bool fullRecordings = false;           // recordings keep every frame's region hashes, not only around desyncs (testing)
@@ -88,6 +91,7 @@ struct NetplayOptions {
     bool verifyLoads = true;               // loads checked against their save's checksum (netplay.h)
     unsigned int verifyLoadsEvery = 16;    // ... every this many loads (1: all)
     bool leanResim = true;                 // replayed ticks without presentation work (sfv_game.h SetLeanResim)
+    bool cameraRollback = true;            // camera views follow rollbacks (camera_rollback.h)
     bool hashOnConfirm = true;             // frames on predicted inputs hashed once confirmed (NetplayConfig)
     bool menuAfterMatch = true;            // back to the main menu when a session ends or on leave
     bool hotkeys = false;                  // F7 hosts, F8 joins (testing; capture tools bind F8)

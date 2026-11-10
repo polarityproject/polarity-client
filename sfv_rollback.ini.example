@@ -108,6 +108,9 @@ verify_loads_every=16
 ; frame's newest tick makes up for; about a sixth of a long rollback's time.
 ; 0: every replayed tick runs the whole update (for comparing).
 lean_resim=1
+; 1: camera views (throw and Critical Art cameras, their blends back) follow
+; rollbacks; 0: the game's own reset after a load, which cut the camera.
+camera_rollback=1
 ; 1: a frame simulated on predicted inputs is hashed (for the desync check
 ; and the recording) once its inputs are confirmed, from its save, instead of
 ; at every simulation: a long rollback runs most frames several times.
