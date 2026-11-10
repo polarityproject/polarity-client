@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -33,25 +34,41 @@ using namespace ui;    // ui_kit.h
 enum Kind : uint8_t { Empty, Idle, Counter, Active, FirstActive, Recovery, Iasa, Parry, Stun, Invincible, StrikeInv, ProjInv };
 // Runs count FirstActive with Active; Empty (not recorded) is neutral too.
 Kind Group(Kind k) { return k == FirstActive ? Active : k == Empty ? Idle : k; }
+bool Actionable(Kind k) { return k == Idle || k == Iasa || k == Empty; }
 const char* KindName(Kind k)
 {
     static const char* names[] = {"-", "idle", "cnt", "act", "act1", "rec", "iasa", "par", "stun", "inv", "sinv", "pinv"};
     return names[k];
 }
 
-constexpr int N = 120;            // blocks: 2 s
-constexpr int kClear = 10;        // blocks left clear after the newest once it wraps
-constexpr int kNeutralLimit = 120; // neutral frames after which the next action starts a new bar
+constexpr int N = 120;               // blocks: 2 s
 constexpr ULONGLONG kStaleMs = 250;  // no refresh this long: the battle is gone
 constexpr ULONGLONG kPausedMs = 150; // no battle tick this long out of a replay: the game is paused
+
+// A block's milestones, drawn as a white border on its top, right and bottom.
+enum Edge : uint8_t { EdgeAirborne = 1, EdgeLanding = 2, EdgeEnd = 4 };
 
 struct Meter {
     Kind kind[2][N]{};
     uint16_t count[2][N]{}; // a run's length, over its last block (0: none)
     bool lane[2][N]{};      // the player's projectile is out
+    uint8_t edge[2][N]{};   // Edge bits
     bool mark[N]{};         // a super freeze or cinematic held the meter before this block
     int startup[2] = {-1, -1}, total[2] = {-1, -1}, adv[2] = {0, 0};
     bool advKnown[2] = {false, false};
+};
+
+// One battle frame as read: what the meter is built from. A viewed replay
+// keeps one per recording frame, so that a step or a seek rebuilds the meter
+// as the frames led there.
+struct Record {
+    bool valid = false;
+    uint8_t hold = 0; // 0 counted; 1 hitstop; 2 a super freeze or a cinematic; 3 outside a round's fight
+    Kind kind[2] = {Idle, Idle};
+    bool lane[2] = {false, false};
+    bool air[2] = {false, false};
+    bool attack[2] = {false, false}; // the script has hitboxes of its own
+    uint32_t script[2] = {0, 0};
 };
 
 struct Run {
@@ -68,6 +85,7 @@ struct Player {
     uint32_t script = ~0u;
     bool doing = false;      // the last frame was an action
     bool actionable = true;  // the last frame was neutral or IASA
+    bool air = false;        // the last frame was airborne
     int actionableSince = 0; // the frame it became so
     int moveStart = -1;      // the open move's first frame, -1 none
 };
@@ -81,11 +99,11 @@ std::atomic<int> g_log{0};
 Meter g_m;
 Player g_p[2];
 uint64_t g_layout = ~0ull;
-int g_written = 0;      // blocks written in this bar (the next one's index)
-int g_pendingNeutral = 0;
-bool g_hasContent = false, g_pendingMark = false, g_exchange = false;
+int g_written = 0; // blocks written in this bar (the next one's index)
+bool g_hasContent = false, g_ended = true, g_pendingMark = false, g_exchange = false;
 bool g_armed = false; // both fighters have been free to act since the battle (or a reset) began
-int g_replayFrame = -1;
+std::vector<Record> g_records; // a viewed replay's, by recording frame
+int g_applied = -1;            // the last recording frame the meter is built to
 
 // Shared with the overlay.
 std::mutex g_mutex;
@@ -105,7 +123,6 @@ bool IsActor(const uint8_t* r, uint32_t vtable)
 {
     return r && IsReadable(r - kPosition, kPosition) && At<uintptr_t>(r - kVtableAt, 0) == g_base + vtable;
 }
-
 // The move file's section of that type in a script, or nullptr.
 const uint8_t* Section(const uint8_t* script, int type, uint32_t* count)
 {
@@ -157,7 +174,7 @@ struct Sample {
     uint32_t script = 0;
     int frame = 0, interrupt = -1, firstHit = -1;
     bool held = false, cinematic = false, frozen = false, stun = false;
-    bool hit = false, strike = false, projectile = false, hurt = false, parry = false, counter = false;
+    bool hit = false, strike = false, projectile = false, hurt = false, parry = false, counter = false, air = false;
     uint32_t side = 0;
 };
 
@@ -173,7 +190,9 @@ Sample Read(const uint8_t* r, const uint8_t* state)
     if (IsReadable(script, 64)) {
         s.firstHit = At<int32_t>(script, kScriptFirstHit);
         s.interrupt = At<int32_t>(script, kScriptInterrupt);
-        s.counter = (StatusFlags(script, s.frame) & kStatusCounter) != 0;
+        const uint32_t flags = StatusFlags(script, s.frame);
+        s.counter = (flags & kStatusCounter) != 0;
+        s.air = (flags & kStatusAir) != 0;
     }
     const auto* pos = At<const uint8_t*>(r - kPosition, 0);
     s.frozen = pos && IsReadable(pos + kSuperFreeze, 4) && At<uint32_t>(pos, kSuperFreeze) != 0;
@@ -227,141 +246,6 @@ Kind Classify(const Sample& s)
     return past ? Iasa : Recovery;
 }
 
-void EndRun(int i)
-{
-    Run& run = g_p[i].run;
-    // A single block needs no count (and its label would run into the next).
-    if (run.group != Idle && run.length > 1 && run.cell >= 0) g_m.count[i][run.cell] = static_cast<uint16_t>(std::min(run.length, 9999));
-    run = Run{};
-}
-
-void ClearBar()
-{
-    const Meter keep = g_m;
-    g_m = Meter{};
-    for (int i = 0; i < 2; i++) {
-        g_m.startup[i] = keep.startup[i];
-        g_m.total[i] = keep.total[i];
-        g_m.adv[i] = keep.adv[i];
-        g_m.advKnown[i] = keep.advKnown[i];
-        g_p[i].run = Run{};
-        g_p[i].lastWritten = Idle;
-        g_p[i].moveStart = -1;
-    }
-    g_written = 0;
-    g_pendingNeutral = 0;
-    g_hasContent = false;
-    g_pendingMark = false;
-    g_exchange = false;
-}
-
-void Reset()
-{
-    ClearBar();
-    g_armed = false;
-    g_m = Meter{};
-    for (Player& p : g_p) {
-        const uint8_t* actor = p.actor;
-        const uint8_t* state = p.state;
-        p = Player{};
-        p.actor = actor;
-        p.state = state;
-    }
-}
-
-void Write(const Kind (&kinds)[2], const bool (&lanes)[2])
-{
-    const int cell = g_written % N;
-    for (int i = 0; i < 2; i++) {
-        Kind k = kinds[i];
-        if (k == Active && Group(g_p[i].lastWritten) != Active) k = FirstActive;
-        if (Group(k) != g_p[i].run.group) EndRun(i);
-        Run& run = g_p[i].run;
-        run.group = Group(k);
-        run.length++;
-        run.cell = cell;
-        g_m.kind[i][cell] = k;
-        g_m.count[i][cell] = 0;
-        g_m.lane[i][cell] = lanes[i];
-        g_p[i].lastWritten = k;
-    }
-    g_m.mark[cell] = g_pendingMark;
-    g_pendingMark = false;
-    if (g_written + 1 >= N) {
-        // Wrapped: the blocks after the newest are cleared.
-        for (int j = 1; j <= kClear; j++) {
-            const int c = (cell + j) % N;
-            for (int i = 0; i < 2; i++) {
-                g_m.kind[i][c] = Empty;
-                g_m.count[i][c] = 0;
-                g_m.lane[i][c] = false;
-            }
-            g_m.mark[c] = false;
-        }
-    }
-    g_written++;
-    g_hasContent = true;
-}
-
-// Each move's startup, total and the frame advantage after an exchange.
-void Count(const Sample (&s)[2], const Kind (&k)[2], const bool (&lanes)[2], int index)
-{
-    for (int i = 0; i < 2; i++) {
-        Player& p = g_p[i];
-        const bool actionable = k[i] == Idle || k[i] == Iasa;
-        const bool doing = !actionable && k[i] != Stun;
-        // A move starts when the character acts from neutral or IASA, or
-        // cancels into a script with hitboxes of its own (a script handing
-        // over to its follow-up, a landing or a recovery, is the same move).
-        const bool attack = s[i].firstHit >= 0;
-        if (doing && (!p.doing || (s[i].script != p.script && attack))) {
-            p.moveStart = index;
-            g_m.startup[i] = -1;
-            g_m.total[i] = -1;
-            g_m.advKnown[i] = false;
-        }
-        if (p.moveStart >= 0) {
-            if (g_m.startup[i] < 0 && (Group(k[i]) == Active || lanes[i])) g_m.startup[i] = index - p.moveStart + 1;
-            if (actionable) {
-                g_m.total[i] = index - p.moveStart;
-                p.moveStart = -1;
-            }
-            else if (k[i] == Stun) p.moveStart = -1;
-        }
-        if (actionable && !p.actionable) p.actionableSince = index;
-        p.actionable = actionable;
-        p.doing = doing;
-        p.script = s[i].script;
-        if (k[i] == Stun) g_exchange = true;
-    }
-    if (g_exchange && g_p[0].actionable && g_p[1].actionable) {
-        g_m.adv[0] = g_p[1].actionableSince - g_p[0].actionableSince;
-        g_m.adv[1] = -g_m.adv[0];
-        g_m.advKnown[0] = g_m.advKnown[1] = true;
-        g_exchange = false;
-    }
-}
-
-void Publish()
-{
-    std::lock_guard lock(g_mutex);
-    g_shown = g_m;
-}
-
-bool Wanted(bool* replay, int* frame, bool* seeking, bool* fighting = nullptr)
-{
-    const ReplayView v = ReplayViewNow();
-    *replay = v.active;
-    *frame = v.frame;
-    *seeking = v.seeking;
-    // A replay's round: from its FIGHT to its KO (not the intro, the KO and
-    // the win poses).
-    if (fighting) *fighting = !v.active || v.roundFrame >= 0;
-    if (g_forced) return true;
-    if (v.active) return !v.benchmark && FrameMeterInReplays();
-    return FrameMeterInTraining() && CurrentScene() == "TrainingBattleState";
-}
-
 // The two fighters' actors and state objects, P1 first, paired by side: at
 // a battle's start P1 is on the left. Not yet (false) while the sides are
 // not set apart.
@@ -381,24 +265,10 @@ bool FindFighters(SfvGame& game)
             ns++;
         }
     }
-    if (na != 2 || ns != 2) {
-        static ULONGLONG logged = 0;
-        if (GetTickCount64() - logged > 2000) {
-            logged = GetTickCount64();
-            Log("framemeter: %d fighter actors, %d state objects", na, ns);
-        }
-        return false;
-    }
+    if (na != 2 || ns != 2) return false;
     const uint32_t a0 = At<uint32_t>(actors[0], kSide), a1 = At<uint32_t>(actors[1], kSide);
     const uint32_t s0 = At<uint32_t>(states[0], kStateSide), s1 = At<uint32_t>(states[1], kStateSide);
-    if (a0 > 1 || a1 > 1 || a0 == a1 || s0 > 1 || s1 > 1 || s0 == s1) {
-        static ULONGLONG logged = 0;
-        if (GetTickCount64() - logged > 2000) {
-            logged = GetTickCount64();
-            Log("framemeter: fighters not apart yet (actor sides %X/%X, state sides %X/%X)", a0, a1, s0, s1);
-        }
-        return false;
-    }
+    if (a0 > 1 || a1 > 1 || a0 == a1 || s0 > 1 || s1 > 1 || s0 == s1) return false;
     for (int p = 0; p < 2; p++) {
         g_p[p].actor = a0 == static_cast<uint32_t>(p) ? actors[0] : actors[1];
         g_p[p].state = s0 == static_cast<uint32_t>(p) ? states[0] : states[1];
@@ -406,6 +276,294 @@ bool FindFighters(SfvGame& game)
     return true;
 }
 
+// The frame the game is on now, read into a record (false: the fighters are
+// gone, a new battle). `fight`: in a round's fight (replays; else always).
+bool ReadFrame(SfvGame& game, bool fight, Record* out)
+{
+    Record r;
+    Sample s[2];
+    for (int i = 0; i < 2; i++) {
+        if (!IsActor(g_p[i].actor, kFighterVtable)) return false;
+        s[i] = Read(g_p[i].actor, g_p[i].state);
+        if (!s[i].ok) return false;
+    }
+    r.valid = true;
+    // Hitstop (both held), a super freeze and a cinematic are not counted.
+    const bool freeze = s[0].frozen || s[1].frozen || s[0].cinematic || s[1].cinematic;
+    r.hold = !fight ? 3 : freeze ? 2 : s[0].held && s[1].held ? 1 : 0;
+    // The players' projectiles: live effect slots with an attacking box, the
+    // owner told by side (an effect faces as its owner did).
+    if (r.hold == 0) {
+        for (const StateRegion& reg : game.Regions()) {
+            if (reg.size != kRegionSize || !IsActor(reg.ptr, kEffectVtable)) continue;
+            if (!At<uint32_t>(reg.ptr, kEffectLiveA) && !At<uint32_t>(reg.ptr, kEffectLiveB)) continue;
+            const uint32_t side = At<uint32_t>(reg.ptr, kSide);
+            if (side > 1 || s[0].side == s[1].side) continue;
+            bool hit = false;
+            for (size_t at = kHitList; at + kEntrySize <= kHitListEnd && !hit; at += kEntrySize) {
+                const uint8_t* e = reg.ptr + at;
+                hit = At<uintptr_t>(e, kEntryVtableAt) == g_base + kEntryVtable && At<uint32_t>(e, kEntryId) != 0xFFFFFFFFu &&
+                      e[kEntryType] != 4 && e[kEntryType] <= 5;
+            }
+            if (hit) r.lane[s[0].side == side ? 0 : 1] = true;
+        }
+    }
+    for (int i = 0; i < 2; i++) {
+        r.kind[i] = Classify(s[i]);
+        r.air[i] = s[i].air;
+        r.attack[i] = s[i].firstHit >= 0;
+        r.script[i] = s[i].script;
+    }
+    *out = r;
+    return true;
+}
+
+void EndRun(int i)
+{
+    Run& run = g_p[i].run;
+    // A single block needs no count (and its label would run into the next).
+    if (run.group != Idle && run.length > 1 && run.cell >= 0) g_m.count[i][run.cell] = static_cast<uint16_t>(std::min(run.length, 9999));
+    run = Run{};
+}
+
+// An empty bar; the numbers of the last moves stay.
+void ClearBar()
+{
+    const Meter keep = g_m;
+    g_m = Meter{};
+    for (int i = 0; i < 2; i++) {
+        g_m.startup[i] = keep.startup[i];
+        g_m.total[i] = keep.total[i];
+        g_m.adv[i] = keep.adv[i];
+        g_m.advKnown[i] = keep.advKnown[i];
+        g_p[i].run = Run{};
+        g_p[i].lastWritten = Idle;
+        g_p[i].moveStart = -1;
+    }
+    g_written = 0;
+    g_hasContent = false;
+    g_ended = true;
+    g_pendingMark = false;
+    g_exchange = false;
+}
+
+// As at a battle's start: nothing recorded, nothing known.
+void Reset()
+{
+    ClearBar();
+    g_armed = false;
+    g_m = Meter{};
+    for (Player& p : g_p) {
+        const uint8_t* actor = p.actor;
+        const uint8_t* state = p.state;
+        p = Player{};
+        p.actor = actor;
+        p.state = state;
+    }
+}
+
+void Write(const Record& r)
+{
+    const int cell = g_written % N;
+    for (int i = 0; i < 2; i++) {
+        Kind k = r.kind[i];
+        if (k == Active && Group(g_p[i].lastWritten) != Active) k = FirstActive;
+        if (Group(k) != g_p[i].run.group) EndRun(i);
+        Run& run = g_p[i].run;
+        run.group = Group(k);
+        run.length++;
+        run.cell = cell;
+        g_m.kind[i][cell] = k;
+        g_m.count[i][cell] = 0;
+        g_m.lane[i][cell] = r.lane[i];
+        // The first airborne frame after the pre-jump, the first landing frame.
+        g_m.edge[i][cell] = r.air[i] && !g_p[i].air ? EdgeAirborne : !r.air[i] && g_p[i].air ? EdgeLanding : 0;
+        g_p[i].lastWritten = k;
+    }
+    g_m.mark[cell] = g_pendingMark;
+    g_pendingMark = false;
+    if (g_written + 1 >= N) {
+        // Wrapped: the block after the newest is cleared (where the next goes).
+        const int c = (cell + 1) % N;
+        for (int i = 0; i < 2; i++) {
+            g_m.kind[i][c] = Empty;
+            g_m.count[i][c] = 0;
+            g_m.lane[i][c] = false;
+            g_m.edge[i][c] = 0;
+        }
+        g_m.mark[c] = false;
+    }
+    g_written++;
+    g_hasContent = true;
+    g_ended = false;
+}
+
+// Each move's startup, total and the frame advantage after an exchange.
+void Count(const Record& r, int index)
+{
+    for (int i = 0; i < 2; i++) {
+        Player& p = g_p[i];
+        const Kind k = r.kind[i];
+        const bool actionable = Actionable(k);
+        const bool doing = !actionable && k != Stun;
+        // A move starts when the character acts from neutral or IASA, or
+        // cancels into a script with hitboxes of its own (a script handing
+        // over to its follow-up, a landing or a recovery, is the same move).
+        if (doing && (!p.doing || (r.script[i] != p.script && r.attack[i]))) {
+            p.moveStart = index;
+            g_m.startup[i] = -1;
+            g_m.total[i] = -1;
+            g_m.advKnown[i] = false;
+        }
+        if (p.moveStart >= 0) {
+            if (g_m.startup[i] < 0 && (Group(k) == Active || r.lane[i])) g_m.startup[i] = index - p.moveStart + 1;
+            if (actionable) {
+                g_m.total[i] = index - p.moveStart;
+                p.moveStart = -1;
+            }
+            else if (k == Stun) p.moveStart = -1;
+        }
+        if (actionable && !p.actionable) p.actionableSince = index;
+        p.actionable = actionable;
+        p.doing = doing;
+        p.script = r.script[i];
+        p.air = r.air[i];
+        if (k == Stun) g_exchange = true;
+    }
+    if (g_exchange && g_p[0].actionable && g_p[1].actionable) {
+        g_m.adv[0] = g_p[1].actionableSince - g_p[0].actionableSince;
+        g_m.adv[1] = -g_m.adv[0];
+        g_m.advKnown[0] = g_m.advKnown[1] = true;
+        g_exchange = false;
+    }
+}
+
+// One frame into the meter.
+void Apply(const Record& r)
+{
+    // A frame not read (a replay's frame never played): what follows is not
+    // joined to what came before.
+    if (!r.valid) {
+        ClearBar();
+        g_armed = false;
+        return;
+    }
+    if (r.hold == 3) return;
+    if (r.hold == 2) {
+        if (g_hasContent && !g_ended) g_pendingMark = true;
+        return;
+    }
+    if (r.hold == 1) return;
+    // Not before both have been free to act (a battle's or training's start).
+    const bool bothFree = Actionable(r.kind[0]) && Actionable(r.kind[1]);
+    if (!g_armed && !bothFree) return;
+    g_armed = true;
+    const bool neutral = r.kind[0] == Idle && r.kind[1] == Idle && !r.lane[0] && !r.lane[1];
+    if (neutral) {
+        // Both neutral: the meter holds, its last frame marked.
+        if (g_hasContent && !g_ended) {
+            const int last = (g_written - 1) % N;
+            for (int i = 0; i < 2; i++) {
+                g_m.edge[i][last] |= EdgeEnd;
+                EndRun(i);
+            }
+            g_ended = true;
+        }
+        Count(r, g_written);
+        return;
+    }
+    // An action that does not carry on an exchange (the other player free to
+    // act, not in stun or in an action of their own) starts a new bar.
+    bool fresh = !g_hasContent;
+    for (int i = 0; i < 2; i++) {
+        const Kind k = r.kind[i];
+        const bool starts = !Actionable(k) && k != Stun && g_p[i].actionable;
+        if (starts && Actionable(r.kind[1 - i]) && g_p[1 - i].actionable) fresh = true;
+    }
+    if (fresh) ClearBar();
+    const int index = g_written;
+    Write(r);
+    Count(r, index);
+}
+
+void Publish()
+{
+    std::lock_guard lock(g_mutex);
+    g_shown = g_m;
+}
+
+bool Wanted(bool* replay, int* frame, bool* fight)
+{
+    const ReplayView v = ReplayViewNow();
+    *replay = v.active;
+    *frame = v.frame;
+    // A replay's round: from its FIGHT to its KO (not the intro, the KO and
+    // the win poses).
+    *fight = !v.active || v.roundFrame >= 0;
+    if (g_forced) return true;
+    if (v.active) return !v.benchmark && FrameMeterInReplays();
+    return FrameMeterInTraining() && CurrentScene() == "TrainingBattleState";
+}
+
+// A new battle's fighters (the region layout changed): false while not there.
+bool Ready(SfvGame& game, bool replay)
+{
+    if (game.LayoutVersion() == g_layout) return true;
+    if (!FindFighters(game)) return false;
+    g_layout = game.LayoutVersion();
+    g_records.clear();
+    g_applied = -1;
+    Reset();
+    Log("framemeter: %s, P1 %p, P2 %p", replay ? "replay" : CurrentScene().c_str(), static_cast<const void*>(g_p[0].actor),
+        static_cast<const void*>(g_p[1].actor));
+    return true;
+}
+
+void Store(int frame, const Record& r)
+{
+    if (frame < 0 || frame > 1000000) return;
+    if (static_cast<size_t>(frame) >= g_records.size()) g_records.resize(frame + 1);
+    g_records[frame] = r;
+}
+
+// A replay's meter as the frames up to `frame` built it: on from where it
+// is when they follow on, else again from the start.
+void BuildTo(int frame)
+{
+    if (frame == g_applied) return;
+    if (frame < g_applied || g_applied < 0) {
+        Reset();
+        g_applied = -1;
+    }
+    for (int f = g_applied + 1; f <= frame; f++) Apply(static_cast<size_t>(f) < g_records.size() ? g_records[f] : Record{});
+    g_applied = frame;
+    Publish();
+}
+
+void LogRecord(int index, const Record& r)
+{
+    if (g_log <= 0) return;
+    g_log--;
+    Log("fmlog %d: hold %d | P1 #%u %s%s%s | P2 #%u %s%s%s | written %d", index, r.hold, r.script[0], KindName(r.kind[0]), r.lane[0] ? "+proj" : "",
+        r.air[0] ? "+air" : "", r.script[1], KindName(r.kind[1]), r.lane[1] ? "+proj" : "", r.air[1] ? "+air" : "", g_written);
+}
+
+// Text over the fight: a thin black outline round it and a drop shadow under
+// it, so it reads on any stage (`s`: the design scale).
+void OutlinedText(ImDrawList* d, ImFont* f, float px, ImVec2 at, ImU32 color, const std::string& t, float align, float s)
+{
+    const ImVec2 size = f->CalcTextSizeA(px, FLT_MAX, 0, t.c_str());
+    const ImVec2 p(std::round(at.x - size.x * align), std::round(at.y));
+    const float o = std::max(1.0f, std::round(s));
+    const float drop = std::max(1.0f, std::round(2.5f * s));
+    d->AddText(f, px, ImVec2(p.x + o, p.y + drop), IM_COL32(0, 0, 0, 150), t.c_str());
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            if (dx || dy) d->AddText(f, px, ImVec2(p.x + dx * o, p.y + dy * o), IM_COL32(0, 0, 0, 230), t.c_str());
+        }
+    }
+    d->AddText(f, px, p, color, t.c_str());
+}
 } // namespace
 
 bool FrameMeterInTraining() { return ReadChoice(g_training, L"training", 1) != 0; }
@@ -434,111 +592,49 @@ void LogFrameMeter(int ticks) { g_log = ticks; }
 void FrameMeterTick(SfvGame& game)
 {
     if (!g_base) g_base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-    bool replay = false, seeking = false, fighting = true;
+    bool replay = false, fight = true;
     int frame = 0;
-    if (!Wanted(&replay, &frame, &seeking, &fighting)) {
+    if (!Wanted(&replay, &frame, &fight)) {
         g_layout = ~0ull;
         return;
     }
-    if (game.LayoutVersion() != g_layout) {
-        if (!FindFighters(game)) return;
-        g_layout = game.LayoutVersion();
-        g_replayFrame = -1;
-        Reset();
-        Log("framemeter: %s, P1 %p, P2 %p", replay ? "replay" : CurrentScene().c_str(), static_cast<const void*>(g_p[0].actor),
-            static_cast<const void*>(g_p[1].actor));
-    }
-    // A replay's seek, step back or jump: what was recorded no longer leads here.
+    if (!Ready(game, replay)) return;
+    Record r;
     if (replay) {
-        if (seeking || frame < g_replayFrame || frame > g_replayFrame + 8) Reset();
-        g_replayFrame = frame;
-        if (seeking) return Publish();
+        // The state this tick starts from is the one after the frame before
+        // it: that frame's record (BuildTo applies it once it is on screen).
+        const int f = ReplayTickFrame() - 1;
+        if (f < 0 || !ReadFrame(game, ReplayTickInFight(), &r)) return;
+        Store(f, r);
+        LogRecord(f, r);
+        return;
     }
-    Sample s[2];
-    for (int i = 0; i < 2; i++) {
-        if (!IsActor(g_p[i].actor, kFighterVtable)) {
-            g_layout = ~0ull;
-            return;
-        }
-        s[i] = Read(g_p[i].actor, g_p[i].state);
-        if (!s[i].ok) return Publish();
+    if (!ReadFrame(game, true, &r)) {
+        g_layout = ~0ull;
+        return;
     }
-    // Hitstop (both held), a super freeze and a cinematic are not counted.
-    const bool freeze = s[0].frozen || s[1].frozen || s[0].cinematic || s[1].cinematic;
-    if (freeze || (s[0].held && s[1].held)) {
-        if (freeze && g_hasContent) g_pendingMark = true;
-        if (g_log > 0) {
-            g_log--;
-            Log("fmlog held: frozen %d/%d cinematic %d/%d held %d/%d", s[0].frozen, s[1].frozen, s[0].cinematic, s[1].cinematic, s[0].held, s[1].held);
-        }
-        return Publish();
-    }
-    // The players' projectiles: live effect slots with an attacking box, the
-    // owner told by side (an effect faces as its owner did).
-    bool lanes[2] = {false, false};
-    for (const StateRegion& r : game.Regions()) {
-        if (r.size != kRegionSize || !IsActor(r.ptr, kEffectVtable)) continue;
-        if (!At<uint32_t>(r.ptr, kEffectLiveA) && !At<uint32_t>(r.ptr, kEffectLiveB)) continue;
-        const uint32_t side = At<uint32_t>(r.ptr, kSide);
-        if (side > 1 || s[0].side == s[1].side) continue;
-        bool hit = false;
-        for (size_t at = kHitList; at + kEntrySize <= kHitListEnd && !hit; at += kEntrySize) {
-            const uint8_t* e = r.ptr + at;
-            hit = At<uintptr_t>(e, kEntryVtableAt) == g_base + kEntryVtable && At<uint32_t>(e, kEntryId) != 0xFFFFFFFFu &&
-                  e[kEntryType] != 4 && e[kEntryType] <= 5;
-        }
-        if (hit) lanes[s[0].side == side ? 0 : 1] = true;
-    }
-    const Kind k[2] = {Classify(s[0]), Classify(s[1])};
-    // Not before both have been free to act (a battle's or training's start
-    // scripts), nor outside a replay's rounds.
-    const bool bothFree = (k[0] == Idle || k[0] == Iasa) && (k[1] == Idle || k[1] == Iasa);
-    if (!g_armed && !bothFree) return Publish();
-    g_armed = true;
-    if (!fighting) return Publish();
-    // Neutral holds the meter; IASA alone does not start a new sequence but
-    // is drawn in one that runs.
-    // After more than kNeutralLimit neutral frames, the first movement (any
-    // script change: a walk, a crouch, a jump) clears the whole bar at once.
-    if (g_hasContent && g_pendingNeutral > kNeutralLimit && (s[0].script != g_p[0].script || s[1].script != g_p[1].script)) {
-        ClearBar();
-    }
-    const bool running = g_hasContent && g_pendingNeutral <= kNeutralLimit;
-    const bool neutral = ((k[0] == Idle && k[1] == Idle) || (!running && bothFree)) && !lanes[0] && !lanes[1];
-    int index = 0;
-    if (neutral) {
-        // Held: drawn only if someone acts within kNeutralLimit frames.
-        for (int i = 0; i < 2; i++) {
-            if (g_p[i].run.group != Idle) EndRun(i);
-        }
-        index = g_written + g_pendingNeutral;
-        g_pendingNeutral++;
-    }
-    else {
-        if (!g_hasContent || g_pendingNeutral > kNeutralLimit) ClearBar();
-        const Kind idle[2] = {Idle, Idle};
-        const bool none[2] = {false, false};
-        for (; g_pendingNeutral > 0; g_pendingNeutral--) Write(idle, none);
-        index = g_written;
-        Write(k, lanes);
-    }
-    Count(s, k, lanes, index);
-    if (g_log > 0) {
-        g_log--;
-        Log("fmlog %d: P1 #%u f%d %s%s | P2 #%u f%d %s%s | written %d", index, s[0].script, s[0].frame, KindName(k[0]),
-            lanes[0] ? "+proj" : "", s[1].script, s[1].frame, KindName(k[1]), lanes[1] ? "+proj" : "", g_written);
-    }
+    Apply(r);
+    LogRecord(g_written, r);
     Publish();
 }
 
 void FrameMeterFrame(SfvGame& game)
 {
     if (!g_base) g_base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-    bool replay = false, seeking = false;
+    bool replay = false, fight = true;
     int frame = 0;
-    if (!Wanted(&replay, &frame, &seeking) || game.LayoutVersion() != g_layout) return;
+    if (!Wanted(&replay, &frame, &fight) || !Ready(game, replay)) return;
+    if (replay) {
+        // The frame on screen: its record (the state now), then the meter
+        // built to it, whichever way the replay got there.
+        Record r;
+        if (ReadFrame(game, fight, &r)) Store(frame, r);
+        if (!ReplayViewNow().seeking) BuildTo(frame);
+        g_tickAt = GetTickCount64();
+        return;
+    }
     // Training's pause menu stops the ticks: no meter over the game's menu.
-    if (replay || GetTickCount64() - game.LastTickMs() <= kPausedMs) g_tickAt = GetTickCount64();
+    if (GetTickCount64() - game.LastTickMs() <= kPausedMs) g_tickAt = GetTickCount64();
 }
 
 bool FrameMeterVisible()
@@ -546,7 +642,6 @@ bool FrameMeterVisible()
     const ULONGLONG at = g_tickAt.load();
     return at && GetTickCount64() - at < kStaleMs;
 }
-
 void DrawFrameMeter(ImDrawList* d, ImFont* bold)
 {
     if (!FrameMeterVisible() || !bold) return;
@@ -588,23 +683,39 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold)
         default: return Rgba(10, 12, 16, 158);
         }
     };
+    // A solid black bar under each row (the gaps between blocks black too),
+    // a thin black border round it, a drop shadow under that.
+    const float border = std::max(1.0f, std::round(1.5f * s));
+    const float edgePx = std::max(1.0f, std::round(1.5f * s));
+    for (int i = 0; i < 2; i++) {
+        const float y = rowY(kBars[i]);
+        d->AddRectFilled(ImVec2(left - border, y - border + drop), ImVec2(right + border, y + hPx + border + drop), shadow);
+        d->AddRectFilled(ImVec2(left - border, y - border), ImVec2(right + border, y + hPx + border), IM_COL32(0, 0, 0, 255));
+    }
     for (int i = 0; i < 2; i++) {
         const float y = rowY(kBars[i]), ly = rowY(kLanes[i]);
         for (int c = 0; c < N; c++) {
             const float x = cellX(c);
             const Kind k = m.kind[i][c];
-            d->AddRectFilled(ImVec2(x + drop / 2, y + drop), ImVec2(x + wPx + drop / 2, y + hPx + drop), shadow);
             d->AddRectFilled(ImVec2(x, y), ImVec2(x + wPx, y + hPx), color(k));
             if (k == StrikeInv || k == ProjInv) {
                 const float stripe = std::max(1.0f, std::round(3 * s));
                 for (float sy = 0; sy < hPx; sy += 2 * stripe) d->AddRectFilled(ImVec2(x, y + sy), ImVec2(x + wPx, y + std::min(sy + stripe, hPx)), look::kCream);
             }
+            // Milestones (the first airborne frame, the first landing frame,
+            // a sequence's last frame): white on the top, right and bottom.
+            if (m.edge[i][c]) {
+                const ImU32 white = IM_COL32(255, 255, 255, 255);
+                d->AddRectFilled(ImVec2(x, y), ImVec2(x + wPx, y + edgePx), white);
+                d->AddRectFilled(ImVec2(x + wPx - edgePx, y), ImVec2(x + wPx, y + hPx), white);
+                d->AddRectFilled(ImVec2(x, y + hPx - edgePx), ImVec2(x + wPx, y + hPx), white);
+            }
             if (m.lane[i][c]) {
-                d->AddRectFilled(ImVec2(x + drop / 2, ly + drop / 2), ImVec2(x + wPx + drop / 2, ly + lanePx + drop / 2), shadow);
+                d->AddRectFilled(ImVec2(x - border, ly - border), ImVec2(x + wPx + border, ly + lanePx + border), IM_COL32(0, 0, 0, 255));
                 d->AddRectFilled(ImVec2(x, ly), ImVec2(x + wPx, ly + lanePx), Rgba(240, 160, 48));
             }
             if (m.count[i][c]) {
-                Text(d, bold, TextPx(kCountSize), ImVec2(x + wPx / 2, rowY(kCounts[i])), look::kCream, std::to_string(m.count[i][c]), 0.5f, true);
+                OutlinedText(d, bold, TextPx(kCountSize), ImVec2(x + wPx / 2, rowY(kCounts[i])), look::kCream, std::to_string(m.count[i][c]), 0.5f, s);
             }
         }
     }
@@ -650,7 +761,7 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold)
         const float ty = rowY(y0 - 2);
         for (const Piece& p : pieces) {
             x += p.gap * s;
-            Text(d, bold, TextPx(kTextSize), ImVec2(x, ty), p.color, p.text, 0, true);
+            OutlinedText(d, bold, TextPx(kTextSize), ImVec2(x, ty), p.color, p.text, 0, s);
             x += TextW(bold, kTextSize, p.text) * s;
         }
     }

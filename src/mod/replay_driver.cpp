@@ -51,6 +51,10 @@ std::atomic<bool> g_stop{false}; // `replay stop`: end the running replay at the
 std::mutex g_viewMutex;
 std::vector<std::pair<ReplayControl, int>> g_viewCommands;
 ReplayView g_view;                 // as the driver last published it
+// The recording frame the tick being run plays (-1: none), and whether the
+// state it starts from (after the frame before) is in a round's fight.
+std::atomic<int> g_tickFrame{-1};
+std::atomic<bool> g_tickFight{false};
 uint32_t g_viewTaken = 0;          // commands the driver took from g_viewCommands (published later as g_view.handled)
 std::function<void()> g_viewLeave; // what leaving a viewed replay does after the battle
 // A viewer restarting (a jump back across a round's end): what the next
@@ -502,6 +506,8 @@ private:
                 Log("replay: takeover input %08X at frame %d", static_cast<unsigned>(in.p[tk_.side]), frame_);
             }
             tk_.lastInput = in.p[tk_.side];
+            g_tickFrame = frame_;
+            g_tickFight = wasFight_;
             game.Advance(in, false);
             frame_++;
             wasFight_ = RoundInFight();
@@ -553,6 +559,8 @@ private:
     // there would skip the game's screens), not checked, not kept.
     void TakeoverTick(SfvGame& game)
     {
+        g_tickFrame = frame_;
+        g_tickFight = wasFight_;
         game.Advance(FrameInputs{}, false);
         frame_++;
         tk_.ticks++;
@@ -648,6 +656,8 @@ private:
         // Lean only in a round's fight, as rollbacks run: the intro, the round
         // call and the KO count presentation work a lean tick leaves out (a
         // seek into the intro ran its round call a frame late without it).
+        g_tickFrame = frame_;
+        g_tickFight = wasFight_;
         game.Advance(rf_.inputs[frame_], lean && wasFight_);
         CheckFrame(game, frame_);
         const bool fight = RoundInFight();
@@ -1734,6 +1744,9 @@ uint32_t ControlReplay(ReplayControl c, int arg)
     // the count of those taken plus those waiting.
     return g_viewTaken + static_cast<uint32_t>(g_viewCommands.size());
 }
+
+int ReplayTickFrame() { return g_tickFrame; }
+bool ReplayTickInFight() { return g_tickFight; }
 
 ReplayView ReplayViewNow()
 {

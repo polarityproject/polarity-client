@@ -63,7 +63,7 @@ constexpr size_t kScriptFirstHit = 0, kScriptInterrupt = 8, kScriptTotal = 12, k
 constexpr size_t kSectionSize = 16;
 constexpr int kSectionStatus = 1, kSectionHurtboxes = 6;
 constexpr size_t kHurtboxRecord = 60, kHurtboxArmorEffect = 44;
-constexpr uint32_t kStatusCounter = 0x20;
+constexpr uint32_t kStatusCounter = 0x20, kStatusAir = 0x4;
 // Script indices every move file shares: 4..12 the jumps (TAKEOFF_V,
 // JUMP_V, LANDING_V, then the same forward and back).
 constexpr uint32_t kScriptFirstJump = 4, kScriptLastJump = 12;

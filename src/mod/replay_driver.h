@@ -109,6 +109,11 @@ struct ReplayView {
     std::string title;
 };
 ReplayView ReplayViewNow();
+// Game thread, inside a viewed replay's tick: the recording frame the tick
+// plays, and whether the state it starts from (after the frame before) is in
+// a round's fight (the frame meter's per-frame record, frame_meter.cpp).
+int ReplayTickFrame();
+bool ReplayTickInFight();
 // The benchmark's run of its round (benchmark.h): a stress replay with an
 // 8-frame rollback every frame, its FIGHT to its end measured; back to the
 // menus after, the result to FinishBenchmark. B (ReplayControl::Leave) stops.
