@@ -4,6 +4,7 @@
 #include "core/state.h"
 #include "mod/battle_driver.h"
 #include "mod/camera_rollback.h"
+#include "mod/hud_step.h"
 #include "mod/battle_setup.h"
 #include "mod/boot.h"
 #include "mod/config.h"
@@ -157,6 +158,7 @@ DWORD WINAPI ModMain(LPVOID self)
     WatchLoginStatus();
     InstallBattleDriver(image, &game);
     InstallCameraRollback(image);
+    InstallHudStep(image);
     SetCameraRollback(config.netplay.cameraRollback);
     if (config.netplay.skipLoadCallbacks) SetSkippedLoadCallbacks(DefaultSkippedLoadCallbacks());
     SetLeanResim(config.netplay.leanResim);

@@ -231,6 +231,7 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/hitbox_display.cpp
     src/mod/frame_meter.cpp
     src/mod/camera_rollback.cpp
+    src/mod/hud_step.cpp
     src/mod/stress_driver.cpp
     src/mod/synctest.cpp
     src/mod/tracer.cpp

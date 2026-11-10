@@ -20,6 +20,7 @@
 #include "mod/stack.h"
 #include "mod/battle_setup.h"
 #include "mod/camera_rollback.h"
+#include "mod/hud_step.h"
 #include "mod/boot.h"
 #include "mod/weyve_service.h"
 #include "mod/rooms_client.h"
@@ -374,6 +375,12 @@ bool RunResearchCommand(const std::string& cmd, std::stringstream& ss)
         ss >> on;
         if (cmd == "camlog") RunOnGameThread([on] { SetCameraRollbackLog(on != 0); });
         else RunOnGameThread([on] { SetCameraRollback(on != 0); });
+    }
+    else if (cmd == "hudstep") {
+        // hudstep 0|1: replay runs keep the battle HUD's movies in step (on by default; research)
+        int on = 1;
+        ss >> on;
+        RunOnGameThread([on] { SetHudStep(on); });
     }
     else if (cmd == "camtrace") {
         // camtrace <from tick> <to tick> [class text]: research (camera objects per tick and frame)
@@ -1337,6 +1344,97 @@ void RunNetCommand(const std::string& line)
             Log("named %s (%p) in %s", ue4::Describe(object).c_str(), object, ue4::Describe(ue4::OuterOf(object)).c_str());
         });
     }
+    else if (cmd == "ofclass") {
+        // ofclass <class name> [max]: live objects of that class or a subclass,
+        // with their class and outer (research).
+        std::string name;
+        int max = 60;
+        ss >> name >> max;
+        if (!ue4::EnsureObjects(g_imageBase)) return;
+        int shown = 0, total = 0;
+        ue4::ForEachObject([&](const void* object) {
+            for (const void* c = ue4::ClassOf(object); c; c = ue4::SuperOf(c)) {
+                if (ue4::ObjectName(c) != name) continue;
+                total++;
+                if (shown < max && ue4::ObjectName(object).rfind("Default__", 0) != 0) {
+                    shown++;
+                    Log("ofclass %s (%p) in %s", ue4::Describe(object).c_str(), object, ue4::Describe(ue4::OuterOf(object)).c_str());
+                }
+                break;
+            }
+        });
+        Log("ofclass %s: %d of %d shown", name.c_str(), shown, total);
+    }
+    else if (cmd == "gfx") {
+        // gfx [vtable words]: the live Scaleform players (ScaleformUtilGFxPlayer
+        // and subclasses): movie asset path (+0x300), step mode (+0x3A0), the
+        // GFxMovie object (+0x318), the native movie player (+0x398) with its
+        // vtable as RVAs (research: the battle HUD's banners).
+        int words = 0, actorSlots = 0;
+        ss >> words >> actorSlots;
+        if (!ue4::EnsureObjects(g_imageBase)) return;
+        const auto rva = [](uint64_t v) { return v >= g_imageBase && v < g_imageBase + 0x5000000 ? v - g_imageBase : 0; };
+        // The player class's own virtuals: slots that differ from AActor's.
+        if (actorSlots > 0) {
+            const auto* actor = static_cast<const uint8_t*>(ue4::FindObject("Default__Actor", "Actor"));
+            const auto* player = static_cast<const uint8_t*>(ue4::FindObject("Default__ScaleformUtilGFxPlayer", "ScaleformUtilGFxPlayer"));
+            if (actor && player) {
+                const auto* va = *reinterpret_cast<const uint64_t* const*>(actor);
+                const auto* vp = *reinterpret_cast<const uint64_t* const*>(player);
+                std::string w;
+                for (int i = 0; i < actorSlots && IsReadable(va + i, 8) && IsReadable(vp + i, 8); i++) {
+                    if (va[i] == vp[i]) continue;
+                    char b[40];
+                    std::snprintf(b, sizeof(b), " %d:%llX/%llX", i, static_cast<unsigned long long>(rva(va[i])), static_cast<unsigned long long>(rva(vp[i])));
+                    w += b;
+                }
+                Log("gfx player virtuals (slot:actor/player):%s", w.c_str());
+            }
+            else Log("gfx: no Default__Actor (%p) or Default__ScaleformUtilGFxPlayer (%p)", actor, player);
+        }
+        ue4::ForEachObject([&](const void* object) {
+            bool is = false;
+            for (const void* c = ue4::ClassOf(object); c && !is; c = ue4::SuperOf(c)) is = ue4::ObjectName(c) == "ScaleformUtilGFxPlayer";
+            if (!is || ue4::ObjectName(object).rfind("Default__", 0) == 0) return;
+            const auto* p = static_cast<const uint8_t*>(object);
+            if (!IsReadable(p, 0x3A8)) return;
+            std::string path;
+            const auto* text = *reinterpret_cast<const wchar_t* const*>(p + 0x300);
+            const int len = *reinterpret_cast<const int32_t*>(p + 0x308);
+            if (text && len > 0 && len < 400 && IsReadable(text, len * 2)) {
+                for (int i = 0; i < len && text[i]; i++) path += static_cast<char>(text[i] < 128 ? text[i] : '?');
+            }
+            const auto* movie = *reinterpret_cast<const uint8_t* const*>(p + 0x318);
+            const auto* native = *reinterpret_cast<const uint8_t* const*>(p + 0x398);
+            const uint64_t vt = native && IsReadable(native, 8) ? *reinterpret_cast<const uint64_t*>(native) : 0;
+            const void* asset = *reinterpret_cast<const void* const*>(p + 0x390);
+            const void* asset2 = *reinterpret_cast<const void* const*>(p + 0x310);
+            Log("gfx %s (%p): '%s' asset %s / %s, step %d, movie %s (%p), native %p vtable rva 0x%llX, object vtable rva 0x%llX, draw %d",
+                ue4::Describe(object).c_str(), object, path.c_str(), ue4::Describe(asset).c_str(), ue4::Describe(asset2).c_str(), p[0x3A0],
+                ue4::Describe(movie).c_str(), movie, native,
+                static_cast<unsigned long long>(rva(vt)), static_cast<unsigned long long>(rva(*reinterpret_cast<const uint64_t*>(p))),
+                *reinterpret_cast<const int32_t*>(p + 0x374));
+            if (native && IsReadable(native, 0x80)) {
+                std::string w;
+                for (int i = 0; i < 16; i++) {
+                    char b[24];
+                    std::snprintf(b, sizeof(b), " %llx", static_cast<unsigned long long>(reinterpret_cast<const uint64_t*>(native)[i]));
+                    w += b;
+                }
+                Log("gfx   native words:%s", w.c_str());
+            }
+            if (words > 0 && vt && IsReadable(reinterpret_cast<const void*>(vt), words * 8)) {
+                std::string w;
+                for (int i = 0; i < words; i++) {
+                    char b[24];
+                    std::snprintf(b, sizeof(b), " %d:%llX", i, static_cast<unsigned long long>(rva(reinterpret_cast<const uint64_t*>(vt)[i])));
+                    w += b;
+                }
+                Log("gfx   native vtable:%s", w.c_str());
+                words = 0; // once
+            }
+        });
+    }
     else if (cmd == "find") {
         // find <text>: objects whose name contains `text` (case-insensitive), up to 60.
         std::string text;
@@ -1656,6 +1754,7 @@ void RunNetCommand(const std::string& line)
                               : what == "round" ? ReplayControl::Round : what == "fast" ? ReplayControl::Fast
                               : what == "takeover" ? ReplayControl::Takeover : what == "takeoverstop" ? ReplayControl::TakeoverStop
                               : what == "leave" ? ReplayControl::Leave : what == "outofsync" ? ReplayControl::OutOfSync
+                              : what == "holdat" ? ReplayControl::HoldAt
                               : ReplayControl::Toggle;
         ControlReplay(c, arg);
     }
@@ -1975,7 +2074,7 @@ bool Parse(const std::string& line, Step& step)
         return !ss.fail();
     }
     if (cmd == "host" || cmd == "join" || cmd == "matchchat" || cmd == "shot" || cmd == "warmupsleep" || cmd == "warmupextra" || cmd == "watchcamera" || cmd == "emptystage" || cmd == "spectate" || cmd == "ticket" || cmd == "presence" || cmd == "rooms" || cmd == "settings" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "crash" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
-        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "randomstages" || cmd == "randomoff" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "wordfilter" || cmd == "countryflag" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "rview" || cmd == "roundinfo" || cmd == "ufunc" || cmd == "uobj" || cmd == "rfind" || cmd == "dumpbac" || cmd == "actorlog" || cmd == "cinelog" || cmd == "camtrace" || cmd == "camrollback" || cmd == "camlog" || cmd == "watchphase" || cmd == "watchname" || cmd == "rsnap" || cmd == "ptrscan" || cmd == "rpeek" || cmd == "rcmp" || cmd == "rdump" || cmd == "hitboxes" || cmd == "framemeter" || cmd == "fmlog" || cmd == "freeze" || cmd == "ftrace" || cmd == "winsize" || cmd == "boxlog" || cmd == "rdiff" || cmd == "functrace" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "soundlog" || cmd == "uisound" || cmd == "soundrollback" || cmd == "kowaitmode" || cmd == "frameids" || cmd == "leanresim" || cmd == "startprobe" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
+        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "randomstages" || cmd == "randomoff" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "wordfilter" || cmd == "countryflag" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "rview" || cmd == "roundinfo" || cmd == "ufunc" || cmd == "uobj" || cmd == "rfind" || cmd == "dumpbac" || cmd == "actorlog" || cmd == "cinelog" || cmd == "camtrace" || cmd == "camrollback" || cmd == "camlog" || cmd == "hudstep" || cmd == "watchphase" || cmd == "watchname" || cmd == "rsnap" || cmd == "ptrscan" || cmd == "rpeek" || cmd == "rcmp" || cmd == "rdump" || cmd == "hitboxes" || cmd == "framemeter" || cmd == "fmlog" || cmd == "freeze" || cmd == "ftrace" || cmd == "winsize" || cmd == "boxlog" || cmd == "rdiff" || cmd == "functrace" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "ofclass" || cmd == "gfx" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "soundlog" || cmd == "uisound" || cmd == "soundrollback" || cmd == "kowaitmode" || cmd == "frameids" || cmd == "leanresim" || cmd == "startprobe" || cmd == "phasecost" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
         step.kind = Step::Net;
         step.line = line;
         return true;

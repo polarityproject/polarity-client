@@ -10,6 +10,7 @@
 #include "mod/battle_setup.h"
 #include "mod/benchmark.h"
 #include "mod/hitch.h"
+#include "mod/hud_step.h"
 #include "mod/control.h"
 #include "mod/files.h"
 #include "mod/flow.h"
@@ -134,8 +135,7 @@ public:
     // a while (the game keeps drawing it), for a screenshot.
     void Hold(int frame, int seconds)
     {
-        holdAt_ = frame;
-        holdMs_ = seconds * 1000ull;
+        if (frame >= 0 && seconds > 0) holds_.push_back({frame, seconds * 1000ull});
     }
 
     // `trap <frame> <region> <offset> <bytes>`: a write watch on those bytes
@@ -313,6 +313,7 @@ private:
     bool ViewerFrame(SfvGame& game)
     {
         if (!Valid(game)) return false;
+        hudTicks_ = 0;
         if (frame_ == 0 && keys_.empty()) {
             roundEndsSeen_ = RoundEndEvents();
             RecordBattleSounds(true); // for a restart to stop (Finish)
@@ -392,7 +393,7 @@ private:
             if ((frame_ >= target_ - 1 || frame_ > last_) && koScreenOver()) {
                 if (!quiet_) MuteGameSounds(false);
                 if (frame_ == target_ - 1 && frame_ <= last_) Simulate(game, false);
-                Log("replay: at frame %d (seek done)", frame_ - 1);
+                Log("replay: at frame %d (seek done), %s", frame_ - 1, HudStepReport().c_str());
                 target_ = -1;
                 warm_ = 0;
             }
@@ -421,6 +422,7 @@ private:
                 Simulate(game, true);
                 if (roundCalls_.size() > known) {
                     findRound_ = false;
+                    Log("replay: on at round call %d, frame %d (%s)", static_cast<int>(roundCalls_.size()), roundCalls_.back(), HudStepReport().c_str());
                     // Found as it ran (here already, the usual case: Seek
                     // returns early then, sounds still muted from the run).
                     // The call's own tick's sounds play on; the run's before
@@ -668,6 +670,17 @@ private:
     // One frame of the recording, a keyframe first where one is due.
     void Simulate(SfvGame& game, bool lean)
     {
+        // A run's second and later ticks this rendered frame: the HUD's movies
+        // (banners, timer) first get the tick before's time, as if it had had
+        // its frame (hud_step.h); the frame's own advance covers the last.
+        // Only where the round's banners play: its call ("ROUND n") and its
+        // fight's first kHudFightFrames ("FIGHT!"). A fight's own ticks left
+        // nothing on screen, a KO's screen plays in real time anyway (a run
+        // waits it out), and a step costs 0.3-0.9 ms (TestPC).
+        if (viewer_ && hudTicks_++ > 0 &&
+            (RoundCallRunning() || (wasFight_ && !roundStarts_.empty() && frame_ - roundStarts_.back() <= kHudFightFrames))) {
+            StepHudMovies(1.0f / 60.0f);
+        }
         // (roundStarts_ may hold later rounds already: a restart keeps them.)
         const bool due = frame_ % kKeyEvery == 0 || std::binary_search(roundStarts_.begin(), roundStarts_.end(), frame_ - 1);
         if (due && (keys_.empty() || keys_.back().frame < frame_)) {
@@ -860,6 +873,7 @@ private:
             else Seek(game, PreviousRoundTarget());
             break;
         case ReplayControl::Fast: fast_ = std::clamp(arg, 0, 4); break;
+        case ReplayControl::HoldAt: Hold(arg, 5); break;
         case ReplayControl::OutOfSync:
             if (firstMismatch_ < 0) firstMismatch_ = std::max(0, frame_ - 1);
             mismatchFrames_++;
@@ -981,6 +995,8 @@ private:
     bool crossFight_ = false; // LoadableKey: a takeover's rewind (fight keys across its round end)
     int warm_ = 0;            // a seek's last frames run in full (Seek's run, TakeoverLoad)
     int handledNow_ = 0; // controls taken since the last Publish (ReplayView::handled)
+    int hudTicks_ = 0;   // ticks simulated this rendered frame (Simulate: the HUD's step)
+    static constexpr int kHudFightFrames = 120; // "FIGHT!" plays out within them (90 measured clean)
     // A jump's run waits for the KO screen (Simulate): it plays in real time
     // from the KO, about this long (UI checks, 2026-11-09).
     static constexpr ULONGLONG kKoScreenMs = 1500;
@@ -1049,6 +1065,7 @@ private:
         Log("replay: battle objects ready after %d neutral ticks (%s); state before frame 0 %s", game.ObjectsAt(),
             RoundEndState().c_str(),
             differ ? ("differs in " + std::to_string(differ) + " regions").c_str() : "equal");
+        if (viewer_) FindHudMovies(); // a run's ticks step them (Simulate)
         if (stress_ > 0) {
             NetplayConfig nc;
             nc.stressCheckDistance = static_cast<unsigned char>(stress_);
@@ -1322,10 +1339,13 @@ private:
 
     void MaybeHold(int f)
     {
-        if (f != holdAt_ || holdMs_ == 0) return;
-        holdUntil_ = GetTickCount64() + holdMs_;
-        holdMs_ = 0;
-        Log("replay: holding at frame %d", f);
+        for (size_t i = 0; i < holds_.size(); i++) {
+            if (holds_[i].first != f) continue;
+            holdUntil_ = GetTickCount64() + holds_[i].second;
+            holds_.erase(holds_.begin() + static_cast<std::ptrdiff_t>(i));
+            Log("replay: holding at frame %d", f);
+            return;
+        }
     }
 
     // ArmWatch sets every thread's debug registers but the caller's, and the
@@ -1675,6 +1695,7 @@ private:
 
     void Finish(SfvGame& game)
     {
+        ForgetHudMovies();
         if (trapSlots_) {
             WatchReport();
             DisarmWatches();
@@ -1790,8 +1811,8 @@ private:
     // (<name>_kept.sfvr), with state dumps of those frames: a stress replay of
     // it names the words that differ there (CompareDump).
     int keepFrom_ = -1, keepTo_ = -1;
-    int holdAt_ = -1;
-    uint64_t holdMs_ = 0, holdUntil_ = 0;
+    std::vector<std::pair<int, uint64_t>> holds_; // tests' holds: frame, ms (Hold, `rview holdat`)
+    uint64_t holdUntil_ = 0;
     std::vector<Trap> traps_;
     int trapSlots_ = 0;
     ReplayFile kept_;

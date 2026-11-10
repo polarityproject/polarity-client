@@ -68,6 +68,7 @@ enum class ReplayControl {
     Takeover,
     TakeoverStop, // early: back to where it began (or the countdown called off)
     OutOfSync,    // testing: the frame on screen counted as differing from the recording
+    HoldAt,       // testing: stand still 5 s after frame arg (a screenshot)
 };
 // Any thread; taken at the replay's next frame. Returns the command's number:
 // ReplayView::handled reaches it once the replay has taken it (0: no replay).
