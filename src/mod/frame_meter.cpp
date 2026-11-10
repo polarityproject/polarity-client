@@ -69,6 +69,7 @@ struct Record {
     bool air[2] = {false, false};
     bool attack[2] = {false, false}; // the script has hitboxes of its own
     uint32_t script[2] = {0, 0};
+    int round = 0; // a replay's round, from its call (the meter starts again with each); training: 0
 };
 
 struct Run {
@@ -104,6 +105,7 @@ bool g_hasContent = false, g_ended = true, g_pendingMark = false, g_exchange = f
 bool g_armed = false; // both fighters have been free to act since the battle (or a reset) began
 std::vector<Record> g_records; // a viewed replay's, by recording frame
 int g_applied = -1;            // the last recording frame the meter is built to
+int g_round = 0;               // the round of the last frame applied (Record::round)
 
 // Shared with the overlay.
 std::mutex g_mutex;
@@ -448,6 +450,12 @@ void Apply(const Record& r)
         g_armed = false;
         return;
     }
+    // A replay's next round, from its call (after the round's set-up, the
+    // screen's load): the meter as at a battle's start, bars and numbers.
+    if (r.round != g_round) {
+        Reset();
+        g_round = r.round;
+    }
     if (r.hold == 3) return;
     if (r.hold == 2) {
         if (g_hasContent && !g_ended) g_pendingMark = true;
@@ -611,6 +619,7 @@ void FrameMeterTick(SfvGame& game)
         // it: that frame's record (BuildTo applies it once it is on screen).
         const int f = ReplayTickFrame() - 1;
         if (f < 0 || !ReadFrame(game, ReplayTickInFight(), &r)) return;
+        r.round = ReplayTickRound();
         Store(f, r);
         LogRecord(f, r);
         return;
@@ -636,7 +645,10 @@ void FrameMeterFrame(SfvGame& game)
         // built to it, whichever way the replay got there (hidden: only the
         // record).
         Record r;
-        if (ReadFrame(game, fight, &r)) Store(frame, r);
+        if (ReadFrame(game, fight, &r)) {
+            r.round = ReplayViewNow().callRound;
+            Store(frame, r);
+        }
         if (!wanted) return;
         if (!ReplayViewNow().seeking) BuildTo(frame);
         g_tickAt = GetTickCount64();

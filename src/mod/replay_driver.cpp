@@ -50,6 +50,7 @@ ReplayView g_view;                 // as the driver last published it
 // state it starts from (after the frame before) is in a round's fight.
 std::atomic<int> g_tickFrame{-1};
 std::atomic<bool> g_tickFight{false};
+std::atomic<int> g_tickRound{0}; // round calls up to the tick's starting frame (ReplayTickRound)
 uint32_t g_viewTaken = 0;          // commands the driver took from g_viewCommands (published later as g_view.handled)
 std::function<void()> g_viewLeave; // what leaving a viewed replay does after the battle
 // A viewer restarting (a jump back across a round's end): what the next
@@ -547,6 +548,7 @@ private:
             tk_.lastInput = in.p[tk_.side];
             g_tickFrame = frame_;
             g_tickFight = wasFight_;
+            g_tickRound = CallsThrough(frame_ - 1);
             game.Advance(in, false);
             frame_++;
             wasFight_ = RoundInFight();
@@ -600,6 +602,7 @@ private:
     {
         g_tickFrame = frame_;
         g_tickFight = wasFight_;
+        g_tickRound = CallsThrough(frame_ - 1);
         game.Advance(FrameInputs{}, false);
         frame_++;
         tk_.ticks++;
@@ -708,6 +711,7 @@ private:
         // seek into the intro ran its round call a frame late without it).
         g_tickFrame = frame_;
         g_tickFight = wasFight_;
+        g_tickRound = CallsThrough(frame_ - 1);
         game.Advance(rf_.inputs[frame_], lean && wasFight_);
         if (postLoadLogs_ > 0) {
             postLoadLogs_--;
@@ -904,6 +908,7 @@ private:
         g_view.canStepForward = CanStepForward() && target_ < 0 && !findRound_ && runToFight_ < 0;
         g_view.canRoundForward = CanRoundForward();
         g_view.round = static_cast<int>(std::upper_bound(roundStarts_.begin(), roundStarts_.end(), frame_ - 1) - roundStarts_.begin());
+        g_view.callRound = CallsThrough(frame_ - 1);
         g_view.mismatches = mismatchFrames_;
         g_view.outOfSync = firstMismatch_ < 0 ? -1
                                               : static_cast<int>(std::upper_bound(roundStarts_.begin(), roundStarts_.end(), firstMismatch_) - roundStarts_.begin());
@@ -932,6 +937,11 @@ private:
             }
         }
     }
+
+    // Round calls at or before frame `f` (0 before round 1's): which round's
+    // presentation and fight a frame belongs to, from its call on (the frame
+    // meter starts again with each, ReplayTickRound / ReplayView::callRound).
+    int CallsThrough(int f) const { return static_cast<int>(std::upper_bound(roundCalls_.begin(), roundCalls_.end(), f) - roundCalls_.begin()); }
 
     // The replay's start for Play at the end and LB in round 1: round 1's call
     // (g_skipIntro), as a round jump lands on it, or the recording's first frame.
@@ -1918,6 +1928,7 @@ uint32_t ControlReplay(ReplayControl c, int arg)
 
 int ReplayTickFrame() { return g_tickFrame; }
 bool ReplayTickInFight() { return g_tickFight; }
+int ReplayTickRound() { return g_tickRound; }
 
 ReplayView ReplayViewNow()
 {

@@ -85,6 +85,7 @@ struct ReplayView {
     int frame = 0;  // on screen
     int frames = 0; // in the recording
     int round = 0;  // 1 from the first round's FIGHT; 0 before it
+    int callRound = 0; // 1 from the first round's call ("ROUND 1"); 0 before it
     int fast = 0;
     // The earliest frame a step back reaches: one a keyframe of this round
     // loads (going back further restarts the battle, which steps never do).
@@ -126,6 +127,8 @@ ReplayView ReplayViewNow();
 // a round's fight (the frame meter's per-frame record, frame_meter.cpp).
 int ReplayTickFrame();
 bool ReplayTickInFight();
+// The round (by its call: 1 from "ROUND 1") of the state the tick starts from.
+int ReplayTickRound();
 // The benchmark's run of its round (benchmark.h): a stress replay with an
 // 8-frame rollback every frame, its FIGHT to its end measured; back to the
 // menus after, the result to FinishBenchmark. B (ReplayControl::Leave) stops.
