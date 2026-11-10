@@ -41,7 +41,7 @@ const char* KindName(Kind k)
     return names[k];
 }
 
-constexpr int N = 120;               // blocks: 2 s
+constexpr int N = 90;                // blocks: 1.5 s
 constexpr ULONGLONG kStaleMs = 250;  // no refresh this long: the battle is gone
 constexpr ULONGLONG kPausedMs = 150; // no battle tick this long out of a replay: the game is paused
 
@@ -505,6 +505,9 @@ bool Wanted(bool* replay, int* frame, bool* fight)
     return FrameMeterInTraining() && CurrentScene() == "TrainingBattleState";
 }
 
+// A viewed replay (not the benchmark's) with its meter hidden still records.
+bool RecordsHidden(bool replay) { return replay && !ReplayViewNow().benchmark; }
+
 // A new battle's fighters (the region layout changed): false while not there.
 bool Ready(SfvGame& game, bool replay)
 {
@@ -594,7 +597,10 @@ void FrameMeterTick(SfvGame& game)
     if (!g_base) g_base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     bool replay = false, fight = true;
     int frame = 0;
-    if (!Wanted(&replay, &frame, &fight)) {
+    // A viewed replay keeps its records while the meter is hidden: shown
+    // again it is built from them at once (it was reset, empty until the
+    // next exchange, and a step back found nothing before the show).
+    if (!Wanted(&replay, &frame, &fight) && !RecordsHidden(replay)) {
         g_layout = ~0ull;
         return;
     }
@@ -623,12 +629,15 @@ void FrameMeterFrame(SfvGame& game)
     if (!g_base) g_base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     bool replay = false, fight = true;
     int frame = 0;
-    if (!Wanted(&replay, &frame, &fight) || !Ready(game, replay)) return;
+    const bool wanted = Wanted(&replay, &frame, &fight);
+    if ((!wanted && !RecordsHidden(replay)) || !Ready(game, replay)) return;
     if (replay) {
         // The frame on screen: its record (the state now), then the meter
-        // built to it, whichever way the replay got there.
+        // built to it, whichever way the replay got there (hidden: only the
+        // record).
         Record r;
         if (ReadFrame(game, fight, &r)) Store(frame, r);
+        if (!wanted) return;
         if (!ReplayViewNow().seeking) BuildTo(frame);
         g_tickAt = GetTickCount64();
         return;
@@ -651,17 +660,19 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold)
         m = g_shown;
     }
     BeginScreen();
-    // Design units: the bars at x 80..1520 just above the V-Trigger gauges;
-    // the blocks are laid on whole pixels (one pitch and gap for every
-    // block, the 120 centred on the design's place), so no gap differs.
-    constexpr float x0 = 80, y0 = 652, pitch = 12, gap = 2, h = 20;
+    // Design units: the bars centred on the screen (x 260..1340), above the
+    // V-Trigger gauges; the blocks are laid on whole pixels (one pitch and
+    // gap for every block, the N centred on x 800), so no gap differs. P1's
+    // numbers above its bar, P2's under its own (both on the left).
+    constexpr float cx = 800, y0 = 624, pitch = 12, gap = 2, h = 20;
     constexpr float kTextSize = 21, kCountSize = 20;
     constexpr float kCounts[2] = {y0 + 25, y0 + 103}, kLanes[2] = {y0 + 46, y0 + 98}, kBars[2] = {y0 + 52, y0 + 76};
+    constexpr float kTexts[2] = {y0 - 2, y0 + 127};
     const float s = g_v.s;
     const float pitchPx = std::max(3.0f, std::round(pitch * s));
     const float gapPx = std::max(1.0f, std::round(gap * s));
     const float wPx = pitchPx - gapPx;
-    const float left = std::round(g_v.P(x0 + N * pitch / 2, 0).x - N * pitchPx / 2);
+    const float left = std::round(g_v.P(cx, 0).x - N * pitchPx / 2);
     const float right = left + (N - 1) * pitchPx + wPx;
     const float hPx = std::max(2.0f, std::round(h * s)), lanePx = std::max(2.0f, std::round(4 * s));
     const float drop = std::max(1.0f, std::round(2 * s));
@@ -726,8 +737,8 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold)
         d->AddRectFilled(ImVec2(x + 1, top + 1), ImVec2(x + w2 + 1, bottom + 1), shadow);
         d->AddRectFilled(ImVec2(x, top), ImVec2(x + w2, bottom), look::kCream);
     }
-    // The numbers: P1's at the left, P2's at the right ("P1 Startup 6F ·
-    // Total 20F · Advantage +5F"); the kicker on the outer side.
+    // The numbers, each at the left: P1's above the meter, P2's under it
+    // ("P1 Startup 6F · Total 20F · Advantage +5F").
     struct Piece {
         std::string text;
         ImU32 color;
@@ -746,19 +757,10 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold)
             const int a = m.adv[i];
             add("Advantage", (a > 0 ? "+" : "") + std::to_string(a) + "F", a > 0 ? look::kOk : a < 0 ? look::kDanger : look::kCream);
         }
-        const Piece kicker{i == 0 ? "P1" : "P2", look::kGold, 0};
-        if (i == 0) {
-            if (!pieces.empty()) pieces.front().gap = 10;
-            pieces.insert(pieces.begin(), kicker);
-        }
-        else {
-            pieces.push_back(kicker);
-            pieces.back().gap = pieces.size() > 1 ? 10.0f : 0.0f;
-        }
-        float width = 0; // screen pixels
-        for (const Piece& p : pieces) width += (p.gap + TextW(bold, kTextSize, p.text)) * s;
-        float x = i == 0 ? left : right - width;
-        const float ty = rowY(y0 - 2);
+        if (!pieces.empty()) pieces.front().gap = 10;
+        pieces.insert(pieces.begin(), Piece{i == 0 ? "P1" : "P2", look::kGold, 0});
+        float x = left;
+        const float ty = rowY(kTexts[i]);
         for (const Piece& p : pieces) {
             x += p.gap * s;
             OutlinedText(d, bold, TextPx(kTextSize), ImVec2(x, ty), p.color, p.text, 0, s);
