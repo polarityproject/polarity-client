@@ -75,6 +75,7 @@ uint32_t ControlReplay(ReplayControl c, int arg = 0);
 // Research (`rview callkeys|crossrounds 0|1`): round jumps load the keyframe
 // before a round's call; keyframe loads across round ends.
 void SetReplayExperiment(const std::string& what, bool on);
+void SetReplayExperimentValue(const std::string& what, int value);
 struct ReplayView {
     bool active = false;
     bool paused = false;
@@ -90,6 +91,9 @@ struct ReplayView {
     // Steps forward and fast forward run only through a round's action
     // frames (after "FIGHT!" to its KO); the rest plays at normal speed.
     bool canStepForward = false;
+    // RB has a round to go to: one starts after the round on screen (the
+    // file's rounds; a file without them: until its end).
+    bool canRoundForward = true;
     // The frame on screen within its round's action frames (0 the first, the
     // KO's the last), -1 outside them; how many there are (0: not known);
     // the stripe's fill (0..1).

@@ -71,6 +71,7 @@ std::atomic<bool> g_callKeys{true}, g_crossRounds{false}, g_anyKeys{false}, g_ke
 // black (as a round jump's run), not as it played. Not a Start skip: that
 // would play a different battle than the recording's. `rview intro 1` shows it.
 std::atomic<bool> g_skipIntro{true};
+std::atomic<int> g_callPace{0}, g_callAfter{90}; // research: a run's pace through a round's call (ViewerFrame)
 std::atomic<int> g_latch{-1};    // `latch tick|game`: the pad latch the next replay uses (-1: by recording)
 
 class NoTransport : public ITransport {
@@ -368,7 +369,17 @@ private:
             Finish(game);
             return false;
         }
-        const auto koScreenOver = [&] { return GetTickCount64() >= koHoldUntil_; }; // (Simulate)
+        // Research (`rview callpace <k>`, `rview callafter <n>`): through a
+        // round's call and the first n frames of its fight, at most k ticks a
+        // rendered frame (the HUD's banners play per rendered frame).
+        const int runFrom = frame_;
+        const auto koScreenOver = [&] { // (Simulate)
+            if (GetTickCount64() < koHoldUntil_) return false;
+            const int pace = g_callPace;
+            if (pace <= 0 || frame_ - runFrom < pace) return true;
+            const bool banner = RoundCallRunning() || (wasFight_ && !roundStarts_.empty() && frame_ - roundStarts_.back() <= g_callAfter);
+            return !banner;
+        };
         if (target_ >= 0) {
             // Seeking: the frames before the target lean and muted, the last as
             // played; ~40 ms of them a rendered frame, so the screen goes on.
@@ -834,10 +845,11 @@ private:
             // A round starts at its call ("ROUND 2"), which then plays as it
             // did: a seek run through the call in a frame or two left its
             // banner (then "FIGHT!") over the fight (UI checks, 2026-11-09).
-            // Next: the first round call after the frame on screen; previous:
-            // this round's call, or the one before when just past it (before
-            // the first: the replay's start).
-            if (arg > 0) {
+            // Next: the first round call after the frame on screen, none in the
+            // last round (it ran to the recording's end, which stops inside the
+            // final KO); previous: PreviousRoundTarget.
+            if (arg > 0 && !CanRoundForward()) Log("replay: no round after this one");
+            else if (arg > 0) {
                 auto next = std::upper_bound(roundCalls_.begin(), roundCalls_.end(), shown);
                 if (next != roundCalls_.end()) Seek(game, *next + 1);
                 else if (frame_ <= last_) {
@@ -845,10 +857,7 @@ private:
                     MuteGameSounds(true);
                 }
             }
-            else {
-                auto it = std::lower_bound(roundCalls_.begin(), roundCalls_.end(), shown - kKeyEvery);
-                Seek(game, it == roundCalls_.begin() ? StartFrame() : *std::prev(it) + 1);
-            }
+            else Seek(game, PreviousRoundTarget());
             break;
         case ReplayControl::Fast: fast_ = std::clamp(arg, 0, 4); break;
         case ReplayControl::OutOfSync:
@@ -879,6 +888,7 @@ private:
         g_view.fast = fast_;
         g_view.backLimit = BackLimit();
         g_view.canStepForward = CanStepForward() && target_ < 0 && !findRound_ && runToFight_ < 0;
+        g_view.canRoundForward = CanRoundForward();
         g_view.round = static_cast<int>(std::upper_bound(roundStarts_.begin(), roundStarts_.end(), frame_ - 1) - roundStarts_.begin());
         g_view.mismatches = mismatchFrames_;
         g_view.outOfSync = firstMismatch_ < 0 ? -1
@@ -917,6 +927,35 @@ private:
     {
         if (!g_skipIntro || (target_ < 0 && !findRound_)) return false;
         return roundCalls_.empty() ? findRound_ : frame_ <= roundCalls_.front() && (findRound_ || target_ == roundCalls_.front() + 1);
+    }
+
+    // RB has a round to go to: the round on screen (counted by calls, 0 in the
+    // intro) is not the file's last. A file without its rounds: until the end.
+    bool CanRoundForward() const
+    {
+        const int shown = frame_ - 1;
+        const auto next = std::upper_bound(roundCalls_.begin(), roundCalls_.end(), shown);
+        if (next != roundCalls_.end()) return true; // seen already
+        const int round = static_cast<int>(next - roundCalls_.begin());
+        const int rounds = static_cast<int>(std::count_if(rf_.summary.rounds.begin(), rf_.summary.rounds.end(), [](const RoundResult& r) { return r.fightFrame >= 0; }));
+        if (rounds > 0) return round < rounds;
+        return frame_ <= last_ && !MatchDecided();
+    }
+
+    // LB: the previous round's call while this round's has just begun (its
+    // call, or the first second of its fight), else this round's call; before
+    // round 2 the replay's start.
+    int PreviousRoundTarget() const
+    {
+        const int shown = frame_ - 1;
+        auto it = std::upper_bound(roundCalls_.begin(), roundCalls_.end(), shown); // past this round's call
+        if (it == roundCalls_.begin()) return StartFrame();                       // before any call
+        const int call = *std::prev(it);
+        auto fight = std::upper_bound(roundStarts_.begin(), roundStarts_.end(), call - 1);
+        const bool justBegun = fight == roundStarts_.end() || *fight >= shown || shown - *fight <= kKeyEvery;
+        if (!justBegun) return call + 1;
+        if (std::prev(it) == roundCalls_.begin()) return StartFrame();
+        return *std::prev(it, 2) + 1;
     }
 
     // A frame step forward runs an action frame: the state on screen has a
@@ -1826,6 +1865,13 @@ bool RequestBenchmark(const std::string& path)
     }
     RequestReplay(path, 8, -1, -1, "", -1, -1, true, "", -1, 0, 0, -1, "", false, true);
     return CurrentFrameDriver() != nullptr;
+}
+
+void SetReplayExperimentValue(const std::string& what, int value)
+{
+    if (what == "callpace") g_callPace = value;
+    else if (what == "callafter") g_callAfter = value;
+    Log("rview: %s %d", what.c_str(), value);
 }
 
 void SetReplayExperiment(const std::string& what, bool on)

@@ -932,6 +932,20 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
     // The intro run to round 1's call (a replay's start): black like a round
     // jump's, fading in on the call.
     if (v.opening && g_jump.phase == JumpFade::None) g_jump = {JumpFade::Black, 0, ImGui::GetTime(), v.handled};
+    // A round jump while the last one fades back in (pressed as the picture
+    // comes back: the round's first frame you can see): out again from there.
+    const auto jumpPressed = [&] {
+        if (Pressed({ImGuiKey_GamepadL1}, false)) return -1;
+        if (Pressed({ImGuiKey_GamepadR1}, false) && v.canRoundForward) return 1;
+        return 0;
+    };
+    if (takeInput && g_jump.phase == JumpFade::In && !v.seeking) {
+        if (const int dir = jumpPressed(); dir != 0) {
+            PlayUi(UiSound::Step);
+            const double shown = std::clamp(1 - (ImGui::GetTime() - g_jump.since) / kFadeIn, 0.0, 1.0); // the black left
+            g_jump = {JumpFade::Out, dir, ImGui::GetTime() - shown * kFadeOut, 0};
+        }
+    }
     // While a round jump fades, only B (leave) is taken.
     const bool fading = g_jump.phase != JumpFade::None;
     const bool canTakeOver = v.roundFrame >= 0 && !v.seeking && !fading;
@@ -963,7 +977,7 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
         // or the battle started again: nothing to watch) and fades back in
         // on the round's call (RoundJumpFade).
         if (g_jump.phase == JumpFade::None) {
-            const int dir = Pressed({ImGuiKey_GamepadL1}, false) ? -1 : Pressed({ImGuiKey_GamepadR1}, false) ? 1 : 0;
+            const int dir = jumpPressed(); // RB only with a round after this one
             if (dir != 0) {
                 PlayUi(UiSound::Step);
                 g_jump = {JumpFade::Out, dir, ImGui::GetTime(), 0};
@@ -993,9 +1007,11 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
     char frame[64] = "";
     if (action && v.roundFrames > 0) std::snprintf(frame, sizeof(frame), " \xC2\xB7 Frame %d / %d", v.roundFrame, v.roundFrames - 1);
     else if (action) std::snprintf(frame, sizeof(frame), " \xC2\xB7 Frame %d", v.roundFrame);
+    // RB shows only when there is a round after this one.
     PromptList prompts = {{"button_a", v.paused ? "Play" : "Pause"}, {"button_lb", "Round"}, {"button_rb", ""}, {"button_rt", "Hold to fast forward"},
                           {"button_back", HitboxesInReplays() ? "Hide hitboxes" : "Show hitboxes"},
                           {"button_start", FrameMeterInReplays() ? "Hide frame meter" : "Show frame meter"}, {"button_b", "Leave"}};
+    if (!v.canRoundForward) prompts.erase(prompts.begin() + 2);
     // Replay Takeover, in a round's fight.
     if (canTakeOver) prompts.insert(prompts.begin() + 1, {{"button_x", "Control P1"}, {"button_y", "Control P2"}});
     int clicked = -1;
