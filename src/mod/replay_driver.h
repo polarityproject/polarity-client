@@ -50,8 +50,9 @@ void RequestReplay(const std::string& path, int stressDistance, int watchFrom = 
 
 // The Battle Log's playback of a recording: as played, with the controls
 // below; the game goes back to the menus when it is left, then onLeave runs
-// (on the game thread).
-void RequestReplayView(const std::string& path, const std::string& title, std::function<void()> onLeave);
+// (on the game thread). holdAt/holdSeconds: tests' screenshots (the `hold` of RequestReplay).
+void RequestReplayView(const std::string& path, const std::string& title, std::function<void()> onLeave, int holdAt = -1,
+                       int holdSeconds = 0);
 enum class ReplayControl {
     Pause,
     Play,
@@ -78,6 +79,7 @@ struct ReplayView {
     bool active = false;
     bool paused = false;
     bool seeking = false;
+    bool opening = false; // running the intro to round 1's call: black until the call
     int frame = 0;  // on screen
     int frames = 0; // in the recording
     int round = 0;  // 1 from the first round's FIGHT; 0 before it

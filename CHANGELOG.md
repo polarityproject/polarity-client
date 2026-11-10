@@ -18,7 +18,8 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   play is kept in SFVR\replays, newest first, with both players' names,
   characters and round wins. LB/RB shows them grouped by set (a table's
   set, or a Direct Match session until character select), LT filters by
-  your character and your opponent's, RT by opponent. A watches a match:
+  your character and your opponent's, RT by opponent. A watches a match,
+  starting at round 1's call (the intro is skipped):
   pause and play (A), frame by frame both ways (left and right), the next
   or previous round (RB, LB), fast forward (hold RT), leave (B). Y opens
   the folder: copy replays out, or drop others' in. A replay plays on later

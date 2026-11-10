@@ -1583,9 +1583,10 @@ void RunNetCommand(const std::string& line)
         bool cold = false;
         ss >> file;
         if (file == "view") {
-            // replay view <file>: the Battle Log's playback (rview controls it)
+            // replay view <file> [hold <frame> <seconds>]: the Battle Log's playback (rview controls it)
             ss >> file;
-            RequestReplayView(file, file, nullptr);
+            if (ss >> word && word == "hold") ss >> holdAt >> holdSeconds;
+            RequestReplayView(file, file, nullptr, holdAt, holdSeconds);
             return;
         }
         while (ss >> word) {
@@ -1632,17 +1633,17 @@ void RunNetCommand(const std::string& line)
         std::string what;
         int arg = 0;
         ss >> what >> arg;
-        if (what == "callkeys" || what == "crossrounds" || what == "anykeys" || what == "keysanywhere") {
+        if (what == "callkeys" || what == "crossrounds" || what == "anykeys" || what == "keysanywhere" || what == "intro") {
             SetReplayExperiment(what, arg != 0);
             return;
         }
         if (what == "status") {
             const ReplayView v = ReplayViewNow();
             Log("rview: %s frame %d of %d, round %d, %s%s, fast %d, %d keyframe loads, %d frames differ, back to %d, "
-                "round frame %d of %d, forward %d, progress %.3f",
+                "round frame %d of %d, forward %d, progress %.3f, opening %d",
                 v.active ? "active" : "none", v.frame, v.frames, v.round, v.paused ? "paused" : "playing", v.seeking ? " (seeking)" : "",
                 v.fast, v.seeks, v.mismatches, v.backLimit, v.roundFrame, v.roundFrames, v.canStepForward ? 1 : 0,
-                static_cast<double>(v.roundProgress));
+                static_cast<double>(v.roundProgress), v.opening ? 1 : 0);
             Log("rview: takeover %d, countdown %.1f, ending %d", v.takeover, static_cast<double>(v.takeoverCountdown), v.takeoverEnding ? 1 : 0);
             return;
         }

@@ -929,6 +929,9 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
         if (clicked >= 0) ControlReplay(ReplayControl::TakeoverStop);
         return;
     }
+    // The intro run to round 1's call (a replay's start): black like a round
+    // jump's, fading in on the call.
+    if (v.opening && g_jump.phase == JumpFade::None) g_jump = {JumpFade::Black, 0, ImGui::GetTime(), v.handled};
     // While a round jump fades, only B (leave) is taken.
     const bool fading = g_jump.phase != JumpFade::None;
     const bool canTakeOver = v.roundFrame >= 0 && !v.seeking && !fading;

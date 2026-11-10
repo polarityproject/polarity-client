@@ -67,6 +67,10 @@ RestartPending g_restartPending;
 // tests). Research (`rview crossrounds 1`): any key across round ends (a
 // fight key from the match's end diverged, 60 frames, 2026-11-09).
 std::atomic<bool> g_callKeys{true}, g_crossRounds{false}, g_anyKeys{false}, g_keysAnywhere{true};
+// The viewer starts at round 1's call: the intro runs muted and lean behind
+// black (as a round jump's run), not as it played. Not a Start skip: that
+// would play a different battle than the recording's. `rview intro 1` shows it.
+std::atomic<bool> g_skipIntro{true};
 std::atomic<int> g_latch{-1};    // `latch tick|game`: the pad latch the next replay uses (-1: by recording)
 
 class NoTransport : public ITransport {
@@ -317,6 +321,13 @@ private:
                 target_ = startAt_;
                 startAt_ = -1;
             }
+            else if (g_skipIntro) {
+                // On to round 1's call (findRound_'s run, as RB's), its banner
+                // and "FIGHT!" then played as they were.
+                Log("replay: on to round 1's call, past the intro");
+                findRound_ = true;
+                MuteGameSounds(true);
+            }
             // Still muted from before a restart (MuteGameSounds(true) then does
             // nothing): the capture, ended with the old battle (Finish:
             // StopBattleSounds), begins again on this one's sounds.
@@ -393,7 +404,7 @@ private:
         else if (findRound_) {
             // The next round's call, not reached yet: on until it is.
             const ULONGLONG until = GetTickCount64() + 40;
-            while (findRound_ && frame_ <= last_ && GetTickCount64() < until && koScreenOver()) {
+            while (findRound_ && frame_ <= last_ && GetTickCount64() < until && koScreenOver() && !holdUntil_) {
                 const size_t known = roundCalls_.size();
                 const size_t soundMark = SoundCaptureMark();
                 Simulate(game, true);
@@ -716,6 +727,7 @@ private:
             if (lean && koMs_) koHoldUntil_ = koMs_ + kKoScreenMs;
         }
         wasFight_ = fight;
+        if (viewer_) MaybeHold(frame_); // tests' screenshots (`replay view <file> hold`)
         frame_++;
     }
 
@@ -788,7 +800,7 @@ private:
         case ReplayControl::Play:
             paused_ = false;
             EndQuiet();
-            if (frame_ > last_) Seek(game, 0); // from the end: again from the start
+            if (frame_ > last_) Seek(game, StartFrame()); // from the end: again from the start
             break;
         case ReplayControl::Toggle: Control(game, paused_ ? ReplayControl::Play : ReplayControl::Pause, 0); break;
         case ReplayControl::Step:
@@ -835,7 +847,7 @@ private:
             }
             else {
                 auto it = std::lower_bound(roundCalls_.begin(), roundCalls_.end(), shown - kKeyEvery);
-                Seek(game, it == roundCalls_.begin() ? 0 : *std::prev(it) + 1);
+                Seek(game, it == roundCalls_.begin() ? StartFrame() : *std::prev(it) + 1);
             }
             break;
         case ReplayControl::Fast: fast_ = std::clamp(arg, 0, 4); break;
@@ -854,6 +866,7 @@ private:
         g_view.title = title_;
         g_view.paused = paused_ && target_ < 0 && !findRound_ && runToFight_ < 0;
         g_view.seeking = target_ >= 0 || findRound_ || runToFight_ >= 0 || tk_.phase == TakeoverPhase::FadeOut || tk_.phase == TakeoverPhase::ToFight;
+        g_view.opening = InOpeningRun();
         g_view.handled += static_cast<uint32_t>(handledNow_);
         handledNow_ = 0;
         g_view.takeover = tk_.phase == TakeoverPhase::None ? -1 : tk_.side;
@@ -894,6 +907,16 @@ private:
                 g_view.roundProgress = nextCall ? 0.0f : 1.0f;
             }
         }
+    }
+
+    // The replay's start for Play at the end and LB in round 1: round 1's call
+    // (g_skipIntro), as a round jump lands on it, or the recording's first frame.
+    int StartFrame() const { return g_skipIntro && !roundCalls_.empty() ? roundCalls_.front() + 1 : 0; }
+    // Running to round 1's call from before it (the intro behind black).
+    bool InOpeningRun() const
+    {
+        if (!g_skipIntro || (target_ < 0 && !findRound_)) return false;
+        return roundCalls_.empty() ? findRound_ : frame_ <= roundCalls_.front() && (findRound_ || target_ == roundCalls_.front() + 1);
     }
 
     // A frame step forward runs an action frame: the state on screen has a
@@ -1774,7 +1797,7 @@ private:
 
 void SetReplayLatch(int latch) { g_latch = latch; }
 
-void RequestReplayView(const std::string& path, const std::string& title, std::function<void()> onLeave)
+void RequestReplayView(const std::string& path, const std::string& title, std::function<void()> onLeave, int holdAt, int holdSeconds)
 {
     {
         std::lock_guard lock(g_viewMutex);
@@ -1782,7 +1805,7 @@ void RequestReplayView(const std::string& path, const std::string& title, std::f
         g_viewTaken = g_view.handled;
         g_viewLeave = std::move(onLeave);
     }
-    RequestReplay(path, 0, -1, -1, "", -1, -1, true, "", -1, 0, 0, -1, title.empty() ? path : title);
+    RequestReplay(path, 0, -1, -1, "", -1, -1, true, "", holdAt, holdSeconds, 0, -1, title.empty() ? path : title);
 }
 
 bool RequestBenchmark(const std::string& path)
@@ -1811,6 +1834,7 @@ void SetReplayExperiment(const std::string& what, bool on)
     else if (what == "crossrounds") g_crossRounds = on;
     else if (what == "anykeys") g_anyKeys = on;
     else if (what == "keysanywhere") g_keysAnywhere = on; // off: the old rule (fight keys within a round, call keys)
+    else if (what == "intro") g_skipIntro = !on;            // on: the viewer plays the intro
     else return Log("rview: no experiment %s", what.c_str());
     Log("rview: %s %s", what.c_str(), on ? "on" : "off");
 }
