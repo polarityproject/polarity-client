@@ -165,6 +165,8 @@ public:
     // The battle simulation itself ticked (its InputUnit recorded a frame)
     // within the last half second; false while the pause menu is open.
     bool BattleTicking() const { return inputUnit_ && GetTickCount64() - lastInputMs_ < 500; }
+    // When the last battle tick started (GetTickCount64): none run while the game pauses.
+    uint64_t LastTickMs() const { return lastInputMs_; }
     uint8_t* InputUnit() const { return inputUnit_; }
     uint8_t* BattleFrameObject() const { return battleFrame_; }
     bool includeSyncCounters = true;

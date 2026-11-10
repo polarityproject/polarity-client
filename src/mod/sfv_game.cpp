@@ -2,6 +2,7 @@
 
 #include "core/state.h"
 #include "mod/battle_driver.h"
+#include "mod/frame_meter.h"
 #include "mod/flow.h"
 #include "mod/hitch.h"
 #include "mod/lifecycle.h"
@@ -187,6 +188,8 @@ void SfvGame::OnInputUnit(uint8_t* inputUnit)
         }
     }
     ActorLogTick();
+    FrameMeterTick(*this);
+    FtraceTick();
     if (injecting_) {
         values[0] = inject_[0];
         values[1] = inject_[1];

@@ -1,5 +1,6 @@
 #include "mod/hitbox_display.h"
 
+#include "mod/battle_actors.h"
 #include "mod/config.h"
 #include "mod/flow.h"
 #include "mod/image.h"
@@ -23,32 +24,14 @@ namespace sfv::mod {
 
 namespace {
 
-// The actor's region R (15808 bytes) and its owner's vtable 0x18 before it.
-constexpr size_t kActorRegionSize = 15808, kActorVtableAt = 0x18;
-constexpr uint32_t kFighterVtable = 0x2C4F220, kEffectVtable = 0x2C6E6D8;
-// R-0x40: the actor's position object. A fighter's: x, y at +0x790 (its
-// battle position region s300 is at +0x764); an effect's at +0x1F0.
-constexpr size_t kPositionAt = 0x40, kFighterXY = 0x790, kEffectXY = 0x1F0;
-// R+0x3DB8: the side, 0 on the left (facing right), 1 on the right, -1 in an
-// effect slot never used.
-constexpr size_t kSideAt = 0x3DB8;
-// An effect slot's two flags, 1 while it is out, 0 once it hit or ended (its
-// lists stay as they were).
-constexpr size_t kEffectLiveA = 0x11C0, kEffectLiveB = 0x1358;
-// The box lists: hitboxes from R+0x120, hurtboxes from R+0x1610; entries of
-// 0x78 bytes: +0 the move file's box (x, y, z, w, h), +0x30 the hit type (a
-// byte: 0 strike, 1 projectile, 2 throw, 4 proximity guard, 5 projectile
-// cancel) or hurt type (bits: 1 strike, 2 projectile, 4 throw), +0x50 the
-// box id (box << 8 | script << 16; -1 an empty slot), +0x58 the entry's
-// vtable (other slots hold another, or old bytes).
-constexpr size_t kHitList = 0x120, kHitListEnd = 0x1608, kHurtList = 0x1610, kHurtListEnd = 0x3040;
-constexpr size_t kEntrySize = 0x78, kEntryType = 0x30, kEntryId = 0x50, kEntryVtableAt = 0x58;
-constexpr uint32_t kEntryVtable = 0x2C4D6F8;
+using namespace actor; // battle_actors.h
+
 // The player controller's PlayerCameraManager (+0x390), whose CameraCache.POV (+0x370) is the view
 // drawn: location, rotation (pitch, yaw, roll), FOV (horizontal), ...,
 // aspect ratio (+0x28).
 constexpr size_t kCameraManager = 0x390, kPov = 0x370;
 constexpr ULONGLONG kStaleMs = 250; // no collection this long: the battle is gone
+constexpr ULONGLONG kPausedMs = 150; // no battle tick this long out of a replay: the game is paused
 
 uintptr_t g_base = 0;
 std::atomic<int> g_training{-1}, g_replays{-1}; // -1: not read yet
@@ -115,14 +98,14 @@ void Collect(SfvGame& game, std::vector<WorldBox>& boxes)
     std::string text;
     const uintptr_t entryVtable = g_base + kEntryVtable;
     for (const StateRegion& r : game.Regions()) {
-        if (r.size != kActorRegionSize || !IsReadable(r.ptr - kPositionAt, kPositionAt)) continue;
-        const uintptr_t vt = At<uintptr_t>(r.ptr - kActorVtableAt, 0) - g_base;
+        if (r.size != kRegionSize || !IsReadable(r.ptr - kPosition, kPosition)) continue;
+        const uintptr_t vt = At<uintptr_t>(r.ptr - kVtableAt, 0) - g_base;
         const bool fighter = vt == kFighterVtable;
         if (!fighter && vt != kEffectVtable) continue;
-        const uint32_t side = At<uint32_t>(r.ptr, kSideAt);
+        const uint32_t side = At<uint32_t>(r.ptr, kSide);
         if (side > 1) continue; // an effect slot never used
         if (!fighter && !At<uint32_t>(r.ptr, kEffectLiveA) && !At<uint32_t>(r.ptr, kEffectLiveB)) continue;
-        const auto* pos = At<const uint8_t*>(r.ptr - kPositionAt, 0);
+        const auto* pos = At<const uint8_t*>(r.ptr - kPosition, 0);
         const size_t xy = fighter ? kFighterXY : kEffectXY;
         if (!pos || !IsReadable(pos + xy, 8)) continue;
         const float px = At<float>(pos, xy), py = At<float>(pos, xy + 4);
@@ -201,6 +184,9 @@ void CollectHitboxes(SfvGame& game)
 {
     if (!g_base) g_base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     if (!Wanted()) return;
+    // Training's pause menu stops the ticks (a paused replay runs none either,
+    // but keeps its picture): no boxes over the game's menu.
+    if (!ReplayViewNow().active && GetTickCount64() - game.LastTickMs() > kPausedMs) return;
     // The camera manager once per battle (a new region layout).
     if (game.LayoutVersion() != g_cameraLayout) {
         g_cameraLayout = game.LayoutVersion();

@@ -1,6 +1,7 @@
 #include "mod/overlay.h"
 
 #include "mod/battle_driver.h"
+#include "mod/frame_meter.h"
 #include "mod/hitbox_display.h"
 
 #include "core/random_stage.h"
@@ -2295,6 +2296,14 @@ std::vector<SettingsRow> SettingsRows()
         r.title = "Hitboxes";
         r.lines = {"Shows hurtboxes, hitboxes, throw and proximity boxes in Training mode."};
     }
+    {
+        SettingsRow& r = row("framemeter", "TRAINING", "Frame meter");
+        r.arrows = true;
+        r.value = FrameMeterInTraining() ? "Shown" : "Hidden";
+        r.kicker = "TRAINING";
+        r.title = "Frame meter";
+        r.lines = {"Shows each frame of both characters' actions above the V-Trigger gauges in Training mode, with startup, total and frame advantage."};
+    }
     // The benchmark (benchmark.h).
     {
         SettingsRow& r = row("bench", "BENCHMARK", "Run benchmark");
@@ -2527,6 +2536,7 @@ void ApplySetting(const SettingsInput& in)
     else if (in.row == "benchlast" && in.confirm) OpenBenchmarkModal(true);
     else if (in.row == "checkstart" && in.delta) SaveMainIni(L"update", L"check", ReadMainIni(L"update", L"check", 1) ? 0 : 1);
     else if (in.row == "hitboxes" && in.delta) SetHitboxesInTraining(!HitboxesInTraining());
+    else if (in.row == "framemeter" && in.delta) SetFrameMeterInTraining(!FrameMeterInTraining());
     else if (in.row == "name" && in.typed) {
         std::snprintf(g_choices.name, sizeof(g_choices.name), "%s", in.text.c_str());
         SaveChoices();
@@ -3836,6 +3846,7 @@ void Draw(IDXGISwapChain* swapChain)
     const bool hint = !visible && !preview && !HubOpen() && (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) && OnMenuScreen();
     if (hint) DrawMenuHint();
     DrawHitboxes(ImGui::GetBackgroundDrawList(), ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
+    DrawFrameMeter(ImGui::GetBackgroundDrawList(), g_fontBold);
     DrawPreviews();
     DrawNotices(session && (phase == NetView::Phase::Running || phase == NetView::Phase::PostMatch), view);
     DrawTexturePreview();
@@ -3847,7 +3858,7 @@ void Draw(IDXGISwapChain* swapChain)
     // The menu sounds this frame's screens asked for (ui_sound.h).
     FlushUiSounds();
     const bool draw = visible || preview || liveAlpha > 0 || session || hint || HubOpen() || !g_toasts.empty() || g_preview.Any() || texture ||
-                      ReplayViewNow().active || HitboxesVisible();
+                      ReplayViewNow().active || HitboxesVisible() || FrameMeterVisible();
     if (!draw || (!g_rtv && !CreateTarget(swapChain))) {
         ImGui::EndFrame();
         return;

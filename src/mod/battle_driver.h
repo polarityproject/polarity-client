@@ -51,6 +51,10 @@ void ActorLogTick();
 // then logs the words that changed since (side: flips between 1.0/-1.0 or 0/1).
 void SnapRegions();
 void DiffRegions(const std::string& mode, const std::string& prefix = "");
+// Research (`ftrace <ticks>`): every changed snapshot word per tick, with
+// the fighters' script and frame, to SFVR\research\ftrace.bin.
+void TraceRegions(int ticks);
+void FtraceTick();
 // Research (`freeze 1|0`): the battle runs no ticks (held on its frame) / runs again.
 void SetBattleFreeze(bool on);
 // Research (`rpeek <region> <hex offset, may be negative> [qwords]`).

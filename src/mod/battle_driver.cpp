@@ -5,6 +5,7 @@
 #include "mod/crash_report.h"
 #include "mod/flow.h"
 #include "mod/hitch.h"
+#include "mod/frame_meter.h"
 #include "mod/hitbox_display.h"
 #include "mod/lifecycle.h"
 #include "mod/log.h"
@@ -277,6 +278,7 @@ void BattleFrameDetour(uint8_t* battleFrame)
     }
     // The boxes of the frame about to be drawn (Training, replays).
     CollectHitboxes(*g_game);
+    FrameMeterFrame(*g_game);
 }
 
 int g_strayRecords = 0;
@@ -965,6 +967,100 @@ namespace {
 std::map<std::string, std::vector<uint8_t>> g_regionSnap;
 
 } // namespace
+
+namespace {
+// Research (`ftrace <ticks>`): every snapshot word that changes, per tick.
+std::atomic<int> g_ftrace{0};
+FILE* g_ftraceFile = nullptr;
+std::vector<std::vector<uint8_t>> g_ftracePrev;
+uint32_t g_ftraceTick = 0;
+} // namespace
+
+void TraceRegions(int ticks)
+{
+    if (g_ftraceFile) std::fclose(g_ftraceFile), g_ftraceFile = nullptr;
+    g_ftracePrev.clear();
+    g_ftraceTick = 0;
+    if (!g_game || ticks <= 0) return;
+    wchar_t exe[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    std::wstring dir(exe);
+    dir = dir.substr(0, dir.find_last_of(L"\\/")) + L"\\SFVR\\research";
+    CreateDirectoryW(dir.c_str(), nullptr);
+    g_ftraceFile = _wfopen((dir + L"\\ftrace.bin").c_str(), L"wb");
+    if (!g_ftraceFile) return;
+    // Header: region count, then each region's name (with its owner) and size.
+    const auto& regions = g_game->Regions();
+    const uint32_t n = static_cast<uint32_t>(regions.size());
+    std::fwrite(&n, 4, 1, g_ftraceFile);
+    for (const StateRegion& r : regions) {
+        char at[32];
+        std::snprintf(at, sizeof(at), " @%llX", static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(r.ptr)));
+        const std::string name = r.name + " " + RegionOwner(r.ptr) + at;
+        const uint16_t len = static_cast<uint16_t>(name.size());
+        const uint32_t size = static_cast<uint32_t>(r.size);
+        std::fwrite(&len, 2, 1, g_ftraceFile);
+        std::fwrite(name.data(), 1, len, g_ftraceFile);
+        std::fwrite(&size, 4, 1, g_ftraceFile);
+        g_ftracePrev.emplace_back(r.size, uint8_t{0});
+    }
+    g_ftrace = ticks;
+    Log("ftrace: %u regions, the next %d ticks", n, ticks);
+}
+
+void FtraceTick()
+{
+    if (g_ftrace <= 0 || !g_game || !g_ftraceFile) return;
+    const auto& regions = g_game->Regions();
+    if (regions.size() != g_ftracePrev.size()) return;
+    // Per tick: the tick, each fighter's script index and frame (16.16),
+    // then the changed words: region index (u16), offset (u32), value (u32).
+    std::vector<uint8_t> out;
+    auto put = [&](const void* p, size_t n) { out.insert(out.end(), static_cast<const uint8_t*>(p), static_cast<const uint8_t*>(p) + n); };
+    put(&g_ftraceTick, 4);
+    uint32_t fighters[4] = {};
+    int f = 0;
+    for (const StateRegion& r : regions) {
+        if (r.size != 15808 || f >= 2 || !IsReadable(r.ptr - 0x18, 8)) continue;
+        if (*reinterpret_cast<const uintptr_t*>(r.ptr - 0x18) - g_imageBase != 0x2C4F220) continue;
+        const auto* runner = *reinterpret_cast<const uint8_t* const*>(r.ptr);
+        if (runner && IsReadable(runner, 0x60)) {
+            fighters[2 * f] = *reinterpret_cast<const uint32_t*>(runner + 0x48);
+            fighters[2 * f + 1] = *reinterpret_cast<const uint32_t*>(runner + 0x4C);
+        }
+        f++;
+    }
+    put(fighters, sizeof(fighters));
+    const size_t countAt = out.size();
+    uint32_t count = 0;
+    put(&count, 4);
+    for (size_t i = 0; i < regions.size(); i++) {
+        const StateRegion& r = regions[i];
+        uint8_t* prev = g_ftracePrev[i].data();
+        for (size_t at = 0; at + 4 <= r.size; at += 4) {
+            uint32_t v;
+            std::memcpy(&v, r.ptr + at, 4);
+            uint32_t p;
+            std::memcpy(&p, prev + at, 4);
+            if (v == p && g_ftraceTick) continue;
+            std::memcpy(prev + at, &v, 4);
+            const uint16_t ri = static_cast<uint16_t>(i);
+            const uint32_t off = static_cast<uint32_t>(at);
+            put(&ri, 2);
+            put(&off, 4);
+            put(&v, 4);
+            count++;
+        }
+    }
+    std::memcpy(out.data() + countAt, &count, 4);
+    std::fwrite(out.data(), 1, out.size(), g_ftraceFile);
+    g_ftraceTick++;
+    if (--g_ftrace <= 0) {
+        std::fclose(g_ftraceFile);
+        g_ftraceFile = nullptr;
+        Log("ftrace: done, %u ticks", g_ftraceTick);
+    }
+}
 
 void SetBattleFreeze(bool on)
 {
