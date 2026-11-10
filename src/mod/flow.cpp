@@ -170,6 +170,10 @@ std::atomic<uint32_t> g_roundEnds{0};
 // Between the round call (5) and "FIGHT!" (6). The presentation runs in
 // lockstep (never rolled back), so a plain flag follows it.
 std::atomic<bool> g_roundCall{false};
+// The phase machine's index of the round call's phase (learned at its flow
+// event; -1 until then): RoundCallRunning reads the machine, which loads put
+// back, so a rollback across the call leaves it right.
+std::atomic<int> g_roundCallPhase{-1};
 // The match is over (after its last KO): the win screens that follow take
 // their input from the pads, not from the battle. 13: the results screen.
 constexpr int32_t kResults = 13;
@@ -445,6 +449,9 @@ uint64_t EventDetour(void* node, void* event, void* a3, void* a4)
         }
         if (vtable - g_base == kFlowEventType) {
             g_roundCall = code == kRoundCall;
+            if (code == kRoundCall) {
+                if (const uint8_t* m = g_phaseMachine; m && IsReadable(m + 0x130, 4)) g_roundCallPhase = *reinterpret_cast<const int32_t*>(m + 0x130);
+            }
             if (code == kRoundEnd) g_roundEnds++;
             if (code == kFightStarts || EndsFight(code) || code == kResults) {
                 g_roundFlow.lastCode = code;
@@ -505,7 +512,7 @@ struct MachineCopy {
     bool hasRecorder;
     uint8_t recorder[kRecorderHead];
     bool hasKoWait;
-    uint8_t koWait[16];
+    uint8_t koWait[0x48];
 };
 std::vector<MachineCopy> g_phaseRing(kPhaseRing);
 // The round's end waits (the round-end phase's timer, rva 0x40BC00, on rva
@@ -517,10 +524,18 @@ std::vector<MachineCopy> g_phaseRing(kPhaseRing);
 // it, so a resimulated round end went on on another tick (stress replay of
 // 2026-11-08_05-14-51 ..._91ba0287: from frame 2813). Its 16 bytes at +0x100
 // go into the per-tick copies and come back with a load.
+// Not only those: the KO's flow event arms it (rva 0x3D4550: +0xF8, +0xFC,
+// the latch and the mode, a weak object reference at +0x118, the first
+// fighter's position at +0x120), and a stage transition KO reads them as
+// it plays: a load after the arming left them as the later timeline had
+// them, and a stress replay parted from its recording 2 ticks into the
+// match's last KO (LAR vs NCL 364c0a17, frame 9274, 28 regions). Its whole
+// tail, +0xF8 to its end (+0x140), is kept.
 constexpr uint32_t kKoWaitCtor = 0x3C7AE0;
 constexpr uintptr_t kKoWaitVtable = 0x2C602F8;
-constexpr uint32_t kKoWaitState = 0x100;
-constexpr size_t kKoWaitStateSize = 16;
+constexpr uint32_t kKoWaitState = 0xF8;
+constexpr size_t kKoWaitStateSize = 0x48;
+constexpr size_t kKoWaitLatch = 0x100 - kKoWaitState, kKoWaitMode = 0x104 - kKoWaitState;
 uint8_t* g_koWait = nullptr; // the newest such object
 std::atomic<bool> g_koWaitRollback{true};
 int g_koWaitLogs = 0;
@@ -652,7 +667,7 @@ void CapturePhases()
         modeLogs = 0;
     }
     if (wait) {
-        const int32_t mode = Field<int32_t>(wait, kKoWaitState + 4);
+        const int32_t mode = Field<int32_t>(wait, kKoWaitState + kKoWaitMode);
         if (mode != lastMode && (mode == 6 || mode == 7) && modeLogs++ < 8) {
             Log("flow: stage transition at tick %u (round end wait mode %d)", tick, mode);
         }
@@ -738,8 +753,8 @@ void RestoreMachine(const MachineCopy& c)
         if (std::memcmp(wait + kKoWaitState, c.koWait, kKoWaitStateSize) != 0) {
             if (g_koWaitLogs++ < 8) {
                 Log("flow: round end wait back to mode %d latch %d (was mode %d latch %d) by a load to tick %u",
-                    Field<int32_t>(c.koWait, 4), Field<int32_t>(c.koWait, 0), Field<int32_t>(wait, kKoWaitState + 4),
-                    Field<int32_t>(wait, kKoWaitState), c.tick);
+                    Field<int32_t>(c.koWait, kKoWaitMode), Field<int32_t>(c.koWait, kKoWaitLatch),
+                    Field<int32_t>(wait, kKoWaitState + kKoWaitMode), Field<int32_t>(wait, kKoWaitState + kKoWaitLatch), c.tick);
             }
             std::memcpy(wait + kKoWaitState, c.koWait, kKoWaitStateSize);
         }
@@ -801,16 +816,37 @@ void UndoRoundOvers(uint32_t tick)
     }
 }
 
-// The round history the round over writes (kRoundCount to the results), of
-// the live battle; null when it cannot be read.
-uint8_t* RoundHistoryNow()
+// What the round over leaves in the battle context, as a keyframe keeps it:
+// kRoundCount to the results, then the latest round's record (kLastRecord,
+// the round undo's lastRecord), whose +0x787B8 the fight phase's tick
+// callback (rva 0x40EC60) reads to start the round's end: without it a
+// keyframe from before a KO, loaded after it, ended the round on its first
+// tick (the Battle Log's restarts after a round's end; LAR vs NCL frame 6840).
+// The battle context of the live battle, or null when it cannot be read.
+uint8_t* RoundContextNow()
 {
     uint8_t* d = LiveRoundDirector();
     uint8_t* context = d ? BattleContext(d) : nullptr;
-    if (!context || !IsReadable(context + kRoundCount, kRoundResult + kRoundResultSize - kRoundCount)) return nullptr;
-    return context + kRoundCount;
+    if (!context || !IsReadable(context + kRoundCount, kRoundResult + kRoundResultSize - kRoundCount) ||
+        !IsReadable(context + kLastRecord, kRoundRecord)) {
+        return nullptr;
+    }
+    return context;
 }
-constexpr size_t kRoundHistoryBytes = kRoundResult + kRoundResultSize - kRoundCount;
+constexpr size_t kRoundHistoryPart = kRoundResult + kRoundResultSize - kRoundCount;
+constexpr size_t kRoundHistoryBytes = kRoundHistoryPart + kRoundRecord;
+constexpr size_t kRoundChunk = 4096; // keyframes share unchanged chunks of it
+// Both parts, one after the other, into `out` (kRoundHistoryBytes); and back.
+void CopyRoundHistory(const uint8_t* context, uint8_t* out)
+{
+    std::memcpy(out, context + kRoundCount, kRoundHistoryPart);
+    std::memcpy(out + kRoundHistoryPart, context + kLastRecord, kRoundRecord);
+}
+void PutRoundHistory(uint8_t* context, const uint8_t* in)
+{
+    std::memcpy(context + kRoundCount, in, kRoundHistoryPart);
+    std::memcpy(context + kLastRecord, in + kRoundHistoryPart, kRoundRecord);
+}
 
 constexpr uintptr_t kVirtualTask = 0x3EB3F4; // a task that calls its object's virtual +0x38
 // The battle's sound manager has the game's own rollback handling for sounds
@@ -1150,7 +1186,12 @@ void PumpGameThread()
     for (auto& t : tasks) t();
 }
 
-bool RoundCallRunning() { return g_roundCall; }
+bool RoundCallRunning()
+{
+    const int phase = g_roundCallPhase;
+    if (const uint8_t* m = phase >= 0 ? LivePhaseMachine() : nullptr) return Field<int32_t>(m, 0x130) == phase;
+    return g_roundCall;
+}
 uint32_t RoundEndEvents() { return g_roundEnds; }
 
 bool RoundInFight()
@@ -1262,19 +1303,23 @@ bool SaveOutsideState(OutsideState* out, const OutsideState* previous)
         std::memcpy(p + sizeof(rf.director), d + kDirectorTimers, sizeof(rf.directorTimers));
         std::memcpy(p + sizeof(rf.director) + sizeof(rf.directorTimers), d + kDirectorCounts, sizeof(rf.directorCounts));
     }
-    const uint8_t* history = RoundHistoryNow();
-    if (!history) {
-        out->rounds.reset();
-        return true;
-    }
-    // The history changes only at a round's end: shared with the previous
-    // keyframe while it is the same.
-    if (previous && previous->rounds && previous->rounds->size() == kRoundHistoryBytes &&
-        std::memcmp(previous->rounds->data(), history, kRoundHistoryBytes) == 0) {
-        out->rounds = previous->rounds;
-    }
-    else {
-        out->rounds = std::make_shared<const std::vector<uint8_t>>(history, history + kRoundHistoryBytes);
+    const uint8_t* context = RoundContextNow();
+    out->rounds.clear();
+    if (!context) return true;
+    // The round history and the latest round's record (part of it changes
+    // every tick) in chunks, each shared with the previous keyframe's while
+    // the same: a keyframe holds only the chunks that moved.
+    thread_local std::vector<uint8_t> now;
+    now.resize(kRoundHistoryBytes);
+    CopyRoundHistory(context, now.data());
+    const size_t chunks = (kRoundHistoryBytes + kRoundChunk - 1) / kRoundChunk;
+    const bool samePlan = previous && previous->rounds.size() == chunks;
+    out->rounds.resize(chunks);
+    for (size_t i = 0; i < chunks; i++) {
+        const size_t at = i * kRoundChunk, n = std::min(kRoundChunk, kRoundHistoryBytes - at);
+        const auto& before = samePlan ? previous->rounds[i] : nullptr;
+        if (before && before->size() == n && std::memcmp(before->data(), now.data() + at, n) == 0) out->rounds[i] = before;
+        else out->rounds[i] = std::make_shared<const std::vector<uint8_t>>(now.data() + at, now.data() + at + n);
     }
     return true;
 }
@@ -1440,8 +1485,14 @@ void RestoreOutsideState(const OutsideState& s)
         std::memcpy(d + kDirectorCounts, p + sizeof(rf.director) + sizeof(rf.directorTimers), sizeof(rf.directorCounts));
     }
     if (s.machine.size() == sizeof(MachineCopy)) RestoreMachine(*reinterpret_cast<const MachineCopy*>(s.machine.data()));
-    if (uint8_t* history = s.rounds && s.rounds->size() == kRoundHistoryBytes ? RoundHistoryNow() : nullptr) {
-        std::memcpy(history, s.rounds->data(), kRoundHistoryBytes);
+    const size_t chunks = (kRoundHistoryBytes + kRoundChunk - 1) / kRoundChunk;
+    if (uint8_t* context = s.rounds.size() == chunks ? RoundContextNow() : nullptr) {
+        std::vector<uint8_t> all;
+        all.reserve(kRoundHistoryBytes);
+        for (const auto& c : s.rounds) {
+            if (c) all.insert(all.end(), c->begin(), c->end());
+        }
+        if (all.size() == kRoundHistoryBytes) PutRoundHistory(context, all.data());
     }
     // What the copies and the journal held belongs to the timeline left.
     for (MachineCopy& c : g_phaseRing) c.valid = false;
@@ -1502,6 +1553,7 @@ void ResetRoundFlow()
 {
     g_roundFlow = {};
     g_roundCall = false;       // a battle left during its round call
+    g_roundCallPhase = -1;
     g_roundDirector = nullptr; // the old battle's; its task points to the new one
 }
 
@@ -3480,6 +3532,8 @@ std::string RoundEndState()
                   haveRecorder ? Field<int32_t>(recorder, 0x1B4) : -1);
     return buf;
 }
+
+uint8_t* PhaseMachineObject() { return LivePhaseMachine(); }
 
 void LogPhaseMachine()
 {

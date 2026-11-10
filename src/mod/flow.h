@@ -204,20 +204,24 @@ int StageIndex(const std::string& code);
 constexpr uint16_t kKeepStage = 0xFFFF; // MatchSetup::stage: whatever the game has prepared
 // The round's flow, from the battle's flow events: whether the fight runs
 // (between "FIGHT!" and the round's end) or a presentation phase (intro, round
-// call, KO and win poses). Inputs can skip parts of the presentation, and its
-// objects are not in the snapshot, so netplay keeps rollbacks out of it.
+// call, KO and win poses). Inputs can skip parts of the presentation. Its
+// objects are not in the snapshot, but what the round's stages keep outside
+// it follows loads (the round director, the phase machine, the round end
+// wait, the round over's writes), so sessions predict and roll back there
+// too ([netplay] lockstep_presentation=1: lockstep, as before).
 // The state lives in a snapshot region of its own, so a rollback restores it.
 bool RoundInFight();
 // A replay's keyframe of what a load needs beside the snapshot regions: the
 // battle phase machine and its phases, the round end wait, the input
 // recorder's head (the per-tick copies a rollback restores from reach only
-// 64 ticks back) and the battle context's round history (what the round over
-// writes, ~480 KB; shared with the previous keyframe while unchanged).
+// 64 ticks back) and the battle context's round history and latest round's
+// record (what the round over writes, ~550 KB, in 4 KB chunks each shared
+// with the previous keyframe's while unchanged).
 // Game thread, in a driven battle.
 struct OutsideState {
     std::vector<uint8_t> director; // the round director's state, timers and counts
     std::vector<uint8_t> machine;
-    std::shared_ptr<const std::vector<uint8_t>> rounds;
+    std::vector<std::shared_ptr<const std::vector<uint8_t>>> rounds; // in chunks, shared with the previous keyframe's while unchanged
 };
 bool SaveOutsideState(OutsideState* out, const OutsideState* previous);
 // After the regions were loaded, before SfvGame::OnStateLoaded (whose fix-ups
@@ -308,6 +312,8 @@ void SetTaskProfiling(bool on, uint64_t ticks = 0);
 // Research: logs the battle's phase machine and its phases (`phases`), with
 // the snapshot region each lies in (from the lookup SfvGame's driver sets).
 void LogPhaseMachine();
+// The battle's phase machine object, or nullptr (research: `watchphase`).
+uint8_t* PhaseMachineObject();
 void SetRegionLookup(std::function<std::string(const void*)> lookup);
 // Research: director state and stop kind, phase machine index / requested, tick count.
 std::string RoundEndState();

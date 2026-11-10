@@ -66,7 +66,7 @@ RestartPending g_restartPending;
 // across round ends until the match is decided (on; `rview callkeys 0` for
 // tests). Research (`rview crossrounds 1`): any key across round ends (a
 // fight key from the match's end diverged, 60 frames, 2026-11-09).
-std::atomic<bool> g_callKeys{true}, g_crossRounds{false};
+std::atomic<bool> g_callKeys{true}, g_crossRounds{false}, g_anyKeys{false}, g_keysAnywhere{true};
 std::atomic<int> g_latch{-1};    // `latch tick|game`: the pad latch the next replay uses (-1: by recording)
 
 class NoTransport : public ITransport {
@@ -229,6 +229,16 @@ private:
         // A takeover's rewind: a fight key from the next round's fight too
         // (crossFight_; from a fight, as a round call's key loads).
         const bool crossFight = crossFight_ && keys_[k].fight && wasFight_;
+        if (g_anyKeys) return k; // research: every key loads
+        // Since the round end wait's whole tail and the latest round's record
+        // follow loads (flow.cpp), any key from the first FIGHT on loads, from
+        // anywhere: across round ends, from between fights, from after the
+        // match's last KO (seek tests on LAR vs NCL 364c0a17, 2026-11-10: 0
+        // frames differing over every kind). Keys from the opening (before
+        // the first FIGHT) still restart: one parted from the recording for
+        // a tick at the round call (frame 721), research `rview anykeys 1`.
+        const bool opening = roundStarts_.empty() || keyFrame <= roundStarts_.front();
+        if (!opening && g_keysAnywhere) return k;
         return (keys_[k].fight && sameRound) || call || crossFight || (g_crossRounds && (keys_[k].fight || keys_[k].call)) ? k : -1;
     }
 
@@ -283,7 +293,9 @@ private:
     int BackLimit() const
     {
         for (const Keyframe& k : keys_) {
-            if (k.fight && k.frame < frame_ && LoadableKey(k.frame + 1) >= 0) return k.frame; // steps stay in the action
+            // Steps stay in the action, and in this round (a step back never crosses a KO).
+            const bool thisRound = std::none_of(roundEnds_.begin(), roundEnds_.end(), [&](int e) { return e >= k.frame && e < frame_ - 1; });
+            if (k.fight && k.frame < frame_ && thisRound && LoadableKey(k.frame + 1) >= 0) return k.frame;
         }
         return std::max(0, frame_ - 1);
     }
@@ -653,6 +665,12 @@ private:
         g_tickFrame = frame_;
         g_tickFight = wasFight_;
         game.Advance(rf_.inputs[frame_], lean && wasFight_);
+        if (postLoadLogs_ > 0) {
+            postLoadLogs_--;
+            Log("replay: frame %d after the load: %s, battle frame stop flags %08X %08X", frame_, RoundEndState().c_str(),
+                game.BattleFrameObject() ? *reinterpret_cast<const uint32_t*>(game.BattleFrameObject() + 0x190) : 0u,
+                game.BattleFrameObject() ? *reinterpret_cast<const uint32_t*>(game.BattleFrameObject() + 0x194) : 0u);
+        }
         CheckFrame(game, frame_);
         const bool fight = RoundInFight();
         if (fight && !wasFight_ && (roundStarts_.empty() || roundStarts_.back() < frame_)) {
@@ -725,6 +743,10 @@ private:
             frame_ = key.frame;
             wasFight_ = RoundInFight();
             seeks_++;
+            logged_ = 0; // each load logs its own first differing frames
+            Log("replay: loaded the keyframe of frame %d (%s, %s)", key.frame, key.fight ? "fight" : key.call ? "round call" : "between fights",
+                RoundEndState().c_str());
+            postLoadLogs_ = 4;
         }
         target_ = target;
         if (target_ == frame_) {
@@ -1718,6 +1740,7 @@ private:
     bool jumped_ = false;
     bool ready_ = false;
     int layout_ = 0;
+    int postLoadLogs_ = 0; // research: the round's state on the ticks after a keyframe load
     std::vector<StateRegion> checkRegions_; // CheckRegions
     int checkLayout_ = -1;
     size_t checkCount_ = 0;
@@ -1776,6 +1799,8 @@ void SetReplayExperiment(const std::string& what, bool on)
 {
     if (what == "callkeys") g_callKeys = on;
     else if (what == "crossrounds") g_crossRounds = on;
+    else if (what == "anykeys") g_anyKeys = on;
+    else if (what == "keysanywhere") g_keysAnywhere = on; // off: the old rule (fight keys within a round, call keys)
     else return Log("rview: no experiment %s", what.c_str());
     Log("rview: %s %s", what.c_str(), on ? "on" : "off");
 }

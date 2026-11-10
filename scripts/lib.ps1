@@ -99,8 +99,10 @@ function Reset-Instances([int[]]$Instances, [string]$Server = '') {
 # afterwards, also when $Body throws.
 # Report uploads go off too (the panel files' upload_reports, which override
 # the ini): games killed on purpose and test desyncs stay off the server.
-function Use-TestSettings([int]$Instances = 1, [scriptblock]$Body) {
+function Use-TestSettings([int]$Instances = 1, [scriptblock]$Body, [hashtable]$Extra = @{}) {
   $want = @{ virtual_pads = '1'; always_active = '1' }
+  # -Extra: more sfv_rollback.ini keys for the test (only keys the file has), put back after.
+  foreach ($k in $Extra.Keys) { $want[$k] = [string]$Extra[$k] }
   if ($Instances -gt 1) { $want.multi_instance = '1' }
   $testIniFiles = @(@{ Path = $script:IniPath; Want = $want })
   foreach ($panel in Get-ChildItem (Split-Path $script:IniPath) -Filter 'sfv_rollback.panel*.ini' -ErrorAction SilentlyContinue) {

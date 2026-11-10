@@ -63,7 +63,7 @@ struct NetplayOptions {
     // session.
     int8_t delaySetting = -1;
     uint8_t predictionWindow = 8;
-    bool lockstepPresentation = true;      // no prediction (so no rollbacks) outside the fight (flow.h)
+    bool lockstepPresentation = false;     // true: no prediction (so no rollbacks) outside the fight (flow.h); off by default since the round's stages roll back
     bool lockstepDelay = true;             // there, a local input delay that covers the one-way trip
     bool roundEndRollback = true;          // a round's end may be rolled back (flow.h), instead of held
     bool hasPick = false;                  // this player's own character choice

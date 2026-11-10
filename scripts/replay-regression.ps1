@@ -11,7 +11,7 @@
 # with no result after -MaxSeconds is stopped and counted as failed.
 #
 #   .\scripts\replay-regression.ps1 -Token <agent token> [-Quick] [-Stress 1] [-NoDeploy]
-param([Parameter(Mandatory)][string]$Token, [string]$Agent = '192.168.8.104', [switch]$Quick, [int]$Stress = 1,
+param([Parameter(Mandatory)][string]$Token, [string]$Agent = '192.168.8.104', [switch]$Quick, [int]$Stress = 1, [switch]$StressAll, [string]$AllMode = '',
       [switch]$NoDeploy, [int]$MaxSeconds = 600, [string]$Out = '')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
@@ -31,6 +31,10 @@ if ($Quick) {
 if (-not $files.Count) { throw "no recordings in $corpus" }
 $stressFiles = @(Get-Content (Join-Path $corpus 'stress.txt') -ErrorAction SilentlyContinue | Where-Object { $_ -and -not $_.StartsWith('#') }) | Select-Object -First $Stress
 $jobs = @(foreach ($f in $files) { , @($f.Name, '') }) + @(foreach ($n in $stressFiles) { , @($n, 'stress 8') })
+# -StressAll: every recording under stress 8 only (research: rollbacks through every round stage).
+if ($StressAll) { $stressFiles = @($files | ForEach-Object { $_.Name }); $jobs = @(foreach ($n in $stressFiles) { , @($n, 'stress 8') }) }
+# -AllMode '<mode>': every recording in that mode only ('mispredict 7 remote 2': rollbacks on mispredicted inputs).
+if ($AllMode) { $jobs = @(foreach ($f in $files) { , @($f.Name, $AllMode) }) }
 
 if (-not $Out) { $Out = Join-Path $repo ("build\regression\" + (Get-Date -Format 'yyyy-MM-dd_HH-mm-ss')) }
 New-Item -ItemType Directory -Force $Out | Out-Null
