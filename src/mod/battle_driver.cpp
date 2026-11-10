@@ -13,6 +13,7 @@
 #include "mod/lifecycle.h"
 #include "mod/log.h"
 #include "mod/stack.h"
+#include "mod/watch.h"
 
 #include <MinHook.h>
 
@@ -814,6 +815,15 @@ std::string RegionOwner(const void* region)
 
 // Research: a region by name, or "v<owner vtable rva hex>.<n>": the n-th
 // region whose owner (RegionOwner) has that vtable (names shift between runs).
+const StateRegion* FindRegion(const std::string& name);
+
+void WatchRegionNamed(const std::string& name, size_t offset, int length)
+{
+    const StateRegion* r = FindRegion(name);
+    if (!r || offset + length > r->size) return Log("watchname: no region %s with +0x%zx", name.c_str(), offset);
+    Log("watchname: %s +0x%zx (%d bytes): %s", name.c_str(), offset, length, ArmWatch(2, r->ptr + offset, length, g_imageBase) ? "armed" : "not armed");
+}
+
 const StateRegion* FindRegion(const std::string& name)
 {
     if (!g_game) return nullptr;

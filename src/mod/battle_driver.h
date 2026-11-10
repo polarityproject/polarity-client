@@ -70,6 +70,8 @@ void FtraceTick();
 void SetBattleFreeze(bool on);
 // Research (`rpeek <region> <hex offset, may be negative> [qwords]`).
 void PeekRegion(const std::string& name, long long offset, int qwords);
+// Research (`watchname <region> <hex offset> <len>`): a write watch on a region by name (`watchreport`).
+void WatchRegionNamed(const std::string& name, size_t offset, int length);
 // Research (`rdump <region> <tag>`): its bytes, from 0x40 before it, to SFVR\research\<tag>.bin.
 void DumpRegion(const std::string& name, const std::string& tag);
 // Research (`rcmp <a> <b> <hex from> <hex to>`): small u32 values that differ.

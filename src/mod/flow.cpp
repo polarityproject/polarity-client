@@ -1284,6 +1284,39 @@ void RoundDirectorFromSnapshot()
     }
 }
 
+namespace {
+using Chunks = std::vector<std::shared_ptr<const std::vector<uint8_t>>>;
+// `size` bytes from `src` in kRoundChunk pieces, each shared with `before`'s
+// piece while the same.
+void SaveChunks(const uint8_t* src, size_t size, const Chunks* before, Chunks* out)
+{
+    const size_t chunks = (size + kRoundChunk - 1) / kRoundChunk;
+    const bool samePlan = before && before->size() == chunks;
+    out->assign(chunks, nullptr);
+    for (size_t i = 0; i < chunks; i++) {
+        const size_t at = i * kRoundChunk, n = std::min(kRoundChunk, size - at);
+        const auto& old = samePlan ? (*before)[i] : nullptr;
+        if (old && old->size() == n && std::memcmp(old->data(), src + at, n) == 0) (*out)[i] = old;
+        else (*out)[i] = std::make_shared<const std::vector<uint8_t>>(src + at, src + at + n);
+    }
+}
+bool PutChunks(const Chunks& chunks, uint8_t* dst, size_t size)
+{
+    size_t at = 0;
+    for (const auto& c : chunks) {
+        if (!c || at + c->size() > size) return false;
+        at += c->size();
+    }
+    if (at != size) return false;
+    at = 0;
+    for (const auto& c : chunks) {
+        std::memcpy(dst + at, c->data(), c->size());
+        at += c->size();
+    }
+    return true;
+}
+} // namespace
+
 bool SaveOutsideState(OutsideState* out, const OutsideState* previous)
 {
     out->machine.assign(sizeof(MachineCopy), 0);
@@ -1312,15 +1345,7 @@ bool SaveOutsideState(OutsideState* out, const OutsideState* previous)
     thread_local std::vector<uint8_t> now;
     now.resize(kRoundHistoryBytes);
     CopyRoundHistory(context, now.data());
-    const size_t chunks = (kRoundHistoryBytes + kRoundChunk - 1) / kRoundChunk;
-    const bool samePlan = previous && previous->rounds.size() == chunks;
-    out->rounds.resize(chunks);
-    for (size_t i = 0; i < chunks; i++) {
-        const size_t at = i * kRoundChunk, n = std::min(kRoundChunk, kRoundHistoryBytes - at);
-        const auto& before = samePlan ? previous->rounds[i] : nullptr;
-        if (before && before->size() == n && std::memcmp(before->data(), now.data() + at, n) == 0) out->rounds[i] = before;
-        else out->rounds[i] = std::make_shared<const std::vector<uint8_t>>(now.data() + at, now.data() + at + n);
-    }
+    SaveChunks(now.data(), kRoundHistoryBytes, previous ? &previous->rounds : nullptr, &out->rounds);
     return true;
 }
 
@@ -1485,14 +1510,9 @@ void RestoreOutsideState(const OutsideState& s)
         std::memcpy(d + kDirectorCounts, p + sizeof(rf.director) + sizeof(rf.directorTimers), sizeof(rf.directorCounts));
     }
     if (s.machine.size() == sizeof(MachineCopy)) RestoreMachine(*reinterpret_cast<const MachineCopy*>(s.machine.data()));
-    const size_t chunks = (kRoundHistoryBytes + kRoundChunk - 1) / kRoundChunk;
-    if (uint8_t* context = s.rounds.size() == chunks ? RoundContextNow() : nullptr) {
-        std::vector<uint8_t> all;
-        all.reserve(kRoundHistoryBytes);
-        for (const auto& c : s.rounds) {
-            if (c) all.insert(all.end(), c->begin(), c->end());
-        }
-        if (all.size() == kRoundHistoryBytes) PutRoundHistory(context, all.data());
+    if (uint8_t* context = s.rounds.empty() ? nullptr : RoundContextNow()) {
+        std::vector<uint8_t> all(kRoundHistoryBytes);
+        if (PutChunks(s.rounds, all.data(), kRoundHistoryBytes)) PutRoundHistory(context, all.data());
     }
     // What the copies and the journal held belongs to the timeline left.
     for (MachineCopy& c : g_phaseRing) c.valid = false;

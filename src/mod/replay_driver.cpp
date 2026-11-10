@@ -235,8 +235,13 @@ private:
         // anywhere: across round ends, from between fights, from after the
         // match's last KO (seek tests on LAR vs NCL 364c0a17, 2026-11-10: 0
         // frames differing over every kind). Keys from the opening (before
-        // the first FIGHT) still restart: one parted from the recording for
-        // a tick at the round call (frame 721), research `rview anykeys 1`.
+        // the first FIGHT) still restart: loaded after later rounds were
+        // played, the round's setup (flow event 2: the director's handler
+        // 0x482010, fighter resets 0x35755F / 0x3581FC) filled both
+        // fighters' vitality blocks from a source the key does not hold, for
+        // one tick (frame 721), then reset them. Not the director's record
+        // (+0x130..+0x110C4, tried). Sessions never load across a round's
+        // setup from a later round. Research: `rview anykeys 1`, `watchname`.
         const bool opening = roundStarts_.empty() || keyFrame <= roundStarts_.front();
         if (!opening && g_keysAnywhere) return k;
         return (keys_[k].fight && sameRound) || call || crossFight || (g_crossRounds && (keys_[k].fight || keys_[k].call)) ? k : -1;
