@@ -7,6 +7,7 @@
 //   sfvr peers   <a.sfvr> <b.sfvr> [--initial | --pointers [--max-frame N]] [--raw] [--write noise.txt] [--show region]
 //   sfvr verify  <file> [--stress N] [--every K] [--dump out.bin] [--mock-bug B] [--machine-value V]
 //   sfvr compact <file> <out.sfvr>
+//   sfvr thin    <file> <out.sfvr> <every>
 //   sfvr export  <file> <out-dir>
 //   sfvr demo    <out-dir>
 //
@@ -47,6 +48,7 @@ int Usage()
                  "               [--mock-bug none|outside-snapshot|machine-value|effect-rng] [--machine-value V]\n"
                  "  sfvr changes <file> <region size>\n"
                  "  sfvr compact <file> <out.sfvr>\n"
+                 "  sfvr thin    <file> <out.sfvr> <every>   (state dumps only every <every> frames)\n"
                  "  sfvr export  <file> <out-dir>\n"
                  "  sfvr demo    <out-dir>\n");
     return 2;
@@ -242,6 +244,29 @@ int CmdCompact(int argc, char** argv)
     std::printf("wrote %s: %d frames, region hashes kept for %d, %d checksum mismatches\n", argv[1], rf.FrameCount(),
                 kept, mismatches);
     return mismatches ? 1 : 0;
+}
+
+// thin <in> <out> <every>: the recording compact, with the state before
+// frame 0 and a state dump only every <every> frames (the replay regression
+// corpus, tests/replays: a replay starts from the first, and on a build
+// whose region table differs the dumps are what it is checked against).
+int CmdThin(int argc, char** argv)
+{
+    if (argc < 3) return Usage();
+    ReplayFile rf;
+    if (!Load(argv[0], rf)) return 1;
+    const int every = std::atoi(argv[2]);
+    if (every <= 0) return Usage();
+    const size_t before = rf.dumps.size();
+    rf.dumps.erase(std::remove_if(rf.dumps.begin(), rf.dumps.end(), [every](const StateDump& d) { return d.frame >= 0 && d.frame % every != 0; }),
+                   rf.dumps.end());
+    std::string error;
+    if (!SaveReplay(rf, argv[1], &error, ReplayDetail::Compact)) {
+        std::fprintf(stderr, "%s\n", error.c_str());
+        return 1;
+    }
+    std::printf("wrote %s: %d frames, %zu of %zu state dumps\n", argv[1], rf.FrameCount(), rf.dumps.size(), before);
+    return 0;
 }
 
 // cut <in> <out> <frames>: the first <frames> frames as a compact recording
@@ -804,6 +829,7 @@ int main(int argc, char** argv)
     if (cmd == "region") return CmdRegion(argc - 2, argv + 2);
     if (cmd == "compact") return CmdCompact(argc - 2, argv + 2);
     if (cmd == "cut") return CmdCut(argc - 2, argv + 2);
+    if (cmd == "thin") return CmdThin(argc - 2, argv + 2);
     if (cmd == "export") return CmdExport(argc - 2, argv + 2);
     if (cmd == "verify") return CmdVerify(argc - 2, argv + 2);
     if (cmd == "demo") return CmdDemo(argc - 2, argv + 2);

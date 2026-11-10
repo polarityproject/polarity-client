@@ -3,6 +3,8 @@ dist/
 *.sfvr
 # ... but the benchmark's round, built into the DLL
 !data/benchmark.sfvr
+# ... and the replay regression corpus (scripts/replay-regression.ps1)
+!tests/replays/**/*.sfvr
 sfv_rollback.ini
 sfv_rollback.log
 sfv_statemap.bin

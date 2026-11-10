@@ -2,6 +2,7 @@
 #include "mod/frame_meter.h"
 #include "mod/hitbox_display.h"
 
+#include "core/build_id.h"
 #include "core/battle_log.h"
 #include "core/display_name.h"
 #include "mod/files.h"
@@ -401,7 +402,7 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
             }
             else if (focused->entry) {
                 const Entry& e = *focused->entry;
-                if (e.header.gameBuild != live.buildId) {
+                if (!ReplayCompatible(e.header.gameBuild, live.buildId)) {
                     PlayUi(UiSound::Error);
                 }
                 else {
@@ -611,7 +612,7 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         if (s.present && s.ending == 1) line += " \xC2\xB7 not finished";
         Text(d, bold, g_v.L(19), g_v.P(kDetailX0 + 24, ry), kSoft, Fit(bold, 19, line, kDetailX1 - kDetailX0 - 48));
         ry += 32;
-        const bool playable = de->header.gameBuild == live.buildId;
+        const bool playable = ReplayCompatible(de->header.gameBuild, live.buildId);
         const std::string ver = "SFVR " + de->header.modVersion;
         if (playable) {
             d->AddLine(g_v.P(kDetailX0 + 26, ry + 12), g_v.P(kDetailX0 + 31, ry + 17), look::kOk, g_v.L(2.4f));
@@ -633,7 +634,7 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
                    ? "Game " + std::to_string(e.header.summary.setGame) + " of " + std::to_string(focused->set->games.size()) + " against " +
                          core::DisplayName(battlelog::NameOf(e, 1 - me)) + "."
                    : "Against " + core::DisplayName(battlelog::NameOf(e, 1 - me)) + ".";
-        if (e.header.gameBuild == live.buildId) prompts.push_back({"button_a", "Watch"});
+        if (ReplayCompatible(e.header.gameBuild, live.buildId)) prompts.push_back({"button_a", "Watch"});
     }
     else if (focused && focused->kind == RowKind::SetHeader) {
         prompts.push_back({"button_a", "Open"});
@@ -1010,6 +1011,17 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput)
                          v.canStepForward && !fading ? look::kCream : Rgba(236, 228, 206, 70));
     Text(d, bold, g_v.L(17), g_v.P(tx + 52, y0 + 12), look::kCream, "Frame");
     if (clicked >= 0) ClickPad(PadKeyOfGlyph(prompts[clicked].first));
+    // A replay that stopped matching its recording: what plays from there is
+    // not the match as it was.
+    if (v.outOfSync >= 0) {
+        const std::string note = v.outOfSync > 0 ? "Out of sync with the recording from round " + std::to_string(v.outOfSync)
+                                                 : "Out of sync with the recording";
+        // Top centre, under the round timer: clear of the gauges and the frame meter.
+        const float w = TextW(bold, 17, note) + 32, x = 800 - w / 2, top = 168;
+        d->AddRectFilled(g_v.P(x, top), g_v.P(x + w, top + 34), Rgba(10, 12, 16, 200));
+        d->AddRect(g_v.P(x, top), g_v.P(x + w, top + 34), Rgba(229, 67, 90, 200), 0, 0, std::max(1.0f, g_v.L(1.5f)));
+        Text(d, bold, g_v.L(17), g_v.P(x + 16, top + 7), look::kCream, note);
+    }
 }
 
 } // namespace sfv::mod

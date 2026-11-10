@@ -1,0 +1,6 @@
+# scripts/replay-regression.ps1 -Stress <n>: the first n also run under stress 8
+# (Not 2026-11-08_23-57-28 LAR vs NCL 364c0a17: under stress 8 it parts from its
+# recording 2 ticks into the match-ending stage transition KO, at frame 9274, on
+# every build tried (lean resim off too); sessions run the KO's wait in lockstep.)
+2026-11-09_21-11-00_Player-1-ZGF_vs_Player-1-RYU_b4701aa0_p1.sfvr
+2026-11-08_05-07-19_Player-1-VEG_vs_Player-1-CNL_09362254_p1.sfvr

@@ -1636,7 +1636,8 @@ void RunNetCommand(const std::string& line)
                               : what == "step" ? ReplayControl::Step : what == "seek" ? ReplayControl::Seek
                               : what == "round" ? ReplayControl::Round : what == "fast" ? ReplayControl::Fast
                               : what == "takeover" ? ReplayControl::Takeover : what == "takeoverstop" ? ReplayControl::TakeoverStop
-                              : what == "leave" ? ReplayControl::Leave : ReplayControl::Toggle;
+                              : what == "leave" ? ReplayControl::Leave : what == "outofsync" ? ReplayControl::OutOfSync
+                              : ReplayControl::Toggle;
         ControlReplay(c, arg);
     }
     else if (cmd == "regions") {

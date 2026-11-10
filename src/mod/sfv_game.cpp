@@ -4,6 +4,7 @@
 #include "mod/battle_driver.h"
 #include "mod/camera_rollback.h"
 #include "mod/frame_meter.h"
+#include "mod/sim_version.h"
 #include "mod/flow.h"
 #include "mod/hitch.h"
 #include "mod/lifecycle.h"
@@ -895,9 +896,9 @@ void SfvGame::RunPostRestoreCallbacks(const game::FrameId& gameId, const game::F
 
 std::string SfvGame::BuildId() const
 {
-    char buf[96];
+    char buf[128];
     const uint64_t noise = NoiseHash();
-    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-12/map-%016llx/noise-%016llx", image_.timestamp,
+    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-12/sim-%d/map-%016llx/noise-%016llx", image_.timestamp, kSimVersion,
                   static_cast<unsigned long long>(stateMap_ ? stateMap_->Fingerprint() : 0),
                   static_cast<unsigned long long>(noise));
     return buf;

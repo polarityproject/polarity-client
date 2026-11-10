@@ -2,6 +2,7 @@
 // tooling, using MockGame over the loopback network.
 
 #include "core/battle_log.h"
+#include "core/build_id.h"
 #include "core/display_name.h"
 #include "core/input_delay.h"
 #include "core/lobby.h"
@@ -115,6 +116,25 @@ void TestHashes()
     const char* longer = "Nobody inspects the spammish repetition";
     CHECK(Hash64(longer, std::strlen(longer)) == 0xFBCEA83C8A378BF1ull);
     CHECK(Crc32("123456789", 9) == 0xCBF43926u);
+}
+
+void TestBuildIds()
+{
+    const std::string live = "sfv-648AD3A4/adapter-12/sim-12/map-0000000000000000/noise-c2da3f81207455e0";
+    // A recording from before the sim part: its adapter version stands in.
+    const std::string old = "sfv-648AD3A4/adapter-12/map-0000000000000000/noise-1111111111111111";
+    CHECK(BuildSimVersion(live) == 12);
+    CHECK(BuildSimVersion(old) == 12);
+    CHECK(BuildAdapterVersion(live) == 12);
+    CHECK(BuildExe(live) == "sfv-648AD3A4");
+    // Other checksum masks (noise, map): still plays.
+    CHECK(ReplayCompatible(old, live));
+    CHECK(ReplayCompatible("sfv-648AD3A4/adapter-13/sim-12/map-00000000000000ff/noise-22", live));
+    // Another sim version, another exe, an older adapter: does not.
+    CHECK(!ReplayCompatible("sfv-648AD3A4/adapter-12/sim-11/map-0/noise-0", live));
+    CHECK(!ReplayCompatible("sfv-648AD3A5/adapter-12/sim-12/map-0/noise-0", live));
+    CHECK(!ReplayCompatible("sfv-648AD3A4/adapter-10/map-0/noise-0", live));
+    CHECK(!ReplayCompatible("mockfighter-1", live));
 }
 
 void TestPingTiers()
@@ -2338,6 +2358,7 @@ int main()
         {"keeper protocol", TestKeeperProtocol},
         {"spectate relay", TestSpectateRelay},
         {"png", TestPng},
+        {"build ids", TestBuildIds},
     };
     for (const auto& t : tests) {
         const int before = g_failures;

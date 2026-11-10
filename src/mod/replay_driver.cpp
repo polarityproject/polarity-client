@@ -1,5 +1,6 @@
 #include "mod/replay_driver.h"
 
+#include "core/build_id.h"
 #include "core/netplay.h"
 #include "core/file_open.h"
 #include "core/replay_file.h"
@@ -36,13 +37,6 @@
 namespace sfv::mod {
 
 namespace {
-
-// The adapter version in a build id ("sfv-.../adapter-8/map-..."); 0 if none.
-int AdapterOf(const std::string& build)
-{
-    const size_t at = build.find("adapter-");
-    return at == std::string::npos ? 0 : std::atoi(build.c_str() + at + 8);
-}
 
 std::atomic<bool> g_stop{false}; // `replay stop`: end the running replay at the next frame
 
@@ -814,6 +808,10 @@ private:
             }
             break;
         case ReplayControl::Fast: fast_ = std::clamp(arg, 0, 4); break;
+        case ReplayControl::OutOfSync:
+            if (firstMismatch_ < 0) firstMismatch_ = std::max(0, frame_ - 1);
+            mismatchFrames_++;
+            break;
         default: break;
         }
     }
@@ -839,6 +837,8 @@ private:
         g_view.canStepForward = CanStepForward() && target_ < 0 && !findRound_ && runToFight_ < 0;
         g_view.round = static_cast<int>(std::upper_bound(roundStarts_.begin(), roundStarts_.end(), frame_ - 1) - roundStarts_.begin());
         g_view.mismatches = mismatchFrames_;
+        g_view.outOfSync = firstMismatch_ < 0 ? -1
+                                              : static_cast<int>(std::upper_bound(roundStarts_.begin(), roundStarts_.end(), firstMismatch_) - roundStarts_.begin());
         g_view.seeks = seeks_;
         // The per-round counter and the stripe: 0 on a round's first action
         // frame, its last on the KO's; empty before a round's action (and
@@ -918,14 +918,14 @@ private:
         // pad latch (once per rendered frame): an intro skip lands a tick
         // later with it. A straight run keeps it to follow them; runs that
         // roll back need the mod's (a replayed tick saw a newer frame's).
-        game.latchEachTick = stress_ > 0 || delay_ > 0 || AdapterOf(rf_.gameBuild) >= 9;
+        game.latchEachTick = stress_ > 0 || delay_ > 0 || BuildAdapterVersion(rf_.gameBuild) >= 9;
         if (const int latch = g_latch.exchange(-1); latch >= 0) game.latchEachTick = latch != 0;
         if (!game.latchEachTick) Log("replay: %s predates adapter-9: the game's own pad latch", rf_.gameBuild.c_str());
         SetRoundDirectorPerTick(true, true);
         SetMatchDrawSeed(rf_.setup.seed);
         game.Recanonicalize();
         std::vector<uint64_t> hashes(game.Regions().size());
-        HashRegions(game.Regions(), hashes.data());
+        HashRegions(CheckRegions(game), hashes.data());
         // The neutral ticks before the objects exist depend on loading (16 in
         // a session, 9 here), and so does the frozen state: take the
         // recording's, as a netplay joiner takes the host's.
@@ -933,7 +933,7 @@ private:
             TakeRecordedStart(game, hashes);
             game.Recanonicalize();
             hashes.assign(game.Regions().size(), 0);
-            HashRegions(game.Regions(), hashes.data());
+            HashRegions(CheckRegions(game), hashes.data());
         }
         layout_ = game.LayoutVersion(); // after the copy and its new canonical order
         game.ArmStartProbe();
@@ -946,7 +946,8 @@ private:
             kept_.localPlayer = rf_.localPlayer;
             kept_.setup = rf_.setup;
             kept_.regions = DescribeRegions(game.Regions());
-            kept_.initialHashes = hashes;
+            kept_.initialHashes.assign(game.Regions().size(), 0);
+            HashRegions(game.Regions(), kept_.initialHashes.data()); // this build's masks, as its region table
             std::vector<uint8_t> state(StateSize(game.Regions()));
             SaveRegions(game.Regions(), state.data());
             kept_.dumps.push_back({-1, "initial", std::move(state)});
@@ -1200,7 +1201,7 @@ private:
         game.Advance(in, rollingBack);
         used_[k] = in;
         std::vector<uint64_t> hashes(game.Regions().size());
-        HashRegions(game.Regions(), hashes.data());
+        HashRegions(CheckRegions(game), hashes.data());
         sums_[k] = FoldChecksum(hashes.data(), hashes.size());
     }
 
@@ -1414,11 +1415,52 @@ private:
         return false;
     }
 
+    // The regions the recording is checked against: this build's, with the
+    // recording's checksum masks where they differ (a later build may leave
+    // more or fewer words out of the checksum; what the battle computes is
+    // the same). A region takes the mask the recording has for its size
+    // when there is one; with several, the one at its place when the two
+    // tables have the same sizes in the same order.
+    const std::vector<StateRegion>& CheckRegions(SfvGame& game)
+    {
+        const std::vector<StateRegion>& live = game.Regions();
+        if (game.LayoutVersion() == checkLayout_ && live.size() == checkCount_) return checkRegions_.empty() ? live : checkRegions_;
+        checkLayout_ = game.LayoutVersion();
+        checkCount_ = live.size();
+        checkRegions_.clear();
+        const auto masksOf = [](const std::string& id) {
+            const size_t at = id.find("/map-");
+            return at == std::string::npos ? std::string() : id.substr(at);
+        };
+        if (masksOf(rf_.gameBuild) == masksOf(game.BuildId())) return live;
+        std::map<uint64_t, std::vector<const std::vector<uint8_t>*>> bySize;
+        for (const RegionInfo& r : rf_.regions) {
+            auto& masks = bySize[r.size];
+            if (std::none_of(masks.begin(), masks.end(), [&](const std::vector<uint8_t>* m) { return *m == r.ignore; })) masks.push_back(&r.ignore);
+        }
+        bool sameOrder = rf_.regions.size() == live.size();
+        for (size_t i = 0; sameOrder && i < live.size(); i++) sameOrder = rf_.regions[i].size == live[i].size;
+        checkRegions_ = live;
+        int changed = 0;
+        for (size_t i = 0; i < checkRegions_.size(); i++) {
+            const auto& masks = bySize[checkRegions_[i].size];
+            const std::vector<uint8_t>* mask = masks.size() == 1 ? masks[0] : sameOrder ? &rf_.regions[i].ignore : nullptr;
+            if (mask && *mask != checkRegions_[i].ignore) {
+                checkRegions_[i].ignore = *mask;
+                changed++;
+            }
+        }
+        Log("replay: checked with the recording's checksum masks (%d of %zu regions masked differently on this build)", changed,
+            checkRegions_.size());
+        if (!changed) checkRegions_.clear();
+        return checkRegions_.empty() ? live : checkRegions_;
+    }
+
     void CheckFrame(SfvGame& game, int f)
     {
         if (f >= rf_.FrameCount() || rf_.hashes.empty()) return;
         std::vector<uint64_t> hashes(game.Regions().size());
-        HashRegions(game.Regions(), hashes.data());
+        HashRegions(CheckRegions(game), hashes.data());
         framesChecked_++;
         // A state dump of the frame (a compact recording's every 600 frames, a
         // kept run's chosen frames) is compared word by word.
@@ -1676,6 +1718,9 @@ private:
     bool jumped_ = false;
     bool ready_ = false;
     int layout_ = 0;
+    std::vector<StateRegion> checkRegions_; // CheckRegions
+    int checkLayout_ = -1;
+    size_t checkCount_ = 0;
     int frame_ = 0;
     int fed_ = 0;
     int checked_ = -1;

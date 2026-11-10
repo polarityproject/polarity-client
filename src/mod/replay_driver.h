@@ -66,6 +66,7 @@ enum class ReplayControl {
     // round's fight ends (KO or time); then back to where it began, paused.
     Takeover,
     TakeoverStop, // early: back to where it began (or the countdown called off)
+    OutOfSync,    // testing: the frame on screen counted as differing from the recording
 };
 // Any thread; taken at the replay's next frame. Returns the command's number:
 // ReplayView::handled reaches it once the replay has taken it (0: no replay).
@@ -104,6 +105,10 @@ struct ReplayView {
     // seek they started shows as seeking from then on): the UI's fades wait on it.
     uint32_t handled = 0;
     int mismatches = 0; // frames that differed from the recording (testing)
+    // The round (1..) in which the replay stopped matching the recording
+    // (0: before the first; -1: it matches so far). A recording from a build
+    // that computes battles differently (a missed sim version bump).
+    int outOfSync = -1;
     int seeks = 0;      // keyframe loads (testing)
     bool benchmark = false; // the benchmark's run (benchmark.h), not a viewed replay
     std::string title;
