@@ -317,6 +317,10 @@ private:
                 target_ = startAt_;
                 startAt_ = -1;
             }
+            // Still muted from before a restart (MuteGameSounds(true) then does
+            // nothing): the capture, ended with the old battle (Finish:
+            // StopBattleSounds), begins again on this one's sounds.
+            if (GameSoundsMuted()) BeginSoundCapture();
         }
         std::vector<std::pair<ReplayControl, int>> commands;
         {
@@ -1646,6 +1650,7 @@ private:
         std::function<void()> leave;
         if (viewer_ && !restarting_) {
             MuteGameSounds(false);
+            StopCapturedSounds(); // a takeover's, unmuted (and the capture ends with the battle)
             RecordBattleSounds(false);
             std::lock_guard lock(g_viewMutex);
             g_view = ReplayView{};

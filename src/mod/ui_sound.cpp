@@ -136,6 +136,8 @@ void InstallUiSound(const GameImage& image)
     g_base = image.base;
 }
 
+bool GameSoundsMuted() { return g_muted; }
+
 void MuteGameSounds(bool mute)
 {
     if (!g_base || mute == g_muted) return;

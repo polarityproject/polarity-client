@@ -657,6 +657,12 @@ int StopBattleSounds()
         // The capture's are the battle's too: stopped now, while their
         // players exist, not after the battle is gone.
         captured.swap(g_captured);
+        // And it ends here: the sounds asked for from now until the next
+        // battle (the teardown's, on players freed with it) must not be
+        // stopped later. A stop on a freed player was a crash (2026-11-10,
+        // RB to a replay's end, then a jump back; at the restarted view's
+        // unmute). The restarted view begins its own (ReplayDriver::ViewerFrame).
+        g_capturing = false;
     }
     if (g_cueStop) {
         for (const auto& [player, handle] : sounds) g_cueStop(player, handle, true);

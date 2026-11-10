@@ -119,6 +119,7 @@ void KeepCapturedFrom(size_t mark);
 // A viewed replay's battle: its sounds are kept track of (on), so that
 // StopBattleSounds can stop every one still playing (loops, ambience) before
 // the battle is started again; returns how many it had. Off forgets them.
+// StopBattleSounds also ends the capture: the old battle's players go with it.
 void RecordBattleSounds(bool on);
 int StopBattleSounds();
 // Logs the current battle's start probe (SfvGame::ArmStartProbe), once.
