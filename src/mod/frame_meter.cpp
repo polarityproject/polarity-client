@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -208,7 +209,11 @@ Kind Classify(const Sample& s)
     // the hit or block stun ends. 0 means none (basic scripts).
     const bool interruptible = s.interrupt > 0;
     const bool past = interruptible && s.frame >= s.interrupt;
-    const bool action = interruptible || s.firstHit >= 0 || s.counter;
+    // The jump's scripts (pre-jump, airborne, landing: the same indices in
+    // every character's move file) are actions too: the character is
+    // committed to them, even where the script has no interrupt frame.
+    const bool jump = s.script >= kScriptFirstJump && s.script <= kScriptLastJump;
+    const bool action = interruptible || jump || s.firstHit >= 0 || s.counter;
     if (s.stun) return past ? Idle : Stun;
     if (s.hit) return Active;
     if (s.parry) return Parry;
@@ -493,6 +498,11 @@ void FrameMeterTick(SfvGame& game)
     if (!fighting) return Publish();
     // Neutral holds the meter; IASA alone does not start a new sequence but
     // is drawn in one that runs.
+    // After more than kNeutralLimit neutral frames, the first movement (any
+    // script change: a walk, a crouch, a jump) clears the whole bar at once.
+    if (g_hasContent && g_pendingNeutral > kNeutralLimit && (s[0].script != g_p[0].script || s[1].script != g_p[1].script)) {
+        ClearBar();
+    }
     const bool running = g_hasContent && g_pendingNeutral <= kNeutralLimit;
     const bool neutral = ((k[0] == Idle && k[1] == Idle) || (!running && bothFree)) && !lanes[0] && !lanes[1];
     int index = 0;
@@ -546,9 +556,22 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold)
         m = g_shown;
     }
     BeginScreen();
-    // Design units: the bars at x 80..1520 just above the V-Trigger gauges.
-    constexpr float x0 = 80, y0 = 652, pitch = 12, w = 10, h = 20;
-    constexpr float kCounts[2] = {y0 + 26, y0 + 102}, kLanes[2] = {y0 + 46, y0 + 98}, kBars[2] = {y0 + 52, y0 + 76};
+    // Design units: the bars at x 80..1520 just above the V-Trigger gauges;
+    // the blocks are laid on whole pixels (one pitch and gap for every
+    // block, the 120 centred on the design's place), so no gap differs.
+    constexpr float x0 = 80, y0 = 652, pitch = 12, gap = 2, h = 20;
+    constexpr float kTextSize = 21, kCountSize = 20;
+    constexpr float kCounts[2] = {y0 + 25, y0 + 103}, kLanes[2] = {y0 + 46, y0 + 98}, kBars[2] = {y0 + 52, y0 + 76};
+    const float s = g_v.s;
+    const float pitchPx = std::max(3.0f, std::round(pitch * s));
+    const float gapPx = std::max(1.0f, std::round(gap * s));
+    const float wPx = pitchPx - gapPx;
+    const float left = std::round(g_v.P(x0 + N * pitch / 2, 0).x - N * pitchPx / 2);
+    const float right = left + (N - 1) * pitchPx + wPx;
+    const float hPx = std::max(2.0f, std::round(h * s)), lanePx = std::max(2.0f, std::round(4 * s));
+    const float drop = std::max(1.0f, std::round(2 * s));
+    auto cellX = [&](int c) { return left + c * pitchPx; };
+    auto rowY = [&](float y) { return std::round(g_v.P(0, y).y); };
     const ImU32 shadow = Rgba(0, 0, 0, 120);
     auto color = [](Kind k) {
         switch (k) {
@@ -566,32 +589,34 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold)
         }
     };
     for (int i = 0; i < 2; i++) {
+        const float y = rowY(kBars[i]), ly = rowY(kLanes[i]);
         for (int c = 0; c < N; c++) {
-            const float x = x0 + c * pitch, y = kBars[i];
+            const float x = cellX(c);
             const Kind k = m.kind[i][c];
-            d->AddRectFilled(g_v.P(x + 1, y + 2), g_v.P(x + w + 1, y + h + 2), shadow);
-            d->AddRectFilled(g_v.P(x, y), g_v.P(x + w, y + h), color(k));
+            d->AddRectFilled(ImVec2(x + drop / 2, y + drop), ImVec2(x + wPx + drop / 2, y + hPx + drop), shadow);
+            d->AddRectFilled(ImVec2(x, y), ImVec2(x + wPx, y + hPx), color(k));
             if (k == StrikeInv || k == ProjInv) {
-                for (float sy = 0; sy < h; sy += 6) d->AddRectFilled(g_v.P(x, y + sy), g_v.P(x + w, y + std::min(sy + 3, h)), look::kCream);
+                const float stripe = std::max(1.0f, std::round(3 * s));
+                for (float sy = 0; sy < hPx; sy += 2 * stripe) d->AddRectFilled(ImVec2(x, y + sy), ImVec2(x + wPx, y + std::min(sy + stripe, hPx)), look::kCream);
             }
             if (m.lane[i][c]) {
-                const float ly = kLanes[i];
-                d->AddRectFilled(g_v.P(x + 1, ly + 1), g_v.P(x + w + 1, ly + 5), shadow);
-                d->AddRectFilled(g_v.P(x, ly), g_v.P(x + w, ly + 4), Rgba(240, 160, 48));
+                d->AddRectFilled(ImVec2(x + drop / 2, ly + drop / 2), ImVec2(x + wPx + drop / 2, ly + lanePx + drop / 2), shadow);
+                d->AddRectFilled(ImVec2(x, ly), ImVec2(x + wPx, ly + lanePx), Rgba(240, 160, 48));
             }
             if (m.count[i][c]) {
-                Text(d, bold, TextPx(17), g_v.P(x + w / 2, kCounts[i]), look::kCream, std::to_string(m.count[i][c]), 0.5f, true);
+                Text(d, bold, TextPx(kCountSize), ImVec2(x + wPx / 2, rowY(kCounts[i])), look::kCream, std::to_string(m.count[i][c]), 0.5f, true);
             }
         }
     }
     for (int c = 0; c < N; c++) {
         if (!m.mark[c]) continue;
-        const float x = x0 + c * pitch - 1;
-        d->AddRectFilled(g_v.P(x - 1 + 1, y0 + 44 + 1), g_v.P(x + 1 + 1, y0 + 102 + 1), shadow);
-        d->AddRectFilled(g_v.P(x - 1, y0 + 44), g_v.P(x + 1, y0 + 102), look::kCream);
+        const float x = cellX(c) - std::round(gapPx / 2) - 1, w2 = std::max(2.0f, std::round(2 * s));
+        const float top = rowY(y0 + 44), bottom = rowY(y0 + 102);
+        d->AddRectFilled(ImVec2(x + 1, top + 1), ImVec2(x + w2 + 1, bottom + 1), shadow);
+        d->AddRectFilled(ImVec2(x, top), ImVec2(x + w2, bottom), look::kCream);
     }
     // The numbers: P1's at the left, P2's at the right ("P1 Startup 6F ·
-    // Total 20F · Recovery +5F"); the kicker on the outer side.
+    // Total 20F · Advantage +5F"); the kicker on the outer side.
     struct Piece {
         std::string text;
         ImU32 color;
@@ -608,7 +633,7 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold)
         if (m.total[i] > 0) add("Total", std::to_string(m.total[i]) + "F", look::kCream);
         if (m.advKnown[i]) {
             const int a = m.adv[i];
-            add("Recovery", (a > 0 ? "+" : "") + std::to_string(a) + "F", a > 0 ? look::kOk : a < 0 ? look::kDanger : look::kCream);
+            add("Advantage", (a > 0 ? "+" : "") + std::to_string(a) + "F", a > 0 ? look::kOk : a < 0 ? look::kDanger : look::kCream);
         }
         const Piece kicker{i == 0 ? "P1" : "P2", look::kGold, 0};
         if (i == 0) {
@@ -619,13 +644,14 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold)
             pieces.push_back(kicker);
             pieces.back().gap = pieces.size() > 1 ? 10.0f : 0.0f;
         }
-        float width = 0;
-        for (const Piece& p : pieces) width += p.gap + TextW(bold, 18, p.text);
-        float x = i == 0 ? x0 : x0 + (N - 1) * pitch + w - width;
+        float width = 0; // screen pixels
+        for (const Piece& p : pieces) width += (p.gap + TextW(bold, kTextSize, p.text)) * s;
+        float x = i == 0 ? left : right - width;
+        const float ty = rowY(y0 - 2);
         for (const Piece& p : pieces) {
-            x += p.gap;
-            Text(d, bold, TextPx(18), g_v.P(x, y0), p.color, p.text, 0, true);
-            x += TextW(bold, 18, p.text);
+            x += p.gap * s;
+            Text(d, bold, TextPx(kTextSize), ImVec2(x, ty), p.color, p.text, 0, true);
+            x += TextW(bold, kTextSize, p.text) * s;
         }
     }
 }
