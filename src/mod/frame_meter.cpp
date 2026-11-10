@@ -770,7 +770,8 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold)
             add("Advantage", (a > 0 ? "+" : "") + std::to_string(a) + "F", a > 0 ? look::kOk : a < 0 ? look::kDanger : look::kCream);
         }
         if (!pieces.empty()) pieces.front().gap = 10;
-        pieces.insert(pieces.begin(), Piece{i == 0 ? "P1" : "P2", look::kGold, 0});
+        // The player colours (overlay.cpp kP1 / kP2): P1 blue, P2 red.
+        pieces.insert(pieces.begin(), Piece{i == 0 ? "P1" : "P2", i == 0 ? Rgba(92, 158, 255) : Rgba(255, 92, 77), 0});
         float x = left;
         const float ty = rowY(kTexts[i]);
         for (const Piece& p : pieces) {
