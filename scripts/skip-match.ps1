@@ -29,7 +29,9 @@ foreach ($i in 0, 1) {
   $ev = foreach ($e in ($lines | Where-Object { $_ -match 'round flow event (\d+)$' })) {
     if ((Stamp $e) -ge (Stamp $t0) -and $e -match 'event (\d+)$') { '{0}@{1:N1}' -f $Matches[1], ((Stamp $e) - (Stamp $t0)).TotalSeconds }
   }
-  $fight = ($lines | Select-String 'prediction window \d+ from frame (\d+) \(fight\)' | Select-Object -First 1).Matches.Groups[1].Value
+  # FIGHT's frame: "fight from frame N" (any mode), or the lockstep's window line.
+  $fm = $lines | Select-String 'netplay: fight from frame (\d+)|prediction window \d+ from frame (\d+) \(fight\)' | Select-Object -First 1
+  $fight = if ($fm) { ($fm.Matches[0].Groups | Select-Object -Skip 1 | Where-Object { $_.Success } | Select-Object -First 1).Value } else { '?' }
   $skip = [bool]($lines -match 'both players pressed Start')
   $desync = ($lines -match 'desync detected' | Select-Object -First 1)
   "instance ${i}: $($ev -join ' ') | fight from frame $fight | skip logged: $skip | desync: $(if ($desync) { $desync.Substring(21) } else { 'no' })"

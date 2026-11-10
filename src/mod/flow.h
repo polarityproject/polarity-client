@@ -208,7 +208,7 @@ constexpr uint16_t kKeepStage = 0xFFFF; // MatchSetup::stage: whatever the game 
 // objects are not in the snapshot, but what the round's stages keep outside
 // it follows loads (the round director, the phase machine, the round end
 // wait, the round over's writes), so sessions predict and roll back there
-// too ([netplay] lockstep_presentation=1: lockstep, as before).
+// too ([netplay] lockstep_round_stages=1: lockstep, as before).
 // The state lives in a snapshot region of its own, so a rollback restores it.
 bool RoundInFight();
 // A replay's keyframe of what a load needs beside the snapshot regions: the

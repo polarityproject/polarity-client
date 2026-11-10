@@ -320,7 +320,10 @@ Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const st
     n.udpPort = static_cast<uint16_t>(ReadInt(path, L"netplay", L"udp_port", 47001));
     const std::wstring host = ReadString(path, L"netplay", L"udp_host", L"127.0.0.1");
     n.udpHost = Ascii(host);
-    n.lockstepPresentation = ReadInt(path, L"netplay", L"lockstep_presentation", 0) != 0;
+    // lockstep_round_stages, not lockstep_presentation: every release's ini
+    // had lockstep_presentation=1 (and updates keep a player's ini), so the
+    // old key is left unread and the round's stages roll back by default.
+    n.lockstepPresentation = ReadInt(path, L"netplay", L"lockstep_round_stages", 0) != 0;
     n.lockstepDelay = ReadInt(path, L"netplay", L"lockstep_delay", 1) != 0;
     n.roundEndRollback = ReadInt(path, L"netplay", L"round_end_rollback", 1) != 0;
     n.menuAfterMatch = ReadInt(path, L"netplay", L"menu_after_match", 1) != 0;

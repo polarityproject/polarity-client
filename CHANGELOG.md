@@ -21,13 +21,27 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   your character and your opponent's, RT by opponent. A watches a match:
   pause and play (A), frame by frame both ways (left and right), the next
   or previous round (RB, LB), fast forward (hold RT), leave (B). Y opens
-  the folder: copy replays out, or drop others' in. A replay plays on the
-  SFVR version that recorded it.
+  the folder: copy replays out, or drop others' in. A replay plays on later
+  SFVR versions too, until one changes how battles play out; a replay that
+  goes out of sync with its recording says so.
 - **Benchmark**, in SFVR settings: one recorded round played with an
   8-frame rollback on every frame, the most a match can have, measured from
   its FIGHT on. 59 fps or more on average passes; it also checks the round
   played exactly as recorded, as a PC that plays it differently would
   desync online. The last result shows under it.
+
+### Changed
+
+- The intro, round call, KO and win poses no longer run in lockstep online:
+  they roll back like the fight, so they play at full speed at any ping
+  instead of slowing to the connection's round trip. (`lockstep_round_stages=1`
+  under `[netplay]` in sfv_rollback.ini brings the old behaviour back; the
+  old `lockstep_presentation` line is no longer read.)
+
+### Fixed
+
+- Throw and Critical Art cameras (Zangief's SPDs, Abigail's Critical Art)
+  no longer cut to the fight camera when a rollback lands during them.
 
 ## [0.3.1] - 2026-11-08
 

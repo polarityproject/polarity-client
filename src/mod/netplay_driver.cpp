@@ -2714,10 +2714,17 @@ private:
     // last frames of the call then run in lockstep at the player's delay (a
     // little slower over a long trip, while nobody can act yet).
     static constexpr int kRoundCallFrames = 196; // measured: flow event 5 to 6 (3.267 s)
+    bool loggedInFight_ = false;
     static constexpr int kEarlyMargin = 2;
 
     void UpdatePredictionWindow()
     {
+        // The fight's start and end as the session sees them (tests read
+        // these, with or without the presentation's lockstep).
+        if (const bool inFight = RoundInFight(); inFight != loggedInFight_) {
+            loggedInFight_ = inFight;
+            Log(inFight ? "netplay: fight from frame %d" : "netplay: fight over at frame %d", session_->NextFrame());
+        }
         const bool fight = !options_.lockstepPresentation || RoundInFight();
         const uint8_t window = fight ? options_.predictionWindow : 0;
         const int frame = session_->NextFrame();

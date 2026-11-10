@@ -78,8 +78,9 @@ input_delay=2
 ; 1: no prediction (so no rollbacks) outside the fight: intro, round call, KO
 ; and round end, at the round trip's pace. 0 (the default): those are
 ; predicted and rolled back like the fight (the round's stages roll back:
-; the round director, phase machine and round end wait follow loads).
-lockstep_presentation=0
+; the round director, phase machine and round end wait follow loads). The
+; older lockstep_presentation key is no longer read.
+lockstep_round_stages=0
 ; 1: back to the main menu when a session ends (the other player left,
 ; leave), ready for the next one.
 menu_after_match=1
