@@ -1,26 +1,27 @@
-# SFVR (prototype)
+# Polarity (prototype)
 
-SFVR is rollback netplay for Street Fighter V, built on the game's **local Versus** mode
+Polarity is rollback netplay for Street Fighter V, built on the game's **local Versus** mode
 and its own rollback manager, using [GekkoNet](https://github.com/HeatXD/GekkoNet)
 over [Weyvelength](https://github.com/HeatXD/Weyvelength) rooms and
 peer-to-peer links. The game's online code (ProudNet, Capcom servers,
 CFN) is never touched.
 
-Builds are downloadable at <https://sfvr.pages.dev>; installed copies update
+Builds are downloadable at <https://polaritymod.link>; installed copies update
 themselves from there (Settings, Updates).
 
 ## Repositories
 
-This is one of three, kept side by side in the game's folder:
+This is one of four, kept side by side in the game's folder:
 
 | Repository | What it holds |
 | --- | --- |
-| `sfv-rollback` (this one) | the mod, the loader (`xinput1_3.dll`), the core library and its tests, the `sfvr` and `weyve_probe` tools, the test scripts (`scripts/`) and a Windows build of the rooms server for local tests |
-| `sfvr-server` | the public rooms server: the Linux install (`deploy/`, systemd, Cloudflare TURN) and its guide |
-| `sfvr-site` | the project website: the download page and the update info file the updater reads |
+| `polarity-client` (this one) | the mod, the loader (`xinput1_3.dll`), the core library and its tests, the `polarity` and `weyve_probe` tools, the test scripts (`scripts/`) and a Windows build of the rooms server for local tests |
+| `polarity-server` | the public rooms server: the Docker stack and the Linux install (`docker/`, `deploy/`, Cloudflare TURN), the reports service, the rooms API Worker, and their guides |
+| `polarity-web` | the project website: the download page and the update info file the updater reads |
+| `polarity-discord` | the Discord bot that posts the public rooms |
 
 The Weyvelength commit is pinned in two places that must match: `GIT_TAG`
-in `CMakeLists.txt` here and `COMMIT` in sfvr-server's `deploy/install.sh`.
+in `CMakeLists.txt` here and `COMMIT` in polarity-server's `deploy/install.sh`.
 
 ## Status
 
@@ -34,7 +35,7 @@ in `CMakeLists.txt` here and `COMMIT` in sfvr-server's `deploy/install.sh`.
 | In-game overlay panel (Dear ImGui over Direct3D 11; F1 or Back + Start) | host, join, match code, picks (with character names), stage, cancel, leave, live match numbers, a status strip, gamepad navigation, choices saved per instance, debug tab |
 | Jump straight into a battle (no menus) with the host's setup: character, costume, colour, comment, V-Skill, V-Trigger, stage | done (`battlenow`; netplay uses it) from the main menu (about 8 s, no character select scene), stage select, a running battle or its results (about 5 s); back to the main menu when a session ends |
 | `.sfvr` recordings (format 3): inputs, a checksum per frame, per-region hashes around desyncs (compact, the default: about 270 KB a match) or for every frame (full), events, compressed state dumps (start, desync, every 600 frames), CRC | done |
-| Deterministic playback (`VerifyReplay`), `sfvr diff` / `sfvr peers` for cross-machine desyncs | done |
+| Deterministic playback (`VerifyReplay`), `polarity diff` / `polarity peers` for cross-machine desyncs | done |
 | Shared noise mask (`data/sfv_noise.txt`): junk, pointer and engine-clock words left out of checksums | learned for every character at frame 0, and across V-Skill / V-Trigger I and II while fighting (`scripts/scan-loadouts.ps1`) |
 | In-game rollback stress test (one process) | passes |
 | Two-machine sync | in sync on one PC with both players mashing under latency and loss, through KOs and into round 2: lockstep outside the fight, the KO stop bit matched to the round director after loads; not yet tried across machines |
@@ -49,9 +50,9 @@ src/core/      game-agnostic: IGame, netplay session, GekkoNet bridge,
                .sfvr format, verifier, diff
 src/testbed/   MockGame (deterministic fighter with switchable bugs),
                loopback network with latency/jitter/loss, match runner
-src/tools/     sfvr command-line tool
-src/mod/       sfv_rollback.dll: offsets, probes, SfvGame, Weyvelength and UDP transports
-src/proxy/     xinput1_3.dll (and version.dll) proxy that loads sfv_rollback.dll
+src/tools/     polarity command-line tool
+src/mod/       polarity.dll: offsets, probes, SfvGame, Weyvelength and UDP transports
+src/proxy/     xinput1_3.dll (and version.dll) proxy that loads polarity.dll
 tests/         end-to-end tests
 scripts/       PowerShell helpers to drive two game instances and soak-test netplay
 data/          sfv_noise.txt, the shared checksum mask (built into the DLL)
@@ -70,21 +71,21 @@ build\Release\sfvtests.exe
 ## Try the desync tooling
 
 ```bat
-build\Release\sfvr.exe demo demo
-build\Release\sfvr.exe diff demo\machine-value_p1.sfvr demo\machine-value_p2.sfvr
-build\Release\sfvr.exe verify demo\machine-value_p2.sfvr --mock-bug machine-value
-build\Release\sfvr.exe verify demo\outside-snapshot_p1.sfvr --mock-bug outside-snapshot --stress 7
+build\Release\polarity.exe demo demo
+build\Release\polarity.exe diff demo\machine-value_p1.sfvr demo\machine-value_p2.sfvr
+build\Release\polarity.exe verify demo\machine-value_p2.sfvr --mock-bug machine-value
+build\Release\polarity.exe verify demo\outside-snapshot_p1.sfvr --mock-bug outside-snapshot --stress 7
 ```
 
 ## Run the phase 1 probes in game
 
-1. Copy `build\Release\xinput1_3.dll` and `build\Release\sfv_rollback.dll` to
+1. Copy `build\Release\xinput1_3.dll` and `build\Release\polarity.dll` to
    `StreetFighterV\Binaries\Win64\` (next to the 64 MB exe, not the launcher).
    `version.dll` is not used on Windows 11.
-2. Copy `sfv_rollback.ini.example` there as `sfv_rollback.ini` (default
+2. Copy `polarity.ini.example` there as `polarity.ini` (default
    `mode=probe`).
 3. Start the game, play a local Versus match, press F5 and later F9.
-4. Read `SFVR\logs\sfvr.log` in the same folder.
+4. Read `Polarity\logs\polarity.log` in the same folder.
 
 The DLL checks the exe timestamp and 16-byte signatures at every address it
 uses and does nothing on a mismatch. Delete the two DLLs to uninstall.

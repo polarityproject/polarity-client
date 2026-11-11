@@ -1,9 +1,10 @@
 #pragma once
-// Shared by the loader proxies: a thread loads sfv_rollback.dll from the
-// proxy's own folder and reloads it on request.
+// Shared by the loader proxies: a thread loads polarity.dll from the proxy's
+// own folder and reloads it on request; sfv_rollback.dll, SFVR's name, when
+// there is no polarity.dll.
 //
-// The mod is loaded from a copy (sfv_rollback.live.<instance>.<n>.dll) so the
-// build can overwrite sfv_rollback.dll while the game runs. Creating the file
+// The mod is loaded from a copy (polarity.live.<instance>.<n>.dll) so the
+// build can overwrite polarity.dll while the game runs. Creating the file
 // sfv_reload (instance 0) or sfv_reload.<instance> makes the loader call the
 // mod's SfvShutdown export, unload it, and load a fresh copy, unless the
 // mod's SfvCanUnload export says no (a netplay session is on): then the
@@ -11,7 +12,8 @@
 //
 // Several game instances can share the folder: each takes the lowest free
 // instance number (named mutex) and tells the mod through SFV_INSTANCE. With
-// [mod] multi_instance=1 in sfv_rollback.ini the game's own single-instance
+// [mod] multi_instance=1 in polarity.ini (sfv_rollback.ini until the mod has
+// moved it) the game's own single-instance
 // check (a mutex named "StreetFighterV") is made per process. Two instances
 // write the same save files, so this is for testing only.
 
@@ -59,16 +61,38 @@ inline void AllowMultipleInstances()
     }
 }
 
+inline bool Exists(const wchar_t* path) { return GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES; }
+
+// SFVR's loader made sfv_rollback.live.<instance>.<n>.dll copies; any a crash
+// of the last SFVR run left behind are deleted here (one still loaded by
+// another game stays: Windows refuses to delete it).
+inline void DeleteOldLiveCopies()
+{
+    wchar_t pattern[MAX_PATH], path[MAX_PATH];
+    wsprintfW(pattern, L"%ssfv_rollback.live.*.dll", g_dir);
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (lstrlenW(g_dir) + lstrlenW(fd.cFileName) >= MAX_PATH) continue;
+        wsprintfW(path, L"%s%s", g_dir, fd.cFileName);
+        DeleteFileW(path);
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
+
 inline DWORD WINAPI LoadMod(LPVOID)
 {
     wchar_t source[MAX_PATH], trigger[MAX_PATH], live[MAX_PATH];
-    wsprintfW(source, L"%ssfv_rollback.dll", g_dir);
+    DeleteOldLiveCopies();
+    wsprintfW(source, L"%spolarity.dll", g_dir);
+    if (!Exists(source)) wsprintfW(source, L"%ssfv_rollback.dll", g_dir);
     if (g_instance == 0) wsprintfW(trigger, L"%ssfv_reload", g_dir);
     else wsprintfW(trigger, L"%ssfv_reload.%d", g_dir, g_instance);
 
     HMODULE mod = nullptr;
     for (int generation = 0;; generation++) {
-        wsprintfW(live, L"%ssfv_rollback.live.%d.%d.dll", g_dir, g_instance, generation);
+        wsprintfW(live, L"%spolarity.live.%d.%d.dll", g_dir, g_instance, generation);
         DeleteFileW(live);
         mod = CopyFileW(source, live, FALSE) ? LoadLibraryW(live) : nullptr;
 
@@ -89,15 +113,18 @@ inline DWORD WINAPI LoadMod(LPVOID)
     }
 }
 
-// After an update the mod starts the game again with SFVR_WAIT_PID set to
-// the old game's process: wait here (before the game's single-instance
-// check) until it has closed, at most a minute.
+// After an update the mod starts the game again with POLARITY_WAIT_PID set
+// to the old game's process (SFVR_WAIT_PID from SFVR's updater, which
+// installs the first Polarity build): wait here (before the game's
+// single-instance check) until it has closed, at most a minute.
 inline void WaitForRestartedGame()
 {
     wchar_t text[32];
-    const DWORD n = GetEnvironmentVariableW(L"SFVR_WAIT_PID", text, 32);
-    if (!n || n >= 32) return;
+    DWORD n = GetEnvironmentVariableW(L"POLARITY_WAIT_PID", text, 32);
+    if (!n || n >= 32) n = GetEnvironmentVariableW(L"SFVR_WAIT_PID", text, 32);
+    SetEnvironmentVariableW(L"POLARITY_WAIT_PID", nullptr);
     SetEnvironmentVariableW(L"SFVR_WAIT_PID", nullptr);
+    if (!n || n >= 32) return;
     DWORD pid = 0;
     for (DWORD i = 0; i < n && text[i] >= L'0' && text[i] <= L'9'; i++) pid = pid * 10 + (text[i] - L'0');
     if (!pid) return;
@@ -105,11 +132,14 @@ inline void WaitForRestartedGame()
         WaitForSingleObject(old, 60000);
         CloseHandle(old);
     }
-    SetEnvironmentVariableW(L"SFVR_RESTARTED", L"1");
+    SetEnvironmentVariableW(L"POLARITY_RESTARTED", L"1");
 }
 
 inline void Start(HMODULE self)
 {
+    // Tells the mod that Polarity's loader runs: only then does it delete
+    // SFVR's DLL (migrate.h). SFVR's loader loads nothing else.
+    SetEnvironmentVariableW(L"POLARITY_LOADER", L"1");
     WaitForRestartedGame();
     DWORD n = GetModuleFileNameW(self, g_dir, MAX_PATH);
     while (n > 0 && g_dir[n - 1] != L'\\' && g_dir[n - 1] != L'/') n--;
@@ -118,7 +148,7 @@ inline void Start(HMODULE self)
 
     for (g_instance = 0; g_instance < 8; g_instance++) {
         wchar_t name[64];
-        wsprintfW(name, L"Local\\sfv_rollback_instance_%d", g_instance);
+        wsprintfW(name, L"Local\\polarity_instance_%d", g_instance);
         HANDLE m = CreateMutexW(nullptr, TRUE, name);
         if (m && GetLastError() != ERROR_ALREADY_EXISTS) break; // kept open for the process lifetime
         if (m) CloseHandle(m);
@@ -128,7 +158,8 @@ inline void Start(HMODULE self)
     SetEnvironmentVariableW(L"SFV_INSTANCE", value);
 
     wchar_t ini[MAX_PATH];
-    wsprintfW(ini, L"%ssfv_rollback.ini", g_dir);
+    wsprintfW(ini, L"%spolarity.ini", g_dir);
+    if (!Exists(ini)) wsprintfW(ini, L"%ssfv_rollback.ini", g_dir);
     if (GetPrivateProfileIntW(L"mod", L"multi_instance", 0, ini)) AllowMultipleInstances();
 
     if (HANDLE t = CreateThread(nullptr, 0, LoadMod, nullptr, 0, nullptr)) CloseHandle(t);

@@ -184,7 +184,7 @@ HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live
     case P::Unreachable:
         title = "Can't reach the rooms server";
         text = "Couldn't connect to " + server + ". Check your internet connection and firewall. "
-               "If they're fine, the server may be down. SFVR retries every 10 seconds.";
+               "If they're fine, the server may be down. Polarity retries every 10 seconds.";
         primary = "Try again";
         primaryAction = HubAction::RetryRooms;
         break;
@@ -194,15 +194,15 @@ HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live
         break;
     case P::UpdatePending:
         title = "Update to play online";
-        text = "SFVR " + live.update.latest + " is out. Custom Rooms need the latest version.";
+        text = "Polarity " + live.update.latest + " is out. Custom Rooms need the latest version.";
         primary = "Update now";
         primaryAction = HubAction::UpdateInstall;
         break;
     case P::UpdateNeeded:
         title = "Update needed";
-        text = "Custom Rooms need a newer SFVR" + (live.roomsBuild.empty() ? std::string() : " (protocol " + live.roomsBuild + ")") +
-               ". Update in SFVR settings, then restart the game.";
-        primary = "SFVR settings";
+        text = "Custom Rooms need a newer Polarity" + (live.roomsBuild.empty() ? std::string() : " (protocol " + live.roomsBuild + ")") +
+               ". Update in Polarity settings, then restart the game.";
+        primary = "Polarity settings";
         primaryAction = HubAction::Settings;
         break;
     default:
@@ -269,7 +269,7 @@ HubAction DrawUpdateModal(ImDrawList* d, const HubFonts& f, const HubLive& live)
     float progress = -1;
     switch (u.state) {
     case S::Available: {
-        title = "SFVR " + u.latest + " is out";
+        title = "Polarity " + u.latest + " is out";
         // The first paragraph of the notes, cut to a few lines.
         std::string notes = u.notes.substr(0, u.notes.find("\n\n"));
         if (notes.size() > 360) notes = notes.substr(0, notes.rfind(' ', 357)) + "...";
@@ -279,13 +279,13 @@ HubAction DrawUpdateModal(ImDrawList* d, const HubFonts& f, const HubLive& live)
         break;
     }
     case S::Downloading:
-        title = "Updating to SFVR " + u.latest;
+        title = "Updating to Polarity " + u.latest;
         progress = u.total ? static_cast<float>(u.done) / static_cast<float>(u.total) : 0.0f;
         text = "Downloading... " + std::to_string(static_cast<int>(progress * 100)) + "%. You can keep using the menus.";
         close = "Hide";
         break;
     case S::Ready:
-        title = "SFVR " + u.latest + " is ready";
+        title = "Polarity " + u.latest + " is ready";
         text = live.restartError.empty() ? "Restart the game to finish."
                                          : "Couldn't restart: " + live.restartError + ". Close the game and start it again.";
         primary = "Restart now";
@@ -305,7 +305,7 @@ HubAction DrawUpdateModal(ImDrawList* d, const HubFonts& f, const HubLive& live)
         close = "Close";
         break;
     default:
-        title = "SFVR is up to date";
+        title = "Polarity is up to date";
         text = "You have the latest version.";
         close = "Close";
         break;
@@ -364,7 +364,7 @@ HubAction DrawUpdateModal(ImDrawList* d, const HubFonts& f, const HubLive& live)
 
 void DrawTop(ImDrawList* d, const HubFonts& f, const HubLive& live)
 {
-    StageText(d, f.display, 42, 800, 30, Rgba(255, 255, 255), "SFVR", 0.5f);
+    StageText(d, f.display, 42, 800, 30, Rgba(255, 255, 255), "Polarity", 0.5f);
     // Right to left: the version, the player.
     float x = 1560;
     const float y = 22;
@@ -472,7 +472,7 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     int prompt = -1;
     const bool modal = g_problemOpen || g_updateOpen;
     PromptLine(d, f.body, f.bold ? f.bold : f.strong, "", kGold, modal ? std::string() : entries[g_focus].text,
-               modal ? PromptList{} : PromptList{{"button_a", "Select"}, {"button_start", "SFVR settings"}}, &prompt);
+               modal ? PromptList{} : PromptList{{"button_a", "Select"}, {"button_start", "Polarity settings"}}, &prompt);
     if (g_updateOpen) action = DrawUpdateModal(d, f, live);
     else if (g_problemOpen) action = DrawRoomsProblem(d, f, live);
     else {

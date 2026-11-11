@@ -65,7 +65,9 @@ bool ParseUpdateInfo(std::string_view json, UpdateInfo* out, std::string* error)
     info.published = doc.Str("published");
     info.notes = doc.Str("notes");
     info.download = doc.Str("download");
-    if (info.product != "SFVR") return fail("not an SFVR update file");
+    // "SFVR": the old site's update info (SFVR's updaters accept only that),
+    // frozen at the first Polarity release.
+    if (info.product != "Polarity" && info.product != "SFVR") return fail("not a Polarity update file");
     if (info.version.empty()) return fail("no version");
     const JsonValue* files = doc.Find("files");
     if (!files || files->type != JsonValue::Type::Array || files->array.empty()) return fail("no files");
@@ -142,10 +144,23 @@ int CompareVersions(const std::string& a, const std::string& b)
 
 bool SafeUpdatePath(const std::string& path)
 {
-    // The one folder: the bundled fonts, .ttc only.
-    constexpr std::string_view kFonts = "SFVR/fonts/";
-    if (path.compare(0, kFonts.size(), kFonts) == 0) return PlainFileName(path.substr(kFonts.size()), {".ttc"});
+    // The one folder: the bundled fonts, .ttc only (SFVR/fonts/ in the old
+    // site's update info; both land in Polarity\fonts, UpdateFileOnDisk).
+    for (std::string_view fonts : {std::string_view(kUpdateFontsDir), std::string_view("SFVR/fonts/")}) {
+        if (path.compare(0, fonts.size(), fonts) == 0) return PlainFileName(path.substr(fonts.size()), {".ttc"});
+    }
     return PlainFileName(path, {".dll", ".pdb", ".txt"});
+}
+
+std::string UpdateFileOnDisk(const std::string& path)
+{
+    std::string out = path;
+    constexpr std::string_view kOld = "SFVR/fonts/";
+    if (out.compare(0, kOld.size(), kOld) == 0) out = kUpdateFontsDir + out.substr(kOld.size());
+    for (char& c : out) {
+        if (c == '/') c = '\\';
+    }
+    return out;
 }
 
 std::string ResolveUrl(const std::string& base, const std::string& url)

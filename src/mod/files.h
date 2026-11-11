@@ -1,8 +1,8 @@
 #pragma once
-// The SFVR folder next to the game (Binaries\Win64\SFVR): what a player zips
+// The Polarity folder next to the game (Binaries\Win64\Polarity): what a player zips
 // up and sends when something goes wrong.
-//   logs\     the event log: sfvr.log (this run; sfvr.<n>.log for test
-//             instance n), earlier runs as sfvr_<start>.log
+//   logs\     the event log: polarity.log (this run; polarity.<n>.log for test
+//             instance n), earlier runs as polarity_<start>.log
 //   matches\  per match a recording (.sfvr) and its log (.log), named by date,
 //             players, characters and match id
 //   crashes\  reports of runs that ended badly (crash_report.h)
@@ -22,11 +22,11 @@ constexpr size_t kKeptCrashReports = 20;  // crash reports (.log, and .dmp with 
 constexpr size_t kSharedCrashFiles = 6;   // the latest crash reports' files in a shared zip
 
 void SetDataDir(const std::wstring& dir);
-std::wstring DataDir();                   // ...\Win64\SFVR
-std::wstring LogsDir();                   // ...\SFVR\logs
-std::wstring MatchesDir();                // ...\SFVR\matches
-std::wstring ReplaysDir();                // ...\SFVR\replays: the Battle Log (kept, never pruned)
-std::wstring CrashesDir();                // ...\SFVR\crashes
+std::wstring DataDir();                   // ...\Win64\Polarity
+std::wstring LogsDir();                   // ...\Polarity\logs
+std::wstring MatchesDir();                // ...\Polarity\matches
+std::wstring ReplaysDir();                // ...\Polarity\replays: the Battle Log (kept, never pruned)
+std::wstring CrashesDir();                // ...\Polarity\crashes
 
 // Creates the folder and any missing parents.
 bool EnsureDirectory(const std::wstring& path);
@@ -52,9 +52,9 @@ bool WriteZip(const std::wstring& path, const std::vector<std::pair<std::wstring
               std::string* error);
 // The zip "Pack logs to share" makes: the event logs (this run and the
 // earlier ones kept) and the latest kSharedMatches matches' logs and
-// recordings, as SFVR\SFVR-logs-<date>.zip. Returns its path, empty on failure.
+// recordings, as Polarity\Polarity-logs-<date>.zip. Returns its path, empty on failure.
 std::wstring PackLogsToShare(std::string* error);
-// Opens the SFVR folder in Explorer, with `select` selected when given.
+// Opens the Polarity folder in Explorer, with `select` selected when given.
 void OpenDataFolder(const std::wstring& select = L"");
 
 // The game's data files, for logs and match logs: how many of the game's own

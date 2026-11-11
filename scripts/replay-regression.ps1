@@ -48,14 +48,14 @@ $failed = 0
 try {
   Say "== replay regression, sim $sim ($(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')): $($files.Count) recordings straight, $($stressFiles.Count) under stress 8"
   try { Remote 'stop' | Out-Null } catch {}
-  foreach ($f in 'sfv_rollback.ini', 'sfv_rollback.panel.ini') { try { $saved[$f] = RemoteGet $f (Join-Path $Out "before-$f") } catch {} }
+  foreach ($f in 'polarity.ini', 'polarity.panel.ini') { try { $saved[$f] = RemoteGet $f (Join-Path $Out "before-$f") } catch {} }
   foreach ($kv in @(@('control', 'virtual_pads', '1'), @('control', 'always_active', '1'))) {
-    Remote 'ini' @{ file = 'sfv_rollback.ini'; section = $kv[0]; key = $kv[1]; value = $kv[2] } | Out-Null
+    Remote 'ini' @{ file = 'polarity.ini'; section = $kv[0]; key = $kv[1]; value = $kv[2] } | Out-Null
   }
-  Remote 'ini' @{ file = 'sfv_rollback.panel.ini'; section = 'report'; key = 'upload_reports'; value = '0' } | Out-Null
+  Remote 'ini' @{ file = 'polarity.panel.ini'; section = 'report'; key = 'upload_reports'; value = '0' } | Out-Null
   if (-not $NoDeploy) { RemoteDeploy; Say '  this build deployed' }
   # In a folder of their own: the matches folder keeps only its newest recordings.
-  foreach ($f in $files) { RemotePut $f.FullName "SFVR\matches\regression\$($f.Name)" | Out-Null }
+  foreach ($f in $files) { RemotePut $f.FullName "Polarity\matches\regression\$($f.Name)" | Out-Null }
   Say "  $(RemoteStart 1 | Select-Object -Last 1 | Out-String)".Trim()
   foreach ($job in $jobs) {
     $name = $job[0]; $mode = $job[1]

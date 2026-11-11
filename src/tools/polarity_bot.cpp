@@ -1,11 +1,11 @@
-// sfvr-bot: a headless rooms player for tests (custom-rooms-plan.md M7),
+// polarity-bot: a headless rooms player for tests (custom-rooms-plan.md M7),
 // grown from weyve_probe: it finds the lobby channel, makes or joins a custom
 // room and does what its script says, without the game. With --auto it
 // answers its table calls (Ready), opens a made-up match room when it is P1
 // and reports the set's result a moment later, so bots cycle a table's
 // rotation by themselves.
 //
-//   sfvr-bot --name Bot1 [--server 127.0.0.1:5555] [--auto] [--set-ms 3000] [--wins p1|p2|random]
+//   polarity-bot --name Bot1 [--server 127.0.0.1:5555] [--auto] [--set-ms 3000] [--wins p1|p2|random]
 //            [--hub | --browse] [--script "create 2 1 0; wait 1000; sit 0 0; ..."]
 // Where it waits between rooms (docs/room-listing-plan.md): the keeper's desk
 // (the default: it can ask for rooms), or in no room at all as the game does:
@@ -352,7 +352,7 @@ struct Viewer {
 
 struct Bot {
     std::string name = "Bot";
-    std::string version = sfv::kSfvrVersion; // member data `ver` ("--version ''": none)
+    std::string version = sfv::kPolarityVersion; // member data `ver` ("--version ''": none)
     std::string host = "127.0.0.1";
     uint16_t port = 5555;
     bool autoPlay = false;
@@ -887,7 +887,7 @@ int main(int argc, char** argv)
         else if (a == "--wins" && v) bot.wins = argv[++i];
         else if (a == "--script" && v) Split(argv[++i], &bot.script);
         else {
-            std::fprintf(stderr, "usage: sfvr-bot --name N [--server host:port] [--auto] [--set-ms ms] [--wins p1|p2|random] [--version v] [--diff] [--hub | --browse] [--script \"...\"]\n");
+            std::fprintf(stderr, "usage: polarity-bot --name N [--server host:port] [--auto] [--set-ms ms] [--wins p1|p2|random] [--version v] [--diff] [--hub | --browse] [--script \"...\"]\n");
             return 2;
         }
     }

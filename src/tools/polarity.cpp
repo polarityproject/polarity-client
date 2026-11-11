@@ -1,15 +1,15 @@
-// sfvr: inspect, compare and verify .sfvr match recordings / desync reports.
+// polarity: inspect, compare and verify .sfvr match recordings / desync reports.
 //
-//   sfvr info    <file> [-v]
-//   sfvr inputs  <file> [first] [last]
-//   sfvr presses <file> <player 0|1>
-//   sfvr diff    <a.sfvr> <b.sfvr>
-//   sfvr peers   <a.sfvr> <b.sfvr> [--initial | --pointers [--max-frame N]] [--raw] [--write noise.txt] [--show region]
-//   sfvr verify  <file> [--stress N] [--every K] [--dump out.bin] [--mock-bug B] [--machine-value V]
-//   sfvr compact <file> <out.sfvr>
-//   sfvr thin    <file> <out.sfvr> <every>
-//   sfvr export  <file> <out-dir>
-//   sfvr demo    <out-dir>
+//   polarity info    <file> [-v]
+//   polarity inputs  <file> [first] [last]
+//   polarity presses <file> <player 0|1>
+//   polarity diff    <a.sfvr> <b.sfvr>
+//   polarity peers   <a.sfvr> <b.sfvr> [--initial | --pointers [--max-frame N]] [--raw] [--write noise.txt] [--show region]
+//   polarity verify  <file> [--stress N] [--every K] [--dump out.bin] [--mock-bug B] [--machine-value V]
+//   polarity compact <file> <out.sfvr>
+//   polarity thin    <file> <out.sfvr> <every>
+//   polarity export  <file> <out-dir>
+//   polarity demo    <out-dir>
 //
 // `verify` plays a recording back deterministically. Recordings made with the
 // mock fighter verify here; Street Fighter V recordings are verified inside the
@@ -39,18 +39,18 @@ int Usage()
 {
     std::fprintf(stderr,
                  "usage:\n"
-                 "  sfvr info    <file> [-v]\n"
-                 "  sfvr inputs  <file> [first] [last]\n"
-                 "  sfvr presses <file> <player 0|1>\n"
-                 "  sfvr diff    <a.sfvr> <b.sfvr>\n"
-                 "  sfvr peers   <a.sfvr> <b.sfvr> [--initial | --pointers [--max-frame N]] [--raw] [--write noise.txt] [--show region]\n"
-                 "  sfvr verify  <file> [--stress N] [--every K] [--dump out.bin]\n"
+                 "  polarity info    <file> [-v]\n"
+                 "  polarity inputs  <file> [first] [last]\n"
+                 "  polarity presses <file> <player 0|1>\n"
+                 "  polarity diff    <a.sfvr> <b.sfvr>\n"
+                 "  polarity peers   <a.sfvr> <b.sfvr> [--initial | --pointers [--max-frame N]] [--raw] [--write noise.txt] [--show region]\n"
+                 "  polarity verify  <file> [--stress N] [--every K] [--dump out.bin]\n"
                  "               [--mock-bug none|outside-snapshot|machine-value|effect-rng] [--machine-value V]\n"
-                 "  sfvr changes <file> <region size>\n"
-                 "  sfvr compact <file> <out.sfvr>\n"
-                 "  sfvr thin    <file> <out.sfvr> <every>   (state dumps only every <every> frames)\n"
-                 "  sfvr export  <file> <out-dir>\n"
-                 "  sfvr demo    <out-dir>\n");
+                 "  polarity changes <file> <region size>\n"
+                 "  polarity compact <file> <out.sfvr>\n"
+                 "  polarity thin    <file> <out.sfvr> <every>   (state dumps only every <every> frames)\n"
+                 "  polarity export  <file> <out-dir>\n"
+                 "  polarity demo    <out-dir>\n");
     return 2;
 }
 
@@ -735,7 +735,7 @@ int CmdVerify(int argc, char** argv)
     if (rf.gameBuild != game.BuildId()) {
         std::fprintf(stderr,
                      "%s was recorded on '%s'. Verify it in the game: set mode=playback and file=<path> in "
-                     "sfv_rollback.ini and start local Versus.\n",
+                     "polarity.ini and start local Versus.\n",
                      argv[0], rf.gameBuild.c_str());
         return 2;
     }

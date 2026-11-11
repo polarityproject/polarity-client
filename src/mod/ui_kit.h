@@ -1,5 +1,5 @@
 #pragma once
-// What the mod's full screens share (the select screen, the SFVR hub, the
+// What the mod's full screens share (the select screen, the Polarity hub, the
 // custom rooms screens): the game's textures read in the background, the
 // 1600x900 design space fitted to the window, pad and keyboard input through
 // ImGui, and the drawing helpers. Render thread only, inside an ImGui frame,
@@ -126,7 +126,7 @@ struct Prompt {
 // `right` and `top` (design units) place the row elsewhere (a panel's own).
 void DrawPrompts(ImDrawList* d, ImFont* text, const std::vector<Prompt>& prompts, float right = 1572, float top = 14);
 
-// ----- the 1d look (the SFVR design system) -------------------------------------
+// ----- the 1d look (the Polarity design system) -------------------------------------
 // Glass panes over the game's stage art, one gold for the focus, square
 // everything, light drop shadows. Positions are design units (1600 x 900).
 namespace look {

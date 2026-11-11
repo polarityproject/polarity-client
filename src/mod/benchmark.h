@@ -1,5 +1,5 @@
 #pragma once
-// The benchmark (docs/benchmark-plan.md; mock-up canvas "SFVR Benchmark"):
+// The benchmark (docs/benchmark-plan.md; mock-up canvas "Polarity Benchmark"):
 // one recorded round, built into the DLL, played as a stress replay with an
 // 8-frame rollback on every frame (the most a match can have), measured from
 // its FIGHT to its end. It passes with an average of 59 fps or more, and only
@@ -25,17 +25,17 @@ struct BenchmarkResult {
     double gameMs = 0;      // the game's battle frame besides
     double drawMs = 0;      // the overlay and Present
     uint64_t when = 0;      // unix time
-    std::string version;    // SFVR's
+    std::string version;    // Polarity's
     bool Pass() const { return valid && matched && averageFps >= 59.0; }
 };
 
-// Starts a run from the menus (the built-in round written to SFVR\benchmark.sfvr
+// Starts a run from the menus (the built-in round written to Polarity\benchmark.sfvr
 // first). False when it cannot (no round in this build, a driver busy).
 bool StartBenchmark(const std::string& modVersion);
 // The run's progress, for the stripe (frame, of frames; false when none).
 bool BenchmarkRunning(int* frame = nullptr, int* frames = nullptr);
 // The last result (this session's, else the last one logged in
-// SFVR\logs\benchmark.txt); valid false when there is none.
+// Polarity\logs\benchmark.txt); valid false when there is none.
 BenchmarkResult LastBenchmark();
 // A run just ended: its result once (then false).
 bool TakeBenchmarkResult(BenchmarkResult* out);

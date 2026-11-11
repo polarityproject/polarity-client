@@ -26,7 +26,7 @@ struct RoomsScreenInput {
     std::string join;           // join this room code
     bool clearNotice = false;   // "Try again" after a failed join
     std::string focusedRoom;    // the public room in focus (its detail is asked for: RoomsPeek)
-    bool settings_ = false;     // open SFVR settings (wrong build, no server)
+    bool settings_ = false;     // open Polarity settings (wrong build, no server)
 };
 
 void OpenRoomsScreen();
@@ -47,7 +47,7 @@ void DrawCrown(ImDrawList* d, float x, float y, float scale, ImU32 col);
 // `stage`: text with nothing behind it (the light drop shadow under it).
 float FitText(ImDrawList* d, ImFont* f, float size, float minSize, float maxW, ImVec2 at, ImU32 c, std::string t, float align = 0,
               bool stage = false);
-// Streamer mode (SFVR settings): room codes are not shown on the rooms
+// Streamer mode (Polarity settings): room codes are not shown on the rooms
 // screens (Copy code still copies it). Any thread.
 void SetStreamerMode(bool on);
 bool StreamerMode();

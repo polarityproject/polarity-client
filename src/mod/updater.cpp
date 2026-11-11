@@ -76,7 +76,7 @@ bool HttpGet(const std::string& url, size_t maxBytes, std::vector<uint8_t>* out,
         return false;
     }
     const bool secure = parts.nScheme == INTERNET_SCHEME_HTTPS;
-    HINTERNET session = WinHttpOpen(L"SFVR updater", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
+    HINTERNET session = WinHttpOpen(L"Polarity updater", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
                                     WINHTTP_NO_PROXY_BYPASS, 0);
     HINTERNET connect = session ? WinHttpConnect(session, host, parts.nPort, 0) : nullptr;
     HINTERNET request = connect ? WinHttpOpenRequest(connect, L"GET", path, nullptr, WINHTTP_NO_REFERER,
@@ -200,7 +200,7 @@ void Check()
         finish = !info.files.empty();
     }
     g_view.state = newer || finish ? UpdateView::State::Available : UpdateView::State::UpToDate;
-    Log("update: the site has SFVR %s (this build %s): %s", info.version.c_str(), g_view.current.c_str(),
+    Log("update: the site has Polarity %s (this build %s): %s", info.version.c_str(), g_view.current.c_str(),
         newer ? "an update" : finish ? "up to date; fetching its data files missing here" : "up to date");
     g_info = std::move(info);
     }
@@ -211,13 +211,12 @@ void Check()
     }
 }
 
-// An update file's place under the game folder (SFVR/fonts/x.ttc ->
-// SFVR\fonts\x.ttc), and its name in the staging folder (flat).
+// An update file's place under the game folder (Polarity/fonts/x.ttc or
+// the old site's SFVR/fonts/x.ttc -> Polarity\fonts\x.ttc), and its name in
+// the staging folder (flat).
 std::wstring OnDisk(const UpdateFile& f)
 {
-    std::wstring path = Wide(f.path);
-    std::replace(path.begin(), path.end(), L'/', L'\\');
-    return path;
+    return Wide(UpdateFileOnDisk(f.path));
 }
 
 std::wstring Staged(const UpdateFile& f)
@@ -329,7 +328,7 @@ void Install()
         return;
     }
     RemoveDirectoryW(staging.c_str());
-    Log("update: SFVR %s installed (%zu files; %zu already up to date); the next launch runs it", info.version.c_str(),
+    Log("update: Polarity %s installed (%zu files; %zu already up to date); the next launch runs it", info.version.c_str(),
         info.files.size(), listed - info.files.size());
     Set(UpdateView::State::Ready);
 }
@@ -340,7 +339,7 @@ void CleanUp()
 {
     WIN32_FIND_DATAW fd;
     HANDLE h;
-    for (const std::wstring& dir : {g_gameDir, g_gameDir + L"\\SFVR\\fonts"}) {
+    for (const std::wstring& dir : {g_gameDir, g_gameDir + L"\\Polarity\\fonts"}) {
         h = FindFirstFileW((dir + L"\\*.old").c_str(), &fd);
         if (h == INVALID_HANDLE_VALUE) continue;
         do {
@@ -389,7 +388,7 @@ void ApplyUrl(const std::string& url)
     }
     else if (url.empty()) {
         g_view.state = UpdateView::State::Off;
-        g_view.message = "no update site set ([update] url in sfv_rollback.ini)";
+        g_view.message = "no update site set ([update] url in polarity.ini)";
     }
     else if (g_view.state == UpdateView::State::Off) {
         g_view.state = UpdateView::State::Idle;
@@ -466,7 +465,7 @@ bool UpdateCheckIfStale(int64_t maxAgeMs)
 void UpdatePretendVersion(const std::string& version)
 {
     std::lock_guard lock(g_mutex);
-    Log("update: this build reports SFVR %s (was %s), for testing", version.c_str(), g_view.current.c_str());
+    Log("update: this build reports Polarity %s (was %s), for testing", version.c_str(), g_view.current.c_str());
     g_view.current = version;
     if (g_view.state != UpdateView::State::Off) g_view.state = UpdateView::State::Idle;
     g_view.checkedAtMs = -1;
@@ -485,12 +484,17 @@ bool RestartGame(void* window, std::string* error)
     // this one's (Steam's app id: no relaunch through Steam) and the pid to
     // wait for.
     std::wstring command = GetCommandLineW();
-    SetEnvironmentVariableW(L"SFVR_WAIT_PID", std::to_wstring(GetCurrentProcessId()).c_str());
+    // Both names: a loader from before Polarity (an update that could not
+    // replace it) waits on SFVR_WAIT_PID.
+    const std::wstring pid = std::to_wstring(GetCurrentProcessId());
+    SetEnvironmentVariableW(L"POLARITY_WAIT_PID", pid.c_str());
+    SetEnvironmentVariableW(L"SFVR_WAIT_PID", pid.c_str());
     STARTUPINFOW si{};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi{};
     const BOOL started = CreateProcessW(exe, command.data(), nullptr, nullptr, FALSE, 0, nullptr, dir.c_str(), &si, &pi);
     const DWORD failure = started ? 0 : GetLastError();
+    SetEnvironmentVariableW(L"POLARITY_WAIT_PID", nullptr);
     SetEnvironmentVariableW(L"SFVR_WAIT_PID", nullptr);
     if (!started) {
         Log("update: cannot start the game again (error %lu)", failure);

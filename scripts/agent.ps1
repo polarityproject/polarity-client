@@ -1,6 +1,6 @@
 # Test agent for a second PC: lets scripts on the main PC drive the game on
 # this one (two-machine tests, scripts\remote.ps1). Run it here, next to the
-# game, from the sfv-rollback folder copied into the game folder (the same
+# game, from the polarity-client folder copied into the game folder (the same
 # layout as on the main PC):
 #   powershell -ExecutionPolicy Bypass -File scripts\agent.ps1 -Token <secret>
 # It listens on TCP -Port (allow it in the firewall, private networks only)
@@ -12,7 +12,7 @@
 #   cmd    instance commands      mod commands (scripts\cmd.ps1), ';'-separated
 #   log    instance from          the instance's log from line `from` on
 #   put    path data              writes a file (base64) under the game folder
-#                                 (Binaries\Win64\...) or this folder (sfv-rollback\...)
+#                                 (Binaries\Win64\...) or this folder (polarity-client\... or sfv-rollback\...)
 #   get    path                   reads such a file (base64)
 #   ini    file section key value sets a key in an ini under Binaries\Win64
 #   shot   instance               a screenshot (PNG, base64)
@@ -23,22 +23,27 @@ param([Parameter(Mandatory)][string]$Token, [int]$Port = 47100)
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $game = (Resolve-Path (Join-Path $PSScriptRoot '..\..\StreetFighterV\Binaries\Win64')).Path
-function LogOf([int]$i) { Join-Path $game ($(if ($i -eq 0) { 'SFVR\logs\sfvr.log' } else { "SFVR\logs\sfvr.$i.log" })) }
+function LogOf([int]$i) { Join-Path $game ($(if ($i -eq 0) { 'Polarity\logs\polarity.log' } else { "Polarity\logs\polarity.$i.log" })) }
 . (Join-Path $PSScriptRoot 'logtail.ps1')
 $script:logState = @{} # the log op's per instance tails
 # A path the request names, kept inside the game's Win64 folder or the repo.
 function Inside([string]$path) {
-  $base = if ($path -like 'sfv-rollback\*' -or $path -like 'sfv-rollback/*') { Split-Path $repo -Parent } else { $game }
-  $full = [IO.Path]::GetFullPath((Join-Path $base $path))
+  # polarity-client\... or sfv-rollback\... (its name before the rename, which
+  # older remote.ps1 send): this repository, whatever its folder is called.
+  $full = $null
+  foreach ($prefix in 'polarity-client', 'sfv-rollback') {
+    if ($path -like "$prefix\*" -or $path -like "$prefix/*") { $full = [IO.Path]::GetFullPath((Join-Path $repo $path.Substring($prefix.Length + 1))) }
+  }
+  if (-not $full) { $full = [IO.Path]::GetFullPath((Join-Path $game $path)) }
   if (-not ($full.StartsWith($game, 'OrdinalIgnoreCase') -or $full.StartsWith($repo, 'OrdinalIgnoreCase'))) { throw "outside the game folder: $path" }
   $full
 }
 
 # Deletes the crash reports' "running" marks of these game processes
-# (SFVR\crashes\running*.txt, crash_report.h): games killed on purpose did
+# (Polarity\crashes\running*.txt, crash_report.h): games killed on purpose did
 # not crash.
 function Clear-CrashMarks([string]$win64, [int[]]$ids) {
-  foreach ($f in Get-ChildItem (Join-Path $win64 'SFVR\crashes') -Filter 'running*.txt' -ErrorAction SilentlyContinue) {
+  foreach ($f in Get-ChildItem (Join-Path $win64 'Polarity\crashes') -Filter 'running*.txt' -ErrorAction SilentlyContinue) {
     $id = (Select-String -Path $f.FullName -Pattern '^pid (\d+)' | Select-Object -First 1).Matches.Groups[1].Value
     if ($id -and $ids -contains [int]$id) { Remove-Item $f.FullName -ErrorAction SilentlyContinue }
   }

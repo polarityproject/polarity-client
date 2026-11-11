@@ -27,6 +27,7 @@
 #include "core/key_names.h"
 #include "core/texture_package.h"
 #include "core/verifier.h"
+#include "mod/migrate.h"
 #include "testbed/match_runner.h"
 
 #include <cctype>
@@ -41,6 +42,7 @@
 #include <windows.h>
 
 #include <bcrypt.h>
+#include <shellapi.h>
 #include <string>
 
 using namespace sfv;
@@ -1162,10 +1164,164 @@ void TestUpdateInfo()
     CHECK(CompareVersions("0.3.0-rooms", "0.3.0-rooms.1") < 0 && CompareVersions("0.3.0-1", "0.3.0-rooms") < 0);
     CHECK(CompareVersions("0.3.0-rooms.1", "0.2.4") > 0 && CompareVersions("0.2.5", "0.3.0-rooms.1") < 0);
 
+    // Polarity's update info, and where the fonts land from either site.
+    std::string polarity = more;
+    polarity.replace(polarity.find("\"SFVR\""), 6, "\"Polarity\"");
+    polarity.replace(polarity.find("SFVR/fonts/x.ttc"), 16, "Polarity/fonts/x.ttc");
+    CHECK(ParseUpdateInfo(polarity, &info, &error) && info.product == "Polarity" && info.files[1].path == "Polarity/fonts/x.ttc");
+    std::string other = doc;
+    other.replace(other.find("\"SFVR\""), 6, "\"Other\"");
+    CHECK(!ParseUpdateInfo(other, &info, &error));
+    CHECK(SafeUpdatePath("Polarity/fonts/x.ttc") && !SafeUpdatePath("Polarity/fonts/x.dll") && !SafeUpdatePath("Polarity/logs/x.ttc"));
+    CHECK(UpdateFileOnDisk("SFVR/fonts/x.ttc") == "Polarity\\fonts\\x.ttc" && UpdateFileOnDisk("Polarity/fonts/x.ttc") == "Polarity\\fonts\\x.ttc");
+    CHECK(UpdateFileOnDisk("polarity.dll") == "polarity.dll");
+
     CHECK(ResolveUrl("https://sfvr.example/update.json", "releases/a.dll") == "https://sfvr.example/releases/a.dll");
     CHECK(ResolveUrl("https://sfvr.example/x/update.json", "/a.dll") == "https://sfvr.example/a.dll");
     CHECK(ResolveUrl("https://sfvr.example/update.json", "http://other/a.dll") == "http://other/a.dll");
     CHECK(Base64Decode("aGVsbG8=") == std::vector<uint8_t>({'h', 'e', 'l', 'l', 'o'}));
+}
+
+// The move from SFVR's names (mod/migrate.h), on a folder laid out as an SFVR
+// install that just took the Polarity update.
+std::wstring MigrateTemp(const wchar_t* name)
+{
+    wchar_t tmp[MAX_PATH];
+    GetTempPathW(MAX_PATH, tmp);
+    std::wstring dir = std::wstring(tmp) + L"polarity-migrate-" + name + L"-" + std::to_wstring(GetCurrentProcessId());
+    // A run before this one's (same pid is unlikely; clean anyway).
+    SHFILEOPSTRUCTW op{};
+    std::wstring from = dir + L'\0';
+    op.wFunc = FO_DELETE;
+    op.pFrom = from.c_str();
+    op.fFlags = FOF_NO_UI;
+    SHFileOperationW(&op);
+    CreateDirectoryW(dir.c_str(), nullptr);
+    return dir;
+}
+
+void Put(const std::wstring& path, const std::string& text)
+{
+    const size_t slash = path.find_last_of(L'\\');
+    std::wstring parent = path.substr(0, slash);
+    // Parents first (two levels are enough here).
+    CreateDirectoryW(parent.substr(0, parent.find_last_of(L'\\')).c_str(), nullptr);
+    CreateDirectoryW(parent.c_str(), nullptr);
+    HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    DWORD n = 0;
+    WriteFile(h, text.data(), static_cast<DWORD>(text.size()), &n, nullptr);
+    CloseHandle(h);
+}
+
+bool Has(const std::wstring& path) { return GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES; }
+
+std::wstring IniValue(const std::wstring& path, const wchar_t* section, const wchar_t* key)
+{
+    wchar_t v[256] = {};
+    GetPrivateProfileStringW(section, key, L"(none)", v, 256, path.c_str());
+    return v;
+}
+
+void TestMigrateFromSfvr()
+{
+    using sfv::mod::MigrateFromSfvr;
+    SetEnvironmentVariableW(L"POLARITY_LOADER", L"1"); // as Polarity's loader sets it
+    {
+        // The usual case: everything moves, SFVR's DLL goes.
+        const std::wstring d = MigrateTemp(L"plain");
+        Put(d + L"\\sfv_rollback.ini", "[mod]\r\nreport_dir=SFVR\\matches\r\n[update]\r\nurl=https://sfvr.pages.dev/update.json\r\n[weyve]\r\nname=POLARITYDEV\r\n");
+        Put(d + L"\\sfv_rollback.1.ini", "[weyve]\r\nname=TWO\r\n");
+        Put(d + L"\\sfv_rollback.panel.ini", "[report]\r\nnotice_shown=1\r\n");
+        Put(d + L"\\sfv_rollback.panel.1.ini", "[report]\r\nnotice_shown=1\r\n");
+        Put(d + L"\\SFVR\\logs\\sfvr.log", "SFVR log started 2026-11-10 12:00:00\n");
+        Put(d + L"\\SFVR\\logs\\sfvr.1.log", "SFVR log started 2026-11-10 12:00:01\n");
+        Put(d + L"\\SFVR\\logs\\sfvr_2026-11-09_10-00-00.log", "SFVR log started 2026-11-09 10:00:00\n");
+        Put(d + L"\\SFVR\\matches\\a_p1.sfvr", "SFVR");
+        Put(d + L"\\SFVR\\replays\\r.sfvr", "SFVR");
+        Put(d + L"\\SFVR\\fonts\\NotoSansCJK-Medium.ttc", "font");
+        Put(d + L"\\SFVR\\SFVR-logs-2026-11-09.zip", "zip");
+        Put(d + L"\\polarity.dll", "new");
+        Put(d + L"\\sfv_rollback.dll", "old");
+        Put(d + L"\\sfv_rollback.dll.1.old", "older");
+        Put(d + L"\\sfv_rollback.live.0.3.dll", "copy");
+        Put(d + L"\\sfvr_fonts_license.txt", "license");
+        Put(d + L"\\polarity_fonts_license.txt", "license");
+        const auto r = MigrateFromSfvr(d);
+        CHECK(r.moved && !r.waited);
+        CHECK(Has(d + L"\\polarity.ini") && !Has(d + L"\\sfv_rollback.ini"));
+        CHECK(IniValue(d + L"\\polarity.ini", L"update", L"url").empty() && IniValue(d + L"\\polarity.ini", L"mod", L"report_dir").empty());
+        CHECK(IniValue(d + L"\\polarity.ini", L"weyve", L"name") == L"POLARITYDEV");
+        CHECK(Has(d + L"\\polarity.1.ini") && Has(d + L"\\polarity.panel.ini") && Has(d + L"\\polarity.panel.1.ini"));
+        CHECK(!Has(d + L"\\SFVR") && Has(d + L"\\Polarity\\matches\\a_p1.sfvr") && Has(d + L"\\Polarity\\replays\\r.sfvr"));
+        CHECK(Has(d + L"\\Polarity\\fonts\\NotoSansCJK-Medium.ttc"));
+        CHECK(Has(d + L"\\Polarity\\logs\\polarity.log") && Has(d + L"\\Polarity\\logs\\polarity.1.log") &&
+              Has(d + L"\\Polarity\\logs\\polarity_2026-11-09_10-00-00.log") && !Has(d + L"\\Polarity\\logs\\sfvr.log"));
+        CHECK(Has(d + L"\\Polarity\\Polarity-logs-2026-11-09.zip"));
+        CHECK(!Has(d + L"\\sfv_rollback.dll") && !Has(d + L"\\sfv_rollback.dll.1.old") && !Has(d + L"\\sfv_rollback.live.0.3.dll"));
+        CHECK(!Has(d + L"\\sfvr_fonts_license.txt") && Has(d + L"\\polarity_fonts_license.txt") && Has(d + L"\\polarity.dll"));
+        // Again: nothing left to do.
+        const auto again = MigrateFromSfvr(d);
+        CHECK(!again.moved && again.lines.empty());
+    }
+    {
+        // Both names already there: nothing is overwritten, the rest moves,
+        // and SFVR\ keeps a note of what stayed. No polarity.dll: SFVR's stays.
+        const std::wstring d = MigrateTemp(L"both");
+        Put(d + L"\\sfv_rollback.ini", "[weyve]\r\nname=OLD\r\n");
+        Put(d + L"\\polarity.ini", "[weyve]\r\nname=NEW\r\n");
+        Put(d + L"\\sfv_rollback.dll", "old");
+        Put(d + L"\\SFVR\\matches\\a.sfvr", "old a");
+        Put(d + L"\\SFVR\\matches\\b.sfvr", "b");
+        Put(d + L"\\SFVR\\replays\\r.sfvr", "r");
+        Put(d + L"\\Polarity\\matches\\a.sfvr", "new a");
+        // The same file in both (the font an update put in Polarity\fonts): no conflict.
+        Put(d + L"\\SFVR\\fonts\\x.ttc", "font");
+        Put(d + L"\\Polarity\\fonts\\x.ttc", "font");
+        const auto r = MigrateFromSfvr(d);
+        CHECK(r.moved);
+        CHECK(Has(d + L"\\sfv_rollback.ini") && IniValue(d + L"\\polarity.ini", L"weyve", L"name") == L"NEW");
+        CHECK(Has(d + L"\\sfv_rollback.dll"));
+        CHECK(Has(d + L"\\Polarity\\matches\\b.sfvr") && Has(d + L"\\Polarity\\replays\\r.sfvr") && !Has(d + L"\\SFVR\\replays"));
+        CHECK(Has(d + L"\\SFVR\\matches\\a.sfvr") && Has(d + L"\\SFVR\\Moved to Polarity.txt"));
+        CHECK(!Has(d + L"\\SFVR\\fonts") && Has(d + L"\\Polarity\\fonts\\x.ttc"));
+        // Once the player moves it away, the next start finishes.
+        DeleteFileW((d + L"\\SFVR\\matches\\a.sfvr").c_str());
+        const auto again = MigrateFromSfvr(d);
+        CHECK(!Has(d + L"\\SFVR"));
+        (void)again;
+    }
+    {
+        // A file in use (Explorer, another program): the folder cannot be
+        // renamed, everything else moves, and the next start takes the file.
+        const std::wstring d = MigrateTemp(L"busy");
+        Put(d + L"\\SFVR\\logs\\held.log", "held");
+        Put(d + L"\\SFVR\\matches\\m.sfvr", "m");
+        HANDLE held = CreateFileW((d + L"\\SFVR\\logs\\held.log").c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+        CHECK(held != INVALID_HANDLE_VALUE);
+        const auto r = MigrateFromSfvr(d);
+        CHECK(r.moved && Has(d + L"\\Polarity\\matches\\m.sfvr") && Has(d + L"\\SFVR\\logs\\held.log"));
+        CHECK(Has(d + L"\\SFVR\\Moved to Polarity.txt"));
+        CloseHandle(held);
+        const auto again = MigrateFromSfvr(d);
+        CHECK(again.moved && Has(d + L"\\Polarity\\logs\\held.log") && !Has(d + L"\\SFVR"));
+    }
+    {
+        // SFVR's loader (no POLARITY_LOADER): it loads sfv_rollback.dll only, so that stays.
+        const std::wstring d = MigrateTemp(L"oldloader");
+        Put(d + L"\\polarity.dll", "new");
+        Put(d + L"\\sfv_rollback.dll", "old");
+        SetEnvironmentVariableW(L"POLARITY_LOADER", nullptr);
+        MigrateFromSfvr(d);
+        SetEnvironmentVariableW(L"POLARITY_LOADER", L"1");
+        CHECK(Has(d + L"\\sfv_rollback.dll"));
+    }
+    {
+        // Nothing of SFVR's: nothing happens.
+        const std::wstring d = MigrateTemp(L"fresh");
+        Put(d + L"\\polarity.dll", "new");
+        const auto r = MigrateFromSfvr(d);
+        CHECK(!r.moved && r.lines.empty());
+    }
 }
 
 void TestShownSetup()
@@ -1939,7 +2095,7 @@ void TestKeeperProtocol()
         r.players = {{"Laptop", "DE", "RYU"}, {"Player 2", "", "KEN"}, {"Deck", "JP", ""}};
         const std::string one = FormatRoomListJson({r}, totals, 1);
         CHECK(one.find("{\"code\":\"ABC123\",\"title\":\"Beginners Welcome!\",\"title_id\":10,\"title_characters\":[],\"owner\":\"a\\\"b\\\\c\\u000a\xE3\x81\x82"
-                       "\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBDz\",\"sfvr_version\":null,\"members\":3,\"capacity\":16,\"tables\":2,\"open_seats\":1,"
+                       "\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBDz\",\"client_version\":null,\"sfvr_version\":null,\"members\":3,\"capacity\":16,\"tables\":2,\"open_seats\":1,"
                        "\"rules\":\"r1 ft2 bo3 t99 ws3\",\"faces\":[\"RYU\",\"KEN\"],\"players\":["
                        "{\"name\":\"Laptop\",\"country\":\"DE\",\"face\":\"RYU\"},{\"name\":\"Player 2\",\"country\":null,\"face\":\"KEN\"},"
                        "{\"name\":\"Deck\",\"country\":\"JP\",\"face\":null}]}") != std::string::npos);
@@ -1951,7 +2107,7 @@ void TestKeeperProtocol()
         CHECK(FormatRoomListJson({r}, totals, 1).find("\"title\":null,\"title_id\":0,\"title_characters\":[]") != std::string::npos);
         // The room's SFVR version (players list and join only their own's).
         r.version = "0.3.0";
-        CHECK(FormatRoomListJson({r}, totals, 1).find("\"sfvr_version\":\"0.3.0\",\"members\":3") != std::string::npos);
+        CHECK(FormatRoomListJson({r}, totals, 1).find("\"client_version\":\"0.3.0\",\"sfvr_version\":\"0.3.0\",\"members\":3") != std::string::npos);
         r.version.clear();
         std::vector<ListedRoom> many;
         for (int i = 0; i < 5; i++) many.insert(many.end(), rooms.begin(), rooms.end());
@@ -2346,6 +2502,7 @@ int main()
         {"spectator", TestSpectator},
         {"spectator pacing", TestSpectatorPacing},
         {"update info", TestUpdateInfo},
+        {"migrate from sfvr", TestMigrateFromSfvr},
         {"update signature", TestUpdateSignature},
         {"texture package", TestTexturePackage},
         {"key names", TestKeyNames},

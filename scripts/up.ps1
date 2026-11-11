@@ -10,15 +10,15 @@ param([int]$Count = 2, [switch]$Restart, [switch]$StageSelect, [int]$StaggerSeco
 $w = (Join-Path $PSScriptRoot '..\..\StreetFighterV\Binaries\Win64')
 $exe = Join-Path $w 'StreetFighterV.exe'
 # A second copy needs multi_instance=1, else it quits at once (exit code 0).
-if ($Count -gt 1 -and -not (Select-String -Path (Join-Path $w 'sfv_rollback.ini') -Pattern '^multi_instance=1' -Quiet)) {
-  Write-Error "$Count instances need multi_instance=1 in sfv_rollback.ini (lib.ps1: Use-TestSettings)"
+if ($Count -gt 1 -and -not (Select-String -Path (Join-Path $w 'polarity.ini') -Pattern '^multi_instance=1' -Quiet)) {
+  Write-Error "$Count instances need multi_instance=1 in polarity.ini (lib.ps1: Use-TestSettings)"
   exit 1
 }
 # Deletes the crash reports' "running" marks of these game processes
-# (SFVR\crashes\running*.txt, crash_report.h): games killed on purpose did
+# (Polarity\crashes\running*.txt, crash_report.h): games killed on purpose did
 # not crash.
 function Clear-CrashMarks([string]$win64, [int[]]$ids) {
-  foreach ($f in Get-ChildItem (Join-Path $win64 'SFVR\crashes') -Filter 'running*.txt' -ErrorAction SilentlyContinue) {
+  foreach ($f in Get-ChildItem (Join-Path $win64 'Polarity\crashes') -Filter 'running*.txt' -ErrorAction SilentlyContinue) {
     $id = (Select-String -Path $f.FullName -Pattern '^pid (\d+)' | Select-Object -First 1).Matches.Groups[1].Value
     if ($id -and $ids -contains [int]$id) { Remove-Item $f.FullName -ErrorAction SilentlyContinue }
   }
@@ -45,11 +45,11 @@ if ($Restart) {
 $running = @(Get-Process StreetFighterV -ErrorAction SilentlyContinue).Count
 # The loader runs a copy of the DLL, so this one is never in use. The loader
 # itself (xinput1_3.dll) is the game's while it runs: copied with none running.
-Copy-Item (Join-Path $PSScriptRoot '..\build\Release\sfv_rollback.dll') $w -Force
+Copy-Item (Join-Path $PSScriptRoot '..\build\Release\polarity.dll') $w -Force
 if (-not $running) { Copy-Item (Join-Path $PSScriptRoot '..\build\Release\xinput1_3.dll') $w -Force }
 # The bundled CJK font (third_party/fonts/README.md), where releases put it.
 $cjk = Join-Path $PSScriptRoot '..\build\Release\fonts\NotoSansCJK-Medium.ttc'
-$cjkTo = Join-Path $w 'SFVR\fonts\NotoSansCJK-Medium.ttc'
+$cjkTo = Join-Path $w 'Polarity\fonts\NotoSansCJK-Medium.ttc'
 if ((Test-Path $cjk) -and (-not (Test-Path $cjkTo) -or (Get-Item $cjk).Length -ne (Get-Item $cjkTo).Length)) {
   New-Item -ItemType Directory -Force (Split-Path $cjkTo) | Out-Null
   Copy-Item $cjk $cjkTo -Force
@@ -67,9 +67,9 @@ for ($i = $running; $i -lt $Count; $i++) {
   $pids.Add((Launch))
   if ($i + 1 -lt $Count) { Start-Sleep $StaggerSeconds }
 }
-# Each instance logs to SFVR\logs\sfvr[.N].log; one that started after $mark is
+# Each instance logs to Polarity\logs\polarity[.N].log; one that started after $mark is
 # up once it shows the main menu (instances already running are left alone).
-$logs = @(0..($Count - 1) | ForEach-Object { Join-Path $w ($(if ($_ -eq 0) { 'SFVR\logs\sfvr.log' } else { "SFVR\logs\sfvr.$_.log" })) })
+$logs = @(0..($Count - 1) | ForEach-Object { Join-Path $w ($(if ($_ -eq 0) { 'Polarity\logs\polarity.log' } else { "Polarity\logs\polarity.$_.log" })) })
 $launched = [Math]::Max(0, $Count - $running)
 $deadline = $start.AddSeconds($TimeoutSeconds)
 $up = @{}

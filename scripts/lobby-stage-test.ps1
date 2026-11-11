@@ -10,7 +10,7 @@ param([string]$Stage = 'CHN', [string]$NextStage = 'NZL', [string]$NextPick = ''
       [int]$StartSeconds = 45)
 $w = (Join-Path $PSScriptRoot '..\..\StreetFighterV\Binaries\Win64')
 . (Join-Path $PSScriptRoot 'lib.ps1')
-function LogOf($i) { Join-Path $w ($(if ($i -eq 0) { 'SFVR\logs\sfvr.log' } else { "SFVR\logs\sfvr.$i.log" })) }
+function LogOf($i) { Join-Path $w ($(if ($i -eq 0) { 'Polarity\logs\polarity.log' } else { "Polarity\logs\polarity.$i.log" })) }
 $n = @{}; foreach ($i in 0, 1) { $n[$i] = @(Get-Content (LogOf $i)).Count }
 function Since($i) { Get-Content (LogOf $i) | Select-Object -Skip $n[$i] }
 function WaitCount($i, $pattern, $count, $seconds) {

@@ -30,7 +30,7 @@ void LogOpen(const std::wstring& path)
     if (!g_file) return;
     SYSTEMTIME t;
     GetLocalTime(&t);
-    std::fprintf(g_file, "SFVR log started %04d-%02d-%02d %02d:%02d:%02d\n", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute,
+    std::fprintf(g_file, "Polarity log started %04d-%02d-%02d %02d:%02d:%02d\n", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute,
                  t.wSecond);
     std::fflush(g_file);
     g_day = t.wDay;

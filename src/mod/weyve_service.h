@@ -99,7 +99,7 @@ public:
     // The player's "Country flag" setting: hidden, every client (open ones
     // too) asks the rooms server to leave its country ("@cc", from its
     // address) off this player, right after connecting and before any room
-    // (member data "nocc"; sfvr-server's weyvelength-geoip.patch).
+    // (member data "nocc"; polarity-server's weyvelength-geoip.patch).
     static void SetHideCountry(bool hide);
     static bool HideCountry();
 

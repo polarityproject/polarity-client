@@ -23,7 +23,7 @@ if (Test-Path $f) {
 $lines = @($Commands -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 if ($Wait) {
   . (Join-Path $PSScriptRoot 'logtail.ps1')
-  $log = Join-Path $w ($(if ($Instance -eq 0) { 'SFVR\logs\sfvr.log' } else { "SFVR\logs\sfvr.$Instance.log" }))
+  $log = Join-Path $w ($(if ($Instance -eq 0) { 'Polarity\logs\polarity.log' } else { "Polarity\logs\polarity.$Instance.log" }))
   $tail = New-LogTail $log
   $marker = 'done-' + [guid]::NewGuid().ToString('N').Substring(0, 10)
   $lines += "echo $marker"

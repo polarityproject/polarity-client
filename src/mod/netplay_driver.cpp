@@ -335,7 +335,7 @@ public:
         MatchCode mc;
         if (!DecodeMatchCode(code, &mc)) return false;
         if ((mc.kind == MatchCode::Kind::Udp) != options_.udp) {
-            Log("netplay: the code is for %s; switch transport in sfv_rollback.ini", mc.kind == MatchCode::Kind::Udp ? "UDP" : "rooms");
+            Log("netplay: the code is for %s; switch transport in polarity.ini", mc.kind == MatchCode::Kind::Udp ? "UDP" : "rooms");
             return false;
         }
         code_ = EncodeMatchCode(mc);
@@ -858,12 +858,12 @@ private:
                 break;
             }
             case WeyveEvent::Type::Chat:
-                // No SFVR build chats in a match room: a member who does runs
+                // No Polarity build chats in a match room: a member who does runs
                 // a modified client (a flood costs every member, the host
                 // most). The host bans it (custom-rooms-plan.md M6; the plan
                 // had the keeper do it, which is not in match rooms).
                 if (host_ && e.peer && weyve_) {
-                    Log("netplay: member %u chatted in the match room (no SFVR build does): banned", e.peer);
+                    Log("netplay: member %u chatted in the match room (no Polarity build does): banned", e.peer);
                     weyve_->Ban(e.peer);
                 }
                 break;
@@ -883,15 +883,15 @@ private:
                     // Say which side should update (rooms of older builds have no version).
                     const auto version = v.data.find("version");
                     const std::string theirs = version == v.data.end() ? "" : version->second;
-                    Log("netplay: the room's build is %s (SFVR %s), this one %s (SFVR %s)", build->second.c_str(),
+                    Log("netplay: the room's build is %s (Polarity %s), this one %s (Polarity %s)", build->second.c_str(),
                         theirs.empty() ? "?" : theirs.c_str(), Hex64(build_).c_str(), modVersion_.c_str());
                     std::string why = "rejected: different mod build";
                     if (theirs.empty() || CompareVersions(theirs, modVersion_) < 0) {
-                        why = "the host runs an older SFVR" + (theirs.empty() ? std::string() : " (" + theirs + ")") +
+                        why = "the host runs an older Polarity" + (theirs.empty() ? std::string() : " (" + theirs + ")") +
                               "; they need to update";
                     }
                     else if (CompareVersions(theirs, modVersion_) > 0) {
-                        why = "the host runs SFVR " + theirs + "; update from SFVR settings, Updates";
+                        why = "the host runs Polarity " + theirs + "; update from Polarity settings, Updates";
                     }
                     else {
                         // Same version: the game, or the noise mask (a 0.1.0 install
@@ -908,10 +908,10 @@ private:
                             why = "the host's Street Fighter V is another version (check for a game update in Steam)";
                         }
                         else if (!theirGame.empty() && part(theirGame, "noise-") != part(mine, "noise-")) {
-                            why = "the host's SFVR " + theirs + " checks the game state differently; one of you should reinstall it";
+                            why = "the host's Polarity " + theirs + " checks the game state differently; one of you should reinstall it";
                         }
                         else {
-                            why = "the host runs another build of SFVR " + theirs + "; one of you should reinstall it";
+                            why = "the host runs another build of Polarity " + theirs + "; one of you should reinstall it";
                         }
                     }
                     EndSession(why);
@@ -2933,7 +2933,7 @@ private:
         return rf;
     }
 
-    // A player's matches also go to SFVR\replays (the Battle Log), named
+    // A player's matches also go to Polarity\replays (the Battle Log), named
     //   <date>_<time>_<P1 name>-<P1 character>_vs_<P2 name>-<P2 character>_<match id>.sfvr
     // compact, kept for good (the player removes them).
     void SaveToBattleLog(const ReplayFile& rf)
@@ -2961,7 +2961,7 @@ private:
         }).detach();
     }
 
-    // Recordings go to SFVR\matches (files.h) as
+    // Recordings go to Polarity\matches (files.h) as
     //   <date>_<time>_<P1 name>-<P1 character>_vs_<P2 name>-<P2 character>_<match id>_<p1|p2|spec>[_desync].sfvr
     // with '_' only between the parts; the match's log (WriteMatchLog) takes
     // the same name with .log.
@@ -3044,7 +3044,7 @@ private:
         const std::time_t t = std::time(nullptr);
         std::tm tm;
         localtime_s(&tm, &t);
-        std::fprintf(f, "SFVR %s match log\n", modVersion_.c_str());
+        std::fprintf(f, "Polarity %s match log\n", modVersion_.c_str());
         std::fprintf(f, "match %s, saved %04d-%02d-%02d %02d:%02d:%02d\n", Hex64(liveMatch_).substr(0, 8).c_str(),
                      tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
         for (int i = 0; i < kNumPlayers; i++) {

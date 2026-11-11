@@ -43,7 +43,7 @@ void LogRegionsOfSize(size_t size);
 // Research (`rfind f <float>` | `i <int>` | `bac <KWBAC name>`): where the
 // snapshot regions hold that float, int32, or a pointer into that move file.
 void FindInRegions(const std::string& kind, const std::string& a, const std::string& b);
-// Research (`dumpbac <name>`): a loaded move file's bytes to SFVR\research\<name>.bin.
+// Research (`dumpbac <name>`): a loaded move file's bytes to Polarity\research\<name>.bin.
 void DumpMoveFile(const std::string& name);
 // Research (`actorlog <ticks>`): per tick, each script runner's move file,
 // script offset and frame, and the position regions' floats.
@@ -55,7 +55,7 @@ void LogCinematics(int mode);
 void CineLogTick();
 void CineLogFrame();
 // Research (`camtrace <from> <to> [class text]`): camera objects' bytes per
-// tick and frame to SFVR\research\camtrace.bin.
+// tick and frame to Polarity\research\camtrace.bin.
 void TraceCameraObjects(uint32_t from, uint32_t to, const std::string& text);
 void CamTraceRecord(int kind);
 // Research (`rsnap`, `rdiff side|all [prefix]`): copies every snapshot region,
@@ -63,7 +63,7 @@ void CamTraceRecord(int kind);
 void SnapRegions();
 void DiffRegions(const std::string& mode, const std::string& prefix = "");
 // Research (`ftrace <ticks>`): every changed snapshot word per tick, with
-// the fighters' script and frame, to SFVR\research\ftrace.bin.
+// the fighters' script and frame, to Polarity\research\ftrace.bin.
 void TraceRegions(int ticks);
 void FtraceTick();
 // Research (`freeze 1|0`): the battle runs no ticks (held on its frame) / runs again.
@@ -72,7 +72,7 @@ void SetBattleFreeze(bool on);
 void PeekRegion(const std::string& name, long long offset, int qwords);
 // Research (`watchname <region> <hex offset> <len>`): a write watch on a region by name (`watchreport`).
 void WatchRegionNamed(const std::string& name, size_t offset, int length);
-// Research (`rdump <region> <tag>`): its bytes, from 0x40 before it, to SFVR\research\<tag>.bin.
+// Research (`rdump <region> <tag>`): its bytes, from 0x40 before it, to Polarity\research\<tag>.bin.
 void DumpRegion(const std::string& name, const std::string& tag);
 // Research (`rcmp <a> <b> <hex from> <hex to>`): small u32 values that differ.
 void CompareRegions(const std::string& a, const std::string& b, long long from, long long to);

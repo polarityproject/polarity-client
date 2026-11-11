@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(SfvRollback VERSION 0.1.0 LANGUAGES C CXX)
+project(Polarity VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -98,7 +98,7 @@ if(SFV_BUILD_MOD AND WIN32)
   endif()
   # A cap on what decoding one message may allocate, on both ends (a few
   # bytes claiming gigabytes ran the rooms server out of memory). The same
-  # patch goes into sfvr-server's server image and native install.
+  # patch goes into polarity-server's server image and native install.
   execute_process(COMMAND ${CMAKE_COMMAND} -DPATCH=${CMAKE_CURRENT_SOURCE_DIR}/third_party/weyvelength-decode-limit.patch
                           -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/apply-patch.cmake
                   WORKING_DIRECTORY ${weyvelength_SOURCE_DIR} RESULT_VARIABLE decode_limit)
@@ -178,29 +178,33 @@ add_library(sfvtestbed STATIC
   src/testbed/match_runner.cpp)
 target_link_libraries(sfvtestbed PUBLIC sfvcore)
 
-add_executable(sfvr src/tools/sfvr.cpp)
-target_link_libraries(sfvr PRIVATE sfvcore sfvtestbed)
+# The command-line tool, polarity.exe (its PDB named apart from polarity.dll's).
+add_executable(polarity_cli src/tools/polarity.cpp)
+set_target_properties(polarity_cli PROPERTIES OUTPUT_NAME polarity PDB_NAME polarity_cli)
+target_link_libraries(polarity_cli PRIVATE sfvcore sfvtestbed)
 
 enable_testing()
-add_executable(sfvtests tests/tests.cpp)
+# src/mod/migrate.cpp: the move from SFVR's file names, tested on temporary folders.
+add_executable(sfvtests tests/tests.cpp $<$<BOOL:${WIN32}>:src/mod/migrate.cpp>)
 target_link_libraries(sfvtests PRIVATE sfvcore sfvtestbed bcrypt)
 add_test(NAME sfvtests COMMAND sfvtests WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
 if(SFV_BUILD_MOD AND WIN32)
-  # sfvr-keeper (src/keeper/keeper.h): hosts the lobby channel and the custom
+  # polarity-keeper (src/keeper/keeper.h): hosts the lobby channel and the custom
   # rooms. Built here for local tests; the server builds it on Linux
-  # (scripts/keeper-bundle.ps1 copies its sources into sfvr-server).
-  add_executable(sfvr_keeper src/keeper/main.cpp src/keeper/keeper.cpp)
-  set_target_properties(sfvr_keeper PROPERTIES OUTPUT_NAME sfvr-keeper)
-  target_link_libraries(sfvr_keeper PRIVATE sfvcore weyvelength_client bcrypt ws2_32)
-  # sfvr-bot: a headless rooms player for tests (src/tools/sfvr_bot.cpp).
-  add_executable(sfvr_bot src/tools/sfvr_bot.cpp)
-  set_target_properties(sfvr_bot PROPERTIES OUTPUT_NAME sfvr-bot)
-  target_link_libraries(sfvr_bot PRIVATE sfvcore weyvelength_client bcrypt ws2_32)
+  # (scripts/keeper-bundle.ps1 copies its sources into polarity-server).
+  add_executable(polarity_keeper src/keeper/main.cpp src/keeper/keeper.cpp)
+  set_target_properties(polarity_keeper PROPERTIES OUTPUT_NAME polarity-keeper)
+  target_link_libraries(polarity_keeper PRIVATE sfvcore weyvelength_client bcrypt ws2_32)
+  # polarity-bot: a headless rooms player for tests (src/tools/polarity_bot.cpp).
+  add_executable(polarity_bot src/tools/polarity_bot.cpp)
+  set_target_properties(polarity_bot PROPERTIES OUTPUT_NAME polarity-bot)
+  target_link_libraries(polarity_bot PRIVATE sfvcore weyvelength_client bcrypt ws2_32)
 endif()
 
 if(SFV_BUILD_MOD AND WIN32)
-  add_library(sfv_rollback SHARED
+  # The mod, polarity.dll.
+  add_library(polarity SHARED
     src/mod/dllmain.cpp
     src/mod/log.cpp
     src/mod/memscan.cpp
@@ -208,6 +212,7 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/battle_setup.cpp
     src/mod/boot.cpp
     src/mod/files.cpp
+    src/mod/migrate.cpp
     src/mod/updater.cpp
     src/mod/pak_textures.cpp
     src/mod/profile.cpp
@@ -253,11 +258,11 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/settings_screen.cpp
     src/mod/weyve_service.cpp
     src/mod/fonts.rc)
-  target_link_libraries(sfv_rollback PRIVATE sfvcore minhook imgui weyvelength_client ws2_32 iphlpapi shell32 winhttp dbghelp)
+  target_link_libraries(polarity PRIVATE sfvcore minhook imgui weyvelength_client ws2_32 iphlpapi shell32 winhttp dbghelp)
 
   # The bundled CJK font for names (third_party/fonts/README.md): too large
   # for the repository or the DLL, so downloaded once by its tag and checked;
-  # releases ship it as SFVR/fonts/NotoSansCJK-Medium.ttc (package.ps1).
+  # releases ship it as Polarity/fonts/NotoSansCJK-Medium.ttc (package.ps1).
   set(SFV_CJK_FONT ${CMAKE_BINARY_DIR}/fonts/NotoSansCJK-Medium.ttc)
   file(DOWNLOAD https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/OTC/NotoSansCJK-Medium.ttc ${SFV_CJK_FONT}
        EXPECTED_HASH SHA256=197d5e1e019faca33a4d55931c7d68b8056f3b97cb862049f5cb8de9efdfb8ce)
@@ -274,7 +279,7 @@ if(SFV_BUILD_MOD AND WIN32)
   string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," SFV_NOISE_BYTES "${SFV_NOISE_HEX}")
   file(CONFIGURE OUTPUT ${CMAKE_BINARY_DIR}/generated/builtin_noise.h
        CONTENT "#pragma once\n// Generated from data/sfv_noise.txt by CMakeLists.txt.\nnamespace sfv::mod {\ninline constexpr unsigned char kBuiltinNoise[] = {${SFV_NOISE_BYTES}};\n}\n")
-  # The benchmark's round (data/benchmark.sfvr, made with `sfvr cut`), the same
+  # The benchmark's round (data/benchmark.sfvr, made with `polarity cut`), the same
   # way; a build without the file has an empty one (the benchmark says so).
   set(SFV_BENCH_FILE ${CMAKE_SOURCE_DIR}/data/benchmark.sfvr)
   if(EXISTS ${SFV_BENCH_FILE})
@@ -293,11 +298,11 @@ if(SFV_BUILD_MOD AND WIN32)
   string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," SFV_GRANTS_BYTES "${SFV_GRANTS_HEX}")
   file(CONFIGURE OUTPUT ${CMAKE_BINARY_DIR}/generated/builtin_steam_grants.h
        CONTENT "#pragma once\n// Generated from data/steam_grants.txt by CMakeLists.txt.\nnamespace sfv::mod {\ninline constexpr unsigned char kSteamGrants[] = {${SFV_GRANTS_BYTES}};\n}\n")
-  target_include_directories(sfv_rollback PRIVATE ${CMAKE_BINARY_DIR}/generated)
+  target_include_directories(polarity PRIVATE ${CMAKE_BINARY_DIR}/generated)
   if(MSVC)
     # Symbols for crash stacks (scripts/symbolize.py); the code stays optimised.
-    target_compile_options(sfv_rollback PRIVATE /Zi)
-    target_link_options(sfv_rollback PRIVATE /DEBUG /OPT:REF /OPT:ICF)
+    target_compile_options(polarity PRIVATE /Zi)
+    target_link_options(polarity PRIVATE /DEBUG /OPT:REF /OPT:ICF)
   endif()
 
   # The loader. See src/proxy/xinput_proxy.cpp.

@@ -32,12 +32,12 @@ namespace sfv::mod {
 
 namespace {
 
-// This game's SFVR version as rooms see it (the updater's: a test may
+// This game's Polarity version as rooms see it (the updater's: a test may
 // pretend another).
 std::string MyVersion() { return UpdateViewNow().current; }
 // What a player who joined another version's room is told (the rooms
 // screen's lead keys on its start).
-std::string OtherVersionNotice(const std::string& theirs) { return "That room is on SFVR " + theirs + ". You have " + MyVersion() + "."; }
+std::string OtherVersionNotice(const std::string& theirs) { return "That room is on Polarity " + theirs + ". You have " + MyVersion() + "."; }
 
 } // namespace
 
@@ -46,7 +46,7 @@ namespace {
 using State = RoomsView::State;
 
 // The keeper on the rooms server: the public half of the rooms VPS's key
-// (sfvr-keeper --new-key, made there 2026-11-07; 0.3.0's one server).
+// (polarity-keeper --new-key, made there 2026-11-07; 0.3.0's one server).
 // [rooms] keeper_key adds another (tests against a local keeper).
 constexpr uint8_t kKeeperPublicKey[64] = {
     0x7d, 0xd5, 0x23, 0xba, 0x3f, 0x52, 0x80, 0x80, 0x0e, 0xef, 0x41, 0x60, 0x22, 0x22, 0x9d, 0xc4,
@@ -665,7 +665,7 @@ struct Client {
             // Another version's room (joined by its code): out again at once.
             const std::string theirs = data(keeper::kVersion);
             if (!theirs.empty() && theirs != MyVersion()) {
-                Log("rooms: %s plays SFVR %s, this game %s: leaving it", view.room.c_str(), theirs.c_str(), MyVersion().c_str());
+                Log("rooms: %s plays Polarity %s, this game %s: leaving it", view.room.c_str(), theirs.c_str(), MyVersion().c_str());
                 BackToLobby(OtherVersionNotice(theirs), true);
                 return;
             }

@@ -2,7 +2,7 @@
 # This PC runs the Weyvelength server and game instance 0 (the host); the
 # second PC's instance 0 joins. Both mash; after each decided match both make
 # the next choice from -Choices; then both leave. The second PC's recordings
-# are fetched and each match is compared with `sfvr peers`.
+# are fetched and each match is compared with `polarity peers`.
 #   two-machine.ps1 -Agent 192.168.1.20 -Token <secret> -Server 192.168.1.10 [-Deploy] [-Choices rematch,select]
 # -Server: this PC's address as the second PC reaches it (the server's port 5555
 # must be allowed in this PC's firewall). -Deploy first copies this build's mod
@@ -18,8 +18,8 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'remote.ps1') -Agent $Agent -Token $Token
 . (Join-Path $PSScriptRoot 'lib.ps1')
 $w = (Join-Path $PSScriptRoot '..\..\StreetFighterV\Binaries\Win64')
-$sfvr = Join-Path $PSScriptRoot '..\build\Release\sfvr.exe'
-$log0 = Join-Path $w 'SFVR\logs\sfvr.log'
+$polarity = Join-Path $PSScriptRoot '..\build\Release\polarity.exe'
+$log0 = Join-Path $w 'Polarity\logs\polarity.log'
 $outDir = if ($Out) { $Out } else { Join-Path $w ("reports\two-machine-" + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 function Say($text) { $text; Add-Content -Path (Join-Path $outDir 'summary.txt') -Value $text }
@@ -31,7 +31,7 @@ Say "second PC: $($ping.host), $($ping.games) game instance(s) running"
 
 & (Join-Path $PSScriptRoot 'weyve-server.ps1') | ForEach-Object { Say "server: $_" }
 # Both games use this server: the second PC through this PC's address.
-(Remote 'ini' @{ file = 'sfv_rollback.ini'; section = 'weyve'; key = 'server'; value = $serverAddress }).output | Out-Null
+(Remote 'ini' @{ file = 'polarity.ini'; section = 'weyve'; key = 'server'; value = $serverAddress }).output | Out-Null
 if ($Deploy) {
   RemoteDeploy
   Say 'deployed this build and the test scripts to the second PC'
@@ -116,8 +116,8 @@ foreach ($l in $remote) {
   $local = Join-Path $outDir (Split-Path $rel -Leaf)
   RemoteGet $rel $local | Out-Null
   if ($mine.ContainsKey($id)) {
-    Say "== match ${id}: sfvr peers"
-    & $sfvr peers $mine[$id] $local 2>&1 | Select-Object -First 12 | ForEach-Object { Say "  $_" }
+    Say "== match ${id}: polarity peers"
+    & $polarity peers $mine[$id] $local 2>&1 | Select-Object -First 12 | ForEach-Object { Say "  $_" }
   }
 }
 Say "files in $outDir"

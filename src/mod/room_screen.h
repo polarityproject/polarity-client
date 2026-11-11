@@ -7,7 +7,7 @@
 // seats are open), A again stands you up; on a busy table A joins its queue
 // (or leaves it). When both seats are taken the your-turn card comes up for
 // the two players: Ready (A), the input delay for this match (left and
-// right, preset from SFVR settings), Leave queue (B); 8 s to answer. Then the
+// right, preset from Polarity settings), Leave queue (B); 8 s to answer. Then the
 // connecting modal (mock-up board 6) until the match loads: the match room,
 // the link with its ping, the characters loading, the match starting; B
 // cancels until the match loads. Start (owner) opens the table rules; Y opens
@@ -75,7 +75,7 @@ void SetTableHandoff(const TableHandoff& handoff);
 void ResetRoomScreen(); // a new room: dialogs shut, nothing typed, nobody muted
 // Testing (`rooms mute <member id>`): as A on a player's row, mute or unmute.
 void ToggleMuteForTest(uint32_t id);
-// `delaySuggestion`: the your-turn card's starting delay (SFVR settings, or
+// `delaySuggestion`: the your-turn card's starting delay (Polarity settings, or
 // with Auto the suggestion for the ping to the opponent).
 void DrawRoomScreen(const HubFonts& fonts, const RoomsView& view, bool takeInput, RoomScreenInput* input);
 // Ready to start a card at this delay (the overlay works it out per opponent).

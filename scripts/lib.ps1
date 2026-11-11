@@ -12,10 +12,10 @@
 #   Reset-Instances 0,1 [-Server addr]      leave any session, mashing and netsim off
 . (Join-Path $PSScriptRoot 'logtail.ps1')
 $script:GameDir = (Resolve-Path (Join-Path $PSScriptRoot '..\..\StreetFighterV\Binaries\Win64')).Path
-$script:IniPath = Join-Path $script:GameDir 'sfv_rollback.ini'
+$script:IniPath = Join-Path $script:GameDir 'polarity.ini'
 
 function LogOf([int]$Instance) {
-  Join-Path $script:GameDir ($(if ($Instance -eq 0) { 'SFVR\logs\sfvr.log' } else { "SFVR\logs\sfvr.$Instance.log" }))
+  Join-Path $script:GameDir ($(if ($Instance -eq 0) { 'Polarity\logs\polarity.log' } else { "Polarity\logs\polarity.$Instance.log" }))
 }
 
 function Assert-GamesRunning([int]$Count = 1) {
@@ -101,11 +101,11 @@ function Reset-Instances([int[]]$Instances, [string]$Server = '') {
 # the ini): games killed on purpose and test desyncs stay off the server.
 function Use-TestSettings([int]$Instances = 1, [scriptblock]$Body, [hashtable]$Extra = @{}) {
   $want = @{ virtual_pads = '1'; always_active = '1' }
-  # -Extra: more sfv_rollback.ini keys for the test (only keys the file has), put back after.
+  # -Extra: more polarity.ini keys for the test (only keys the file has), put back after.
   foreach ($k in $Extra.Keys) { $want[$k] = [string]$Extra[$k] }
   if ($Instances -gt 1) { $want.multi_instance = '1' }
   $testIniFiles = @(@{ Path = $script:IniPath; Want = $want })
-  foreach ($panel in Get-ChildItem (Split-Path $script:IniPath) -Filter 'sfv_rollback.panel*.ini' -ErrorAction SilentlyContinue) {
+  foreach ($panel in Get-ChildItem (Split-Path $script:IniPath) -Filter 'polarity.panel*.ini' -ErrorAction SilentlyContinue) {
     $testIniFiles += @{ Path = $panel.FullName; Want = @{ upload_reports = '0' } }
   }
   foreach ($testIni in $testIniFiles) {

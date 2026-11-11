@@ -1,21 +1,25 @@
 # Changelog
 
-Releases of SFVR, the Street Fighter V rollback netplay mod. Each version's
+Releases of Polarity (SFVR until 0.3.1), the Street Fighter V rollback netplay mod. Each version's
 first paragraph is the summary players see in the game (Settings, Updates);
 `scripts/release.ps1` reads it, and refuses to publish a version that has no
 entry here. Newest first; the format follows [Keep a Changelog](https://keepachangelog.com).
 
 ## [Unreleased]
 
+SFVR is now Polarity. Updating moves everything over by itself: your
+settings, replays, match recordings and logs carry on from the Polarity
+folder, and nothing needs doing.
+
 ### Added
 
-- SFVR's screens make the game's own menu sounds: moving the cursor,
+- Polarity's screens make the game's own menu sounds: moving the cursor,
   changing a value, choosing, going back, windows opening, notices, chat
   lines, players coming and going in a room, Ready, and your turn at a
   table with its last seconds counting down. They follow the game's SE
   volume (Options, Sound) as its own menus do.
 - **Battle Log**, on the hub under Play Offline: every online match you
-  play is kept in SFVR\replays, newest first, with both players' names,
+  play is kept in Polarity\replays, newest first, with both players' names,
   characters and round wins. LB/RB shows them grouped by set (a table's
   set, or a Direct Match session until character select), LT filters by
   your character and your opponent's, RT by opponent. A watches a match,
@@ -23,9 +27,9 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   pause and play (A), frame by frame both ways (left and right), the next
   or previous round (RB, LB), fast forward (hold RT), leave (B). Y opens
   the folder: copy replays out, or drop others' in. A replay plays on later
-  SFVR versions too, until one changes how battles play out; a replay that
+  Polarity versions too, until one changes how battles play out; a replay that
   goes out of sync with its recording says so.
-- **Benchmark**, in SFVR settings: one recorded round played with an
+- **Benchmark**, in Polarity settings: one recorded round played with an
   8-frame rollback on every frame, the most a match can have, measured from
   its FIGHT on. 59 fps or more on average passes; it also checks the round
   played exactly as recorded, as a PC that plays it differently would
@@ -33,6 +37,15 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ### Changed
 
+- **The name**: SFVR is now Polarity, in the game and on the site
+  (polaritymod.link). On its first start, Polarity moves an SFVR install's
+  files to its names: `sfv_rollback.ini` and the panel's ini become
+  `polarity.ini` and `polarity.panel.ini`, the `SFVR` folder (logs,
+  matches, replays, crashes, fonts) becomes `Polarity`, and the old DLL is
+  removed. A file that can't move (open, or Polarity already has one of
+  the same name) stays in the `SFVR` folder, with a note saying what
+  stayed. A notice says so once. Replays keep their `.sfvr` files and play
+  as before. An SFVR build started afterwards starts from fresh settings.
 - The intro, round call, KO and win poses no longer run in lockstep online:
   they roll back like the fight, so they play at full speed at any ping
   instead of slowing to the connection's round trip. (`lockstep_round_stages=1`

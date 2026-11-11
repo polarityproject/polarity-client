@@ -247,7 +247,7 @@ void DrawLoadout(ImDrawList* d, const SelectFonts& f, bool right, const SelectSi
         const SelectRow& row = side.rows[r];
         const float y = top + r * (rowH + gap);
         const ImVec2 a = g_v.P(x0, y), b = g_v.P(x0 + w, y + rowH);
-        // This player's focused row: the gold fill SFVR's other screens use
+        // This player's focused row: the gold fill Polarity's other screens use
         // for focus; the other side's row: a gold edge on its dark row.
         const bool lit = r == highlight && interactive;
         if (lit) d->AddRectFilled(a, b, look::kGold);

@@ -7,7 +7,7 @@ param([ValidateSet('none', 'host', 'join', 'both')][string]$Press = 'both', [int
       [int]$Seconds = 25, [string]$Stage = 'CHN')
 $w = (Join-Path $PSScriptRoot '..\..\StreetFighterV\Binaries\Win64')
 . (Join-Path $PSScriptRoot 'lib.ps1')
-$logs = @((Join-Path $w 'SFVR\logs\sfvr.log'), (Join-Path $w 'SFVR\logs\sfvr.1.log'))
+$logs = @((Join-Path $w 'Polarity\logs\polarity.log'), (Join-Path $w 'Polarity\logs\polarity.1.log'))
 function Since($log, $mark) { Get-Content $log -Tail 3000 | Where-Object { $_.Length -gt 12 -and $_.Substring(0, 12) -ge $mark } }
 function Stamp($line) { [datetime]::ParseExact($line.Substring(0, 12), 'HH:mm:ss.fff', $null) }
 $mark = (Get-Date).ToString('HH:mm:ss.fff')

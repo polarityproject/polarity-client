@@ -35,7 +35,7 @@ TextureView ViewOfTexture(const void* texture, bool quiet = false);
 // Before it, under Wine, no texture has a view. `d3dDevice`: ID3D11Device*.
 void NoteShaderResourceViewKind(void* d3dDevice);
 
-// Research (`savetex`): writes the texture's top mip to SFVR\textures\<name>.dds
+// Research (`savetex`): writes the texture's top mip to Polarity\textures\<name>.dds
 // as it is in memory (BC formats stay compressed). Takes over the view's
 // reference. The copy is made on the render thread: SaveQueuedTextures, from
 // the overlay's Present.

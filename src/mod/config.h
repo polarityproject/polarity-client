@@ -1,5 +1,5 @@
 #pragma once
-// sfv_rollback.ini, next to the DLL. See sfv_rollback.ini.example.
+// polarity.ini, next to the DLL. See polarity.ini.example.
 
 #include "mod/netplay_driver.h"
 
@@ -41,7 +41,7 @@ struct Config {
     // (for learning new words); empty: the built-in one.
     std::wstring noiseFile;
 
-    std::wstring reportDir; // match recordings and logs; default <dll dir>\SFVR\matches (files.h)
+    std::wstring reportDir; // match recordings and logs; default <dll dir>\Polarity\matches (files.h)
 
     // [update] (updater.h): the site's update info, and whether to check at start
     std::wstring updateUrl;
@@ -56,7 +56,7 @@ struct Config {
     bool alwaysActive = false; // keep reading pads while the window is in the background
 };
 
-// panelPath: the overlay's saved choices (sfv_rollback.panel[.N].ini); its
+// panelPath: the overlay's saved choices (polarity.panel[.N].ini); its
 // [netplay] keys override the main file's.
 Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const std::wstring& panelPath = L"");
 // Writes the player's choices (pick, stage, delay, prediction window, name,
@@ -70,8 +70,8 @@ void SaveRandomStagesOff(const std::wstring& path, const std::vector<std::string
 // pick's in [loadouts] of the overlay's file), by character code.
 std::map<std::string, PlayerSetup> ReadLoadouts(const std::wstring& path);
 const char* ModeName(Mode mode);
-// sfv_rollback.ini as LoadConfig read it, and one value written into it
-// (SFVR settings' Check at start and At start).
+// polarity.ini as LoadConfig read it, and one value written into it
+// (Polarity settings' Check at start and At start).
 std::wstring MainIniPath();
 void SaveMainIni(const wchar_t* section, const wchar_t* key, int value);
 int ReadMainIni(const wchar_t* section, const wchar_t* key, int fallback);

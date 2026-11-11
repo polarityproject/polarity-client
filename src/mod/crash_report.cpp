@@ -27,7 +27,7 @@ constexpr size_t kLogTailLines = 400;
 constexpr ULONGLONG kHangMs = 20000;             // the game thread this long without a tick: logged as stuck
 constexpr int kHangThreadsLogged = 40;           // other threads' stacks (distinct ones) logged with it
 
-std::wstring g_dir; // SFVR\crashes
+std::wstring g_dir; // Polarity\crashes
 std::wstring g_suffix;
 std::string g_version;
 thread_local int t_guarded = 0;
@@ -301,7 +301,7 @@ std::string ThreadStack(DWORD id, int frames, bool* ours = nullptr)
     t_guarded++;
     for (int i = 0; i < frames; i++) {
         const std::string where = Where(c.Rip);
-        if (ours && (where.rfind("StreetFighterV.exe", 0) == 0 || where.rfind("sfv_rollback", 0) == 0)) *ours = true;
+        if (ours && (where.rfind("StreetFighterV.exe", 0) == 0 || where.rfind("polarity", 0) == 0 || where.rfind("sfv_rollback", 0) == 0)) *ours = true;
         stack += " " + where;
         if (!Unwind(&c)) break;
     }
@@ -497,11 +497,11 @@ std::string CheckPreviousRun(const std::wstring& suffix, const std::string& vers
         DeleteFileW(PendingPath(L".dmp").c_str());
         DeleteFileW(PendingPath(L".txt").c_str());
         DeleteFileW(RunningPath().c_str());
-        return "crash report: the last run (SFVR " + Value(running, "version") + ") ended " +
+        return "crash report: the last run (Polarity " + Value(running, "version") + ") ended " +
                (!quitting.empty() ? "while quitting (" + quitting + ")" : "during its start, before the exit hooks") +
                ": not reported";
     }
-    const std::wstring logPath = LogsDir() + L"\\sfvr" + suffix + L".log";
+    const std::wstring logPath = LogsDir() + L"\\polarity" + suffix + L".log";
     SYSTEMTIME when{};
     WIN32_FILE_ATTRIBUTE_DATA info;
     if (GetFileAttributesExW(logPath.c_str(), GetFileExInfoStandard, &info)) {
@@ -518,9 +518,9 @@ std::string CheckPreviousRun(const std::wstring& suffix, const std::string& vers
     std::snprintf(id, sizeof(id), "%08lx", static_cast<unsigned long>(counter.QuadPart ^ (counter.QuadPart >> 32) ^ GetCurrentProcessId()));
     const std::string name = Stamp(when) + "_crash_" + id;
 
-    std::string report = "SFVR " + Value(running, "version") + " crash report\n";
+    std::string report = "Polarity " + Value(running, "version") + " crash report\n";
     report += "run started " + Value(running, "started") + ", last logged " + Stamp(when, "%04d-%02d-%02d %02d:%02d:%02d") + "\n";
-    report += "reported by SFVR " + version + "\n";
+    report += "reported by Polarity " + version + "\n";
     const std::string ended = Value(running, "ended");
     if (fault) {
         report += "how it ended: a fault\n";
@@ -574,7 +574,7 @@ std::string CheckPreviousRun(const std::wstring& suffix, const std::string& vers
     }
     PruneOldest(g_dir, L"*_crash_*.log", kKeptCrashReports);
     PruneOldest(g_dir, L"*_crash_*.dmp", kKeptCrashReports);
-    std::string found = "crash report: the last run (SFVR " + Value(running, "version") + ") ended " +
+    std::string found = "crash report: the last run (Polarity " + Value(running, "version") + ") ended " +
                         (fault ? "with a fault: " + Value(pending, "fault")
                                : !ended.empty() ? "by itself (" + ended.substr(0, ended.find(" from")) + ")"
                                                 : "without a clean exit (no fault seen)") +

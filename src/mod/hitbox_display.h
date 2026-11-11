@@ -1,6 +1,6 @@
 #pragma once
 // Hitbox display: the fighters' and their effects' boxes drawn over the
-// battle, in Training (on by default, SFVR settings) and in the Battle Log's
+// battle, in Training (on by default, Polarity settings) and in the Battle Log's
 // replays (toggled from the stripe). Never in online matches.
 //
 // The boxes are the game's own: each actor (the two fighters and 16 pooled
@@ -26,7 +26,7 @@ struct WorldBox {
     Kind kind;
 };
 
-// The saved choices (sfv_rollback.ini [hitboxes] training / replays).
+// The saved choices (polarity.ini [hitboxes] training / replays).
 bool HitboxesInTraining();
 void SetHitboxesInTraining(bool on);
 bool HitboxesInReplays();

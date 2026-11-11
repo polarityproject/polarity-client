@@ -2,7 +2,7 @@
 // Crash reports, written in the game and sent at the next launch (by the
 // desync reports' uploader, report_upload.h, with its opt-out).
 //
-// While the game runs, SFVR\crashes\running[.N].txt says so (pid, version).
+// While the game runs, Polarity\crashes\running[.N].txt says so (pid, version).
 // A clean end deletes it: the process exiting, or ending itself with no
 // fault just before, or a hot reload. A file still there at the next start
 // means the run ended badly (a crash, a freeze ended by force, a kill), and
@@ -22,8 +22,8 @@
 // looked. Faults code catches on purpose are left out (CrashGuardEnter).
 // The next start's report takes the pending files when they are that run's.
 //
-// A report is SFVR\crashes\<when>_crash_<id>.log, with <...>.dmp when there
-// was a fault: names the server's sfvr-reports takes.
+// A report is Polarity\crashes\<when>_crash_<id>.log, with <...>.dmp when there
+// was a fault: names the server's polarity-reports takes.
 
 #include <string>
 

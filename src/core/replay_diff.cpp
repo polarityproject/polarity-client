@@ -306,7 +306,7 @@ std::string FormatDiff(const DiffReport& rep, const ReplayFile& a)
         }
     }
     else {
-        s += "no state dumps of that frame in both files; run `sfvr verify` on each file to find which side "
+        s += "no state dumps of that frame in both files; run `polarity verify` on each file to find which side "
              "is reproducible\n";
     }
     return s;

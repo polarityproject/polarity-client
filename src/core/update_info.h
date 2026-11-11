@@ -1,13 +1,13 @@
 #pragma once
-// The update info file the project site publishes (sfvr-site, public/
+// The update info file the project site publishes (polarity-web, public/
 // update.json), what the mod's updater reads (mod/updater.h):
 //
-//   { "product": "SFVR", "version": "0.2.0", "published": "2026-11-02",
+//   { "product": "Polarity", "version": "0.4.0", "published": "2026-11-20",
 //     "notes": "What changed, a few lines.",
-//     "download": "releases/0.2.0/sfvr-0.2.0.zip",
-//     "files": [ { "path": "sfv_rollback.dll", "size": 4012544,
+//     "download": "releases/0.4.0/polarity-0.4.0.zip",
+//     "files": [ { "path": "polarity.dll", "size": 4012544,
 //                  "sha256": "<64 hex digits>",
-//                  "url": "releases/0.2.0/sfv_rollback.dll" }, ... ] }
+//                  "url": "releases/0.4.0/polarity.dll" }, ... ] }
 //
 // Next to it, update.json.sig: the base64 of an ECDSA P-256 signature (r and
 // s, 32 bytes each) over update.json's exact bytes, SHA-256 hashed. Only the
@@ -22,7 +22,7 @@
 namespace sfv {
 
 struct UpdateFile {
-    std::string path;   // under the game's Binaries\Win64: a plain file name, or SFVR/fonts/<name> (SafeUpdatePath)
+    std::string path;   // under the game's Binaries\Win64: a plain file name, or Polarity/fonts/<name> (SafeUpdatePath; SFVR/fonts/ from the old site)
     uint64_t size = 0;
     std::string sha256; // lowercase hex
     std::string url;
@@ -52,8 +52,14 @@ int CompareVersions(const std::string& a, const std::string& b);
 
 // Whether an update may write this file: a plain name (no folders, no ".."),
 // a .dll, .pdb or .txt, and never the player's settings (*.ini); or a .ttc
-// in SFVR/fonts/ (the bundled CJK font), the one folder.
+// in Polarity/fonts/ or SFVR/fonts/ (the bundled CJK font), the one folder.
 bool SafeUpdatePath(const std::string& path);
+// The fonts folder in update info: Polarity/fonts/ (the old site lists the
+// same files under SFVR/fonts/, for SFVR's updaters).
+constexpr const char* kUpdateFontsDir = "Polarity/fonts/";
+// An update file's place under Binaries\Win64, with backslashes: the old
+// site's SFVR/fonts/ lands in Polarity\fonts too.
+std::string UpdateFileOnDisk(const std::string& path);
 
 // `url` against `base` (the update info's own URL): absolute ones as they
 // are, others relative to base's folder.

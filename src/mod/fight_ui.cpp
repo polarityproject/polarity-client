@@ -267,15 +267,15 @@ void DrawMenuNote(const HubFonts& f)
     BeginScreen();
     ImDrawList* d = ImGui::GetForegroundDrawList();
     ImFont* bold = f.bold ? f.bold : f.strong;
-    const std::string text = "Back + Start or F1 for the SFVR menu";
-    const float kickW = TextW(bold, 17, "SFVR") + 10;
+    const std::string text = "Back + Start or F1 for the Polarity menu";
+    const float kickW = TextW(bold, 17, "Polarity") + 10;
     const float w = 14 + 8 + 10 + kickW + TextW(f.body, 17, text) + 16, h = 36;
     const float x0 = 800 - w / 2, y0 = 12;
     DropShadow(d, x0, y0, x0 + w, y0 + h, 4, 12, 0.35f, true);
     d->AddRectFilled(g_v.P(x0, y0), g_v.P(x0 + w, y0 + h), Rgba(10, 12, 16, 184));
     d->AddRect(g_v.P(x0, y0), g_v.P(x0 + w, y0 + h), Rgba(236, 228, 206, 89), 0.0f, 0, std::max(1.0f, g_v.L(1)));
     Diamond(d, x0 + 14 + 4, y0 + h / 2, 8, look::kGold);
-    Text(d, bold, g_v.L(17), g_v.P(x0 + 32, y0 + 7), look::kGold, "SFVR");
+    Text(d, bold, g_v.L(17), g_v.P(x0 + 32, y0 + 7), look::kGold, "Polarity");
     Text(d, f.body, g_v.L(17), g_v.P(x0 + 32 + kickW, y0 + 7), look::kCream, text);
 }
 

@@ -331,7 +331,7 @@ DWORD WINAPI GetStateDetour(DWORD user, XINPUT_STATE* state)
 // | dumps <every N frames> [max] (state dumps in match recordings)
 // | recordings full|compact (region hashes for every frame, or only around desyncs)
 // | server [host:port] (the rooms server for the next host/join, this game only)
-// | packlogs (the SFVR folder's logs and latest matches into a zip to share)
+// | packlogs (the Polarity folder's logs and latest matches into a zip to share)
 // | update [check [url] | install] (the updater: check the site, install what it offers)
 // | pick <code costume color comment vskill vtrigger> | stage <n> | netstatus
 // | name [text] (the name test sessions use; none: back to "Player <instance + 1>")
@@ -446,7 +446,7 @@ bool RunResearchCommand(const std::string& cmd, std::stringstream& ss)
         }
     }
     else if (cmd == "ftrace") {
-        // ftrace <ticks>: research (changed snapshot words per tick to SFVR\research\ftrace.bin)
+        // ftrace <ticks>: research (changed snapshot words per tick to Polarity\research\ftrace.bin)
         int ticks = 600;
         ss >> ticks;
         RunOnGameThread([ticks] { TraceRegions(ticks); });
@@ -476,7 +476,7 @@ bool RunResearchCommand(const std::string& cmd, std::stringstream& ss)
         SetHitboxesForced(on != 0);
     }
     else if (cmd == "rdump") {
-        // rdump <region> <tag>: research (region bytes to SFVR\research\<tag>.bin)
+        // rdump <region> <tag>: research (region bytes to Polarity\research\<tag>.bin)
         std::string name, tag;
         ss >> name >> tag;
         RunOnGameThread([=] { DumpRegion(name, tag); });
@@ -488,7 +488,7 @@ bool RunResearchCommand(const std::string& cmd, std::stringstream& ss)
         RunOnGameThread([mode, prefix] { DiffRegions(mode, prefix); });
     }
     else if (cmd == "dumpbac") {
-        // dumpbac <BAC_RYU|BCH_RYU|...>: research (the loaded move file to SFVR\research)
+        // dumpbac <BAC_RYU|BCH_RYU|...>: research (the loaded move file to Polarity\research)
         std::string name;
         ss >> name;
         RunOnGameThread([name] { DumpMoveFile(name); });
@@ -965,7 +965,7 @@ void RunNetCommand(const std::string& line)
         // paktex on|off | status | show <path> [max side] | save <path> [max side]
         // | format <path> | dump <path>: textures read from the paks (pak_textures.h): on
         // or off for the screens, figures, one drawn by the overlay or
-        // written as SFVR\textures\pak_<name>.dds (to compare with savetex's
+        // written as Polarity\textures\pak_<name>.dds (to compare with savetex's
         // copy of the game's own), or the view format of the game's own.
         std::string what, path;
         uint32_t maxSide = 0;
@@ -1010,7 +1010,7 @@ void RunNetCommand(const std::string& line)
     }
     else if (cmd == "savetex") {
         // savetex <object name | /Game/... path> ...: each texture's top mip
-        // written to SFVR\textures\<name>.dds (research).
+        // written to Polarity\textures\<name>.dds (research).
         std::vector<std::string> which;
         std::string word;
         while (ss >> word) which.push_back(word);
@@ -1666,7 +1666,7 @@ void RunNetCommand(const std::string& line)
         FindPointer(v);
     }
     else if (cmd == "replay") {
-        // replay <file in SFVR\matches (or reports\) or a full path> [stress <distance>]
+        // replay <file in Polarity\matches (or reports\) or a full path> [stress <distance>]
         // ... [watch <from> <to> <region>]
         // ... [keep <from> <to>] (a straight run kept as a full recording with
         // state dumps of those frames) [cold] (no preload: the characters

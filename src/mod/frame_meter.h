@@ -1,7 +1,7 @@
 #pragma once
 // Frame meter: 120 frames (2 s) of what each player's character is doing,
 // one block a frame, over the V-Trigger gauges, with each move's startup,
-// total and frame advantage (Advantage) above. In Training (on by default, SFVR
+// total and frame advantage (Advantage) above. In Training (on by default, Polarity
 // settings) and in the Battle Log's replays (toggled from the stripe), never
 // online. docs/frame-meter.md has the design and the research.
 //

@@ -1,6 +1,6 @@
 #pragma once
 // What the mod draws over a fight and its results screen in the 1d look (the
-// SFVR design system: "Modals", "Notices"): the leave modal (Back + Start in
+// Polarity design system: "Modals", "Notices"): the leave modal (Back + Start in
 // a match), the vote after a game (a glass pane docked on each side), and the
 // notices: toasts that come down from the top right out of a fight, small
 // notes at the bottom centre in one (a desync too). The overlay gives each

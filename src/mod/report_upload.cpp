@@ -83,7 +83,7 @@ DWORD Post(const std::string& url, const std::vector<uint8_t>& body, std::string
         return 0;
     }
     const bool secure = parts.nScheme == INTERNET_SCHEME_HTTPS;
-    HINTERNET session = WinHttpOpen(L"SFVR reports", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
+    HINTERNET session = WinHttpOpen(L"Polarity reports", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
                                     WINHTTP_NO_PROXY_BYPASS, 0);
     HINTERNET connect = session ? WinHttpConnect(session, host, parts.nPort, 0) : nullptr;
     HINTERNET request = connect ? WinHttpOpenRequest(connect, L"POST", path, nullptr, WINHTTP_NO_REFERER,
@@ -92,7 +92,7 @@ DWORD Post(const std::string& url, const std::vector<uint8_t>& body, std::string
     DWORD status = 0;
     if (request) {
         WinHttpSetTimeouts(request, kTimeoutMs, kTimeoutMs, kTimeoutMs, kTimeoutMs);
-        const std::wstring headers = L"Content-Type: application/octet-stream\r\nX-SFVR-Version: " + Wide(g_version) + L"\r\n";
+        const std::wstring headers = L"Content-Type: application/octet-stream\r\nX-Polarity-Version: " + Wide(g_version) + L"\r\n";
         if (WinHttpSendRequest(request, headers.c_str(), static_cast<DWORD>(-1L), const_cast<uint8_t*>(body.data()),
                                static_cast<DWORD>(body.size()), static_cast<DWORD>(body.size()), 0) &&
             WinHttpReceiveResponse(request, nullptr)) {

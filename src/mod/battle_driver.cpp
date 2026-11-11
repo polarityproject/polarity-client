@@ -894,7 +894,7 @@ void FindInRegions(const std::string& kind, const std::string& a, const std::str
 
 void DumpMoveFile(const std::string& name)
 {
-    // A loaded move file (KWBAC/KWBCH/KWBCM: +0x28 its bytes, +0x30 count) to SFVR\research.
+    // A loaded move file (KWBAC/KWBCH/KWBCM: +0x28 its bytes, +0x30 count) to Polarity\research.
     void* object = ue4::EnsureObjects(g_imageBase) ? ue4::FindObject(name, "") : nullptr;
     if (!object || !IsReadable(static_cast<uint8_t*>(object) + 0x28, 0x10)) return Log("dumpbac: no %s", name.c_str());
     const auto* data = *reinterpret_cast<const uint8_t* const*>(static_cast<uint8_t*>(object) + 0x28);
@@ -903,13 +903,13 @@ void DumpMoveFile(const std::string& name)
     wchar_t exe[MAX_PATH] = {};
     GetModuleFileNameW(nullptr, exe, MAX_PATH);
     std::wstring dir(exe);
-    dir = dir.substr(0, dir.find_last_of(L"\\/")) + L"\\SFVR\\research";
+    dir = dir.substr(0, dir.find_last_of(L"\\/")) + L"\\Polarity\\research";
     CreateDirectoryW(dir.c_str(), nullptr);
     const std::wstring path = dir + L"\\" + std::wstring(name.begin(), name.end()) + L".bin";
     if (FILE* f = _wfopen(path.c_str(), L"wb")) {
         std::fwrite(data, 1, size, f);
         std::fclose(f);
-        Log("dumpbac: %s, %u bytes, to SFVR\\research", name.c_str(), size);
+        Log("dumpbac: %s, %u bytes, to Polarity\\research", name.c_str(), size);
     }
 }
 
@@ -1125,7 +1125,7 @@ namespace {
 // Research (`camtrace <from tick> <to tick> [class text]`): the bytes of every
 // object whose class name holds the text ("Camera" by default), at each tick
 // end (replayed or not) and each rendered frame, for driven ticks from..to,
-// to SFVR\research\camtrace.bin.
+// to Polarity\research\camtrace.bin.
 struct TracedObject { const uint8_t* p; size_t size; std::string name; };
 std::vector<TracedObject> g_camObjects;
 FILE* g_camFile = nullptr;
@@ -1148,7 +1148,7 @@ void TraceCameraObjects(uint32_t from, uint32_t to, const std::string& text)
     wchar_t exe[MAX_PATH] = {};
     GetModuleFileNameW(nullptr, exe, MAX_PATH);
     std::wstring dir(exe);
-    dir = dir.substr(0, dir.find_last_of(L"\\/")) + L"\\SFVR\\research";
+    dir = dir.substr(0, dir.find_last_of(L"\\/")) + L"\\Polarity\\research";
     CreateDirectoryW(dir.c_str(), nullptr);
     g_camFile = _wfopen((dir + L"\\camtrace.bin").c_str(), L"wb");
     if (!g_camFile) return;
@@ -1216,7 +1216,7 @@ void TraceRegions(int ticks)
     wchar_t exe[MAX_PATH] = {};
     GetModuleFileNameW(nullptr, exe, MAX_PATH);
     std::wstring dir(exe);
-    dir = dir.substr(0, dir.find_last_of(L"\\/")) + L"\\SFVR\\research";
+    dir = dir.substr(0, dir.find_last_of(L"\\/")) + L"\\Polarity\\research";
     CreateDirectoryW(dir.c_str(), nullptr);
     g_ftraceFile = _wfopen((dir + L"\\ftrace.bin").c_str(), L"wb");
     if (!g_ftraceFile) return;
@@ -1325,19 +1325,19 @@ void CompareRegions(const std::string& a, const std::string& b, long long from, 
 
 void DumpRegion(const std::string& name, const std::string& tag)
 {
-    // A region's bytes (and the 0x40 before it) to SFVR\research\<tag>.bin.
+    // A region's bytes (and the 0x40 before it) to Polarity\research\<tag>.bin.
     const StateRegion* r = FindRegion(name);
     if (!r || !IsReadable(r->ptr - 0x40, r->size + 0x40)) return Log("rdump: no region %s", name.c_str());
     wchar_t exe[MAX_PATH] = {};
     GetModuleFileNameW(nullptr, exe, MAX_PATH);
     std::wstring dir(exe);
-    dir = dir.substr(0, dir.find_last_of(L"\\/")) + L"\\SFVR\\research";
+    dir = dir.substr(0, dir.find_last_of(L"\\/")) + L"\\Polarity\\research";
     CreateDirectoryW(dir.c_str(), nullptr);
     const std::wstring path = dir + L"\\" + std::wstring(tag.begin(), tag.end()) + L".bin";
     if (FILE* f = _wfopen(path.c_str(), L"wb")) {
         std::fwrite(r->ptr - 0x40, 1, r->size + 0x40, f);
         std::fclose(f);
-        Log("rdump: %s (%s, %zu bytes) to SFVR\\research\\%s.bin", name.c_str(), r->name.c_str(), r->size, tag.c_str());
+        Log("rdump: %s (%s, %zu bytes) to Polarity\\research\\%s.bin", name.c_str(), r->name.c_str(), r->size, tag.c_str());
     }
 }
 

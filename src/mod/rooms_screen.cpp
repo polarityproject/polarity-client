@@ -339,7 +339,7 @@ void CodePanel(ImDrawList* d, const HubFonts& f, bool active, const std::string&
     *clickedKey = -1;
     if (!notice.empty()) {
         const bool full = notice == "Room full";
-        const bool version = notice.rfind("That room is on SFVR", 0) == 0;
+        const bool version = notice.rfind("That room is on Polarity", 0) == 0;
         const ImU32 line = full ? kGold : kRed;
         const ImVec2 a = g_v.P(918, 324), b = g_v.P(1526, 470);
         d->AddRectFilled(a, b, look::kControl);
@@ -503,7 +503,7 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     const int count = static_cast<int>(rooms.size());
     if (g.focus >= count) g.focus = count ? count - 1 : kCode;
     const bool busy = v.state == S::Creating || v.state == S::Joining;
-    const bool versionNotice = v.notice.rfind("That room is on SFVR", 0) == 0;
+    const bool versionNotice = v.notice.rfind("That room is on Polarity", 0) == 0;
     const bool failed = !v.notice.empty() && (v.notice == "No room on that code" || v.notice == "Room full" || versionNotice) && g.focus == kCode;
 
     // ---- input ----
@@ -637,16 +637,16 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     else if (!v.otherBuild.empty() && !v.keeper) {
         lead = "UPDATE NEEDED";
         leadCol = kRed;
-        text = "Custom Rooms need a different SFVR version. Check for updates in SFVR settings.";
-        prompts = {{"button_start", "SFVR settings"}, {"button_b", "Back"}};
+        text = "Custom Rooms need a different Polarity version. Check for updates in Polarity settings.";
+        prompts = {{"button_start", "Polarity settings"}, {"button_b", "Back"}};
     }
     else if (!v.keeper && (g.focus == kCreate || g.focus >= 0)) {
         lead = v.state == S::Failed ? "CANNOT CONNECT" : "OFFLINE";
         leadCol = v.state == S::Failed ? kRed : kMuted;
-        text = v.state == S::Failed ? "Can't reach the rooms server. Check your connection, or the server in SFVR settings."
+        text = v.state == S::Failed ? "Can't reach the rooms server. Check your connection, or the server in Polarity settings."
                                     : "Custom Rooms are unavailable right now. Try again later.";
         prompts = {};
-        if (v.state == S::Failed) prompts.push_back({"button_start", "SFVR settings"});
+        if (v.state == S::Failed) prompts.push_back({"button_start", "Polarity settings"});
         prompts.push_back({"button_b", "Back"});
     }
     else if (g.focus == kCreate) {

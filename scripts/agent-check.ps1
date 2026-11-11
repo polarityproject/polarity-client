@@ -8,7 +8,7 @@
 # own effects (pads, a match) are not checked.
 param([Parameter(Mandatory)][string]$Agent, [string]$Token = $env:SFV_AGENT_TOKEN, [int]$Port = 47100,
       [switch]$Deploy, [switch]$Match, [string]$Server = '', [switch]$Fake,
-      [string]$Out = (Join-Path $env:TEMP 'sfvr-agent-check'))
+      [string]$Out = (Join-Path $env:TEMP 'polarity-agent-check'))
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force $Out | Out-Null
 . (Join-Path $PSScriptRoot 'remote.ps1') -Agent $Agent -Token $Token -Port $Port
@@ -46,7 +46,7 @@ $blob = [byte[]]::new(700000)
 [Random]::new(7).NextBytes($blob)
 $local = Join-Path $Out 'blob.bin'
 [IO.File]::WriteAllBytes($local, $blob)
-foreach ($remotePath in 'SFVR\agent-check\blob.bin', 'sfv-rollback\agent-check\blob.bin') {
+foreach ($remotePath in 'Polarity\agent-check\blob.bin', 'sfv-rollback\agent-check\blob.bin') {
   RemotePut $local $remotePath | Out-Null
   $back = Join-Path $Out 'blob-back.bin'
   RemoteGet $remotePath $back | Out-Null
@@ -83,10 +83,10 @@ if (-not $Fake) {
   # sets them here): commands and virtual pads, and running unfocused. The
   # ini as it was is kept in $Out; the settings stay for the tests to come.
   $before = Join-Path $Out 'agent-ini-before.ini'
-  try { RemoteGet 'sfv_rollback.ini' $before | Out-Null; "  the ini as it was: $before" } catch { "  (no sfv_rollback.ini there yet)" }
-  Remote 'ini' @{ file = 'sfv_rollback.ini'; section = 'control'; key = 'virtual_pads'; value = '1' } | Out-Null
-  Remote 'ini' @{ file = 'sfv_rollback.ini'; section = 'control'; key = 'always_active'; value = '1' } | Out-Null
-  RemoteGet 'sfv_rollback.ini' (Join-Path $Out 'agent-ini-after.ini') | Out-Null
+  try { RemoteGet 'polarity.ini' $before | Out-Null; "  the ini as it was: $before" } catch { "  (no polarity.ini there yet)" }
+  Remote 'ini' @{ file = 'polarity.ini'; section = 'control'; key = 'virtual_pads'; value = '1' } | Out-Null
+  Remote 'ini' @{ file = 'polarity.ini'; section = 'control'; key = 'always_active'; value = '1' } | Out-Null
+  RemoteGet 'polarity.ini' (Join-Path $Out 'agent-ini-after.ini') | Out-Null
   $after = Get-Content (Join-Path $Out 'agent-ini-after.ini')
   Check 'test settings set (virtual pads, always active)' (($after -contains 'virtual_pads=1') -and ($after -contains 'always_active=1'))
 }
@@ -94,7 +94,7 @@ if (-not $Fake) {
 if ($Deploy) {
   '== deploy'
   RemoteDeploy
-  $dll = Join-Path $PSScriptRoot '..\build\Release\sfv_rollback.dll'
+  $dll = Join-Path $PSScriptRoot '..\build\Release\polarity.dll'
   $back = Join-Path $Out 'dll-back.bin'
   RemoteGet 'sfv-rollback\build\Release\sfv_rollback.dll' $back | Out-Null
   Check 'the mod deploys (the build folder''s DLL matches)' ((Sha ([IO.File]::ReadAllBytes($dll))) -eq (Sha ([IO.File]::ReadAllBytes($back))))

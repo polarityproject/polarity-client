@@ -9,11 +9,11 @@ param([int]$Rounds = 5, [int]$Seconds = 45, [int]$Seed = 1, [switch]$Costumes, [
       [int]$MaxLatency = 90, [int]$MaxJitter = 30, [int]$MaxLoss = 8, [int]$Delay = 0)
 
 $w = (Join-Path $PSScriptRoot '..\..\StreetFighterV\Binaries\Win64')
-$sfvr = (Join-Path $PSScriptRoot '..\build\Release\sfvr.exe')
+$polarity = (Join-Path $PSScriptRoot '..\build\Release\polarity.exe')
 $rng = New-Object System.Random $Seed
 $results = @()
 
-function Log($i) { if ($i -eq 0) { Join-Path $w 'SFVR\logs\sfvr.log' } else { Join-Path $w "SFVR\logs\sfvr.$i.log" } }
+function Log($i) { if ($i -eq 0) { Join-Path $w 'Polarity\logs\polarity.log' } else { Join-Path $w "Polarity\logs\polarity.$i.log" } }
 function Cmd($i, $text) {
     $f = if ($i -eq 0) { Join-Path $w 'sfv_cmd.txt' } else { Join-Path $w "sfv_cmd.$i.txt" }
     Set-Content -Path $f -Value ($text -split ';' | ForEach-Object { $_.Trim() })
@@ -84,10 +84,10 @@ for ($r = 1; $r -le $Rounds; $r++) {
     "  sfv0: frozen $($row.frozen0) first desync '$($row.desync0)' | $($row.status0)"
     "  sfv1: frozen $($row.frozen1) first desync '$($row.desync1)' | $($row.status1)"
     if ($files.Count -eq 2) {
-        $diff = & $sfvr diff $files[0] $files[1] 2>&1
+        $diff = & $polarity diff $files[0] $files[1] 2>&1
         $row | Add-Member result (($diff | Select-String '^result|^state diverges' | Select-Object -First 1).Line)
         "  diff: $($row.result)"
-        $peers = & $sfvr peers $files[0] $files[1] 2>&1
+        $peers = & $polarity peers $files[0] $files[1] 2>&1
         $peers | Select-String '^frame' | ForEach-Object { "    $($_.Line)" }
     }
     $results += $row

@@ -124,7 +124,9 @@ void RotateLog(const std::wstring& dir, const std::wstring& stem)
         char line[96] = {};
         if (std::fgets(line, sizeof(line), f)) {
             int y, mo, d, h, mi, s;
-            if (std::sscanf(line, "SFVR log started %d-%d-%d %d:%d:%d", &y, &mo, &d, &h, &mi, &s) == 6) {
+            // "SFVR log started": a log from before Polarity (migrate.h renames them).
+            if (std::sscanf(line, "Polarity log started %d-%d-%d %d:%d:%d", &y, &mo, &d, &h, &mi, &s) == 6 ||
+                std::sscanf(line, "SFVR log started %d-%d-%d %d:%d:%d", &y, &mo, &d, &h, &mi, &s) == 6) {
                 t = {WORD(y), WORD(mo), 0, WORD(d), WORD(h), WORD(mi), WORD(s), 0};
                 known = true;
             }
@@ -270,9 +272,9 @@ std::wstring PackLogsToShare(std::string* error)
     }
     SYSTEMTIME t;
     GetLocalTime(&t);
-    const std::wstring path = DataDir() + L"\\SFVR-logs-" + Wide(Stamp(t)) + L".zip";
+    const std::wstring path = DataDir() + L"\\Polarity-logs-" + Wide(Stamp(t)) + L".zip";
     if (!WriteZip(path, files, error)) return L"";
-    PruneOldest(DataDir(), L"SFVR-logs-*.zip", 5);
+    PruneOldest(DataDir(), L"Polarity-logs-*.zip", 5);
     Log("files: packed %zu files to share into %s", files.size(), Narrow(path).c_str());
     return path;
 }

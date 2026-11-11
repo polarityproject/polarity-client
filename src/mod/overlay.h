@@ -11,7 +11,7 @@
 // thread-safe). While one of the mod's screens takes input the game gets no
 // keyboard or mouse messages and sees neutral pads.
 //
-// The SFVR hub fades in at launch in place of the game's main menu; Back +
+// The Polarity hub fades in at launch in place of the game's main menu; Back +
 // Start (or F1) brings it back from the game's menus. In a match the same
 // opens the leave modal (`overlay show|hide|toggle` in the command file);
 // watching, the watch panel.
@@ -78,6 +78,9 @@ bool OverlayTakesInput();
 void SetOverlayTexture(void* srv, uint32_t width, uint32_t height, const std::string& label);
 // The mod's version, shown in the panel's title.
 void SetOverlayBuild(const std::string& version);
+// This start moved an SFVR install's files to Polarity's names (migrate.h):
+// a toast says so, once, at the first menu.
+void SetMigratedNotice();
 // Frames the game presented per second, recently.
 float RenderFps();
 

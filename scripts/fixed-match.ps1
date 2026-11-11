@@ -6,7 +6,7 @@ param([int]$Seconds = 55, [switch]$NoReload, [string]$HostPick = 'RYU 0 1 0 1 1'
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib.ps1')
 $t = $env:TEMP
-$S = (Join-Path $PSScriptRoot '..\build\Release\sfvr.exe')
+$S = (Join-Path $PSScriptRoot '..\build\Release\polarity.exe')
 Assert-GamesRunning 2
 if (-not $NoReload) { & "$PSScriptRoot\reload.ps1" -Instances 0,1 | Out-Null; Start-Sleep 3 }
 if ($Server -like '127.0.0.1:*') { Start-RoomsServer ([int]($Server -split ':')[1]) }

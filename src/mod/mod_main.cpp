@@ -17,6 +17,7 @@
 #include "mod/lifecycle.h"
 #include "mod/files.h"
 #include "mod/log.h"
+#include "mod/migrate.h"
 #include "mod/probes.h"
 #include "mod/sfv_game.h"
 #include "mod/report_upload.h"
@@ -38,7 +39,7 @@ namespace sfv::mod {
 
 namespace {
 
-constexpr const char* kModVersion = kSfvrVersion; // core/version.h
+constexpr const char* kModVersion = kPolarityVersion; // core/version.h
 
 std::wstring DirectoryOf(HMODULE module)
 {
@@ -68,25 +69,29 @@ DWORD WINAPI ModMain(LPVOID self)
     GetEnvironmentVariableW(L"SFV_INSTANCE", instanceText, 8);
     const int instance = _wtoi(instanceText);
     const std::wstring suffix = instance == 0 ? L"" : L"." + std::to_wstring(instance);
-    // The event log in the SFVR folder players share (files.h); the last
+    // An SFVR install's files move to Polarity's names first (migrate.h).
+    const MigrateResult migrated = MigrateFromSfvr(dir);
+    // The event log in the Polarity folder players share (files.h); the last
     // run's moves aside first.
-    SetDataDir(dir + L"\\SFVR");
+    SetDataDir(dir + L"\\Polarity");
     EnsureDirectory(LogsDir());
     EnsureDirectory(MatchesDir());
     // A report of the last run if it ended badly (from its log, before the
     // log moves aside), then this run counts as running.
     const std::string lastRun = CheckPreviousRun(suffix, kModVersion);
-    RotateLog(LogsDir(), L"sfvr" + suffix);
-    LogOpen(LogsDir() + L"\\sfvr" + suffix + L".log");
+    RotateLog(LogsDir(), L"polarity" + suffix);
+    LogOpen(LogsDir() + L"\\polarity" + suffix + L".log");
+    for (const std::string& line : migrated.lines) Log("%s", line.c_str());
+    if (migrated.waited) Log("migrate: waited for another game moving SFVR's files");
     if (!lastRun.empty()) Log("%s", lastRun.c_str());
     InstallCrashHandler(suffix, kModVersion);
-    std::wstring iniPath = dir + L"\\sfv_rollback" + suffix + L".ini";
-    if (GetFileAttributesW(iniPath.c_str()) == INVALID_FILE_ATTRIBUTES) iniPath = dir + L"\\sfv_rollback.ini";
-    const std::wstring panelPath = dir + L"\\sfv_rollback.panel" + suffix + L".ini";
+    std::wstring iniPath = dir + L"\\polarity" + suffix + L".ini";
+    if (GetFileAttributesW(iniPath.c_str()) == INVALID_FILE_ATTRIBUTES) iniPath = dir + L"\\polarity.ini";
+    const std::wstring panelPath = dir + L"\\polarity.panel" + suffix + L".ini";
     const Config config = LoadConfig(iniPath, dir, panelPath);
-    Log("SFVR %s, instance %d, mode %s", kModVersion, instance, ModeName(config.mode));
-    if (GetEnvironmentVariableW(L"SFVR_RESTARTED", nullptr, 0)) {
-        SetEnvironmentVariableW(L"SFVR_RESTARTED", nullptr);
+    Log("Polarity %s, instance %d, mode %s", kModVersion, instance, ModeName(config.mode));
+    if (GetEnvironmentVariableW(L"POLARITY_RESTARTED", nullptr, 0)) {
+        SetEnvironmentVariableW(L"POLARITY_RESTARTED", nullptr);
         Log("started again by the last run's restart (after an update)");
     }
     {
@@ -124,7 +129,7 @@ DWORD WINAPI ModMain(LPVOID self)
     // No AddressTest for the checksums: whether a value is an address in use
     // is a property of one process, so a value equal on both machines could be
     // masked on one side only. Pointer fields are masked by the shared noise
-    // file instead (sfvr peers --pointers), identically on both machines.
+    // file instead (polarity peers --pointers), identically on both machines.
     if (haveMap) game.SetStateMap(&stateMap);
     // The noise mask is built in, so every copy of a build masks the same
     // words; [mod] noise_file swaps in a file (for learning new words: stress
@@ -149,7 +154,8 @@ DWORD WINAPI ModMain(LPVOID self)
     InstallControl(dir + L"\\sfv_cmd" + suffix + L".txt", config.virtualPads, config.alwaysActive);
     InstallOverlay(panelPath);
     InstallUiSound(image);
-    SetOverlayBuild(std::string("SFVR ") + kModVersion);
+    SetOverlayBuild(std::string("Polarity ") + kModVersion);
+    if (migrated.moved) SetMigratedNotice();
     InstallUpdater(dir, kModVersion, Narrow(config.updateUrl), config.updateCheck);
     InstallBattleSetup(image);
     InstallBootProbes(image, config.verbose);

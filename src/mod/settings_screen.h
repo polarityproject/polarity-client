@@ -1,5 +1,5 @@
 #pragma once
-// SFVR settings (docs/online-lobby.md "The SFVR hub and settings"; mock-up
+// Polarity settings (docs/online-lobby.md "The Polarity hub and settings"; mock-up
 // board "Settings"): Start in the hub. One scrolling list with a header per
 // category (Updates first, so a new version is seen at once; then Online,
 // Game, Reports), a side panel for the focused row, and the stripe's hint.

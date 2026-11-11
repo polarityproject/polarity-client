@@ -1,9 +1,9 @@
 # Names functions and lines in the mod DLL for crash stack addresses.
-#   python symbolize.py <sfv_rollback.dll> <module base hex> <address hex>...
+#   python symbolize.py <polarity.dll> <module base hex> <address hex>...
 # The base is logged at startup ("module at ..."); an address written +<hex>
 # is that far from the base (a crash report's sfv_rollback...dll+<offset>:
 # any base will do). The PDB is found through the path recorded in the DLL
-# (build\Release\sfv_rollback.pdb), else on _NT_SYMBOL_PATH (a release's:
+# (build\Release\polarity.pdb), else on _NT_SYMBOL_PATH (a release's:
 # dist\symbols\<version>).
 import ctypes, ctypes.wintypes as wt, sys
 

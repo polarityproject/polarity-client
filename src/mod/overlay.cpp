@@ -105,7 +105,7 @@ HWND g_window = nullptr;
 bool g_imgui = false;
 
 // In a match: the leave modal is up (Back + Start). The old F1 panel is gone:
-// the hub, the rooms and SFVR settings do its jobs.
+// the hub, the rooms and Polarity settings do its jobs.
 std::atomic<bool> g_visible{false};
 std::atomic<bool> g_hubAllowed{false}; // at the game's menus with no session: Back + Start opens the hub
 std::atomic<bool> g_chordKey{false};   // F1, the keyboard's Back + Start (window thread -> FeedPads)
@@ -120,6 +120,12 @@ std::atomic<bool> g_voting{false};        // the post-match vote is up and takes
 std::atomic<bool> g_watchHold{false};
 std::atomic<HWND> g_inputWindow{nullptr}; // the window ImGui reads input for
 std::string g_build;                      // the mod's version (SetOverlayBuild)
+// g_build without the product name ("0.4.0" from "Polarity 0.4.0").
+std::string BuildVersion()
+{
+    const size_t space = g_build.find(' ');
+    return space == std::string::npos ? g_build : g_build.substr(space + 1);
+}
 std::string g_restartError;               // the update modal's last failed restart, why
 std::atomic<float> g_fps{0};              // presented frames per second (RenderFps)
 std::atomic<bool> g_inMatch{false};       // a netplay match runs (the frame-drop log, Start held for the panel)
@@ -267,7 +273,7 @@ void FeedPads(ImGuiIO& io)
     if (!start && !(buttons & XINPUT_GAMEPAD_BACK)) chordInPress = false;
     startWas = start;
     // The screen the chord opened does not see its Start (the hub's Start
-    // is SFVR settings) until both are let go.
+    // is Polarity settings) until both are let go.
     if (chordInPress) buttons &= static_cast<uint16_t>(~kChord);
     for (const Map& m : kButtons) io.AddKeyEvent(m.key, (buttons & m.button) != 0);
     constexpr float kDead = 7849.0f; // XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE
@@ -430,7 +436,7 @@ std::pair<void*, int> EmbeddedFont(int id)
     return {data, data ? static_cast<int>(SizeofResource(self, found)) : 0};
 }
 
-// The bundled CJK font (SFVR\fonts\NotoSansCJK-Medium.ttc, read once and
+// The bundled CJK font (Polarity\fonts\NotoSansCJK-Medium.ttc, read once and
 // kept: the atlas only points at it), and its face for Windows' display
 // language: the Han characters Chinese, Japanese and Korean share take the
 // player's own shapes (a Chinese system drew them in Japanese ones once).
@@ -1493,7 +1499,7 @@ SelectSide SelectSideFor(const NetView& v, int i)
     s.rows[6].value = FramesText(delay);
     const int fixed = NetOptions().delaySetting;
     const int suggested = v.SuggestedDelay();
-    s.rows[6].hint = fixed >= 0 ? FramesText(fixed) + " in SFVR settings. Lower feels sharper but rolls back more."
+    s.rows[6].hint = fixed >= 0 ? FramesText(fixed) + " in Polarity settings. Lower feels sharper but rolls back more."
                      : suggested >= 0 ? "Suggested for a " + std::to_string(v.link.pingMs) + " ms ping: " + FramesText(suggested) + ". Lower feels sharper but rolls back more."
                                       : std::string("Lower feels sharper but rolls back more.");
     if (chara < 0) return s;
@@ -1747,6 +1753,16 @@ void AddToast(const std::string& text, ImVec4 color = ImVec4(1, 1, 1, 1), int se
 
 bool OnMenuScreen();
 
+std::atomic<bool> g_migrated{false}; // SetMigratedNotice: not toasted yet
+
+// After the move from SFVR (migrate.h), at the first menu.
+void ToastMigrated()
+{
+    if (!g_migrated || !OnMenuScreen()) return;
+    g_migrated = false;
+    AddToast("SFVR is now Polarity. Your settings, replays and logs are in the Polarity folder.", kGold, 12);
+}
+
 // Desync reports: once ever, at the main menu, that they are sent (and where
 // that is turned off); then each match's, as it is sent.
 void ToastReports()
@@ -1757,7 +1773,7 @@ void ToastReports()
         if (!g_panelPath.empty() && NetOptions().uploadReports &&
             !GetPrivateProfileIntW(L"report", L"notice_shown", 0, g_panelPath.c_str())) {
             WritePrivateProfileStringW(L"report", L"notice_shown", L"1", g_panelPath.c_str());
-            AddToast("SFVR sends desync and crash reports to help fix bugs. You can turn this off in SFVR settings.", kGold, 15);
+            AddToast("Polarity sends desync and crash reports to help fix bugs. You can turn this off in Polarity settings.", kGold, 15);
         }
     }
     static int toasted = 0;
@@ -1779,8 +1795,8 @@ void ToastUpdate()
     if (HubOpen() && !RoomsScreenOpen()) return;
     toasted = u.latest;
     const bool inRoom = RoomsScreenOpen() && RoomsSnapshot().state == RoomsView::State::Room;
-    Log("overlay: SFVR %s is out: a toast (%s)", u.latest.c_str(), inRoom ? "in a room" : "at the game's menus");
-    AddToast("SFVR " + u.latest + " is out. " + (inRoom ? "Leave the room to update." : "Press Back + Start to update."), kGold, 10);
+    Log("overlay: Polarity %s is out: a toast (%s)", u.latest.c_str(), inRoom ? "in a room" : "at the game's menus");
+    AddToast("Polarity " + u.latest + " is out. " + (inRoom ? "Leave the room to update." : "Press Back + Start to update."), kGold, 10);
 }
 
 void ToastChanges(const NetView& now)
@@ -1816,7 +1832,7 @@ void ToastChanges(const NetView& now)
 }
 
 // A desync in this match: a note at the bottom centre of the fight until the
-// match is over (the recording is in SFVR\matches, named ..._desync.sfvr).
+// match is over (the recording is in Polarity\matches, named ..._desync.sfvr).
 Notice DesyncNotice(const NetView& v)
 {
     return {"DESYNC AT FRAME " + std::to_string(v.desyncFrame), v.desyncReport.empty() ? "saving the recording..." : "recording saved",
@@ -2033,7 +2049,7 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
             o.delay = g_choices.delay;
             const int fixed = NetOptions().delaySetting, suggested = v.SuggestedDelay();
             if (v.spectator) {}
-            else if (fixed >= 0) std::snprintf(line, sizeof(line), "Delay %d, from SFVR settings", fixed), o.suggestion = line;
+            else if (fixed >= 0) std::snprintf(line, sizeof(line), "Delay %d, from Polarity settings", fixed), o.suggestion = line;
             else if (suggested >= 0) std::snprintf(line, sizeof(line), "Suggested delay %d (ping %u ms)", suggested, v.link.pingMs), o.suggestion = line;
             if (voting && v.voteSecondsLeft >= 0 && s.choice == lobby::Choice::None) {
                 // Playing on: no choice from either is back to the room (both
@@ -2126,7 +2142,7 @@ NetView PreviewView(NetView::Phase phase)
 std::mutex g_previewMutex;
 std::string g_previewWords; // from PreviewOverlay, applied on the render thread
 
-// SFVR settings' rows from the live state (settings_screen.h), and what
+// Polarity settings' rows from the live state (settings_screen.h), and what
 // changing them does.
 void UseServer(const std::string& chosen)
 {
@@ -2143,7 +2159,7 @@ void UseServer(const std::string& chosen)
     });
 }
 
-// The servers SFVR settings offers: the public one first, then the ones used before.
+// The servers Polarity settings offers: the public one first, then the ones used before.
 std::vector<std::string> ServerChoices()
 {
     std::vector<std::string> list{kDefaultServer};
@@ -2168,13 +2184,13 @@ std::vector<SettingsRow> SettingsRows()
     };
     const UpdateView u = UpdateViewNow();
     using U = UpdateView::State;
-    const std::string current = u.current.empty() ? g_build : "SFVR " + u.current;
+    const std::string current = u.current.empty() ? g_build : "Polarity " + u.current;
     // Updates.
     if (u.state == U::Available || u.state == U::Downloading || u.state == U::Ready) {
         SettingsRow& r = row("install", "UPDATES", "Install " + u.latest);
         r.highlight = true;
         r.kicker = "NEW VERSION";
-        r.title = "SFVR " + u.latest;
+        r.title = "Polarity " + u.latest;
         if (!u.notes.empty()) r.lines.push_back((u.published.empty() ? "" : "From " + u.published + ": ") + u.notes);
         r.goldFirst = !r.lines.empty();
         r.lines.push_back("You can only play people on the same version.");
@@ -2207,9 +2223,9 @@ std::vector<SettingsRow> SettingsRows()
         case U::Idle: r.lines = {"Not checked yet."}; break;
         case U::Checking: r.lines = {"Checking for updates..."}; break;
         case U::UpToDate: r.lines = {"You're up to date."}; break;
-        case U::Available: r.lines = {"SFVR " + u.latest + " is available."}; break;
-        case U::Downloading: r.lines = {"Downloading SFVR " + u.latest + "."}; break;
-        case U::Ready: r.lines = {"SFVR " + u.latest + " installs when you restart the game."}; break;
+        case U::Available: r.lines = {"Polarity " + u.latest + " is available."}; break;
+        case U::Downloading: r.lines = {"Downloading Polarity " + u.latest + "."}; break;
+        case U::Ready: r.lines = {"Polarity " + u.latest + " installs when you restart the game."}; break;
         case U::Failed: r.lines = {"The check failed: " + u.message + "."}; break;
         }
         r.hint = "Nothing installs without asking you.";
@@ -2343,11 +2359,11 @@ std::vector<SettingsRow> SettingsRows()
                    "log and a small crash dump, sent at the next start."};
     }
     {
-        SettingsRow& r = row("folder", "REPORTS", "SFVR folder");
+        SettingsRow& r = row("folder", "REPORTS", "Polarity folder");
         r.highlight = true;
         r.value = "Open";
         r.action = "Open";
-        r.kicker = "SFVR FOLDER";
+        r.kicker = "POLARITY FOLDER";
         std::string path;
         for (wchar_t ch : DataDir()) path += ch < 128 ? static_cast<char>(ch) : '_';
         r.title = path;
@@ -2361,7 +2377,7 @@ std::vector<SettingsRow> SettingsRows()
         r.action = "Pack";
         r.kicker = "PACK LOGS";
         r.title = "Pack logs";
-        r.lines = {"Zips logs and recent recordings into one file in the SFVR folder, to send with a bug report."};
+        r.lines = {"Zips logs and recent recordings into one file in the Polarity folder, to send with a bug report."};
         if (!g_packResult.empty()) r.lines.push_back(g_packResult);
     }
     // Third-party acknowledgements, all in one place (last).
@@ -2382,7 +2398,7 @@ std::vector<SettingsRow> SettingsRows()
     return rows;
 }
 
-// The benchmark's modals over SFVR settings: before a run, and a result.
+// The benchmark's modals over Polarity settings: before a run, and a result.
 enum class BenchModal { None, Confirm, Result };
 BenchModal g_benchModal = BenchModal::None;
 int g_benchChoice = 0;
@@ -2404,7 +2420,7 @@ void OpenBenchmarkModal(bool result)
 void StartBenchmarkRun()
 {
     g_benchModal = BenchModal::None;
-    if (!StartBenchmark(g_build.rfind("SFVR ", 0) == 0 ? g_build.substr(5) : g_build)) {
+    if (!StartBenchmark(BuildVersion())) {
         AddToast("The benchmark can't start now.", kRed, 4);
         return;
     }
@@ -2457,7 +2473,7 @@ void DrawBenchmarkModal(const HubFonts& f, bool takeInput)
         char kick[64];
         std::snprintf(kick, sizeof(kick), "BENCHMARK \xC2\xB7 %s %d, %02d:%02d", kMon[tm.tm_mon], tm.tm_mday, tm.tm_hour, tm.tm_min);
         m.kicker = kick;
-        m.aside = "SFVR " + b.version;
+        m.aside = "Polarity " + b.version;
         m.danger = !b.matched;
         m.prompts = {{"button_a", "Choose"}, {"button_b", "Back"}};
         float y = Modal(d, bold, f.body, m, &clicked);
@@ -2507,7 +2523,7 @@ void DrawBenchmarkModal(const HubFonts& f, bool takeInput)
             Text(d, bold, g_v.L(19), g_v.P(m.x0 + 56, y), look::kCream,
                  "The round played differently from frame " + std::to_string(b.firstDiffer) + ".");
             Text(d, f.body, g_v.L(19), g_v.P(m.x0 + 56, y + 30), look::kSoft,
-                 "This PC would fall out of sync online. Pack logs in SFVR settings and send them in.");
+                 "This PC would fall out of sync online. Pack logs in Polarity settings and send them in.");
         }
         const float by = m.y0 + m.h - 46 - 22 - 48;
         const bool done = Button(d, bold, m.x0 + 28, by, m.x0 + m.w / 2 - 6, by + 48, "Done", g_benchChoice == 0);
@@ -2678,7 +2694,7 @@ void StartTableSession(const keeper::TableTicket& t)
 // the menus' preload loads it, the room sees it); B on the grid keeps the
 // pick that was in effect. X opens the stage select: the preferred stage,
 // played when this player hosts as P1. Input delay is the player's usual
-// delay (SFVR settings' Input delay): the your-turn card starts from it.
+// delay (Polarity settings' Input delay): the your-turn card starts from it.
 struct MyCharacter {
     Choices saved;               // the pick in effect: the card's, B's on the grid
     bool fromProfile = false;    // nothing saved yet: the Fighter Profile's favorite
@@ -2908,7 +2924,7 @@ void ApplyMyCharacterInput(const SelectInput& in)
         if (!fighters.empty()) SwitchCharacter(c, fighters[rng() % fighters.size()]);
     }
     if (in.row == 6 && in.delta) {
-        // Auto, 0, 1, ... 8, around (as SFVR settings).
+        // Auto, 0, 1, ... 8, around (as Polarity settings).
         const int n = kMaxDelaySetting + 2;
         g_my.delaySetting = static_cast<int8_t>(((g_my.delaySetting + 1 + in.delta) % n + n) % n - 1);
     }
@@ -3117,7 +3133,7 @@ void DrawHubScreens(bool takeInput)
     if (!RoomsOpened()) {
         OpenHubRooms(o);
     }
-    // A new name in SFVR settings: connected again under it at once, or,
+    // A new name in Polarity settings: connected again under it at once, or,
     // in a room (or on the way into one), once the player is out of it, so
     // the next room has it.
     if (const std::string name = LocalPlayerName(); name != g_nameSeen) {
@@ -3165,7 +3181,7 @@ void DrawHubScreens(bool takeInput)
     const UpdateView update = UpdateViewNow();
     if (RoomsScreenOpen() && !SettingsScreenOpen() && UpdatePending(update) && rooms.state != RoomsView::State::Room &&
         rooms.state != RoomsView::State::Creating && rooms.state != RoomsView::State::Joining) {
-        Log("hub: SFVR %s is out: the rooms screen gives way to the hub's update modal", update.latest.c_str());
+        Log("hub: Polarity %s is out: the rooms screen gives way to the hub's update modal", update.latest.c_str());
         CloseRoomsScreen();
         OpenUpdateModal();
     }
@@ -3272,7 +3288,7 @@ void DrawHubScreens(bool takeInput)
     if (SettingsScreenOpen()) {
         SettingsInput in;
         const bool modal = g_benchModal != BenchModal::None;
-        DrawSettingsScreen(fonts, g_build.rfind("SFVR ", 0) == 0 ? g_build.substr(5) : g_build, SettingsRows(), takeInput && !modal, &in);
+        DrawSettingsScreen(fonts, BuildVersion(), SettingsRows(), takeInput && !modal, &in);
         if (!in.row.empty()) ApplySetting(in);
         if (in.back && !modal) CloseSettingsScreen();
         if (modal) DrawBenchmarkModal(fonts, takeInput);
@@ -3461,7 +3477,7 @@ void DrawPreviews()
         AddToast("Player Two wants a rematch");
         AddToast("A spectator joined (1 watching)", kDim);
         AddToast("Session over: the other player left", kRed, 6);
-        AddToast("SFVR sends desync and crash reports to help fix bugs. You can turn this off in SFVR settings.", kGold, 15);
+        AddToast("Polarity sends desync and crash reports to help fix bugs. You can turn this off in Polarity settings.", kGold, 15);
     }
     const Preview& p = g_preview;
     if (!p.Any()) return;
@@ -3577,7 +3593,7 @@ void Draw(IDXGISwapChain* swapChain)
         WarmSelectTextures();
     }
     // Reaching a session's lobby sets this player's input delay to their
-    // setting (SFVR settings), with Auto the suggestion for the ping between
+    // setting (Polarity settings), with Auto the suggestion for the ping between
     // them (once a session; it can be changed from there). A session a
     // command started (tests) keeps the delay its commands set, and a
     // table's set the one chosen on its your-turn card: from its lobby
@@ -3642,6 +3658,7 @@ void Draw(IDXGISwapChain* swapChain)
     ToastChanges(view);
     // Not over a match: it waits for a menu.
     if (OnMenuScreen()) ToastUpdate();
+    ToastMigrated();
     ToastReports();
     // The select screen preview covers everything.
     if (const int wanted = g_selectRequest.load(); wanted >= 0 && g_tables.loaded) {
@@ -3720,7 +3737,7 @@ void Draw(IDXGISwapChain* swapChain)
             ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, static_cast<int>(black * 255)));
         }
     }
-    // The SFVR hub over the game's menus: after the title, and when Start is
+    // The Polarity hub over the game's menus: after the title, and when Start is
     // held there. It goes when a session starts or a battle loads; Play
     // Offline closes it (and the hub's presence connection with it).
     const bool atMenus = OnMenuScreen() && (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended || tableConnecting) && !preview;
@@ -4126,7 +4143,7 @@ bool FindSwapChainFunctions()
     WNDCLASSEXW wc{sizeof(wc)};
     wc.lpfnWndProc = DefWindowProcW;
     wc.hInstance = GetModuleHandleW(nullptr);
-    wc.lpszClassName = L"SfvRollbackOverlayProbe";
+    wc.lpszClassName = L"PolarityOverlayProbe";
     RegisterClassExW(&wc);
     HWND w = CreateWindowExW(0, wc.lpszClassName, L"", WS_OVERLAPPEDWINDOW, 0, 0, 64, 64, nullptr, nullptr, wc.hInstance,
                              nullptr);
@@ -4357,6 +4374,11 @@ void PreviewOverlay(const std::string& words)
 void SetOverlayBuild(const std::string& version)
 {
     g_build = version;
+}
+
+void SetMigratedNotice()
+{
+    g_migrated = true;
 }
 
 float RenderFps()

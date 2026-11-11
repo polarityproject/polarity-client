@@ -82,7 +82,7 @@ public:
     bool Receive(Packet&) override { return false; }
 };
 
-// Where a bare file name is looked for: SFVR\matches (files.h), then the
+// Where a bare file name is looked for: Polarity\matches (files.h), then the
 // reports folder earlier builds wrote to (next to the exe).
 std::string FindRecording(const std::string& name)
 {

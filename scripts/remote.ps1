@@ -95,9 +95,12 @@ function RemoteStart([int]$count = 1) {
 # This build's mod and test scripts to the second PC (its up.ps1 copies its
 # build folder's DLL into the game folder when it starts the games).
 function RemoteDeploy {
-  $dll = Join-Path $PSScriptRoot '..\build\Release\sfv_rollback.dll'
-  RemotePut $dll 'sfv_rollback.dll' | Out-Null
-  RemotePut $dll 'sfv-rollback\build\Release\sfv_rollback.dll' | Out-Null
+  # Paths under the second PC's repository folder keep the prefix
+  # sfv-rollback\: its agent maps it to that folder whatever it is called
+  # (an agent from before the rename knows only this one).
+  $dll = Join-Path $PSScriptRoot '..\build\Release\polarity.dll'
+  RemotePut $dll 'polarity.dll' | Out-Null
+  RemotePut $dll 'sfv-rollback\build\Release\polarity.dll' | Out-Null
   # The loader too: its up.ps1 copies it into the game folder with no game running.
   RemotePut (Join-Path $PSScriptRoot '..\build\Release\xinput1_3.dll') 'sfv-rollback\build\Release\xinput1_3.dll' | Out-Null
   foreach ($s in 'agent.ps1', 'agent_steamos.py', 'cmd.ps1', 'up.ps1', 'lib.ps1', 'logtail.ps1', 'win.ps1', 'weyve-server.ps1') {

@@ -613,7 +613,7 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         Text(d, bold, g_v.L(19), g_v.P(kDetailX0 + 24, ry), kSoft, Fit(bold, 19, line, kDetailX1 - kDetailX0 - 48));
         ry += 32;
         const bool playable = ReplayCompatible(de->header.gameBuild, live.buildId);
-        const std::string ver = "SFVR " + de->header.modVersion;
+        const std::string ver = "Polarity " + de->header.modVersion;
         if (playable) {
             d->AddLine(g_v.P(kDetailX0 + 26, ry + 12), g_v.P(kDetailX0 + 31, ry + 17), look::kOk, g_v.L(2.4f));
             d->AddLine(g_v.P(kDetailX0 + 31, ry + 17), g_v.P(kDetailX0 + 40, ry + 6), look::kOk, g_v.L(2.4f));

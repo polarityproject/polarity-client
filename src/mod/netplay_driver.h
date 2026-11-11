@@ -34,7 +34,7 @@ namespace sfv::mod {
 
 class SfvGame;
 
-// The public rooms server (the sfvr-server repository's Docker stack, the
+// The public rooms server (the polarity-server repository's Docker stack, the
 // rooms VPS from 0.3.0): where a fresh
 // install hosts and joins unless [weyve] server or the panel's Debug tab
 // says otherwise.
@@ -57,7 +57,7 @@ struct NetplayOptions {
     uint16_t udpPort = 47001;              // UDP: the host listens here; a joiner binds any port
     std::string udpHost = "127.0.0.1";     // UDP: address the host writes into its code
     uint8_t inputDelay = 2;
-    // SFVR settings' Input delay: kDelayAuto (each session starts at the
+    // Polarity settings' Input delay: kDelayAuto (each session starts at the
     // suggestion for its link, core/input_delay.h), 0-8 that many frames
     // every session (user, 2026-11-04). Either can still be changed in a
     // session.
@@ -97,7 +97,7 @@ struct NetplayOptions {
     bool hotkeys = false;                  // F7 hosts, F8 joins (testing; capture tools bind F8)
     bool reconcileStart = true;            // joiner takes the host's values where the frozen states differ (lobby.h)
     bool allowSpectators = true;           // host: others may watch
-    bool uploadReports = true;             // desync reports go to the SFVR server (report_upload.h)
+    bool uploadReports = true;             // desync reports go to the Polarity server (report_upload.h)
     bool autoReady = false;                // ready as soon as the lobby is reached (commands, tests)
     bool showOwnFps = false;               // the match HUD also shows this game's frame rate
     bool shareCountry = true;              // others see this player's flag (off: WeyveService::SetHideCountry)

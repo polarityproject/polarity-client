@@ -6,8 +6,8 @@
 #
 # Layout: the game is at .../steamapps/common/StreetFighterV/StreetFighterV/
 # Binaries/Win64/; this script in a scripts/ folder (its parent is the
-# "sfv-rollback" folder deploys write to), best beside the game:
-#   .../steamapps/common/StreetFighterV/sfv-rollback/scripts/agent_steamos.py
+# "polarity-client" folder deploys write to), best beside the game:
+#   .../steamapps/common/StreetFighterV/polarity-client/scripts/agent_steamos.py
 # It finds the game's Win64 folder by itself (each folder above the script,
 # then Steam's libraries); --game names it outright.
 # Run it in Desktop Mode (Konsole), with a token you make up:
@@ -22,7 +22,7 @@
 #   cmd    instance commands      mod commands (';'-separated), as cmd.ps1 writes them
 #   log    instance from          the log from line `from` on (from -1: its count)
 #   put    path data              writes a file (base64) under the game folder
-#                                 (Binaries/Win64/...) or sfv-rollback/...
+#                                 (Binaries/Win64/...) or polarity-client/... (or sfv-rollback/...)
 #   get    path                   reads such a file (base64)
 #   ini    file section key value sets a key in an ini under Binaries/Win64
 #   shot   instance [scale]       a screenshot (PNG, base64), taken by the mod
@@ -74,12 +74,14 @@ class Agent:
 
     def inside(self, path):
         # A path a request names (Windows or Unix separators), kept inside
-        # the game's Win64 folder or the sfv-rollback folder.
-        # "sfv-rollback/..." is under the repo folder, whatever it is called
+        # the game's Win64 folder or the polarity-client folder.
+        # "polarity-client/..." (or "sfv-rollback/...", its name before the
+        # rename) is under the repo folder, whatever it is called
         # or wherever it is.
         p = str(path).replace('\\', '/')
-        if p.startswith('sfv-rollback/'):
-            full = os.path.realpath(os.path.join(self.repo, p[len('sfv-rollback/'):]))
+        prefix = next((x for x in ('polarity-client/', 'sfv-rollback/') if p.startswith(x)), None)
+        if prefix:
+            full = os.path.realpath(os.path.join(self.repo, p[len(prefix):]))
         else:
             full = os.path.realpath(os.path.join(self.game, p))
         for root in (self.game, self.repo):
@@ -88,8 +90,8 @@ class Agent:
         raise ValueError(f'outside the game folder: {path}')
 
     def log_path(self, instance):
-        name = 'sfvr.log' if instance == 0 else f'sfvr.{instance}.log'
-        return os.path.join(self.game, 'SFVR', 'logs', name)
+        name = 'polarity.log' if instance == 0 else f'polarity.{instance}.log'
+        return os.path.join(self.game, 'Polarity', 'logs', name)
 
     def cmd_path(self, instance):
         return os.path.join(self.game, 'sfv_cmd.txt' if instance == 0 else f'sfv_cmd.{instance}.txt')
@@ -166,7 +168,7 @@ class Agent:
             'steam': shutil.which('steam') or '',
             'launchOptions': opts if opts is not None else '(not found)',
             'modLoads': bool(opts and 'xinput1_3' in opts),
-            'mod': os.path.exists(os.path.join(self.game, 'sfv_rollback.dll')),
+            'mod': os.path.exists(os.path.join(self.game, 'polarity.dll')),
             'loader': os.path.exists(os.path.join(self.game, 'xinput1_3.dll')),
         }
 
@@ -176,13 +178,13 @@ class Agent:
         # with no game running; the bundled CJK font.
         out = []
         build = os.path.join(self.repo, 'build', 'Release')
-        for name in ['sfv_rollback.dll'] + ([] if running else ['xinput1_3.dll']):
+        for name in ['polarity.dll'] + ([] if running else ['xinput1_3.dll']):
             src = os.path.join(build, name)
             if os.path.exists(src):
                 shutil.copyfile(src, os.path.join(self.game, name))
                 out.append(f'copied {name}')
         cjk = os.path.join(build, 'fonts', 'NotoSansCJK-Medium.ttc')
-        cjk_to = os.path.join(self.game, 'SFVR', 'fonts', 'NotoSansCJK-Medium.ttc')
+        cjk_to = os.path.join(self.game, 'Polarity', 'fonts', 'NotoSansCJK-Medium.ttc')
         if os.path.exists(cjk) and (not os.path.exists(cjk_to) or os.path.getsize(cjk) != os.path.getsize(cjk_to)):
             os.makedirs(os.path.dirname(cjk_to), exist_ok=True)
             shutil.copyfile(cjk, cjk_to)
@@ -273,7 +275,7 @@ class Agent:
         # Closed on purpose: their crash reports' "running" marks go (the mod
         # would report each as a run that ended badly, crash_report.h).
         cleared = 0
-        for f in glob.glob(os.path.join(self.game, 'SFVR', 'crashes', 'running*.txt')):
+        for f in glob.glob(os.path.join(self.game, 'Polarity', 'crashes', 'running*.txt')):
             try:
                 os.remove(f)
                 cleared += 1
@@ -404,7 +406,7 @@ class Agent:
         # tool can capture the game in Game Mode.
         instance = int(q.get('instance') or 0)
         scale = int(q.get('scale') or 1)
-        rel = f'SFVR/agent-shot.{instance}.png'
+        rel = f'Polarity/agent-shot.{instance}.png'
         png = os.path.join(self.game, rel)
         if os.path.exists(png):
             os.remove(png)
@@ -506,12 +508,12 @@ def find_game(here):
 def main():
     here = os.path.dirname(os.path.realpath(__file__))
     repo = os.path.dirname(here)
-    ap = argparse.ArgumentParser(description='SFVR test agent for SteamOS (scripts/remote.ps1 drives it)')
+    ap = argparse.ArgumentParser(description='Polarity test agent for SteamOS (scripts/remote.ps1 drives it)')
     ap.add_argument('--token', required=True)
     ap.add_argument('--port', type=int, default=47100)
     ap.add_argument('--game', default='',
                     help="the game's Binaries/Win64 folder (default: found near this script, or in Steam's libraries)")
-    ap.add_argument('--repo', default=repo, help='the sfv-rollback folder (default: this script\'s parent)')
+    ap.add_argument('--repo', default=repo, help='the polarity-client folder (default: this script\'s parent)')
     a = ap.parse_args()
     if not a.game:
         a.game, tried = find_game(here)

@@ -2,14 +2,14 @@
 // Updates from the project site, asking first. At start the mod reads the
 // site's update info (core/update_info.h) and checks its signature; when it
 // names a newer version, the panel offers it (Settings, Updates, and a
-// toast). If the player agrees, the files are downloaded into SFVR\update,
+// toast). If the player agrees, the files are downloaded into Polarity\update,
 // checked against their sizes and SHA-256, and swapped in: each file the
 // game has (even the loaded loader, xinput1_3.dll) is renamed to
 // <name>.<n>.old, the new one moved into its place. The mod runs from a copy
 // (proxy/load_mod.h), so the new build takes over at the next launch, which
 // also deletes the .old files. The player's ini files are never touched.
 //
-// The site's address: [update] url in sfv_rollback.ini, else kDefaultUpdateUrl.
+// The site's address: [update] url in polarity.ini, else kDefaultUpdateUrl.
 
 #include <cstdint>
 #include <string>
@@ -17,12 +17,12 @@
 namespace sfv::mod {
 
 // The update channel this build follows, and its update info on the project
-// site (sfvr-site on Cloudflare Pages): main builds read update.json, the
+// site (polarity-web on Cloudflare Pages): main builds read update.json, the
 // rooms branch's builds rooms/update.json (docs/custom-rooms-plan.md). The
 // channel is part of the build, so 0.3.0, built from main, moves branch
 // installs back by itself. release.ps1 checks it against -Channel.
 constexpr const char* kUpdateChannel = "main";
-constexpr const char* kDefaultUpdateUrl = "https://sfvr.pages.dev/update.json";
+constexpr const char* kDefaultUpdateUrl = "https://polaritymod.link/update.json";
 
 struct UpdateView {
     enum class State {
@@ -65,7 +65,7 @@ bool UpdatePending(const UpdateView& v);
 // rooms show it).
 void UpdatePretendVersion(const std::string& version);
 // Once an update is installed: starts the game again (the new build). A new
-// game process is started with SFVR_WAIT_PID set (the loader waits for this
+// game process is started with POLARITY_WAIT_PID (and SFVR_WAIT_PID) set (the loader waits for this
 // one to end first: the game allows one copy of itself), then `window` is
 // asked to close. False (and why) if the new process could not start; this
 // game then keeps running.

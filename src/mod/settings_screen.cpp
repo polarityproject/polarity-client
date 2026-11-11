@@ -156,8 +156,8 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
     }
 
     // ---- the list ----
-    StageText(d, f.display, 40, 48, 22, Rgba(255, 255, 255), "SFVR SETTINGS");
-    StageText(d, f.body, 20, 48 + TextW(f.display, 40, "SFVR SETTINGS") + 28, 39, kCream, "Version " + version);
+    StageText(d, f.display, 40, 48, 22, Rgba(255, 255, 255), "POLARITY SETTINGS");
+    StageText(d, f.body, 20, 48 + TextW(f.display, 40, "POLARITY SETTINGS") + 28, 39, kCream, "Version " + version);
     // Layout: where each row and header sits (design y, before scrolling).
     std::vector<float> ys(count);
     float y = 0;

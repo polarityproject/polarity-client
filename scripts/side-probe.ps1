@@ -6,7 +6,7 @@ param([string]$P1 = 'ZGF', [string]$P2 = 'KRN')
 $s = $PSScriptRoot
 $w = (Join-Path $PSScriptRoot '..\..\StreetFighterV\Binaries\Win64')
 . (Join-Path $PSScriptRoot 'lib.ps1')
-$log = "$w\SFVR\logs\sfvr.log"
+$log = "$w\Polarity\logs\polarity.log"
 $n0 = @(Get-Content $log).Count
 $code = Start-Host 0 "pick $P1 0 1 0 1 1"
 Start-Join 1 $code "pick $P2 0 1 0 1 1" -NoWait | Out-Null

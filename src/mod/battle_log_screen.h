@@ -1,6 +1,6 @@
 #pragma once
-// The Battle Log (docs/battle-log-plan.md; mock-up canvas "SFVR Battle Log"):
-// the player's online matches from SFVR\replays, newest first, as a timeline
+// The Battle Log (docs/battle-log-plan.md; mock-up canvas "Polarity Battle Log"):
+// the player's online matches from Polarity\replays, newest first, as a timeline
 // or grouped by set (LB/RB), with filters by character (both sides, LT) and
 // by opponent (RT), the focused match's details, and A to watch it (the
 // replay viewer, replay_driver.h). Render thread, inside an ImGui frame;

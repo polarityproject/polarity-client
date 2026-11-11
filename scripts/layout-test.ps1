@@ -10,8 +10,8 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'remote.ps1') -Agent $Agent -Token $Token
 . (Join-Path $PSScriptRoot 'lib.ps1')
 $w = (Join-Path $PSScriptRoot '..\..\StreetFighterV\Binaries\Win64')
-$sfvr = Join-Path $PSScriptRoot '..\build\Release\sfvr.exe'
-$log0 = Join-Path $w 'SFVR\logs\sfvr.log'
+$polarity = Join-Path $PSScriptRoot '..\build\Release\polarity.exe'
+$log0 = Join-Path $w 'Polarity\logs\polarity.log'
 $serverAddress = if ($Server -match ':') { $Server } else { "${Server}:5555" }
 function Local($c) { Send-Cmd 0 $c -Wait }
 function Remote0($c) { RemoteCmd 0 $c -Wait }
@@ -71,7 +71,7 @@ Start-Sleep 4
 "== the recordings"
 $matchId = (LocalSince $n | Select-String 'netplay: match ([0-9a-f]{8})[0-9a-f]{8};' | Select-Object -Last 1).Matches.Groups[1].Value
 if (-not $matchId) { 'no match started (did the second PC join?)'; Local 'input2 restore'; Remote0 'input2 restore'; exit 1 }
-$mine = Get-ChildItem (Join-Path $w 'SFVR\matches') -Filter "*_${matchId}_p1.sfvr" | Select-Object -Last 1
+$mine = Get-ChildItem (Join-Path $w 'Polarity\matches') -Filter "*_${matchId}_p1.sfvr" | Select-Object -Last 1
 $out = Join-Path $env:TEMP "layout-test-$matchId"
 New-Item -ItemType Directory -Force $out | Out-Null
 # Its name as the second PC saved it (its clock can be a second apart).
@@ -79,11 +79,11 @@ $remoteName = (Remote 'log' @{ from = 0 }).lines | Select-String "netplay: saved
   Select-Object -Last 1 | ForEach-Object { $_.Matches.Groups[1].Value }
 if (-not $remoteName) { $remoteName = $mine.Name -replace '_p1\.sfvr$', '_p2.sfvr' }
 $theirs = Join-Path $out $remoteName
-try { RemoteGet "SFVR\matches\$remoteName" $theirs | Out-Null } catch { "cannot fetch $remoteName from the second PC: $_" }
+try { RemoteGet "Polarity\matches\$remoteName" $theirs | Out-Null } catch { "cannot fetch $remoteName from the second PC: $_" }
 # Each player's distinct non-zero button values, in the order they came (directions left out).
 function Presses($file, $player) {
-  $raw = & $sfvr inputs $file 0 99999 --raw 2>$null
-  if (-not $raw) { $raw = & $sfvr inputs $file 0 99999 }
+  $raw = & $polarity inputs $file 0 99999 --raw 2>$null
+  if (-not $raw) { $raw = & $polarity inputs $file 0 99999 }
   return $raw
 }
 $ok = $true
@@ -91,7 +91,7 @@ foreach ($file in @($mine.FullName, $theirs)) {
   if (-not (Test-Path $file)) { $ok = $false; continue }
   foreach ($p in 0, 1) {
     $side = if ($p -eq 0) { 'local' } else { 'remote' }
-    $got = & $sfvr presses $file $p 2>&1
+    $got = & $polarity presses $file $p 2>&1
     $want = (Expected $side | ForEach-Object { '{0:x}' -f $_ }) -join ' '
     $gotText = ($got -join ' ').Trim()
     $match = $gotText -eq $want

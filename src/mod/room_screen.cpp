@@ -791,7 +791,7 @@ void RulesModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, const Prom
         const float y = y0 + 120 + row * 58.0f;
         const bool on = row == g.rulesRow;
         Control(d, x0 + 28, y, x1 - 28, y + 50, on);
-        // As SFVR settings' rows: the medium weight at 21 (the light one read
+        // As Polarity settings' rows: the medium weight at 21 (the light one read
         // faintly on the glass), bold on the focused row's gold.
         ImFont* rowFont = on ? bold : (f.strong ? f.strong : f.body);
         Text(d, rowFont, g_v.L(21), g_v.P(x0 + 50, y + 11), on ? look::kInk : kCream, kRuleRows[row]);
