@@ -5,11 +5,14 @@ first paragraph is the summary players see in the game (Settings, Updates);
 `scripts/release.ps1` reads it, and refuses to publish a version that has no
 entry here. Newest first; the format follows [Keep a Changelog](https://keepachangelog.com).
 
-## [Unreleased]
+## [0.4.0] - 2026-11-11
 
-SFVR is now Polarity. Updating moves everything over by itself: your
-settings, replays, match recordings and logs carry on from the Polarity
-folder, and nothing needs doing.
+SFVR is now Polarity, and this update moves your settings, replays and
+logs over by itself. New: the Battle Log of your online matches with
+hitboxes, a frame meter and Replay Takeover, a Benchmark, Training while
+you wait at a table, room chat while watching, table rules when creating a
+room and My Character on the hub. Fixes for the desyncs and crashes
+reported from 0.3.x. 0.4.0 plays only 0.4.0.
 
 ### Added
 
@@ -34,6 +37,21 @@ folder, and nothing needs doing.
   its FIGHT on. 59 fps or more on average passes; it also checks the round
   played exactly as recorded, as a PC that plays it differently would
   desync online. The last result shows under it.
+- **Replay Takeover** in the Battle Log: during a round's fight, X takes
+  control of Player 1 and Y of Player 2. After a count of 3 you play that
+  side from player 1's pad against the recorded other side. When the round
+  ends, its KO screen plays and the replay fades back to where you took
+  over, paused. Start stops a takeover early.
+- **Hitboxes**: hurtboxes (green outline), throwable areas (yellow),
+  hitboxes (red), throwboxes (blue) and proximity block areas (gray), from
+  the game's own box lists. On by default in Training (Polarity settings,
+  Training, Hitboxes); View toggles them in Battle Log replays. Never
+  online.
+- **Frame meter**: 90 frames per player above the V-Trigger gauges, showing
+  startup, active, recovery, stun, invincibility, parry and counter-hit
+  frames, with startup, total and frame advantage. On by default in
+  Training (Polarity settings, Training, Frame meter); Start toggles it in
+  Battle Log replays, where it follows frame steps both ways. Never online.
 - **My Character** on the hub, beside Custom Rooms: your room loadout's
   character over its stage, with its V-Skill and V-Trigger ("Seth VS1 /
   VT2"). A opens the same My Character screen as in a room.
