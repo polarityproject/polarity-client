@@ -253,6 +253,7 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/benchmark.cpp
     src/mod/rooms_screen.cpp
     src/mod/room_screen.cpp
+    src/mod/watch_chat.cpp
     src/mod/watch_panel.cpp
     src/mod/fight_ui.cpp
     src/mod/settings_screen.cpp

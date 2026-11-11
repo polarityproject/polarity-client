@@ -32,6 +32,7 @@
 #include "mod/ui_kit.h" // the screens' fade
 #include "mod/rooms_screen.h"
 #include "mod/room_screen.h"
+#include "mod/watch_chat.h"
 #include "mod/watch_panel.h"
 #include "mod/settings_screen.h"
 #include "core/match_ticket.h"
@@ -270,6 +271,22 @@ void FeedPads(ImGuiIO& io)
     const bool start = buttons & XINPUT_GAMEPAD_START;
     if (start && !startWas) startDownAt = GetTickCount64();
     if (!start && startWas && !chordInPress && g_spectating && !g_visible && GetTickCount64() - startDownAt < kTapMs) g_watchPanelTap = true;
+    // Watching: a tap of Back alone shows or hides the room chat; Back + Y
+    // starts typing into it (watch_chat.h).
+    static bool backWas = false, backWithOther = false, yWas = false;
+    static ULONGLONG backDownAt = 0;
+    const bool back = buttons & XINPUT_GAMEPAD_BACK, yNow = buttons & XINPUT_GAMEPAD_Y;
+    if (back && !backWas) {
+        backDownAt = GetTickCount64();
+        backWithOther = false;
+    }
+    if (back && (buttons & static_cast<uint16_t>(~XINPUT_GAMEPAD_BACK))) backWithOther = true;
+    if (back && yNow && !yWas && g_spectating && !g_visible) WatchChatStartTyping();
+    if (!back && backWas && !backWithOther && !chordInPress && g_spectating && !g_visible && GetTickCount64() - backDownAt < kTapMs) {
+        WatchChatToggle();
+    }
+    backWas = back;
+    yWas = yNow;
     if (!start && !(buttons & XINPUT_GAMEPAD_BACK)) chordInPress = false;
     startWas = start;
     // The screen the chord opened does not see its Start (the hub's Start
@@ -2634,6 +2651,61 @@ bool g_backToRooms = false;
 // match room is the next watch ticket.
 int g_watchTable = -1;
 
+// Training while waiting at a table (the room screen's LB): the game's own
+// Training select and Training, until this player's table calls them; then
+// the main menu, where the room screen comes back with the your-turn card.
+// The game's "Go to Main Menu" leads back to the room screen the same way.
+enum class RoomTraining { Off, Asked, In };
+RoomTraining g_roomTraining = RoomTraining::Off;
+double g_roomTrainingAt = 0;
+
+bool InTrainingScene() { return CurrentScene().find("Training") != std::string::npos; }
+
+void StartRoomTraining(const RoomsView& rooms)
+{
+    const NetView nv = NetViewNow();
+    if (g_roomTraining != RoomTraining::Off || (nv.phase != NetView::Phase::Idle && nv.phase != NetView::Phase::Ended)) return;
+    // Watching another table would open its matches over Training.
+    if (rooms.watching >= 0) {
+        RoomsWatch(-1);
+        g_watchTable = -1;
+    }
+    g_roomTraining = RoomTraining::Asked;
+    g_roomTrainingAt = ImGui::GetTime();
+    Log("overlay: Training while waiting at a table");
+    ChangeScene("TrainingBattleSetupState");
+}
+
+// Each frame: follows the scene, and ends Training when the table calls.
+void StepRoomTraining()
+{
+    if (g_roomTraining == RoomTraining::Off) return;
+    const bool training = InTrainingScene();
+    if (g_roomTraining == RoomTraining::Asked) {
+        if (training) g_roomTraining = RoomTraining::In;
+        else if (ImGui::GetTime() - g_roomTrainingAt > 10) {
+            Log("overlay: Training did not start");
+            g_roomTraining = RoomTraining::Off;
+        }
+        return;
+    }
+    if (!training) {
+        Log("overlay: back from Training (%s)", CurrentScene().c_str());
+        g_roomTraining = RoomTraining::Off;
+        return;
+    }
+    const RoomsView rooms = RoomsSnapshot();
+    if (rooms.state != RoomsView::State::Room) return;
+    for (size_t t = 0; t < rooms.tableViews.size(); t++) {
+        const keeper::TableState& s = rooms.tableViews[t].s;
+        if (s.phase != keeper::TablePhase::Call || (s.seat[0] != rooms.self && s.seat[1] != rooms.self)) continue;
+        Log("overlay: Table %zu calls (call %u): Training ends", t + 1, s.call);
+        g_roomTraining = RoomTraining::Off;
+        ChangeScene("MainMenuState");
+        return;
+    }
+}
+
 void StartTableWatch(const WatchTicket& w)
 {
     g_backToRooms = true;
@@ -2839,7 +2911,7 @@ SelectCard MyCharacterCard(const RoomsView& rooms)
     const bool eleven = IsEleven(c.chara);
     card.chara = code;
     card.charaName = g_tables.labels[c.chara];
-    card.place = RoomsPlace(rooms, rooms.self);
+    card.place = rooms.state == RoomsView::State::Room ? RoomsPlace(rooms, rooms.self) : "Custom Rooms";
     if (card.place == "Idle") card.place = "In the room"; // no table or queue
     const int slot = std::max(0, CostumeSlot(c.chara, c.costume));
     if (eleven) {
@@ -2972,8 +3044,10 @@ void DrawMyCharacter(const RoomsView& rooms, bool takeInput)
     delay.hint = g_my.delaySetting >= 0 ? "Each match starts with this. Lower feels sharper but rolls back more."
                                         : "Each match suggests a delay from your ping to the opponent.";
     live.card = MyCharacterCard(rooms);
-    live.note = g_my.savedNow ? "Saved. The room sees your pick next to your name."
-                              : "You keep your place in the room. If you're called now, your last saved pick plays.";
+    const bool inRoom = rooms.state == RoomsView::State::Room;
+    live.note = g_my.savedNow ? (inRoom ? "Saved. The room sees your pick next to your name." : "Saved. Custom Rooms play this pick.")
+                : inRoom      ? "You keep your place in the room. If you're called now, your last saved pick plays."
+                              : "What you play at Custom Rooms' tables.";
     g_my.alpha = std::min(1.0f, g_my.alpha + ImGui::GetIO().DeltaTime / 0.15f);
     SelectInput in;
     DrawSelectLive(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold}, live, g_my.alpha, takeInput && ImGui::GetFrameCount() > g_my.openedFrame, &in);
@@ -3086,6 +3160,9 @@ void SetTableSkills(int vskill, int vtrigger)
 // its own, which is left alone).
 std::string g_nameSeen;
 bool g_nameChanged = false;
+// The room creation form's table rules (Customize Tables), for the room it
+// asked for: sent once the new room's screen is up (QueueTableRules).
+std::vector<std::string> g_createRules;
 void OpenHubRooms(const NetplayOptions& o)
 {
     g_nameSeen = LocalPlayerName();
@@ -3150,7 +3227,8 @@ void DrawHubScreens(bool takeInput)
     }
     const RoomsView rooms = RoomsSnapshot();
     g_hubScreen = SettingsScreenOpen()                     ? 3
-                  : rooms.state == RoomsView::State::Room ? (g_myCharacterOpen ? 4 : 2)
+                  : g_myCharacterOpen                     ? 4
+                  : rooms.state == RoomsView::State::Room ? 2
                   : RoomsScreenOpen()                     ? 1
                                                           : 0;
     // A lost or unreachable server (a restart or an update on the VPS, the
@@ -3237,6 +3315,15 @@ void DrawHubScreens(bool takeInput)
     if (tablePick.editable) RoomsSetSkills(tablePick.vskill, tablePick.vtrigger);
     else RoomsSetSkills(0, 0);
     SetCardPick(tablePick);
+    // My Character's tile: the pick the tables play, over its preferred
+    // stage (else the profile's), with its V-Skill and V-Trigger.
+    live.myChara = tablePick.chara.empty() ? live.offlineChara : tablePick.chara;
+    live.myStage = live.offlineStage;
+    for (size_t i = 0; i < g_tables.stages.size(); i++) {
+        if (g_tables.stages[i] == o.stageCode) live.myStage = o.stageCode;
+    }
+    live.mySubtitle = live.myChara == "ELV" ? std::string("Eleven")
+                                            : CharaLabel(live.myChara) + " VS" + std::to_string(tablePick.vskill) + " / VT" + std::to_string(tablePick.vtrigger);
     live.roomsChara = "CNL";
     live.roomsStage = "CHN";
     if (live.offlineStage.empty() && !g_tables.stages.empty()) live.offlineStage = g_tables.stages.front();
@@ -3301,6 +3388,9 @@ void DrawHubScreens(bool takeInput)
             roomShown = rooms.room;
             ResetRoomScreen();
             OpenRoomsScreen();
+            // A room this player just made: the rules Customize Tables set.
+            if (!g_createRules.empty() && rooms.owner == rooms.self) QueueTableRules(g_createRules);
+            g_createRules.clear();
         }
         // The card's starting delay: the setting, or with Auto the
         // suggestion for the ping to the opponent at this player's table.
@@ -3380,6 +3470,11 @@ void DrawHubScreens(bool takeInput)
         return;
     }
     roomShown.clear();
+    // My Character from the hub (no room): its screen until it closes.
+    if (g_myCharacterOpen) {
+        DrawMyCharacter(rooms, takeInput);
+        return;
+    }
     if (!RoomsScreenOpen()) RoomsPeek("");
     if (RoomsScreenOpen()) {
         RoomsScreenInput in;
@@ -3387,8 +3482,14 @@ void DrawHubScreens(bool takeInput)
         RoomsPeek(in.focusedRoom);
         if (in.clearNotice) RoomsClearNotice();
         if (in.settings_) OpenSettingsScreen(rooms.otherBuild.empty() ? "server" : "check");
-        if (in.create) RoomsCreate(in.settings);
-        if (!in.join.empty()) RoomsJoin(in.join);
+        if (in.create) {
+            g_createRules = in.tableRules;
+            RoomsCreate(in.settings);
+        }
+        if (!in.join.empty()) {
+            g_createRules.clear();
+            RoomsJoin(in.join);
+        }
         if (in.back) CloseRoomsScreen();
         return;
     }
@@ -3418,6 +3519,10 @@ void DrawHubScreens(bool takeInput)
         break;
     case HubAction::BattleLog:
         OpenBattleLog();
+        break;
+    case HubAction::MyCharacter:
+        // Before the game's lists are read (a few seconds after launch): not yet.
+        if (g_tables.loaded) OpenMyCharacter();
         break;
     case HubAction::UpdateInstall:
         g_restartError.clear();
@@ -3781,6 +3886,7 @@ void Draw(IDXGISwapChain* swapChain)
         OpenBattleLog();
         RefreshBattleLog();
     }
+    StepRoomTraining();
     // A table's ticket starts its set; after it, back at the menus, the
     // room screen comes back.
     for (keeper::TableTicket ticket; RoomsTakeTicket(&ticket);) StartTableSession(ticket);
@@ -3829,6 +3935,19 @@ void Draw(IDXGISwapChain* swapChain)
         g_spectating = watchingNow;
         if (g_watchPanelTap.exchange(false) && watchingNow) watchPanel = !watchPanel;
         if (!watchingNow) watchPanel = false;
+        // A table's set watched from a room: the room's chat over it, under
+        // the watch panel (watch_chat.h).
+        if (watchingNow && g_watchTable >= 0) {
+            const RoomsView rooms = RoomsSnapshot();
+            if (rooms.state == RoomsView::State::Room) {
+                WatchChatInput ci;
+                DrawWatchChat(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, rooms, !watchPanel && !g_visible, &ci);
+                if (!ci.send.empty() && !RoomsChat(ci.send)) {
+                    Log("watch chat: a line held back (one a second)");
+                    AddToast("Slow down. One message per second.", ImVec4(1, 0.8f, 0.4f, 1), 2);
+                }
+            }
+        }
         watchAlpha = std::clamp(watchAlpha + (watchPanel ? 1.0f : -1.0f) * io.DeltaTime / 0.15f, 0.0f, 1.0f);
         if (watchAlpha > 0 && watchingNow) {
             WatchPanelLive wl;

@@ -16,7 +16,7 @@ namespace {
 
 using namespace ui;
 
-enum class Icon { Pad, Rooms, Log };
+enum class Icon { Pad, Rooms, Log, None };
 
 struct Entry {
     HubAction action;
@@ -32,7 +32,7 @@ struct Frame {
 };
 
 std::atomic<bool> g_open{false};
-int g_focus = 1;        // the last entry used keeps focus (0 Play Offline, 1 Custom Rooms, 2 Battle Log)
+int g_focus = 1;        // the last entry used keeps focus (0 Play Offline, 1 Custom Rooms, 2 Battle Log, 3 My Character)
 int g_column = 0;       // the left column's entry right comes back to (0 or 2)
 double g_openedAt = 0;  // ImGui time, for the fade in
 bool g_fromBlack = false; // ... from black (at launch)
@@ -40,8 +40,8 @@ float g_blackFade = 0;     // from black: seconds of the fade drawn so far
 bool g_clickedTile = false;
 
 // The grid: the left column this PC's own (Play Offline over the Battle
-// Log), Custom Rooms the wide tile under the panel.
-const Frame kFrames[] = {{60, 118, 470, 345}, {546, 464, 994, 360}, {60, 479, 470, 345}};
+// Log), Custom Rooms under the panel with My Character beside it.
+const Frame kFrames[] = {{60, 118, 470, 345}, {546, 464, 650, 360}, {60, 479, 470, 345}, {1212, 464, 328, 360}};
 constexpr Frame kPanel{546, 118, 994, 330};
 
 const ImU32 kGold = IM_COL32(233, 196, 106, 255);
@@ -61,6 +61,9 @@ std::vector<Entry> Entries(const HubLive& live)
         {HubAction::BattleLog, "BATTLE LOG", Icon::Log, live.logInfo,
          "Your online matches, to watch again.",
          live.offlineChara, live.offlineStage},
+        {HubAction::MyCharacter, "MY CHARACTER", Icon::None, live.mySubtitle,
+         "The character, loadout and stage you play in Custom Rooms.",
+         live.myChara, live.myStage},
     };
 }
 
@@ -141,11 +144,41 @@ void DrawPanel(ImDrawList* d, const HubFonts& f, const Entry& e)
     d->AddLine(ImVec2(a.x + edge, a.y + edge + 0.5f), ImVec2(b.x - edge, a.y + edge + 0.5f), Rgba(255, 255, 255, 77), std::max(1.0f, g_v.L(1)));
 }
 
+// My Character's tile: the pick's stage behind its character, the name
+// strip at the top and the subtitle ("Seth VS1 / VT2") along the bottom.
+void DrawPickTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame& r, bool on)
+{
+    Pane(d, r.x, r.y, r.x + r.w, r.y + r.h);
+    d->PushClipRect(g_v.P(r.x + 2, r.y + 2), g_v.P(r.x + r.w - 2, r.y + r.h - 2), true);
+    if (!e.stage.empty()) Cover(d, TextureSized(StageTex(e.stage, "StageSelectBG"), g_v.L(r.w)), r.x, r.y, r.w, r.h, Rgba(205, 205, 205));
+    d->AddRectFilled(g_v.P(r.x, r.y), g_v.P(r.x + r.w, r.y + r.h), Rgba(10, 12, 16, 70));
+    if (!e.chara.empty()) {
+        if (const TextureView* art = TextureSized(CharaTex(e.chara, "PartCharacter"), g_v.L(380))) {
+            const float size = 380, x = r.x + (r.w - size) / 2, y = r.y + 44; // the head under the name strip
+            Image(d, art, g_v.P(x, y), g_v.P(x + size, y + size));
+        }
+    }
+    // The subtitle on a dark band, legible over any stage.
+    d->AddRectFilledMultiColor(g_v.P(r.x, r.y + r.h - 96), g_v.P(r.x + r.w, r.y + r.h), Rgba(0, 0, 0, 0), Rgba(0, 0, 0, 0), Rgba(0, 0, 0, 200),
+                               Rgba(0, 0, 0, 200));
+    d->PopClipRect();
+    Strip(d, r.x + 2, r.y + 2, r.x + r.w - 2, r.y + 46, on);
+    Text(d, f.display, g_v.L(22), g_v.P(r.x + 24, r.y + 11), on ? look::kInk : kCream, e.title);
+    if (!e.info.empty()) {
+        ImFont* bold = f.bold ? f.bold : f.strong;
+        float size = 20;
+        while (size > 14 && TextW(bold, size, e.info) > r.w - 48) size -= 1;
+        Text(d, bold, g_v.L(size), g_v.P(r.x + 24, r.y + r.h - 44), kGold, e.info);
+    }
+    if (on) Ring(d, r.x, r.y, r.x + r.w, r.y + r.h);
+}
+
 // A tile: a glass pane with its name in a strip (gold with the focus) and
 // its icon; no description inside it (the hint at the bottom says it).
 // `state`: live state on the strip's right (the rooms' counts).
 void DrawTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame& r, bool on, const std::string& state)
 {
+    if (e.icon == Icon::None) return DrawPickTile(d, f, e, r, on);
     Pane(d, r.x, r.y, r.x + r.w, r.y + r.h);
     Strip(d, r.x + 2, r.y + 2, r.x + r.w - 2, r.y + 46, on);
     Text(d, f.display, g_v.L(22), g_v.P(r.x + 24, r.y + 11), on ? look::kInk : kCream, e.title);
@@ -406,10 +439,10 @@ void WarmHubTextures(const HubLive& live)
 {
     g_drawing = false;
     for (const char* icon : {"button_a", "button_start"}) Texture(PadTex(icon));
-    for (const std::string& c : {live.roomsChara, live.offlineChara}) {
+    for (const std::string& c : {live.roomsChara, live.offlineChara, live.myChara}) {
         if (!c.empty()) Texture(CharaTex(c, "PartCharacter"));
     }
-    for (const std::string& s : {live.roomsStage, live.offlineStage}) {
+    for (const std::string& s : {live.roomsStage, live.offlineStage, live.myStage}) {
         if (!s.empty()) Texture(StageTex(s, "StageSelectBG"));
     }
     g_drawing = true;
@@ -450,12 +483,14 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     // Input: left and right between the column and the online tiles; the
     // mouse focuses what it is over and a click selects it.
     HubAction action = HubAction::None;
-    // Left and right between the column and the online tile, up and down in
-    // the column (it remembers which of its two right left).
-    if (!g_problemOpen && !g_updateOpen && Left()) g_focus = g_column;
-    if (!g_problemOpen && !g_updateOpen && Right()) g_focus = 1;
-    if (!g_problemOpen && !g_updateOpen && g_focus != 1 && (Up() || Down())) g_focus = g_focus == 0 ? 2 : 0;
-    if (g_focus != 1) g_column = g_focus;
+    // Left and right along the bottom row (the column, Custom Rooms, My
+    // Character), up and down in the column (it remembers which of its two
+    // right left).
+    const bool inColumn = g_focus == 0 || g_focus == 2;
+    if (!g_problemOpen && !g_updateOpen && Left()) g_focus = g_focus == 3 ? 1 : g_column;
+    if (!g_problemOpen && !g_updateOpen && Right()) g_focus = inColumn ? 1 : 3;
+    if (!g_problemOpen && !g_updateOpen && inColumn && (Up() || Down())) g_focus = g_focus == 0 ? 2 : 0;
+    if (g_focus == 0 || g_focus == 2) g_column = g_focus;
     for (int i = 0; i < count && !g_problemOpen && !g_updateOpen; i++) {
         const Frame& r = kFrames[i];
         if (takeInput && MouseIn(g_v.P(r.x, r.y), g_v.P(r.x + r.w, r.y + r.h))) {
@@ -490,7 +525,7 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     d->PopClipRect();
     FadeFrom(d, from, alpha);
     if (action != HubAction::None) {
-        static const char* const kNames[] = {"none", "play offline", "custom rooms", "settings", "retry rooms", "update install", "update restart", "update retry", "battle log"};
+        static const char* const kNames[] = {"none", "play offline", "custom rooms", "settings", "retry rooms", "update install", "update restart", "update retry", "battle log", "my character"};
         Log("hub: %s", kNames[static_cast<int>(action)]);
     }
     return action;

@@ -34,6 +34,22 @@ folder, and nothing needs doing.
   its FIGHT on. 59 fps or more on average passes; it also checks the round
   played exactly as recorded, as a PC that plays it differently would
   desync online. The last result shows under it.
+- **My Character** on the hub, beside Custom Rooms: your room loadout's
+  character over its stage, with its V-Skill and V-Trigger ("Seth VS1 /
+  VT2"). A opens the same My Character screen as in a room.
+- **Table rules when creating a room**: the Table rules row in Create a
+  room opens the same editor the owner has in the room (A, Customize
+  Tables), so a room can open with its own first to, rounds, timer and
+  rotation on each table.
+- **Training while you wait**: seated at a table or in its queue, LB on the
+  room screen goes to Training (the game's own character and stage
+  select). When your table calls you, you're taken back to the room screen
+  with the your-turn card up. The game's "Go to Main Menu" in Training also
+  leads back to the room.
+- **Room chat while watching**: watching a table's set, the room chat shows
+  in a see-through box at the bottom of the screen, between the gauges. T
+  (or Back + Y on a pad) types a line, Enter sends it; Tab or a tap of
+  Back hides the box completely, and shows it again.
 
 ### Changed
 

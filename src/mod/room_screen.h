@@ -11,7 +11,9 @@
 // connecting modal (mock-up board 6) until the match loads: the match room,
 // the link with its ping, the characters loading, the match starting; B
 // cancels until the match loads. Start (owner) opens the table rules; Y opens
-// My character.
+// My character. LB (seated or queued) goes to Training to wait: the game's
+// Training select, then Training, until the table calls (the overlay brings
+// the room screen back for the your-turn card).
 //
 // Players (M6): RB moves the cursor to the player list; A mutes or unmutes a
 // player's chat (this session), X (owner) removes them from the room.
@@ -20,8 +22,11 @@
 // paused: the tables dim, chat carries on. Chat: Enter (or Back + Y on a pad)
 // starts typing, Enter sends, Escape stops.
 
+#include "core/rules.h"
 #include "mod/hub_screen.h"
 #include "mod/rooms_client.h"
+
+#include <imgui.h>
 
 #include <map>
 #include <string>
@@ -40,11 +45,32 @@ struct RoomScreenInput {
     std::vector<std::string> args;
     int delay = -1;           // with "ready": the input delay chosen for this match
     bool myCharacter = false; // Y
+    bool training = false;    // LB: wait in Training (seated or queued)
     bool clearNotice = false; // the table notice read
     bool cancelHandoff = false; // B on the connecting modal: out of this set before it began
     int watch = -2;             // X on a table: watch it (M5); -1 stop watching; -2 nothing
     int vskill = 0, vtrigger = 0; // the card: a V-Skill or V-Trigger chosen (from 1); 0 unchanged
 };
+
+// The table rules editor: the room owner's (Start in a room) and the room
+// creation form's (Customize Tables). A tab per table (LB and RB), the five
+// rules as stepper rows.
+struct TableRulesEditor {
+    std::vector<Rules> rules; // one a table
+    int table = 0, row = 0;
+};
+// One frame's input: LB and RB the table, up and down the row, left and
+// right its value. Render thread, inside an ImGui frame.
+void StepTableRules(TableRulesEditor& e);
+// The modal: "Table rules" under `kicker`, `hint` (in `hintCol`) above its
+// prompts; a clicked prompt's index in `clicked`.
+void DrawTableRules(const HubFonts& f, const TableRulesEditor& e, const char* kicker, const std::string& hint, ImU32 hintCol,
+                    const std::vector<std::pair<const char*, std::string>>& prompts, int* clicked);
+
+// A new room's owner: the rules the creation form set (FormatRules, one a
+// table), sent to the keeper once it is in the room (call after
+// ResetRoomScreen; tables left at the defaults are not sent).
+void QueueTableRules(const std::vector<std::string>& rules);
 
 // What this player plays at the tables, for the your-turn card's V-Skill and
 // V-Trigger rows: the character, its V-Skill and V-Trigger (from 1); not
@@ -75,6 +101,8 @@ void SetTableHandoff(const TableHandoff& handoff);
 void ResetRoomScreen(); // a new room: dialogs shut, nothing typed, nobody muted
 // Testing (`rooms mute <member id>`): as A on a player's row, mute or unmute.
 void ToggleMuteForTest(uint32_t id);
+// Whether this player muted that member's chat (this session; the watch chat too).
+bool RoomMemberMuted(uint32_t id);
 // `delaySuggestion`: the your-turn card's starting delay (Polarity settings, or
 // with Auto the suggestion for the ping to the opponent).
 void DrawRoomScreen(const HubFonts& fonts, const RoomsView& view, bool takeInput, RoomScreenInput* input);

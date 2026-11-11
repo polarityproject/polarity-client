@@ -2306,6 +2306,9 @@ void ChangeScene(const std::string& stateClassName, const std::string& paramName
         if (!stateClass || !manager || !g_origChange) return;
         RememberScene(stateClassName);
         g_origChange(manager, stateClass, param);
+        // (The detour is bypassed: the step trace moves on to this state, or
+        // it kept reading the one just left, freed.)
+        TraceSceneSteps(stateClassName);
     });
 }
 

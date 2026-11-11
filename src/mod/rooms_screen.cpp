@@ -4,6 +4,7 @@
 #include "core/rules.h"
 #include "mod/flow.h"
 #include "mod/log.h"
+#include "mod/room_screen.h"
 #include "mod/ui_kit.h"
 #include "mod/weyve_service.h"
 
@@ -47,6 +48,11 @@ struct State {
     int key = 0;            // the keypad's cursor
     float scroll = 0;       // the list's first row shown (rows)
     std::string lastCode;   // the code a failed join was for
+    // Customize Tables: each table's rules (as many as the form's tables),
+    // the editor open over the form, and the rules as it opened (its B).
+    TableRulesEditor rules;
+    bool rulesOpen = false;
+    std::vector<Rules> rulesBefore;
 } g;
 
 std::atomic<bool> g_open{false};
@@ -100,8 +106,8 @@ float FitText(ImDrawList* d, ImFont* f, float size, float minSize, float maxW, I
 namespace {
 
 // The form's rows: the title, its characters when it names them, then
-// visibility and tables.
-enum FormRow { kRowTitle, kRowChara1, kRowChara2, kRowVisibility, kRowTables };
+// visibility, tables and their rules (Customize Tables).
+enum FormRow { kRowTitle, kRowChara1, kRowChara2, kRowVisibility, kRowTables, kRowRules };
 
 std::vector<FormRow> FormRows()
 {
@@ -111,7 +117,40 @@ std::vector<FormRow> FormRows()
     if (n > 1) rows.push_back(kRowChara2);
     rows.push_back(kRowVisibility);
     rows.push_back(kRowTables);
+    rows.push_back(kRowRules);
     return rows;
+}
+
+// One rules entry per table of the form (new ones at the defaults).
+void SizeRules()
+{
+    g.rules.rules.resize(static_cast<size_t>(std::clamp(g.settings.tables, 1, keeper::kMaxTables)), Rules{});
+    g.rules.table = std::clamp(g.rules.table, 0, static_cast<int>(g.rules.rules.size()) - 1);
+}
+
+// The Table rules row: the defaults on every table, one set of rules on all,
+// or how many tables differ from the defaults.
+std::string RulesSummary()
+{
+    SizeRules();
+    int changed = 0;
+    bool same = true;
+    for (const Rules& r : g.rules.rules) {
+        if (!(r == Rules{})) changed++;
+        if (!(r == g.rules.rules.front())) same = false;
+    }
+    if (!changed) return "Default";
+    if (same && g.rules.rules.size() > 1) return "Customized, same on all";
+    if (g.rules.rules.size() == 1) return "Customized";
+    return "Customized (" + Plural(changed, "table", "tables") + ")";
+}
+
+void OpenRulesEditor()
+{
+    SizeRules();
+    g.rulesBefore = g.rules.rules;
+    g.rules.row = 0;
+    g.rulesOpen = true;
 }
 
 // The settings' title from the form's choices.
@@ -131,7 +170,8 @@ void StepRow(FormRow row, int dir)
         c = (c + dir + keeper::kCharacterCount) % keeper::kCharacterCount;
     }
     else if (row == kRowVisibility) g.settings.isPublic = !g.settings.isPublic;
-    else g.settings.tables = std::clamp(g.settings.tables + dir, 1, keeper::kMaxTables);
+    else if (row == kRowTables) g.settings.tables = std::clamp(g.settings.tables + dir, 1, keeper::kMaxTables);
+    else return; // Table rules: A opens them
     SyncTitle();
     g.formRow = std::min(g.formRow, static_cast<int>(FormRows().size()) - 1);
 }
@@ -276,13 +316,16 @@ void CreatePanel(ImDrawList* d, const HubFonts& f, bool active, int* clickedRow,
     Text(d, f.display, g_v.L(28), g_v.P(918, 138), kCream, "Create a room");
     const std::vector<FormRow> rows = FormRows();
     auto label = [](FormRow row) {
-        return row == kRowTitle ? "Title" : row == kRowChara1 ? "Character 1" : row == kRowChara2 ? "Character 2" : row == kRowVisibility ? "Visibility" : "Tables";
+        return row == kRowTitle ? "Title" : row == kRowChara1 ? "Character 1" : row == kRowChara2 ? "Character 2" : row == kRowVisibility ? "Visibility"
+               : row == kRowTables                                                                                   ? "Tables"
+                                                                                                                      : "Table rules";
     };
     auto value = [](FormRow row) -> std::string {
         if (row == kRowTitle) return g.title == 0 ? std::string("No title") : RoomTitleText(g.settings.title, "");
         if (row == kRowChara1 || row == kRowChara2) return keeper::CharacterName(keeper::CharacterCode(g.chara[row == kRowChara1 ? 0 : 1]));
         if (row == kRowVisibility) return g.settings.isPublic ? "Public" : "Private";
-        return Plural(g.settings.tables, "table", "tables");
+        if (row == kRowTables) return Plural(g.settings.tables, "table", "tables");
+        return RulesSummary();
     };
     *clickedRow = *clickedStep = -1;
     const int n = static_cast<int>(rows.size());
@@ -299,7 +342,7 @@ void CreatePanel(ImDrawList* d, const HubFonts& f, bool active, int* clickedRow,
         Text(d, lit ? bold : f.strong, g_v.L(19), g_v.P(940, y + 15), lit ? look::kInk : kCream, label(rows[i]));
         // Between the arrows (1146 to 1500), shrunk to fit.
         FitText(d, lit ? bold : f.body, 19, 13, 330, g_v.P(1323, y + 15), lit ? look::kInk : kCream, value(rows[i]), 0.5f);
-        if (on) {
+        if (on && rows[i] != kRowRules) {
             // ◀ and ▶ around the value.
             d->AddTriangleFilled(g_v.P(1146, y + 21), g_v.P(1146, y + 33), g_v.P(1136, y + 27), lit ? look::kInk : kGold);
             d->AddTriangleFilled(g_v.P(1500, y + 21), g_v.P(1510, y + 27), g_v.P(1500, y + 33), lit ? look::kInk : kGold);
@@ -315,7 +358,7 @@ void CreatePanel(ImDrawList* d, const HubFonts& f, bool active, int* clickedRow,
                                  : "Not listed. Only people with the code can join.";
     const float below = 196 + n * 60.0f + 14;
     Text(d, f.body, g_v.L(17), g_v.P(918, below), kSoft, visibility);
-    Text(d, f.body, g_v.L(17), g_v.P(918, below + 35), kMuted, "Up to 16 players. Set each table's rules from the room.");
+    Text(d, f.body, g_v.L(17), g_v.P(918, below + 35), kMuted, "Up to 16 players. Table rules can change in the room too.");
 }
 
 void CodePanel(ImDrawList* d, const HubFonts& f, bool active, const std::string& notice, int* clickedKey)
@@ -508,7 +551,11 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
 
     // ---- input ----
     int barClick = -1;
-    if (!busy) {
+    if (g.rulesOpen && (busy || g.focus != kCreate)) g.rulesOpen = false;
+    if (g.rulesOpen) {
+        StepTableRules(g.rules);
+    }
+    else if (!busy) {
         if (!g.inPanel) {
             if (Up()) g.focus = g.focus == kCode ? kCreate : g.focus == 0 ? kCode : std::max<int>(kCreate, g.focus - 1);
             if (Down()) g.focus = g.focus == kCreate ? kCode : g.focus == kCode ? (count ? 0 : kCode) : std::min(count - 1, g.focus + 1);
@@ -617,13 +664,14 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     else if (g.focus >= 0 && g.focus < count) {
         RoomPanel(d, f, rooms[g.focus], v.peek.code == rooms[g.focus].code ? &v.peek : nullptr);
     }
-    if (formRow >= 0) {
+    if (formRow >= 0 && !g.rulesOpen) {
         g.focus = kCreate;
         g.inPanel = true;
         g.formRow = formRow;
         if (formStep >= 0) {
             StepRow(FormRows()[g.formRow], formStep == 0 ? -1 : 1);
         }
+        else if (FormRows()[g.formRow] == kRowRules) OpenRulesEditor();
     }
 
     // ---- the stripe, and the buttons ----
@@ -669,10 +717,12 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
                    : row == kRowChara1 ? "The character you play."
                    : row == kRowChara2 ? "The character you want to face."
                    : row == kRowVisibility ? ""
-                                           : "With 8 tables, all 16 players can play at once.";
+                   : row == kRowTables     ? "With 8 tables, all 16 players can play at once."
+                                           : "First to, rounds, timer and rotation, for each table.";
         }
         prompts = {{"button_start", "Create"}, {"button_b", "Back"}};
         if (!g.inPanel) prompts.insert(prompts.begin(), {"button_a", "Change"});
+        else if (FormRows()[std::min<size_t>(g.formRow, FormRows().size() - 1)] == kRowRules) prompts.insert(prompts.begin(), {"button_a", "Customize Tables"});
     }
     else if (g.focus == kCode) {
         if (failed) prompts = {{"button_a", "Try again"}, {"button_b", "Back"}};
@@ -691,9 +741,21 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
         text = rooms[g.focus].openSeats ? "There are open seats." : "All seats are taken. You can still queue or watch.";
         prompts = {{"button_a", "Join"}, {"button_b", "Back"}};
     }
+    if (g.rulesOpen) lead.clear(), text.clear(), prompts.clear();
     PromptLine(d, f.body, f.bold ? f.bold : f.strong, lead, leadCol, text, prompts, &barClick);
 
-    if (!busy && v.state != S::Room) {
+    // Customize Tables, over the form: the room's own table rules editor.
+    if (g.rulesOpen) {
+        int clicked = -1;
+        const PromptList modalPrompts = {{"button_a", "Done"}, {"button_b", "Cancel"}};
+        DrawTableRules(f, g.rules, "NEW ROOM", "Players see these when they browse rooms.", kSoft, modalPrompts, &clicked);
+        if (Confirm() || Pressed({ImGuiKey_GamepadStart}, false)) g.rulesOpen = false;
+        else if (Back()) {
+            g.rules.rules = g.rulesBefore;
+            g.rulesOpen = false;
+        }
+    }
+    else if (!busy && v.state != S::Room) {
         const bool typingCode = g.focus == kCode && g.inPanel && !failed;
         const bool a = Confirm(), b = Back() || (typingCode && Pressed({ImGuiKey_Escape}, false));
         const bool start = Pressed({ImGuiKey_GamepadStart}, false) ||
@@ -707,8 +769,11 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
             if (start && v.keeper) {
                 in->create = true;
                 in->settings = g.settings;
+                SizeRules();
+                for (const Rules& r : g.rules.rules) in->tableRules.push_back(FormatRules(r));
             }
             else if (a && !g.inPanel) g.inPanel = true;
+            else if (a && FormRows()[std::min<size_t>(g.formRow, FormRows().size() - 1)] == kRowRules) OpenRulesEditor();
             else if (b) {
                 if (g.inPanel) g.inPanel = false;
                 else in->back = true;

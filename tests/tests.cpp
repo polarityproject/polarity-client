@@ -2098,7 +2098,19 @@ void TestKeeperProtocol()
                        "\xEF\xBF\xBD\xEF\xBF\xBD\xEF\xBF\xBDz\",\"client_version\":null,\"sfvr_version\":null,\"members\":3,\"capacity\":16,\"tables\":2,\"open_seats\":1,"
                        "\"rules\":\"r1 ft2 bo3 t99 ws3\",\"faces\":[\"RYU\",\"KEN\"],\"players\":["
                        "{\"name\":\"Laptop\",\"country\":\"DE\",\"face\":\"RYU\"},{\"name\":\"Player 2\",\"country\":null,\"face\":\"KEN\"},"
-                       "{\"name\":\"Deck\",\"country\":\"JP\",\"face\":null}]}") != std::string::npos);
+                       "{\"name\":\"Deck\",\"country\":\"JP\",\"face\":null}],\"table_list\":[]}") != std::string::npos);
+        // Every table: its rules, state, seats (null open) and score.
+        ListedRoom::TableEntry te;
+        te.rules = "r1 ft3 bo3 t99 rr";
+        te.state = "playing";
+        te.seat[0] = {"Laptop", "DE", "RYU"};
+        te.wins[0] = 1;
+        r.tableList = {te, ListedRoom::TableEntry{"r1 ft2 bo3 t99 ws3", "open"}};
+        CHECK(FormatRoomListJson({r}, totals, 1).find("\"table_list\":[{\"table\":1,\"rules\":\"r1 ft3 bo3 t99 rr\",\"state\":\"playing\","
+                                                      "\"seats\":[{\"name\":\"Laptop\",\"country\":\"DE\",\"face\":\"RYU\"},null],\"score\":[1,0]},"
+                                                      "{\"table\":2,\"rules\":\"r1 ft2 bo3 t99 ws3\",\"state\":\"open\",\"seats\":[null,null],\"score\":[0,0]}]}") !=
+              std::string::npos);
+        r.tableList.clear();
         // A title naming characters, and none (null: a page shows the owner's).
         r.title = RoomTitle{3, {"Z30", "CNL"}};
         CHECK(FormatRoomListJson({r}, totals, 1).find("\"title\":\"G user looking for Chun-Li!\",\"title_id\":3,\"title_characters\":[\"Z30\",\"CNL\"]") !=

@@ -78,8 +78,7 @@ struct State {
     int handoffTable = -1, handoffStep = -1;
     double handoffSince = 0;
     // The table rules (owner).
-    int rulesTable = 0, rulesRow = 0;
-    std::vector<Rules> rulesEdit;
+    TableRulesEditor rules;
     std::vector<int> rulesPending; // tables whose new rules are still to send (one a frame)
 } g;
 
@@ -751,26 +750,57 @@ void StepRule(Rules* r, int row, int dir)
     }
 }
 
-// The table rules (L): a tab per table (LB and RB), the five rules as
-// stepper rows; its prompts in its footer.
-void RulesModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, const PromptList& prompts, int* clicked)
+// The owner's table rules (Start): the shared editor, with what changed
+// since the tables' rules said in gold.
+void RulesModal(const HubFonts& f, const RoomsView& v, const PromptList& prompts, int* clicked)
 {
+    const int t = g.rules.table;
+    Rules now;
+    const std::string current = t < static_cast<int>(v.tableRules.size()) ? v.tableRules[t] : "";
+    const bool changed = !(ParseRules(current, &now) && now == g.rules.rules[t]);
+    DrawTableRules(f, g.rules, "OWNER", "Changes apply from the table's next set.", changed ? kGold : kSoft, prompts, clicked);
+}
+
+void Request(RoomScreenInput* in, const char* kind, std::vector<std::string> args = {})
+{
+    in->request = kind;
+    in->args = std::move(args);
+}
+
+} // namespace
+
+void StepTableRules(TableRulesEditor& e)
+{
+    const int tables = static_cast<int>(e.rules.size());
+    if (!tables) return;
+    e.table = std::clamp(e.table, 0, tables - 1);
+    if (Pressed({ImGuiKey_GamepadL1}, false)) e.table = (e.table + tables - 1) % tables;
+    if (Pressed({ImGuiKey_GamepadR1}, false)) e.table = (e.table + 1) % tables;
+    if (Up()) e.row = std::max(0, e.row - 1);
+    if (Down()) e.row = std::min(4, e.row + 1);
+    if (Left()) StepRule(&e.rules[e.table], e.row, -1);
+    if (Right()) StepRule(&e.rules[e.table], e.row, 1);
+}
+
+void DrawTableRules(const HubFonts& f, const TableRulesEditor& e, const char* kicker, const std::string& hint, ImU32 hintCol,
+                    const PromptList& prompts, int* clicked)
+{
+    if (e.rules.empty()) return;
+    ImDrawList* d = ImGui::GetBackgroundDrawList();
     ImFont* bold = f.bold ? f.bold : f.strong;
     const float x0 = 350, w = 900, h = 470, y0 = 187, x1 = x0 + w;
-    const Rules& r = g.rulesEdit[g.rulesTable];
-    Rules now;
-    const std::string current = g.rulesTable < static_cast<int>(v.tableRules.size()) ? v.tableRules[g.rulesTable] : "";
-    const bool changed = !(ParseRules(current, &now) && now == r);
+    const int at = std::clamp(e.table, 0, static_cast<int>(e.rules.size()) - 1);
+    const Rules& r = e.rules[at];
     ModalSpec m;
     m.x0 = x0, m.y0 = y0, m.w = w, m.h = h;
-    m.kicker = "OWNER";
-    m.hint = "Changes apply from the table's next set.";
-    m.hintCol = changed ? kGold : kSoft;
+    m.kicker = kicker;
+    m.hint = hint;
+    m.hintCol = hintCol;
     m.prompts = prompts;
     ui::Modal(d, bold, f.body, m, clicked);
     Text(d, f.display, g_v.L(28), g_v.P(x0 + 28, y0 + 64), kCream, "Table rules");
     // The tabs, right-aligned, between the LB and RB glyphs.
-    const int tables = static_cast<int>(g.rulesEdit.size());
+    const int tables = static_cast<int>(e.rules.size());
     float tw = 0;
     for (int t = 0; t < tables; t++) tw += TextW(bold, 17, "Table " + std::to_string(t + 1)) + 28 + 8;
     float tx = x1 - 28 - 30 - 8 - tw - 30;
@@ -780,7 +810,7 @@ void RulesModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, const Prom
     for (int t = 0; t < tables; t++) {
         const std::string label = "Table " + std::to_string(t + 1);
         const float lw = TextW(bold, 17, label) + 28;
-        const bool on = t == g.rulesTable;
+        const bool on = t == at;
         Control(d, tx, y0 + 65, tx + lw, y0 + 97, on);
         Text(d, bold, g_v.L(17), g_v.P(tx + 14, y0 + 70), on ? look::kInk : kCream, label);
         tx += lw + 8;
@@ -789,7 +819,7 @@ void RulesModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, const Prom
     if (Clicked() && MouseIn(g_v.P(tx - 4, y0 + 62), g_v.P(tx + 34, y0 + 100))) ui::ClickPad(ImGuiKey_GamepadR1);
     for (int row = 0; row < 5; row++) {
         const float y = y0 + 120 + row * 58.0f;
-        const bool on = row == g.rulesRow;
+        const bool on = row == e.row;
         Control(d, x0 + 28, y, x1 - 28, y + 50, on);
         // As Polarity settings' rows: the medium weight at 21 (the light one read
         // faintly on the glass), bold on the focused row's gold.
@@ -803,13 +833,16 @@ void RulesModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, const Prom
     }
 }
 
-void Request(RoomScreenInput* in, const char* kind, std::vector<std::string> args = {})
+void QueueTableRules(const std::vector<std::string>& rules)
 {
-    in->request = kind;
-    in->args = std::move(args);
+    g.rules.rules.assign(rules.size(), Rules{});
+    g.rulesPending.clear();
+    for (size_t t = 0; t < rules.size(); t++) {
+        if (!ParseRules(rules[t], &g.rules.rules[t])) continue;
+        if (!(g.rules.rules[t] == Rules{})) g.rulesPending.push_back(static_cast<int>(t));
+    }
+    Log("room screen: the creation form's rules for %zu of %zu tables to send", g.rulesPending.size(), rules.size());
 }
-
-} // namespace
 
 void ResetRoomScreen() { g = State{}; }
 
@@ -824,6 +857,8 @@ void ToggleMuteForTest(uint32_t id)
     if (!g.muted.erase(id)) g.muted.insert(id);
     Log("room screen: member %u %s (this player's view only)", id, g.muted.count(id) ? "muted" : "unmuted");
 }
+
+bool RoomMemberMuted(uint32_t id) { return g.muted.count(id) != 0; }
 
 void SetSkillNames(std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::string>>> names) { g_skillNames = std::move(names); }
 
@@ -910,6 +945,15 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     const bool atFocused = fs.seat[0] == v.self || fs.seat[1] == v.self;
     const auto inQueue = focused ? std::find(focused->queue.begin(), focused->queue.end(), v.self) : std::vector<uint32_t>::const_iterator{};
     const bool queuedHere = focused && inQueue != focused->queue.end();
+    // Seated or queued at any table, with no set of this player's on: Training
+    // can fill the wait.
+    bool waiting = false, playing = false;
+    for (const TableView& t : v.tableViews) {
+        const bool seated = t.s.seat[0] == v.self || t.s.seat[1] == v.self;
+        if (seated || std::find(t.queue.begin(), t.queue.end(), v.self) != t.queue.end()) waiting = true;
+        if (seated && t.s.phase != TablePhase::Open && t.s.phase != TablePhase::After) playing = true;
+    }
+    waiting = waiting && !playing && handoffTable < 0;
 
     // Typing a chat line: every key is itself (not the game's keys).
     if (g.typing && takeInput) ui::g_textEntry = true;
@@ -969,18 +1013,13 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         else if (Back()) g.modal = Modal::None;
     }
     else if (g.modal == Modal::Rules) {
-        if (Pressed({ImGuiKey_GamepadL1}, false)) g.rulesTable = (g.rulesTable + tables - 1) % tables;
-        if (Pressed({ImGuiKey_GamepadR1}, false)) g.rulesTable = (g.rulesTable + 1) % tables;
-        if (Up()) g.rulesRow = std::max(0, g.rulesRow - 1);
-        if (Down()) g.rulesRow = std::min(4, g.rulesRow + 1);
-        if (Left()) StepRule(&g.rulesEdit[g.rulesTable], g.rulesRow, -1);
-        if (Right()) StepRule(&g.rulesEdit[g.rulesTable], g.rulesRow, 1);
+        StepTableRules(g.rules);
         if (Confirm() || Pressed({ImGuiKey_GamepadStart}, false)) {
             // Every table whose rules changed (sent one a frame, below).
             for (int t = 0; t < tables; t++) {
                 Rules now;
                 const std::string current = t < static_cast<int>(v.tableRules.size()) ? v.tableRules[t] : "";
-                if (!(ParseRules(current, &now) && now == g.rulesEdit[t])) g.rulesPending.push_back(t);
+                if (!(ParseRules(current, &now) && now == g.rules.rules[t])) g.rulesPending.push_back(t);
             }
             g.modal = Modal::None;
         }
@@ -1061,14 +1100,15 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
                 else if (!atFocused) Request(in, "queue", {t});
             }
             if (y && !back) in->myCharacter = true;
+            if (Pressed({ImGuiKey_GamepadL1}, false) && waiting && !paused) in->training = true;
             // X: watch this table's sets (not the one you sit at); again, stop.
             if (Pressed({ImGuiKey_GamepadFaceLeft}, false) && !paused && !atFocused) in->watch = v.watching == g.table ? -1 : g.table;
             if (Pressed({ImGuiKey_GamepadStart}, false) && v.owner == v.self && !paused) {
                 g.modal = Modal::Rules;
-                g.rulesTable = g.table;
-                g.rulesRow = 0;
-                g.rulesEdit.assign(tables, Rules{});
-                for (int t = 0; t < tables && t < static_cast<int>(v.tableRules.size()); t++) ParseRules(v.tableRules[t], &g.rulesEdit[t]);
+                g.rules.table = g.table;
+                g.rules.row = 0;
+                g.rules.rules.assign(tables, Rules{});
+                for (int t = 0; t < tables && t < static_cast<int>(v.tableRules.size()); t++) ParseRules(v.tableRules[t], &g.rules.rules[t]);
             }
             if (enter) g.typing = true;
             else if (Back()) g.modal = Modal::Leaving, g.choice = 0;
@@ -1078,10 +1118,12 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
             in->copiedCode = true;
         }
     }
-    if (in->request.empty() && !g.rulesPending.empty() && g.rulesPending.front() < static_cast<int>(g.rulesEdit.size())) {
+    // (Also the room creation form's, from QueueTableRules: only once the
+    // keeper is in the room to take them.)
+    if (in->request.empty() && !paused && !g.rulesPending.empty() && g.rulesPending.front() < static_cast<int>(g.rules.rules.size())) {
         const int t = g.rulesPending.front();
         g.rulesPending.erase(g.rulesPending.begin());
-        Request(in, "rules", {std::to_string(t), FormatRules(g.rulesEdit[t])});
+        Request(in, "rules", {std::to_string(t), FormatRules(g.rules.rules[t])});
     }
     if (g.table < g.scroll) g.scroll = static_cast<float>(g.table);
     if (g.table > g.scroll + kTablesInView - 1) g.scroll = static_cast<float>(g.table - kTablesInView + 1);
@@ -1247,6 +1289,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         else if (!atFocused) prompts.push_back({"button_a", "Join the queue"});
         if (!atFocused) prompts.push_back({"button_x", v.watching == g.table ? "Stop watching" : "Watch"});
         prompts.push_back({"button_y", "My character"});
+        if (waiting && !paused) prompts.push_back({"button_lb", "Training"});
         if (v.owner == v.self) prompts.push_back({"button_start", "Table rules"});
         prompts.push_back({"button_b", "Leave"});
     }
@@ -1264,7 +1307,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         Dialog(d, f, "OWNER", "Remove " + NameOf(v, g.removing) + "?", "They won't be able to rejoin.", true,
                "Remove", "Cancel", prompts, &clicked, &pressed);
     }
-    else if (g.modal == Modal::Rules) RulesModal(d, f, v, prompts, &clicked);
+    else if (g.modal == Modal::Rules) RulesModal(f, v, prompts, &clicked);
     if (pressed >= 0 && g_inputOn) {
         if (pressed == 0 && g.modal == Modal::Leaving) in->leave = true;
         else if (pressed == 0) Request(in, "kick", {std::to_string(g.removing)});

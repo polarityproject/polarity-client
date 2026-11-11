@@ -39,6 +39,9 @@ struct HubLive {
     // The pictures: Play Offline shows the player's favorite (Fighter
     // Profile), Custom Rooms its own.
     std::string offlineChara, offlineStage, roomsChara, roomsStage;
+    // My Character: the pick the tables play (its character over its
+    // preferred stage) and "Seth VS1 / VT2".
+    std::string myChara, myStage, mySubtitle;
     // Why Custom Rooms cannot be used now (picking it shows this in a modal
     // instead of a screen that can do nothing), "" when it can.
     // CheckingUpdate: the check Custom Rooms asks for first; UpdatePending:
@@ -54,7 +57,8 @@ struct HubLive {
 // RetryRooms: the modal's Try again (connect to the rooms server now).
 // UpdateInstall / UpdateRestart / UpdateRetry: the update modal's buttons
 // (download and install; start the game again; check again after a failure).
-enum class HubAction { None, PlayOffline, CustomRooms, Settings, RetryRooms, UpdateInstall, UpdateRestart, UpdateRetry, BattleLog };
+// MyCharacter: the room's My Character screen, from the hub.
+enum class HubAction { None, PlayOffline, CustomRooms, Settings, RetryRooms, UpdateInstall, UpdateRestart, UpdateRetry, BattleLog, MyCharacter };
 
 // `fromBlack`: at launch, in place of the game's main menu: it fades in
 // from black (the menu never shows), else over whatever is there.
