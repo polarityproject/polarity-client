@@ -562,6 +562,110 @@ uint64_t PhaseDetour(void* scheduler, int phase)
 }
 uint64_t TickProperDetour(void* frame) { return Timed(kPartTick, [&] { return g_origTickProper(frame); }); }
 
+// The battle's jobs. A scheduler phase (rva 0x4CD890) queues each of its
+// tasks as a job on one global queue (rva 0x3A750E0) and runs them with
+// 0x4CD420(queue, 1). With the queue's +0x74 at 0 the runner calls the jobs
+// one after another on its own thread, in the order they were queued: the
+// scheduler's map order, priority then registration (key at the task node
+// +0x20, the counter at scheduler +0x1C; rva 0x4CC560). Otherwise (2 here)
+// the game thread and the battle's worker threads take them as they come.
+// Fighters' jobs write into each other's state (a hit's stun into the
+// defender's, events into the defender's buff conditions; the director's hit
+// tallies, flow.cpp), so which job ran first could differ from one PC to the
+// other: a defender's 10 % stun buff (kind 13 at its buff table +0x120,
+// conditions cleared by its own job rva 0x33AAD0 and set by events 0x32964F)
+// counted on one side and not on the other (Cammy vs E. Honda 70c57065,
+// Birdie vs Laura 795e8d64: stun +10 against +9, then a stun gauge one point
+// apart for thousands of frames). The ticks the mod drives run their jobs in
+// order on the game thread: one order on every PC, at the same cost
+// (phasecost: 434-483 us per tick serial against 459-537 parallel).
+constexpr game::CodeSite kJobRunner{"battle job runner", 0x4CD420,
+    {0x48, 0x89, 0x6C, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x41, 0x54, 0x41, 0x56, 0x41, 0x57}};
+// The phase's end: rcx = the queue (from the global), edx = 1, call the runner.
+constexpr game::CodeSite kPhaseRunsQueue{"phase runs the job queue", 0x4CDA89,
+    {0x48, 0x8B, 0x0D, 0x50, 0x76, 0x5A, 0x03, 0xBA, 0x01, 0x00, 0x00, 0x00, 0xE8, 0x86, 0xF9, 0xFF}};
+// In the runner: cmp dword ptr [rdi+0x74], ebp (0); jne (the threaded path).
+constexpr uint32_t kRunnerModeTest = 0x4CD46B;
+constexpr uint8_t kRunnerModeTestBytes[] = {0x39, 0x6F, 0x74, 0x0F, 0x85};
+constexpr uint32_t kJobQueueGlobal = 0x3A750E0;
+constexpr size_t kJobQueueMode = 0x74;
+constexpr size_t kJobQueueList = 0x08, kJobNext = 0x10, kJobGroup = 0x30, kJobPayload = 0x28;
+constexpr size_t kTaskNodeKeyBefore = 0x08; // the task (payload's first word) is the map node +0x28; its key at node +0x20
+constexpr size_t kTaskClosure = 0x18;       // closure { fn, int32 this-adjust, object }
+using JobRunnerFn = uint64_t (*)(uint8_t* queue, int mode);
+JobRunnerFn g_origJobRunner = nullptr;
+uint8_t* const* g_jobQueue = nullptr;
+std::atomic<bool> g_serialJobs{true};
+std::atomic<int> g_jobOrderLogs{0};
+
+// Research (`joborder [n]`): the next n driven runner calls' jobs in queue
+// order: key (priority, registration), group, the task's function and object,
+// and where the object sits from the fighters' actors (P1 on the left at a
+// battle's start).
+void LogJobOrder(uint8_t* queue)
+{
+    std::vector<std::pair<uint8_t*, int>> fighters; // actor owner, side
+    for (const StateRegion& r : g_game->Regions()) {
+        if (r.size != actor::kRegionSize || !IsReadable(r.ptr - actor::kVtableAt, 8)) continue;
+        if (*reinterpret_cast<const uintptr_t*>(r.ptr - actor::kVtableAt) != g_imageBase + actor::kFighterVtable) continue;
+        fighters.push_back({r.ptr - actor::kVtableAt, *reinterpret_cast<const int32_t*>(r.ptr + actor::kSide)});
+    }
+    std::string sides;
+    for (const auto& [owner, side] : fighters) {
+        char b[48];
+        std::snprintf(b, sizeof(b), " %p side %d", static_cast<void*>(owner), side);
+        sides += b;
+    }
+    Log("joborder: tick %u%s, fighters%s", DrivenTicks(), g_replayingTick ? " replayed" : "", sides.c_str());
+    int n = 0;
+    for (uint8_t* job = *reinterpret_cast<uint8_t**>(queue + kJobQueueList); job && n < 400; n++) {
+        if (!IsReadable(job, 0x48)) break;
+        const int32_t group = *reinterpret_cast<const int32_t*>(job + kJobGroup);
+        uint64_t key = 0;
+        uintptr_t fn = 0, object = 0;
+        uint8_t* payload = *reinterpret_cast<uint8_t**>(job + kJobPayload);
+        uint8_t* task = payload && IsReadable(payload, 8) ? *reinterpret_cast<uint8_t**>(payload) : nullptr;
+        if (task && IsReadable(task - kTaskNodeKeyBefore, 8 + kTaskClosure + 8)) {
+            key = *reinterpret_cast<const uint64_t*>(task - kTaskNodeKeyBefore);
+            const uint8_t* closure = *reinterpret_cast<uint8_t* const*>(task + kTaskClosure);
+            if (closure && IsReadable(closure, 0x18)) {
+                fn = *reinterpret_cast<const uintptr_t*>(closure);
+                object = *reinterpret_cast<const uintptr_t*>(closure + 0x10) + *reinterpret_cast<const int32_t*>(closure + 8);
+            }
+        }
+        std::string near_ = "-";
+        for (size_t i = 0; i < fighters.size(); i++) {
+            const intptr_t d = static_cast<intptr_t>(object) - reinterpret_cast<intptr_t>(fighters[i].first);
+            if (d > -0x20000 && d < 0x20000) {
+                char b[48];
+                std::snprintf(b, sizeof(b), "fighter %zu %s0x%llx", i, d < 0 ? "-" : "+", static_cast<unsigned long long>(d < 0 ? -d : d));
+                near_ = b;
+            }
+        }
+        const bool inImage = fn >= g_imageBase && fn < g_imageBase + 0x5000000;
+        Log("joborder:   %3d key %u.%u group %d fn %s%llx on %p (%s)", n, static_cast<uint32_t>(key >> 32), static_cast<uint32_t>(key),
+            group, inImage ? "rva " : "", static_cast<unsigned long long>(inImage ? fn - g_imageBase : fn),
+            reinterpret_cast<void*>(object), near_.c_str());
+        job = *reinterpret_cast<uint8_t**>(job + kJobNext);
+    }
+}
+
+uint64_t JobRunnerDetour(uint8_t* queue, int mode)
+{
+    if (!g_inDriver || !queue || !g_jobQueue || queue != *g_jobQueue) return g_origJobRunner(queue, mode);
+    if (g_jobOrderLogs > 0) {
+        g_jobOrderLogs--;
+        LogJobOrder(queue);
+    }
+    if (!g_serialJobs) return g_origJobRunner(queue, mode);
+    auto* threads = reinterpret_cast<int32_t*>(queue + kJobQueueMode);
+    const int32_t was = *threads;
+    *threads = 0;
+    const uint64_t r = g_origJobRunner(queue, mode);
+    *threads = was;
+    return r;
+}
+
 void CountPhaseTick()
 {
     if (!g_phaseTiming) return;
@@ -735,6 +839,21 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game)
         !Hook(image, kTickProper, reinterpret_cast<void*>(&TickProperDetour), reinterpret_cast<void**>(&g_origTickProper))) {
         Log("battle driver: phasecost unavailable");
     }
+    {
+        const auto* phaseEnd = image.At<const uint8_t*>(kPhaseRunsQueue.rva);
+        const auto* modeTest = image.At<const uint8_t*>(kRunnerModeTest);
+        if (std::memcmp(phaseEnd, kPhaseRunsQueue.bytes, sizeof(kPhaseRunsQueue.bytes)) != 0 ||
+            std::memcmp(modeTest, kRunnerModeTestBytes, sizeof(kRunnerModeTestBytes)) != 0) {
+            Log("battle driver: signature mismatch at %s: the battle's jobs run on its threads as they come", kPhaseRunsQueue.name);
+        }
+        else {
+            g_jobQueue = image.At<uint8_t* const*>(kJobQueueGlobal);
+            if (!Hook(image, kJobRunner, reinterpret_cast<void*>(&JobRunnerDetour), reinterpret_cast<void**>(&g_origJobRunner))) {
+                g_jobQueue = nullptr;
+                Log("battle driver: the battle's jobs run on its threads as they come");
+            }
+        }
+    }
     if (!Hook(image, kBonePosition, reinterpret_cast<void*>(&BonePositionDetour), reinterpret_cast<void**>(&g_origBonePosition))) {
         Log("battle driver: bonelog unavailable");
     }
@@ -766,6 +885,21 @@ void SetReplayingTick(bool replaying)
 }
 
 bool InReplayedTick() { return g_inDriver && g_replayingTick; }
+
+void SetSerialJobs(bool on)
+{
+    g_serialJobs = on;
+    Log("battle driver: driven ticks run the battle's jobs %s%s", on ? "in order on the game thread" : "on its threads as they come",
+        g_jobQueue ? "" : " (the job runner is not hooked: always on its threads)");
+}
+
+bool SerialJobs() { return g_serialJobs && g_jobQueue; }
+
+void LogJobOrderNext(int calls)
+{
+    g_jobOrderLogs = calls;
+    Log("joborder: the next %d driven job runs", calls);
+}
 
 void SetResimPresentationSkip(bool on)
 {

@@ -29,6 +29,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <cctype>
 #include <set>
 #include <sstream>
 #include <string>
@@ -1043,7 +1044,7 @@ private:
         SetRoundDirectorPerTick(true, true);
         SetMatchDrawSeed(rf_.setup.seed);
         game.Recanonicalize();
-        std::vector<uint64_t> hashes(game.Regions().size());
+        std::vector<uint64_t> hashes(CheckRegions(game).size());
         HashRegions(CheckRegions(game), hashes.data());
         // The neutral ticks before the objects exist depend on loading (16 in
         // a session, 9 here), and so does the frozen state: take the
@@ -1051,7 +1052,7 @@ private:
         if (Compare(game, hashes.data(), rf_.initialHashes.data(), -2)) {
             TakeRecordedStart(game, hashes);
             game.Recanonicalize();
-            hashes.assign(game.Regions().size(), 0);
+            hashes.assign(CheckRegions(game).size(), 0);
             HashRegions(CheckRegions(game), hashes.data());
         }
         layout_ = game.LayoutVersion(); // after the copy and its new canonical order
@@ -1125,7 +1126,7 @@ private:
             Log("replay: the recording has no state before frame 0 to start from");
             return;
         }
-        const auto& regions = game.Regions();
+        const auto& regions = CheckRegions(game); // as `hashes` (a later build's added regions keep theirs)
         std::multiset<uint64_t> mine(hashes.begin(), hashes.end());
         std::multiset<uint64_t> recorded(rf_.initialHashes.begin(), rf_.initialHashes.end());
         std::vector<bool> taken(regions.size(), false);
@@ -1320,7 +1321,7 @@ private:
         in.p[remote_] = Guess(k, known);
         game.Advance(in, rollingBack);
         used_[k] = in;
-        std::vector<uint64_t> hashes(game.Regions().size());
+        std::vector<uint64_t> hashes(CheckRegions(game).size());
         HashRegions(CheckRegions(game), hashes.data());
         sums_[k] = FoldChecksum(hashes.data(), hashes.size());
     }
@@ -1551,38 +1552,52 @@ private:
         checkLayout_ = game.LayoutVersion();
         checkCount_ = live.size();
         checkRegions_.clear();
+        // Regions a later build adds by name for its loads (fighter.switch...)
+        // that the recording does not have: its checksums were made without
+        // them, so its checks leave them out.
+        std::set<std::string> recordedNames;
+        for (const RegionInfo& r : rf_.regions) recordedNames.insert(r.name);
+        std::vector<StateRegion> kept;
+        for (const StateRegion& r : live) {
+            const bool canonical = r.name.size() > 1 && r.name[0] == 's' && std::isdigit(static_cast<unsigned char>(r.name[1]));
+            if (canonical || recordedNames.count(r.name)) kept.push_back(r);
+        }
+        const size_t leftOut = live.size() - kept.size();
         const auto masksOf = [](const std::string& id) {
             const size_t at = id.find("/map-");
             return at == std::string::npos ? std::string() : id.substr(at);
         };
-        if (masksOf(rf_.gameBuild) == masksOf(game.BuildId())) return live;
+        if (masksOf(rf_.gameBuild) == masksOf(game.BuildId()) && !leftOut) return live;
         std::map<uint64_t, std::vector<const std::vector<uint8_t>*>> bySize;
         for (const RegionInfo& r : rf_.regions) {
             auto& masks = bySize[r.size];
             if (std::none_of(masks.begin(), masks.end(), [&](const std::vector<uint8_t>* m) { return *m == r.ignore; })) masks.push_back(&r.ignore);
         }
-        bool sameOrder = rf_.regions.size() == live.size();
-        for (size_t i = 0; sameOrder && i < live.size(); i++) sameOrder = rf_.regions[i].size == live[i].size;
-        checkRegions_ = live;
+        bool sameOrder = rf_.regions.size() == kept.size();
+        for (size_t i = 0; sameOrder && i < kept.size(); i++) sameOrder = rf_.regions[i].size == kept[i].size;
+        checkRegions_ = std::move(kept);
         int changed = 0;
-        for (size_t i = 0; i < checkRegions_.size(); i++) {
-            const auto& masks = bySize[checkRegions_[i].size];
-            const std::vector<uint8_t>* mask = masks.size() == 1 ? masks[0] : sameOrder ? &rf_.regions[i].ignore : nullptr;
-            if (mask && *mask != checkRegions_[i].ignore) {
-                checkRegions_[i].ignore = *mask;
-                changed++;
+        if (masksOf(rf_.gameBuild) != masksOf(game.BuildId())) {
+            for (size_t i = 0; i < checkRegions_.size(); i++) {
+                const auto& masks = bySize[checkRegions_[i].size];
+                const std::vector<uint8_t>* mask = masks.size() == 1 ? masks[0] : sameOrder ? &rf_.regions[i].ignore : nullptr;
+                if (mask && *mask != checkRegions_[i].ignore) {
+                    checkRegions_[i].ignore = *mask;
+                    changed++;
+                }
             }
         }
-        Log("replay: checked with the recording's checksum masks (%d of %zu regions masked differently on this build)", changed,
-            checkRegions_.size());
-        if (!changed) checkRegions_.clear();
+        Log("replay: checked with the recording's checksum masks (%d of %zu regions masked differently on this build, %zu "
+            "regions it does not have left out)",
+            changed, checkRegions_.size(), leftOut);
+        if (!changed && !leftOut) checkRegions_.clear();
         return checkRegions_.empty() ? live : checkRegions_;
     }
 
     void CheckFrame(SfvGame& game, int f)
     {
         if (f >= rf_.FrameCount() || rf_.hashes.empty()) return;
-        std::vector<uint64_t> hashes(game.Regions().size());
+        std::vector<uint64_t> hashes(CheckRegions(game).size());
         HashRegions(CheckRegions(game), hashes.data());
         framesChecked_++;
         // A state dump of the frame (a compact recording's every 600 frames, a
@@ -1676,8 +1691,9 @@ private:
         for (size_t j = 0; j < rf_.regions.size(); j++) bySize[rf_.regions[j].size].insert(recorded[j]);
         int differ = 0;
         std::string names;
-        for (size_t i = 0; i < game.Regions().size(); i++) {
-            auto& pool = bySize[game.Regions()[i].size];
+        const std::vector<StateRegion>& regions = CheckRegions(game); // as `ours`
+        for (size_t i = 0; i < regions.size(); i++) {
+            auto& pool = bySize[regions[i].size];
             const auto it = pool.find(ours[i]);
             if (it != pool.end()) {
                 pool.erase(it);
@@ -1685,7 +1701,7 @@ private:
             }
             // The camera's and the pawns' animation clocks follow how ticks
             // fall into rendered frames: presentation, counted apart.
-            const std::string& name = game.Regions()[i].name;
+            const std::string& name = regions[i].name;
             if (f >= 0 && (name == "viewtarget.clock" || name == "pawn.clock")) {
                 presentationFrames_++;
                 continue;

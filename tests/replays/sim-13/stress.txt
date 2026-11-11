@@ -1,0 +1,6 @@
+# scripts/replay-regression.ps1 -Stress <n>: the first n also run under stress 8
+# (LAR vs NCL, game 2 of a set with its stage transition KO, back on the list:
+# sim-12's 364c0a17 failed under stress 8 until 2026-11-11, then passed.)
+2026-11-11_04-35-39_Player-1-ZGF_vs_Player-2-RYU_a8fe6807_p1.sfvr
+2026-11-11_03-22-04_Player-1-VEG_vs_Player-2-CNL_067059fc_p1.sfvr
+2026-11-11_04-33-13_Player-1-LAR_vs_Player-2-NCL_25092039_p1.sfvr

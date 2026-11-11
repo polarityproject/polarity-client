@@ -309,6 +309,24 @@ int CmdDiff(int argc, char** argv)
     if (!Load(argv[0], a) || !Load(argv[1], b)) return 1;
     const DiffReport d = DiffReplays(a, b);
     std::printf("%s", FormatDiff(d, a).c_str());
+    // --all: every frame both files hold region hashes for whose regions
+    // differ (two kept runs of one recording: not only the first).
+    if (argc > 2 && std::string(argv[2]) == "--all" && a.regions.size() == b.regions.size()) {
+        int frames = 0;
+        for (int f = 0; f < std::min(a.FrameCount(), b.FrameCount()); f++) {
+            if (!a.HasRegionHashes(f) || !b.HasRegionHashes(f)) continue;
+            const uint64_t* ha = a.FrameHashes(f);
+            const uint64_t* hb = b.FrameHashes(f);
+            std::string names;
+            for (size_t r = 0; r < a.regions.size(); r++) {
+                if (ha[r] != hb[r]) names += (names.empty() ? "" : ", ") + a.regions[r].name;
+            }
+            if (names.empty()) continue;
+            frames++;
+            std::printf("frame %d: %s\n", f, names.c_str());
+        }
+        std::printf("%d frames differ\n", frames);
+    }
     return (d.comparable && d.firstInputMismatch < 0 && d.firstStateMismatch < 0 && !d.setupDiffers) ? 0 : 1;
 }
 

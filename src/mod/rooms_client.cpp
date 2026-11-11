@@ -1306,7 +1306,8 @@ void RoomsWatch(int table)
         c.watchTickets.clear();
         c.watchSession = false;
         c.svc->SetMemberData("w", table >= 0 ? std::to_string(table + 1) : "");
-        Log(table >= 0 ? "rooms: watching table %d" : "rooms: stopped watching%s", table >= 0 ? table + 1 : 0);
+        if (table >= 0) Log("rooms: watching table %d", table + 1);
+        else Log("rooms: stopped watching");
         return true;
     });
 }

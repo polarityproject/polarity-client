@@ -1,0 +1,7 @@
+# scripts/replay-regression.ps1 -Quick: a few minutes
+2026-11-11_04-35-39_Player-1-ZGF_vs_Player-2-RYU_a8fe6807_p1.sfvr
+2026-11-11_04-33-13_Player-1-LAR_vs_Player-2-NCL_25092039_p1.sfvr
+2026-11-11_04-18-12_Player-1-RMK_vs_Player-2-Z24_387acf15_p1.sfvr
+2026-11-11_03-22-04_Player-1-VEG_vs_Player-2-CNL_067059fc_p1.sfvr
+2026-11-11_03-36-14_Player-1-RSD_vs_Player-2-FAN_1e5ee2f3_p1.sfvr
+2026-11-11_04-39-45_Player-1-DSM_vs_Player-2-BSN_02380bbb_p1.sfvr

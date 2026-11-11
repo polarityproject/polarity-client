@@ -6,8 +6,11 @@ A recording plays in the Battle Log only on the same game exe and the same
 changes what a battle computes from the same start and inputs. These
 recordings check that nothing else does.
 
-`sim-<n>/` holds the reference recordings for sim version n: one side's file
-of a live two-PC match each, made by test players (no real players' names).
+`sim-<n>/` holds the reference recordings for sim version n: P1's file of a
+live match each, made by test players (no real players' names). sim-12 came
+from two-PC matches; sim-13 (2026-11-11) from two game instances on one PC
+in a session through the local rooms server, input delay 0, both mashing
+(the time-over: both idle, so it has no rollbacks).
 Together they cover every character, plus:
 - Zangief's throw cinematics, with rollbacks during them;
 - a game 2 of a Direct Match set (battle to battle, Laura vs Necalli: the stage transition KO);

@@ -1,5 +1,6 @@
 #include "mod/boot.h"
 
+#include "mod/crash_report.h"
 #include "mod/flow.h"
 #include "mod/lifecycle.h"
 #include "mod/log.h"
@@ -273,7 +274,21 @@ bool InstallBootProbes(const GameImage& image, bool logNetwork)
 int LoginStatus()
 {
     using Fn = uint8_t (*)();
-    return reinterpret_cast<Fn>(g_base + kGetLoginStatus)();
+    // The getter takes the identity interface (rva 0x73BEC0) without a null
+    // check (0x73BBCB): early in a start the online subsystem can have none
+    // yet, and the watch's call ended the game there (access violation
+    // reading 0, 5 to 50 s after the start; six crash reports from 0.2.6.1 to
+    // 0.3.1, some players twice in a row). A fault reads as status -1.
+    CrashGuardEnter(); // a fault here is expected, not a crash
+    __try {
+        const int status = reinterpret_cast<Fn>(g_base + kGetLoginStatus)();
+        CrashGuardLeave();
+        return status;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        CrashGuardLeave();
+        return -1;
+    }
 }
 
 void WatchLoginStatus()

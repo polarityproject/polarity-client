@@ -56,6 +56,23 @@ folder, and nothing needs doing.
 
 - Throw and Critical Art cameras (Zangief's SPDs, Abigail's Critical Art)
   no longer cut to the fight camera when a rollback lands during them.
+- Desyncs reported from 0.3.x matches:
+  - A fighter's list of active effects (seen most with M. Bison) could end
+    up different on each side after a rollback, or from the first frame.
+    These were the most common reports. The list now rolls back with the
+    fight.
+  - A hit's stun could count 10 % apart on the two PCs: whether the
+    defender's stun reduction applied depended on which of the game's
+    threads got there first. Online matches now run the game's battle
+    tasks one after another in a fixed order, the same on both PCs, at the
+    same speed. Because of this, replays recorded before this version can't
+    be played in the Battle Log; it says so.
+- The game could crash a few seconds after starting, when Steam's online
+  service was not ready yet.
+- The game could crash when a session ended during the jump into a match,
+  for example when a spectator pressed X (light punch) on the room screen
+  as the match loaded: it now goes back to the menu. X on the room screen
+  no longer stops watching while the watched match is on.
 
 ## [0.3.1] - 2026-11-08
 

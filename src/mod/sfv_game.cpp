@@ -373,6 +373,21 @@ bool IsBattleCamera(const uint8_t* camera, uintptr_t imageBase)
 constexpr uint32_t kVitalityOwnerVtable = 0x2C51718;
 constexpr size_t kVitalityRegionSize = 372, kVitalityRegionAt = 0xC0, kVitalityOwnerAt = 0xB0;
 constexpr size_t kFighterEventAt = 0x338, kFighterEventSize = 4;
+// A fighter's four effect switches: records of 0x48 bytes from +0x340. Each
+// tick rva 0x362520 picks the entry type a switch shows (by its kind at
+// +0x28, or its override at +0x40 when that is not -1), turns off the type
+// it showed before (+0x3C) when the pick changed, and turns the pick on in
+// the fighter's effect list (s1624 +0x0, its count at +0x2C0; rva 0x364800).
+// The move scripts set the override (rva 0x35EB40) and the level (+0x38,
+// 0x35EB80) and can install a record (0x35EBF0). The game's regions cover
+// only +0x2C..+0x33 and +0x44 of each: after a rollback the override and the
+// type shown kept the newest tick's values, the resimulated tick took its
+// pick as already shown and added it without turning the old one off (M.
+// Bison vs Ken ed359e49 and five more 0.3.x matches: a count of 2 against 1),
+// and a warm-up that set them left both games apart from frame 0 (Rose vs G
+// 3936e71b, e5cc4189). Added: +0x28..+0x43 of each record.
+constexpr size_t kEffectSwitchesAt = 0x340, kEffectSwitchStride = 0x48, kEffectSwitchCount = 4;
+constexpr size_t kEffectSwitchFieldsAt = 0x28, kEffectSwitchFieldsSize = 0x1C;
 // The owner of a fighter's effect slots: the game snapshots the slots (392
 // bytes) from +0x6D8 (the owner's vtable rva 0x2C53598 sits at +0xB0). +0x108
 // is set each tick from the fighter (rva 0x3A00C5; kept while 0x377710 holds)
@@ -515,6 +530,12 @@ bool SfvGame::RefreshRegions()
                 uint8_t* fighter = r.ptr - kVitalityRegionAt;
                 if (owned(fighter, kVitalityOwnerAt, kVitalityOwnerVtable, kFighterEventAt, kFighterEventSize)) {
                     fresh.push_back({"fighter.event." + r.name.substr(5), fighter + kFighterEventAt, kFighterEventSize, {}});
+                }
+                for (size_t s = 0; s < kEffectSwitchCount; s++) {
+                    const size_t at = kEffectSwitchesAt + s * kEffectSwitchStride + kEffectSwitchFieldsAt;
+                    if (!owned(fighter, kVitalityOwnerAt, kVitalityOwnerVtable, at, kEffectSwitchFieldsSize)) continue;
+                    fresh.push_back({"fighter.switch" + std::to_string(s) + "." + r.name.substr(5), fighter + at,
+                                     kEffectSwitchFieldsSize, {}});
                 }
             }
             if (r.size == kEffectSlotsSize && r.name.rfind("s392.", 0) == 0) {

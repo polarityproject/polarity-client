@@ -32,6 +32,13 @@ bool InReplayedTick();
 void SetPhaseTiming(bool on);
 // Experiment (`resimskip 0|1`): replayed ticks leave out the presentation phases.
 void SetResimPresentationSkip(bool on);
+// Driven ticks run the battle's jobs one after another on the game thread, in
+// the scheduler's order (on by default; `serialjobs 0|1`); off, the game's
+// worker threads take them as they come, in an order that can differ by PC.
+void SetSerialJobs(bool on);
+bool SerialJobs();
+// Research (`joborder [n]`): the jobs of the next n driven job runs, in order.
+void LogJobOrderNext(int calls);
 // SetFrameDriver(nullptr), then waits until the game thread has left the
 // frame it was running with the driver (up to 5 s): after it, no OnFrame of
 // the old driver runs.

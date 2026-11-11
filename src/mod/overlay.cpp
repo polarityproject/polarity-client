@@ -3353,9 +3353,21 @@ void DrawHubScreens(bool takeInput)
         if (in.delay >= 0) g_tableDelay = in.delay;
         if (in.vskill > 0 || in.vtrigger > 0) SetTableSkills(in.vskill, in.vtrigger);
         if (in.myCharacter && !g_myCharacterOpen) OpenMyCharacter();
+        if (in.training) StartRoomTraining(rooms);
         if (in.watch != -2) {
-            RoomsWatch(in.watch);
-            if (in.watch < 0) g_watchTable = -1;
+            // Not while a watched match jumps, loads or plays: the screen has
+            // the input until the battle takes it, and an X pressed in the
+            // jump (light punch, in the game) stopped watching, which ended
+            // the session mid-jump (crash reports 2026-11-07..10).
+            const NetView nv = NetViewNow();
+            using P = NetView::Phase;
+            if (nv.spectator && (nv.phase == P::Jumping || nv.phase == P::Loading || nv.phase == P::Running)) {
+                Log("overlay: the room screen's watch toggle ignored while the watched match is on");
+            }
+            else {
+                RoomsWatch(in.watch);
+                if (in.watch < 0) g_watchTable = -1;
+            }
         }
         if (in.clearNotice) RoomsClearNotice();
         else if (g_myCharacterOpen) DrawMyCharacter(rooms, takeInput);
