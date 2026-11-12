@@ -7,6 +7,14 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+
+- The mouse wheel scrolls Polarity's lists: settings, the Battle Log and
+  its filters, the rooms list, a room's tables and its players. A focused
+  row scrolled out of view moves to the nearest one in view.
+- In a room, RB "Players" is in the prompts, and clicking a player picks
+  them in the list (Mute, and Remove for the room's owner).
+
 ### Changed
 
 - The frame meter shows proximity guard in brown, apart from the yellow of

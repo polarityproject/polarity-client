@@ -60,6 +60,7 @@ struct State {
     int seatSide = 0;          // the seat A takes when both are open (left/right)
     bool onPlayers = false;    // RB: the cursor in the player list
     int player = 0;
+    float playersFirst = 0;    // the list's first row shown
     std::set<uint32_t> muted;  // their chat hidden (this session)
     uint32_t removing = 0;     // the owner's removal, to confirm
     // The your-turn card.
@@ -297,7 +298,15 @@ void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
     Strip(d, 894, 82, 1550, 110, false);
     Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(910, 86), kGold, "PLAYERS \xC2\xB7 " + std::to_string(v.members.size()) + " / 16");
     const std::vector<RoomMember> list = PlayerOrder(v);
-    const int first = std::clamp(g.player - kPlayersInView + 1, 0, std::max(0, static_cast<int>(list.size()) - kPlayersInView));
+    const int count = static_cast<int>(list.size());
+    // The wheel scrolls the list; else it keeps the player under the cursor
+    // in view.
+    if (g.modal == Modal::None && g.cardTable < 0)
+        WheelList(g_v.P(894, kRowsTop), g_v.P(1550, kRowsTop + kPlayersInView * kRowH), count, kPlayersInView, &g.playersFirst, &g.player);
+    if (g.player < g.playersFirst) g.playersFirst = static_cast<float>(g.player);
+    if (g.player > g.playersFirst + kPlayersInView - 1) g.playersFirst = static_cast<float>(g.player - kPlayersInView + 1);
+    g.playersFirst = std::clamp(g.playersFirst, 0.0f, static_cast<float>(std::max(0, count - kPlayersInView)));
+    const int first = static_cast<int>(g.playersFirst);
     for (int i = first; i < static_cast<int>(list.size()) && i < first + kPlayersInView; i++) {
         const RoomMember& m = list[i];
         const float y = kRowsTop + (i - first) * kRowH, ty = y + 13;
@@ -316,6 +325,11 @@ void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
         }
         d->AddLine(g_v.P(894, y + kRowH - 1), g_v.P(1550, y + kRowH - 1), look::kHairline, g_v.L(1));
         if (g.onPlayers && i == g.player) Ring(d, 896, y + 1, 1536, y + kRowH - 2);
+        // A click picks the player (the list's cursor, as RB then up and down).
+        if (g.modal == Modal::None && !g.typing && g.cardTable < 0 && Clicked() && MouseIn(g_v.P(894, y), g_v.P(1550, y + kRowH))) {
+            g.onPlayers = true;
+            g.player = i;
+        }
         float x = 994;
         if (m.owner) {
             DrawCrown(d, x, ty + 17, 0.85f, kGold);
@@ -374,7 +388,7 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
     // move the view: a chip says how many wait below.
     const float wrap = 610, size = 19, top = kChatTop + 36, viewBottom = 773;
     const ImVec2 ca = g_v.P(894, top), cb = g_v.P(1550, viewBottom);
-    if (g_inputOn && MouseIn(ca, cb) && ImGui::GetIO().MouseWheel != 0) g.chatScroll += ImGui::GetIO().MouseWheel * 40;
+    if (const int w = WheelSteps(ca, cb)) g.chatScroll += w * 40.0f;
     if (g.typing) {
         if (Pressed({ImGuiKey_UpArrow, ImGuiKey_GamepadDpadUp})) g.chatScroll += 40;
         if (Pressed({ImGuiKey_DownArrow, ImGuiKey_GamepadDpadDown})) g.chatScroll -= 40;
@@ -1125,6 +1139,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         g.rulesPending.erase(g.rulesPending.begin());
         Request(in, "rules", {std::to_string(t), FormatRules(g.rules.rules[t])});
     }
+    if (g.modal == Modal::None && !g.typing && g.cardTable < 0) WheelList(g_v.P(48, 80), g_v.P(868, 832), tables, kTablesInView, &g.scroll, &g.table);
     if (g.table < g.scroll) g.scroll = static_cast<float>(g.table);
     if (g.table > g.scroll + kTablesInView - 1) g.scroll = static_cast<float>(g.table - kTablesInView + 1);
 
@@ -1275,10 +1290,9 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         }
         else if (place != "Idle") {
             lead = Upper(place);
-            text = "RB shows the players.";
         }
         else {
-            text = "Pick a table to sit at or queue for. RB shows the players.";
+            text = "Pick a table to sit at or queue for.";
         }
         if (fs.phase == TablePhase::Open && atFocused) prompts.push_back({"button_a", "Stand up"});
         else if (fs.phase == TablePhase::Open && (!fs.seat[0] || !fs.seat[1])) {
@@ -1291,6 +1305,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         prompts.push_back({"button_y", "My character"});
         if (waiting && !paused) prompts.push_back({"button_lb", "Training"});
         if (v.owner == v.self) prompts.push_back({"button_start", "Table rules"});
+        if (v.members.size() > 1) prompts.push_back({"button_rb", "Players"});
         prompts.push_back({"button_b", "Leave"});
     }
     const bool modal = g.cardTable >= 0 || handoffTable >= 0 || g.modal != Modal::None;

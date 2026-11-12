@@ -607,6 +607,11 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
                 }
             }
         }
+        // The wheel over the list scrolls it (a focused room scrolled away
+        // moves with it; Create and Join stay focused).
+        int focus = g.focus;
+        WheelList(g_v.P(48, kListTop), g_v.P(868, 832), count, kRowsInView, &g.scroll, &focus);
+        if (focus != g.focus) g.focus = focus, g.inPanel = false;
     }
     // The list keeps the focused room in view.
     if (g.focus >= 0) {

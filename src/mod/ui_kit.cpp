@@ -221,7 +221,59 @@ uint32_t MappedPadKeys(int vk)
 ImGuiKey g_clickKey = ImGuiKey_None, g_clickNext = ImGuiKey_None; // a glyph clicked: this frame's button, the next's
 
 void ClickPad(ImGuiKey key) { g_clickNext = key; }
-void BeginInputFrame() { g_clickKey = std::exchange(g_clickNext, ImGuiKey_None); }
+
+namespace {
+// The research command's wheel (TestWheel): taken at the next frame's start,
+// used for that frame in place of the mouse.
+std::mutex g_testWheelMutex;
+ImVec2 g_testWheelNextAt;
+float g_testWheelNext = 0;
+ImVec2 g_testWheelAt;
+float g_testWheel = 0;
+float g_wheelLeft = 0; // a touchpad's fractions of a notch, carried over
+} // namespace
+
+void BeginInputFrame()
+{
+    g_clickKey = std::exchange(g_clickNext, ImGuiKey_None);
+    std::lock_guard lock(g_testWheelMutex);
+    g_testWheel = std::exchange(g_testWheelNext, 0.0f);
+    g_testWheelAt = g_testWheelNextAt;
+}
+
+void TestWheel(float x, float y, float notches)
+{
+    std::lock_guard lock(g_testWheelMutex);
+    g_testWheelNextAt = ImVec2(x, y);
+    g_testWheelNext = notches;
+}
+
+int WheelSteps(ImVec2 a, ImVec2 b)
+{
+    if (!g_inputOn) return 0;
+    float wheel = ImGui::GetIO().MouseWheel;
+    bool over = MouseIn(a, b);
+    if (g_testWheel != 0) {
+        const ImVec2 m = g_v.P(g_testWheelAt.x, g_testWheelAt.y);
+        wheel = g_testWheel;
+        over = m.x >= a.x && m.x < b.x && m.y >= a.y && m.y < b.y;
+    }
+    if (!over || wheel == 0) return 0;
+    if (g_wheelLeft != 0 && (g_wheelLeft > 0) != (wheel > 0)) g_wheelLeft = 0; // turned back
+    g_wheelLeft += wheel;
+    const int steps = static_cast<int>(g_wheelLeft);
+    g_wheelLeft -= static_cast<float>(steps);
+    return steps;
+}
+
+bool WheelList(ImVec2 a, ImVec2 b, int count, int view, float* first, int* focus)
+{
+    const int steps = WheelSteps(a, b);
+    if (!steps) return false;
+    *first = std::clamp(std::round(*first) - static_cast<float>(steps), 0.0f, static_cast<float>(std::max(0, count - view)));
+    if (focus && *focus >= 0 && count > 0) *focus = std::clamp(*focus, static_cast<int>(*first), std::min(count, static_cast<int>(*first) + view) - 1);
+    return true;
+}
 
 ImGuiKey PadKeyOfGlyph(const char* glyph)
 {

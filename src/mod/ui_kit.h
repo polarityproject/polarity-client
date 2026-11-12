@@ -84,6 +84,18 @@ bool Back();        // B
 bool NextSetting(); // Y
 bool Clicked();
 bool MouseIn(ImVec2 a, ImVec2 b);
+// The mouse wheel over an area (pixels) this frame, in whole notches, up
+// positive (a touchpad's fractions of one add up); 0 while input is off.
+// Call it once a frame for an area.
+int WheelSteps(ImVec2 a, ImVec2 b);
+// A list showing `view` of its `count` rows from row `*first`: the wheel
+// over it (pixels) scrolls it a row a notch, and a focused row scrolled out
+// of view becomes the nearest one in view (focus null or < 0: none to move).
+// True when it scrolled.
+bool WheelList(ImVec2 a, ImVec2 b, int count, int view, float* first, int* focus);
+// Research: the next frame's wheel turned `notches` with the mouse at x, y
+// (design coordinates), whatever the mouse does.
+void TestWheel(float x, float y, float notches);
 bool MouseInQuad(const ImVec2 (&q)[4]); // design coordinates
 
 // ----- drawing --------------------------------------------------------------------

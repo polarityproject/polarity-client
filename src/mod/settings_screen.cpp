@@ -171,6 +171,22 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
         y += kRowPitch;
     }
     const float total = y, view = kBottom - kTop;
+    // The wheel over the list scrolls it a row a notch; a focused row
+    // scrolled out of view (or its header) becomes the nearest one in view.
+    if (!g.typing) {
+        if (const int w = WheelSteps(g_v.P(48, kTop), g_v.P(948, kBottom))) {
+            g.scroll = std::clamp(g.scroll - w * kRowPitch, 0.0f, std::max(0.0f, total - view));
+            auto inView = [&](int i) { return ys[i] - kHeaderH >= g.scroll && ys[i] + kRowH <= g.scroll + view; };
+            const bool above = ys[g.focus] - kHeaderH < g.scroll, below = ys[g.focus] + kRowH > g.scroll + view;
+            for (int k = 0; (above || below) && k < count; k++) {
+                const int i = above ? k : count - 1 - k;
+                if (rows[i].enabled && inView(i)) {
+                    g.focus = i;
+                    break;
+                }
+            }
+        }
+    }
     // The focused row and its header stay in view.
     const float want = ys[g.focus];
     if (want - kHeaderH < g.scroll) g.scroll = std::max(0.0f, want - kHeaderH);

@@ -369,6 +369,22 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
             if (Up()) g_focus = std::max(0, g_focus - 1);
             if (Down()) g_focus = std::min(static_cast<int>(selectable.size()) - 1, g_focus + 1);
         }
+        // The wheel over the list scrolls it a match a notch; a focused row
+        // scrolled out of view becomes the nearest one in view.
+        if (const int w = WheelSteps(g_v.P(kListX0, kRowsTop), g_v.P(kListX1, kRowsBottom)); w && !selectable.empty()) {
+            const float view = kRowsBottom - kRowsTop;
+            g_scroll = std::clamp(g_scroll - w * RowHeight(RowKind::Match), 0.0f, std::max(0.0f, total - view));
+            const Row& at = rows[selectable[g_focus]];
+            const bool above = at.y < g_scroll, below = at.y + at.h > g_scroll + view;
+            for (int k = 0; (above || below) && k < static_cast<int>(selectable.size()); k++) {
+                const int i = above ? k : static_cast<int>(selectable.size()) - 1 - k;
+                const Row& r = rows[selectable[i]];
+                if (r.y >= g_scroll && r.y + r.h <= g_scroll + view) {
+                    g_focus = i;
+                    break;
+                }
+            }
+        }
         if (Pressed({ImGuiKey_GamepadL1}, false) || Pressed({ImGuiKey_GamepadR1}, false)) {
             PlayUi(UiSound::Step);
             g_bySets = !g_bySets;
@@ -678,6 +694,8 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
             Text(d, f.body, g_v.L(15), g_v.P(x1 - 12, by + 6), kMuted,
                  std::to_string(count[s] - 1) + (s == 0 ? " played" : " faced"), 1);
             int& scroll = g_modalScroll[s];
+            float first = static_cast<float>(scroll);
+            if (WheelList(g_v.P(x0, by + 30), g_v.P(x1, by + 30 + kVisible * 50), count[s], kVisible, &first, &g_modalRow[s])) scroll = static_cast<int>(first);
             const int r = std::clamp(g_modalRow[s], 0, count[s] - 1);
             if (r < scroll) scroll = r;
             if (r >= scroll + kVisible) scroll = r - kVisible + 1;
@@ -755,6 +773,8 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         by += 64;
         constexpr int kVisible = 7;
         int& scroll = g_modalScroll[0];
+        float first = static_cast<float>(scroll);
+        if (WheelList(g_v.P(fx0, by), g_v.P(fx1, by + kVisible * 56), static_cast<int>(list.size()), kVisible, &first, &row)) scroll = static_cast<int>(first);
         if (row < scroll) scroll = row;
         if (row >= scroll + kVisible) scroll = row - kVisible + 1;
         for (int i = scroll; i < static_cast<int>(list.size()) && i < scroll + kVisible; i++) {
