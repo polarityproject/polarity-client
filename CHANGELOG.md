@@ -14,11 +14,23 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
   row scrolled out of view moves to the nearest one in view.
 - In a room, RB "Players" is in the prompts, and clicking a player picks
   them in the list (Mute, and Remove for the room's owner).
+- Running the benchmark shows its loading: the round read, the characters
+  and stage loading, the round starting, with the time each step takes.
+  Settings stays behind it until the battle loads, then it fades through
+  black into the round once the round runs.
 
 ### Changed
 
 - The frame meter shows proximity guard in brown, apart from the yellow of
   hit and block stun.
+
+### Fixed
+
+- The benchmark never started on a Steam Deck (Proton): its built-in round
+  couldn't be read there. Replays recorded on Windows now play on a Steam
+  Deck too.
+- After a benchmark that could not start, its "Please wait" stripe stayed
+  under the settings screen.
 
 ## [0.4.0] - 2026-11-11
 

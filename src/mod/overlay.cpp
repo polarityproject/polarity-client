@@ -2415,12 +2415,28 @@ std::vector<SettingsRow> SettingsRows()
     return rows;
 }
 
-// The benchmark's modals over Polarity settings: before a run, and a result.
-enum class BenchModal { None, Confirm, Result };
+// The benchmark's modals over Polarity settings: before a run, its loading,
+// and a result.
+enum class BenchModal { None, Confirm, Loading, Result };
 BenchModal g_benchModal = BenchModal::None;
 int g_benchChoice = 0;
 BenchmarkResult g_benchShown;
 bool g_benchReturn = false; // a run is on: settings and its result again at the menus
+
+// Loading a run: settings stays, under a modal that takes no input, while
+// the round is read, its characters and stage load and the jump switches to
+// the battle scene; then black (held while the game's own screen goes
+// black) and settings closes, as the Battle Log's Watch does. Gone at once,
+// settings sat still for the read and the main menu showed for the preload.
+struct BenchLaunch {
+    bool active = false;
+    int step = 0;         // 0 reading the round, 1 loading, 2 starting, 3 fading into it
+    int drawn = 0;        // frames the modal has been shown (the read waits for one)
+    uint64_t switchesAt = 0;
+    double since = 0, stepSince = 0, blackFrom = -1, revealFrom = -1;
+};
+BenchLaunch g_benchLaunch;
+constexpr double kBenchToBlack = 0.3, kBenchReveal = 0.5, kBenchGiveUp = 60;
 
 void OpenBenchmarkModal(bool result)
 {
@@ -2436,14 +2452,124 @@ void OpenBenchmarkModal(bool result)
 
 void StartBenchmarkRun()
 {
-    g_benchModal = BenchModal::None;
-    if (!StartBenchmark(BuildVersion())) {
-        AddToast("The benchmark can't start now.", kRed, 4);
+    // The read itself waits for the modal's first frame (it holds this thread).
+    g_benchModal = BenchModal::Loading;
+    g_benchLaunch = {};
+    g_benchLaunch.active = true;
+    g_benchLaunch.since = g_benchLaunch.stepSince = ImGui::GetTime();
+}
+
+// The launch's progress, each frame.
+void StepBenchmarkLaunch()
+{
+    BenchLaunch& l = g_benchLaunch;
+    const double now = ImGui::GetTime();
+    if (l.step == 0) {
+        if (l.drawn < 1) return;
+        if (!StartBenchmark(BuildVersion())) {
+            g_benchModal = BenchModal::None;
+            l = {};
+            AddToast("The benchmark can't start now.", kRed, 4);
+            return;
+        }
+        l.switchesAt = BattleSceneSwitches();
+        l.step = 1;
+        l.stepSince = now;
+    }
+    if (l.step == 1 && BattleSceneSwitches() != l.switchesAt) {
+        l.step = 2;
+        l.stepSince = l.blackFrom = now;
+    }
+    if (l.step == 1 && now - l.since > kBenchGiveUp) {
+        Log("benchmark: no battle scene %.0f s after Run: stopping it", kBenchGiveUp);
+        ControlReplay(ReplayControl::Leave);
+        g_benchModal = BenchModal::None;
+        l = {};
+        AddToast("The benchmark didn't start. Try again.", kRed, 5);
         return;
     }
-    g_benchReturn = true;
-    CloseSettingsScreen();
-    CloseHub();
+    // Black: settings goes (the game's own screen is black under it).
+    if (l.step == 2 && g_benchModal == BenchModal::Loading && now - l.blackFrom >= kBenchToBlack) {
+        g_benchModal = BenchModal::None;
+        g_benchReturn = true;
+        CloseSettingsScreen();
+        CloseHub();
+    }
+    // The round's first frame has run: from black into it.
+    const ReplayView v = ReplayViewNow();
+    const bool running = v.active && v.benchmark && v.frame > 0;
+    if (l.step == 2 && g_benchModal == BenchModal::None && (running || now - l.stepSince > kBenchGiveUp)) {
+        if (!running) Log("benchmark: the round has not started %.0f s after its battle scene: showing it", kBenchGiveUp);
+        l.step = 3;
+        l.revealFrom = now;
+    }
+    if (l.step == 3 && now - l.revealFrom >= kBenchReveal) l = {};
+    // The replay ended before its first frame (it could not load): no black left behind.
+    if (l.step == 2 && g_benchModal == BenchModal::None && !v.active) l = {};
+}
+
+// The launch's modal and its black, over settings and then over the
+// battle's loading, above everything the hub draws.
+void DrawBenchmarkLaunch(const HubFonts& f)
+{
+    using namespace ui;
+    BenchLaunch& l = g_benchLaunch;
+    const double now = ImGui::GetTime();
+    ImDrawList* d = ImGui::GetForegroundDrawList();
+    ImFont* bold = f.bold ? f.bold : f.strong;
+    // Black: in at the battle scene's switch, out once the round runs; the
+    // modal goes first.
+    double black = l.blackFrom < 0 ? 0 : std::min(1.0, (now - l.blackFrom) / kBenchToBlack);
+    float alpha = 1;
+    if (l.step == 3) {
+        const double out = std::min(1.0, (now - l.revealFrom) / kBenchReveal);
+        black *= 1 - out;
+        alpha = static_cast<float>(std::max(0.0, 1 - out * 2));
+    }
+    if (black > 0) d->AddRectFilled(ImVec2(0, 0), ImGui::GetIO().DisplaySize, IM_COL32(0, 0, 0, static_cast<int>(black * 255)));
+    if (alpha > 0) {
+        const int firstVertex = d->VtxBuffer.Size;
+        g_inputOn = false;
+        ModalSpec m;
+        m.x0 = 480, m.y0 = 270, m.w = 640, m.h = 290;
+        m.kicker = "BENCHMARK";
+        m.hint = "It starts by itself.";
+        int clicked = -1;
+        float y = Modal(d, bold, f.body, m, &clicked);
+        Text(d, f.display, g_v.L(28), g_v.P(m.x0 + 28, y), look::kCream, "Getting the round ready");
+        y += 62;
+        // The steps as the room's hand-off shows them: a ring, ticked when
+        // done, a dot going round while working.
+        const char* const kSteps[] = {"Reading the round", "Loading the characters and the stage", "Starting the round"};
+        for (int i = 0; i < 3; i++) {
+            const int state = i < l.step ? 2 : i == l.step ? 1 : 0;
+            const ImVec2 c = g_v.P(m.x0 + 40, y + 11);
+            const ImU32 ring = state == 2 ? look::kOk : state == 1 ? look::kRing : look::kEdgeControl;
+            d->AddCircle(c, g_v.L(12), ring, 24, g_v.L(2));
+            if (state == 2) {
+                const ImVec2 tick[] = {g_v.P(m.x0 + 34, y + 11), g_v.P(m.x0 + 38.5f, y + 16), g_v.P(m.x0 + 46.5f, y + 6)};
+                d->AddPolyline(tick, 3, look::kOk, 0, g_v.L(2.2f));
+            }
+            else if (state == 1) {
+                const float turn = static_cast<float>(now * 4.0);
+                d->AddCircleFilled(g_v.P(m.x0 + 40 + 7 * std::cos(turn), y + 11 + 7 * std::sin(turn)), g_v.L(2.6f), look::kRing);
+            }
+            std::string text = kSteps[i];
+            if (state == 1 && now - l.stepSince >= 3) text += " \xC2\xB7 " + std::to_string(static_cast<int>(now - l.stepSince)) + " s";
+            Text(d, f.body, g_v.L(17), g_v.P(m.x0 + 66, y), state == 0 ? look::kMuted : look::kCream, text);
+            y += 36;
+        }
+        // Fading out: everything the modal drew, at the modal's alpha.
+        if (alpha < 1) {
+            for (int i = firstVertex; i < d->VtxBuffer.Size; i++) {
+                ImU32& col = d->VtxBuffer[i].col;
+                const ImU32 a = static_cast<ImU32>(((col >> IM_COL32_A_SHIFT) & 0xFF) * alpha);
+                col = (col & ~IM_COL32_A_MASK) | (a << IM_COL32_A_SHIFT);
+            }
+        }
+    }
+    l.drawn++;
+    StepBenchmarkLaunch();
 }
 
 void DrawBenchmarkModal(const HubFonts& f, bool takeInput)
@@ -3864,7 +3990,7 @@ void Draw(IDXGISwapChain* swapChain)
         hubBooted = true;
         OpenHub(true);
     }
-    if (HubOpen() && !atMenus && !g_logLaunch.active) { // (a replay's launch closes it itself)
+    if (HubOpen() && !atMenus && !g_logLaunch.active && !g_benchLaunch.active) { // (a launch closes it itself)
         CloseHub();
         CloseRoomsScreen();
         CloseBattleLog();
@@ -3904,7 +4030,8 @@ void Draw(IDXGISwapChain* swapChain)
         }
     }
     if (HubOpen()) DrawHubFrame(!g_visible);
-    if (ReplayViewNow().active) DrawReplayStripe(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, !g_visible);
+    if (ReplayViewNow().active && !g_benchLaunch.active) DrawReplayStripe(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, !g_visible);
+    if (g_benchLaunch.active) DrawBenchmarkLaunch(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold});
     if (preview) {
         DrawSelectPreview(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold});
     }

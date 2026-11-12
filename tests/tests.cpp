@@ -3,6 +3,7 @@
 
 #include "core/battle_log.h"
 #include "core/build_id.h"
+#include "core/compress.h"
 #include "core/display_name.h"
 #include "core/input_delay.h"
 #include "core/lobby.h"
@@ -491,6 +492,57 @@ ReplayFile Compacted(const ReplayFile& rf, size_t* size = nullptr)
     std::string error;
     if (!DeserializeReplay(bytes.data(), bytes.size(), &back, &error)) std::printf("    compact read failed: %s\n", error.c_str());
     return back;
+}
+
+// The decoder for Proton (no XPRESS Huffman in its cabinet.dll) against
+// Windows' own encoder: what Windows packs, it unpacks the same.
+void TestXpressHuffmanDecoder()
+{
+    std::vector<std::vector<uint8_t>> inputs;
+    inputs.push_back(std::vector<uint8_t>(4096, 0)); // one long match
+    std::vector<uint8_t> random(70000);
+    uint64_t x = 0x9E3779B97F4A7C15ull;
+    for (uint8_t& b : random) {
+        x ^= x << 13, x ^= x >> 7, x ^= x << 17;
+        b = static_cast<uint8_t>(x);
+    }
+    inputs.push_back(random); // literals over a block's end
+    std::vector<uint8_t> text;
+    const char* words[] = {"round ", "frame ", "rollback ", "Polarity ", "hitstop ", "\n", "0123456789 "};
+    for (int i = 0; text.size() < 300000; i++) {
+        x ^= x << 13, x ^= x >> 7, x ^= x << 17;
+        const char* w = words[x % 7];
+        text.insert(text.end(), w, w + std::strlen(w));
+    }
+    inputs.push_back(text); // five blocks, short and middling matches
+    std::vector<uint8_t> state(400000, 0);
+    for (size_t i = 0; i < state.size(); i += 64) state[i] = static_cast<uint8_t>(i / 64);
+    for (size_t i = 150000; i < 150300; i++) state[i] = random[i - 150000];
+    inputs.push_back(state); // game state: zeros, repeats, a long run (16-bit match lengths)
+    std::vector<uint8_t> zeros(1 << 20, 0);
+    inputs.push_back(zeros); // a run longer than 65535 (32-bit match length)
+    int checked = 0;
+    for (const std::vector<uint8_t>& in : inputs) {
+        std::vector<uint8_t> packed, mine, theirs;
+        if (!Compress(in.data(), in.size(), &packed)) {
+            std::printf("    no Windows encoder here: skipped\n");
+            return;
+        }
+        const bool decoded = DecompressXpressHuffman(packed.data(), packed.size(), in.size(), &mine);
+        if (!decoded || mine != in) {
+            size_t at = 0;
+            while (at < mine.size() && at < in.size() && mine[at] == in[at]) at++;
+            std::printf("    input %d (%zu bytes, %zu packed): decoded %d, first difference at %zu\n", checked, in.size(), packed.size(), decoded, at);
+        }
+        CHECK(decoded);
+        CHECK(mine == in);
+        CHECK(Decompress(packed.data(), packed.size(), in.size(), &theirs) && theirs == in);
+        // Damaged input fails or differs, never overruns.
+        std::vector<uint8_t> cut(packed.begin(), packed.begin() + packed.size() / 2), out;
+        if (DecompressXpressHuffman(cut.data(), cut.size(), in.size(), &out)) CHECK(out.size() == in.size());
+        checked++;
+    }
+    std::printf("    %d inputs decoded as Windows encoded them\n", checked);
 }
 
 void TestCompactRecording()
@@ -2499,6 +2551,7 @@ int main()
         {"ignore mask", TestIgnoreMask},
         {"skipped saves", TestSkippedSaves},
         {"replay file round trip", TestReplayRoundTrip},
+        {"xpress huffman decoder", TestXpressHuffmanDecoder},
         {"compact recording", TestCompactRecording},
         {"clean match", TestCleanMatch},
         {"hash on confirm", TestHashOnConfirm},

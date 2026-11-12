@@ -1911,7 +1911,12 @@ bool RequestBenchmark(const std::string& path)
         g_view.title = "Benchmark";
     }
     RequestReplay(path, 8, -1, -1, "", -1, -1, true, "", -1, 0, 0, -1, "", false, true);
-    return CurrentFrameDriver() != nullptr;
+    if (CurrentFrameDriver()) return true;
+    // Not started (the round unreadable): no benchmark view left behind (its
+    // stripe stayed up under settings, waiting for a run that never came).
+    std::lock_guard lock(g_viewMutex);
+    g_view = ReplayView{};
+    return false;
 }
 
 void SetReplayExperimentValue(const std::string& what, int value)
