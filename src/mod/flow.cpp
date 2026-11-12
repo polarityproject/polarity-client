@@ -515,6 +515,22 @@ struct MachineCopy {
     uint8_t koWait[0x48];
 };
 std::vector<MachineCopy> g_phaseRing(kPhaseRing);
+// The phase machine and the round director as they were at the freeze (tick
+// 0): the ring has copies only after a driven tick ran the director, and the
+// snapshot's round flow has no director copy before then. A rollback that
+// loaded the frozen state left the machine in phase 1 (the first tick's
+// switch had run): the replayed first tick did not switch again and so did
+// not fire its flow event (the camera's reset among them), and the session
+// parted from frame 0 on (554f088b, 7cc312ad; 0.4.0, later games of a set).
+struct FreezeCopy {
+    bool valid;
+    bool hasDirector;
+    int32_t director[14];
+    int32_t directorTimers[16];
+    int32_t directorCounts[5];
+    MachineCopy machine;
+};
+FreezeCopy g_freeze{};
 // The round's end waits (the round-end phase's timer, rva 0x40BC00, on rva
 // 0x2F2E90) until an object's mode (+0x104) is 6 or 7, then for its one-tick
 // latch (+0x100); +0x108 is set with the mode. The object (0x140 bytes,
@@ -1231,7 +1247,43 @@ void SetRoundDirectorPerTick(bool on, bool roundEndRollback)
     // From 0 on both machines as the session takes the ticks over (the
     // warm-up ticks before differ).
     g_roundFlow.ticks = 0;
+    // The freeze: what a load back to it puts back.
+    g_freeze.valid = false;
+    if (!g_directorPerTick) return;
+    g_freeze.hasDirector = false;
+    if (const uint8_t* d = LiveRoundDirector()) {
+        std::memcpy(g_freeze.director, d + kDirectorRecord, sizeof(g_freeze.director));
+        std::memcpy(g_freeze.directorTimers, d + kDirectorTimers, sizeof(g_freeze.directorTimers));
+        std::memcpy(g_freeze.directorCounts, d + kDirectorCounts, sizeof(g_freeze.directorCounts));
+        g_freeze.hasDirector = true;
+    }
+    CaptureMachine(g_freeze.machine, 0);
+    g_freeze.valid = g_freeze.hasDirector || g_freeze.machine.valid;
+    const uint8_t* m = LivePhaseMachine();
+    Log("flow: freeze copy: director %s, phase machine %s (phase %d, requested %d)", g_freeze.hasDirector ? "kept" : "missing",
+        g_freeze.machine.valid ? "kept" : "missing", m ? Field<int32_t>(m, 0x130) : -1, m ? Field<int32_t>(m, 0x134) : -1);
 }
+
+namespace {
+// A load to the freeze: the director and the machine back as they were then.
+void RestoreFreeze()
+{
+    if (!g_freeze.valid || TickNow() != 0) return;
+    if (uint8_t* d = g_freeze.hasDirector ? LiveRoundDirector() : nullptr) {
+        const int32_t before = *reinterpret_cast<const int32_t*>(d + kDirectorState);
+        std::memcpy(d + kDirectorRecord, g_freeze.director, sizeof(g_freeze.director));
+        std::memcpy(d + kDirectorTimers, g_freeze.directorTimers, sizeof(g_freeze.directorTimers));
+        std::memcpy(d + kDirectorCounts, g_freeze.directorCounts, sizeof(g_freeze.directorCounts));
+        if (before != g_freeze.director[0]) Log("flow: round director back to state %d (was %d) by a load to the freeze", g_freeze.director[0], before);
+    }
+    if (g_roundEndRollback) {
+        UndoRoundOvers(0);
+        if (g_freeze.machine.valid) RestoreMachine(g_freeze.machine);
+    }
+    static int s_logs = 0;
+    if (s_logs++ < 3) Log("flow: a load to the freeze put the director and the phase machine back");
+}
+} // namespace
 
 void BeginDrivenTick()
 {
@@ -1264,7 +1316,8 @@ void RoundDirectorFromSnapshot()
 {
     const RoundFlow& f = g_roundFlow;
     uint8_t* d = LiveRoundDirector();
-    if (!d || !f.directorSeen) return;
+    if (!d) return;
+    if (!f.directorSeen) return RestoreFreeze(); // a load to the freeze
     const int32_t before = *reinterpret_cast<const int32_t*>(d + kDirectorState);
     std::memcpy(d + kDirectorRecord, f.director, sizeof(f.director));
     std::memcpy(d + kDirectorTimers, f.directorTimers, sizeof(f.directorTimers));
