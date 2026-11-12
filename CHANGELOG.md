@@ -83,7 +83,7 @@ reported from 0.3.x. 0.4.0 plays only 0.4.0.
 - The intro, round call, KO and win poses no longer run in lockstep online:
   they roll back like the fight, so they play at full speed at any ping
   instead of slowing to the connection's round trip. (`lockstep_round_stages=1`
-  under `[netplay]` in sfv_rollback.ini brings the old behaviour back; the
+  under `[netplay]` in polarity.ini brings the old behaviour back; the
   old `lockstep_presentation` line is no longer read.)
 
 ### Fixed
