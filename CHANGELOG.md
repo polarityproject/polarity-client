@@ -5,6 +5,23 @@ first paragraph is the summary players see in the game (Settings, Updates);
 `scripts/release.ps1` reads it, and refuses to publish a version that has no
 entry here. Newest first; the format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [Unreleased]
+
+### Fixed
+
+- The frame meter never showed in a match with R. Mika: her partner
+  Nadeshiko counts as a third fighter, and the meter only started with two.
+- Startup on moves that can be held (Urien's standing HP) was counted from
+  where the held version hands over to the normal one, not from the
+  button press: a tapped Urien st.HP read 5 frames instead of 12.
+- Akuma's and Birdie's idle animations counted as moves on the frame meter
+  (startup, then active frames on Akuma's long idle pose), and against them
+  the meter often didn't start at all.
+- In a Battle Log replay, LB after a round's KO (before the fade) or from
+  the results at the end went back without the timer and health bars, and
+  from the results left them behind. It now goes on to the next fight
+  first, or starts the battle again from the end.
+
 ## [0.4.1] - 2026-11-12
 
 Fixes a crash when a set's next game started after a stage transition KO,

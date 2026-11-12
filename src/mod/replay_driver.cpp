@@ -770,6 +770,31 @@ private:
         MuteGameSounds(true);
         quiet_ = quiet;
         if (target < frame_) {
+            // From a round's KO on, between fights or after the match's last
+            // KO, the game has put its battle HUD away (the timer and the
+            // gauges; at the match's end, its results): a key loads the
+            // fight's state, not the HUD's, so LB from there played the
+            // round without its timer and health bars, and from the results
+            // left them over the round (2026-11-12). From there: on to the
+            // next fight first, where the game brings the HUD back, then the
+            // load; with no fight ahead, the battle again. (Not a takeover's
+            // rewind: its own KO frame loads as a rollback does.)
+            // (A round's end behind the frame on screen, no fight begun since:
+            // the lists may hold later rounds already, as after a restart.)
+            const int shown = frame_ - 1;
+            const auto end = std::upper_bound(roundEnds_.begin(), roundEnds_.end(), shown);
+            const bool afterKo = end != roundEnds_.begin() && std::none_of(roundStarts_.begin(), roundStarts_.end(), [&](int s) {
+                                     return s > *std::prev(end) && s <= shown;
+                                 });
+            const bool hudAway = !wasFight_ && !crossFight_ && afterKo;
+            if (hudAway) {
+                if (FightAhead()) {
+                    Log("replay: on to the next fight before going back to frame %d (the HUD is away)", target - 1);
+                    runToFight_ = target;
+                }
+                else RestartAt(game, target);
+                return;
+            }
             // The keyframe at or before the frame before the target, where
             // one loads (LoadableKey); other jumps start the battle again and
             // run to the target instead.
