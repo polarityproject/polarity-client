@@ -71,6 +71,9 @@ struct Record {
     bool air[2] = {false, false};
     bool attack[2] = {false, false}; // the script has hitboxes of its own
     uint32_t script[2] = {0, 0};
+    int frame[2] = {0, 0};             // the script's frame (a hand-over lands past 0, a new move at 0)
+    int interrupt[2] = {0, 0}, firstHit[2] = {-1, -1}; // fmlog: what classified it
+    bool hit[2] = {false, false}, counter[2] = {false, false};
     int round = 0; // a replay's round, from its call (the meter starts again with each); training: 0
 };
 
@@ -235,17 +238,24 @@ Kind Classify(const Sample& s)
     // sfvsim has it: a damage script's speed is scaled so that it comes as
     // the hit or block stun ends. 0 means none (basic scripts).
     const bool interruptible = s.interrupt > 0;
+    const bool stand = s.script == kScriptStand; // see `action` below
     const bool past = interruptible && s.frame >= s.interrupt;
     // The jump's scripts (pre-jump, airborne, landing: the same indices in
     // every character's move file) are actions too: the character is
     // committed to them, even where the script has no interrupt frame.
     const bool jump = s.script >= kScriptFirstJump && s.script <= kScriptLastJump;
-    const bool action = interruptible || jump || s.firstHit >= 0 || s.counter;
+    // STAND is standing, free to act, whatever its move file carries:
+    // Akuma's and Birdie's STAND have a first hitbox frame (Akuma's at 401,
+    // the long idle pose standing still plays) with no attack ever out, and
+    // read as recovery, so the meter never began (both were never free to
+    // act) and the idle counted as a move.
+    const bool action = !stand && (interruptible || jump || s.firstHit >= 0 || s.counter);
     // Proximity guard (the move file's FGUARD scripts) holds the guard pose
     // with no attack blocked yet: the state object counts it as stun too.
     if (s.script >= kScriptFirstFakeGuard && s.script <= kScriptLastFakeGuard) return ProxGuard;
     if (s.stun) return past ? Idle : Stun;
-    if (s.hit) return Active;
+    // (Akuma's long idle pose has a strike box out on its STAND frames 401-402.)
+    if (s.hit && !stand) return Active;
     if (s.parry) return Parry;
     if (action || !s.hurt) {
         if (!s.strike && !s.projectile) return Invincible;
@@ -255,37 +265,94 @@ Kind Classify(const Sample& s)
     // Armor (a live hurtbox that takes hits without stun), whatever else the
     // frame is: in a move's startup or recovery, or while free to act.
     if (s.armor) return action && !past ? Armor : ArmorFree;
-    if (s.counter) return Counter;
+    if (s.counter && !stand) return Counter;
     if (!action) return Idle;
     return past ? Iasa : Recovery;
 }
 
+// A side's fighter actors, when it has more than one: a helper is a fighter
+// too. R. Mika's Nadeshiko is a third fighter actor on R. Mika's side, with
+// R. Mika's move file, standing in STAND at frame 0 where the round began,
+// her script not run unless she is called in (and her state object's side
+// is -1). With three fighters the meter never found its two and stayed off.
+struct Candidate {
+    const uint8_t* actor;
+    uint32_t script;
+    int32_t frame;
+};
+std::vector<Candidate> g_candidates[2];
+uint64_t g_candidatesLayout = ~0ull;
+
+bool RunnerNow(const uint8_t* r, uint32_t* script, int32_t* frame)
+{
+    const auto* runner = At<const uint8_t*>(r, kRunner);
+    if (!runner || !IsReadable(runner, kRunnerSpeed + 4)) return false;
+    *script = At<uint32_t>(runner, kRunnerIndex);
+    *frame = At<int32_t>(runner, kRunnerFrame);
+    return true;
+}
+
 // The two fighters' actors and state objects, P1 first, paired by side: at
 // a battle's start P1 is on the left. Not yet (false) while the sides are
-// not set apart.
+// not set apart, or while a side with a helper has not shown which of its
+// fighters plays: the one whose script runs while the other's stands still
+// (a player's STAND loops its frames; an idle helper's stays at 0).
 bool FindFighters(SfvGame& game)
 {
-    const uint8_t* actors[2] = {};
+    std::vector<const uint8_t*> actors[2];
     const uint8_t* states[2] = {};
-    int na = 0, ns = 0;
+    int ns[2] = {0, 0};
     for (const StateRegion& r : game.Regions()) {
         if (r.size == kRegionSize && IsActor(r.ptr, kFighterVtable)) {
-            if (na < 2) actors[na] = r.ptr;
-            na++;
+            const uint32_t side = At<uint32_t>(r.ptr, kSide);
+            if (side <= 1 && actors[side].size() < 4) actors[side].push_back(r.ptr);
         }
         else if (r.size == kStateRegionSize && IsReadable(r.ptr - kStateRegionAt, kStateSide + 4) &&
                  At<uintptr_t>(r.ptr - kStateRegionAt, 0) == g_base + kStateVtable) {
-            if (ns < 2) states[ns] = r.ptr - kStateRegionAt;
-            ns++;
+            // A helper's state object has no side (-1).
+            const uint32_t side = At<uint32_t>(r.ptr - kStateRegionAt, kStateSide);
+            if (side > 1) continue;
+            states[side] = r.ptr - kStateRegionAt;
+            ns[side]++;
         }
     }
-    if (na != 2 || ns != 2) return false;
-    const uint32_t a0 = At<uint32_t>(actors[0], kSide), a1 = At<uint32_t>(actors[1], kSide);
-    const uint32_t s0 = At<uint32_t>(states[0], kStateSide), s1 = At<uint32_t>(states[1], kStateSide);
-    if (a0 > 1 || a1 > 1 || a0 == a1 || s0 > 1 || s1 > 1 || s0 == s1) return false;
+    if (actors[0].empty() || actors[1].empty() || ns[0] != 1 || ns[1] != 1) return false;
+    if (g_candidatesLayout != game.LayoutVersion()) {
+        g_candidatesLayout = game.LayoutVersion();
+        g_candidates[0].clear();
+        g_candidates[1].clear();
+    }
+    const uint8_t* chosen[2] = {};
+    for (int side = 0; side < 2; side++) {
+        if (actors[side].size() == 1) {
+            chosen[side] = actors[side][0];
+            continue;
+        }
+        // Which of them runs its script since the last look.
+        std::vector<Candidate>& seen = g_candidates[side];
+        std::vector<Candidate> now;
+        const uint8_t* running = nullptr;
+        int runningCount = 0;
+        for (const uint8_t* a : actors[side]) {
+            Candidate c{a, 0, 0};
+            if (!RunnerNow(a, &c.script, &c.frame)) continue;
+            for (const Candidate& before : seen) {
+                if (before.actor == a && (before.script != c.script || before.frame != c.frame)) {
+                    running = a;
+                    runningCount++;
+                }
+            }
+            now.push_back(c);
+        }
+        seen = now;
+        if (runningCount != 1) return false;
+        chosen[side] = running;
+        Log("framemeter: side %d has %zu fighters (a helper): the one whose script runs, %p", side, actors[side].size(),
+            static_cast<const void*>(running));
+    }
     for (int p = 0; p < 2; p++) {
-        g_p[p].actor = a0 == static_cast<uint32_t>(p) ? actors[0] : actors[1];
-        g_p[p].state = s0 == static_cast<uint32_t>(p) ? states[0] : states[1];
+        g_p[p].actor = chosen[p];
+        g_p[p].state = states[p];
     }
     return true;
 }
@@ -327,6 +394,11 @@ bool ReadFrame(SfvGame& game, bool fight, Record* out)
         r.air[i] = s[i].air;
         r.attack[i] = s[i].firstHit >= 0;
         r.script[i] = s[i].script;
+        r.frame[i] = s[i].frame;
+        r.interrupt[i] = s[i].interrupt;
+        r.firstHit[i] = s[i].firstHit;
+        r.hit[i] = s[i].hit;
+        r.counter[i] = s[i].counter;
     }
     *out = r;
     return true;
@@ -421,9 +493,13 @@ void Count(const Record& r, int index)
         const bool actionable = Actionable(k);
         const bool doing = !actionable && k != Stun && k != ProxGuard;
         // A move starts when the character acts from neutral or IASA, or
-        // cancels into a script with hitboxes of its own (a script handing
-        // over to its follow-up, a landing or a recovery, is the same move).
-        if (doing && (!p.doing || (r.script[i] != p.script && r.attack[i]))) {
+        // cancels into a script with hitboxes of its own, from that script's
+        // start. A script handing over to its follow-up, a landing or a
+        // recovery is the same move, and so is a hand-over past the new
+        // script's start: Urien's st.HP begins as 5HP_HOLD and, let go of
+        // early, goes on as 5HP from its frame 7 (counted from there, its
+        // startup read 5F instead of 12F).
+        if (doing && (!p.doing || (r.script[i] != p.script && r.attack[i] && r.frame[i] == 0))) {
             p.moveStart = index;
             g_m.startup[i] = -1;
             g_m.total[i] = -1;
@@ -567,8 +643,13 @@ void LogRecord(int index, const Record& r)
 {
     if (g_log <= 0) return;
     g_log--;
-    Log("fmlog %d: hold %d | P1 #%u %s%s%s | P2 #%u %s%s%s | written %d", index, r.hold, r.script[0], KindName(r.kind[0]), r.lane[0] ? "+proj" : "",
-        r.air[0] ? "+air" : "", r.script[1], KindName(r.kind[1]), r.lane[1] ? "+proj" : "", r.air[1] ? "+air" : "", g_written);
+    char side[2][96];
+    for (int i = 0; i < 2; i++) {
+        std::snprintf(side[i], sizeof(side[i]), "#%u f%d %s%s%s (int %d, hit at %d%s%s)", r.script[i], r.frame[i], KindName(r.kind[i]),
+                      r.lane[i] ? "+proj" : "", r.air[i] ? "+air" : "", r.interrupt[i], r.firstHit[i], r.hit[i] ? ", box" : "",
+                      r.counter[i] ? ", cnt" : "");
+    }
+    Log("fmlog %d: hold %d | P1 %s | P2 %s | written %d", index, r.hold, side[0], side[1], g_written);
 }
 
 // Text over the fight: a thin black outline round it and a drop shadow under

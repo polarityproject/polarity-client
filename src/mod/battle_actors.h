@@ -65,8 +65,10 @@ constexpr size_t kSectionSize = 16;
 constexpr int kSectionStatus = 1, kSectionHurtboxes = 6;
 constexpr size_t kHurtboxRecord = 60, kHurtboxArmorEffect = 44;
 constexpr uint32_t kStatusCounter = 0x20, kStatusAir = 0x4;
-// Script indices every move file shares: 4..12 the jumps (TAKEOFF_V,
+// Script indices every move file shares: 0 STAND (the idle loop; some
+// characters' run on into a long idle pose); 4..12 the jumps (TAKEOFF_V,
 // JUMP_V, LANDING_V, then the same forward and back);
+constexpr uint32_t kScriptStand = 0;
 constexpr uint32_t kScriptFirstJump = 4, kScriptLastJump = 12;
 // 50..61 the proximity guard poses (FGUARD_L, _M, _H, _C, each also _NEAR
 // and _FAR); the guard stun scripts (GUARD_*) follow from 70.
