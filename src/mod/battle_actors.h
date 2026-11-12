@@ -58,7 +58,8 @@ constexpr uint32_t kEntryVtable = 0x2C4D6F8;
 // (i16), count (u16), then the offsets of its ticks, data and conditions,
 // each from the section header. Section types: 1 status (8 bytes: player
 // flags, opponent flags; 0x20 = counter-hit state), 5 hitboxes, 6 hurtboxes
-// (60 bytes: +37 armor strength, +44 armor effect, 2 = a parry).
+// (60 bytes: +37 armor strength, +38 hits it takes, +44 armor effect: 1
+// armor, 2 a parry, 3 V-Shift).
 constexpr size_t kScriptFirstHit = 0, kScriptInterrupt = 8, kScriptTotal = 12, kScriptSections = 52, kScriptSectionsAt = 60;
 constexpr size_t kSectionSize = 16;
 constexpr int kSectionStatus = 1, kSectionHurtboxes = 6;
@@ -70,6 +71,6 @@ constexpr uint32_t kScriptFirstJump = 4, kScriptLastJump = 12;
 // 50..61 the proximity guard poses (FGUARD_L, _M, _H, _C, each also _NEAR
 // and _FAR); the guard stun scripts (GUARD_*) follow from 70.
 constexpr uint32_t kScriptFirstFakeGuard = 50, kScriptLastFakeGuard = 61;
-constexpr int kArmorParry = 2;
+constexpr int kArmorArmor = 1, kArmorParry = 2;
 
 } // namespace sfv::mod::actor

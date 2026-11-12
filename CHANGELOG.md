@@ -22,7 +22,8 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 ### Changed
 
 - The frame meter shows proximity guard in brown, apart from the yellow of
-  hit and block stun.
+  hit and block stun, and armor in orchid (Zangief's Iron Muscle, EX
+  moves with armor), in a move or while free to act.
 
 ### Fixed
 

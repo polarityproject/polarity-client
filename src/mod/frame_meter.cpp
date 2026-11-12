@@ -31,13 +31,15 @@ namespace {
 using namespace actor; // battle_actors.h
 using namespace ui;    // ui_kit.h
 
-enum Kind : uint8_t { Empty, Idle, Counter, Active, FirstActive, Recovery, Iasa, Parry, Stun, ProxGuard, Invincible, StrikeInv, ProjInv };
-// Runs count FirstActive with Active; Empty (not recorded) is neutral too.
-Kind Group(Kind k) { return k == FirstActive ? Active : k == Empty ? Idle : k; }
-bool Actionable(Kind k) { return k == Idle || k == Iasa || k == Empty; }
+enum Kind : uint8_t { Empty, Idle, Counter, Active, FirstActive, Recovery, Iasa, Parry, Stun, ProxGuard, Invincible, StrikeInv, ProjInv, Armor, ArmorFree };
+// Runs count FirstActive with Active, ArmorFree with Armor; Empty (not
+// recorded) is neutral too. Armor while free to act (outside a move, or in
+// its IASA frames) is armor to see and neutral to count.
+Kind Group(Kind k) { return k == FirstActive ? Active : k == ArmorFree ? Armor : k == Empty ? Idle : k; }
+bool Actionable(Kind k) { return k == Idle || k == Iasa || k == Empty || k == ArmorFree; }
 const char* KindName(Kind k)
 {
-    static const char* names[] = {"-", "idle", "cnt", "act", "act1", "rec", "iasa", "par", "stun", "prox", "inv", "sinv", "pinv"};
+    static const char* names[] = {"-", "idle", "cnt", "act", "act1", "rec", "iasa", "par", "stun", "prox", "inv", "sinv", "pinv", "arm", "armf"};
     return names[k];
 }
 
@@ -176,7 +178,7 @@ struct Sample {
     uint32_t script = 0;
     int frame = 0, interrupt = -1, firstHit = -1;
     bool held = false, cinematic = false, frozen = false, stun = false;
-    bool hit = false, strike = false, projectile = false, hurt = false, parry = false, counter = false, air = false;
+    bool hit = false, strike = false, projectile = false, hurt = false, parry = false, armor = false, counter = false, air = false;
     uint32_t side = 0;
 };
 
@@ -217,7 +219,11 @@ Sample Read(const uint8_t* r, const uint8_t* state)
         s.hurt = true;
         if (type & 1) s.strike = true;
         if (type & 2) s.projectile = true;
-        if (!s.parry && (id >> 16) == s.script && ArmorEffect(script, (id >> 8) & 0xFF) == kArmorParry) s.parry = true;
+        if ((id >> 16) == s.script && (!s.parry || !s.armor)) {
+            const int effect = ArmorEffect(script, (id >> 8) & 0xFF);
+            if (effect == kArmorParry) s.parry = true;
+            if (effect == kArmorArmor) s.armor = true;
+        }
     }
     s.ok = true;
     return s;
@@ -246,6 +252,9 @@ Kind Classify(const Sample& s)
         if (!s.strike) return StrikeInv;
         if (!s.projectile) return ProjInv;
     }
+    // Armor (a live hurtbox that takes hits without stun), whatever else the
+    // frame is: in a move's startup or recovery, or while free to act.
+    if (s.armor) return action && !past ? Armor : ArmorFree;
     if (s.counter) return Counter;
     if (!action) return Idle;
     return past ? Iasa : Recovery;
@@ -704,6 +713,8 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold)
         case Parry: return Rgba(134, 87, 224);
         case Stun: return Rgba(242, 217, 74);
         case ProxGuard: return Rgba(156, 104, 58);
+        case Armor:
+        case ArmorFree: return Rgba(214, 98, 208);
         case Invincible: return Rgba(244, 241, 232);
         case StrikeInv: return Rgba(229, 67, 90);
         case ProjInv: return Rgba(240, 160, 48);
