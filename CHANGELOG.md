@@ -5,7 +5,13 @@ first paragraph is the summary players see in the game (Settings, Updates);
 `scripts/release.ps1` reads it, and refuses to publish a version that has no
 entry here. Newest first; the format follows [Keep a Changelog](https://keepachangelog.com).
 
-## [Unreleased]
+## [0.4.1] - 2026-11-12
+
+Fixes a crash when a set's next game started after a stage transition KO,
+and a desync from the first frame of some matches. The mouse wheel now
+scrolls Polarity's lists, the frame meter shows proximity guard and armor,
+and the benchmark shows its loading and runs on a Steam Deck. 0.4.1 plays
+only 0.4.1.
 
 ### Added
 
@@ -27,6 +33,14 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ### Fixed
 
+- The game could crash as a table's next game started. It took a stage
+  transition KO (the KO that carries the fight into another part of the
+  stage) in a round before the last, followed by a rollback from the next
+  round back into that KO; the crash came when the battle was put away for
+  the next game.
+- A match could part between the two players from its very first frame
+  (a desync at frame 0) when a rollback went back to the start of the
+  match. It showed most in a set's later games.
 - The benchmark never started on a Steam Deck (Proton): its built-in round
   couldn't be read there. Replays recorded on Windows now play on a Steam
   Deck too.
