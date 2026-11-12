@@ -513,6 +513,7 @@ struct MachineCopy {
     uint8_t recorder[kRecorderHead];
     bool hasKoWait;
     uint8_t koWait[0x48];
+    void* koWaitHeld; // the wait's reference block this copy holds a reference to (HoldRef), or null
 };
 std::vector<MachineCopy> g_phaseRing(kPhaseRing);
 // The phase machine and the round director as they were at the freeze (tick
@@ -552,6 +553,26 @@ constexpr uintptr_t kKoWaitVtable = 0x2C602F8;
 constexpr uint32_t kKoWaitState = 0xF8;
 constexpr size_t kKoWaitStateSize = 0x48;
 constexpr size_t kKoWaitLatch = 0x100 - kKoWaitState, kKoWaitMode = 0x104 - kKoWaitState;
+// The tail holds a shared pointer: +0x110 an object, +0x118 its reference
+// block (uses at +8, weak references at +0xC). The KO's arming empties it,
+// the stage transition KO holds its object through it, and the round's end
+// (rva 0x3D66E0, the mode back to -1) lets go of it. Copied back as bytes
+// by a load from the next round to the transition, it pointed at the block
+// again without a reference of its own; the replayed round's end let go of
+// it a second time and freed the object while the battle's unit (rva
+// 0x3C72A0) still listed it as a child, and destroying the battle at the
+// next game of a set read the freed child (crash at StreetFighterV.exe+
+// 0x4D77DC: 4f5db3fe, 7fde3ab3, 3b02cd4b; 0.4.0). Each copy now holds a
+// reference of its own through the game's assign, and a load puts the
+// pointer back through it, the counts kept right.
+constexpr uint32_t kKoWaitObject = 0x110, kKoWaitRef = 0x118;
+constexpr uint32_t kSharedAssign = 0x2F02D0; // (slot, &block): the new block counted up, the old one down (freed at zero)
+constexpr uint8_t kSharedAssignBytes[16] = {0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83,
+                                            0xEC, 0x20, 0x48, 0x8B, 0x32, 0x48, 0x8B, 0xF9};
+using SharedAssignFn = void (*)(void** slot, void* const* block);
+SharedAssignFn g_sharedAssign = nullptr;
+std::atomic<DWORD> g_gameThread{0}; // the thread that runs the driven ticks
+int g_waitRefBacks = 0, g_waitRefEmptied = 0, g_waitRefLeft = 0; // loads that put the pointer back, per battle
 uint8_t* g_koWait = nullptr; // the newest such object
 std::atomic<bool> g_koWaitRollback{true};
 int g_koWaitLogs = 0;
@@ -612,6 +633,39 @@ uint8_t* LiveKoWait()
     return *reinterpret_cast<const uintptr_t*>(w) == g_base + kKoWaitVtable ? w : nullptr;
 }
 
+// `*slot` to `block` through the game's assign: a reference taken on the new
+// block, the old one's let go of. Without the assign nothing is held.
+void HoldRef(void** slot, void* block)
+{
+    if (*slot == block) return;
+    if (g_sharedAssign) g_sharedAssign(slot, &block);
+    else *slot = nullptr;
+}
+
+// A copy's reference let go of: at once on the game thread, else posted to
+// it (letting go of the last one destroys the object).
+void ReleaseHeld(MachineCopy& c)
+{
+    void* block = c.koWaitHeld;
+    if (!block) return;
+    c.koWaitHeld = nullptr;
+    const DWORD game = g_gameThread;
+    if (!game || GetCurrentThreadId() == game) {
+        HoldRef(&block, nullptr);
+        return;
+    }
+    RunOnGameThread([block]() mutable { HoldRef(&block, nullptr); });
+}
+
+// The ring's copies dropped, with their references.
+void ForgetCopies()
+{
+    for (MachineCopy& c : g_phaseRing) {
+        c.valid = false;
+        ReleaseHeld(c);
+    }
+}
+
 uint8_t* LiveRecorder()
 {
     auto* recorder = *reinterpret_cast<uint8_t* const*>(g_base + kRecorderGlobal);
@@ -662,6 +716,11 @@ bool CaptureMachine(MachineCopy& c, uint32_t tick)
     const uint8_t* wait = LiveKoWait();
     c.hasKoWait = wait != nullptr;
     if (wait) std::memcpy(c.koWait, wait + kKoWaitState, kKoWaitStateSize);
+    // The block its shared pointer has kept alive while this copy is (one
+    // with a count of uses left).
+    auto* block = wait ? Field<uint8_t*>(wait, kKoWaitRef) : nullptr;
+    if (block && (!IsReadable(block, 16) || Field<int32_t>(block, 8) <= 0)) block = nullptr;
+    HoldRef(&c.koWaitHeld, block);
     c.valid = true;
     return true;
 }
@@ -772,7 +831,32 @@ void RestoreMachine(const MachineCopy& c)
                     Field<int32_t>(c.koWait, kKoWaitMode), Field<int32_t>(c.koWait, kKoWaitLatch),
                     Field<int32_t>(wait, kKoWaitState + kKoWaitMode), Field<int32_t>(wait, kKoWaitState + kKoWaitLatch), c.tick);
             }
+            // The words as bytes, but the shared pointer (+0x110/+0x118).
+            uint8_t live[16];
+            std::memcpy(live, wait + kKoWaitObject, sizeof(live));
             std::memcpy(wait + kKoWaitState, c.koWait, kKoWaitStateSize);
+            std::memcpy(wait + kKoWaitObject, live, sizeof(live));
+            void* const want = Field<void*>(c.koWait, kKoWaitRef - kKoWaitState);
+            void* const have = Field<void*>(wait, kKoWaitRef);
+            // Through the game's assign, and only to a block this copy keeps
+            // alive (or none); a copy without its reference (a Battle Log
+            // keyframe) leaves the live one.
+            if (want != have && g_sharedAssign && (!want || want == c.koWaitHeld)) {
+                HoldRef(reinterpret_cast<void**>(wait + kKoWaitRef), want);
+                *reinterpret_cast<void**>(wait + kKoWaitObject) = Field<void*>(c.koWait, kKoWaitObject - kKoWaitState);
+                (want ? g_waitRefBacks : g_waitRefEmptied)++;
+                static int s_backs = 0;
+                if (s_backs++ < 6) {
+                    Log("flow: round end wait's object back to %p (block %p, %d uses; was block %p) by a load to tick %u",
+                        Field<void*>(c.koWait, kKoWaitObject - kKoWaitState), want,
+                        want ? Field<int32_t>(static_cast<const uint8_t*>(want), 8) : 0, have, c.tick);
+                }
+            }
+            else if (want != have) {
+                g_waitRefLeft++;
+                static int s_kept = 0;
+                if (s_kept++ < 3) Log("flow: round end wait's object left as it is by a load (no reference kept for it)");
+            }
         }
     }
     // The recorder's head, word by word: data back, pointers (both sides)
@@ -1081,6 +1165,12 @@ bool InstallFlowProbes(const GameImage& image)
     if (!Hook(image, kKoWaitCtorSite, reinterpret_cast<void*>(&KoWaitCtorDetour), reinterpret_cast<void**>(&g_origKoWaitCtor))) {
         Log("flow: the round end wait's mode is not put back by loads");
     }
+    if (std::memcmp(reinterpret_cast<const void*>(g_base + kSharedAssign), kSharedAssignBytes, sizeof(kSharedAssignBytes)) == 0) {
+        g_sharedAssign = reinterpret_cast<SharedAssignFn>(g_base + kSharedAssign);
+    }
+    else {
+        Log("flow: the game's shared pointer assign is not at rva 0x%X: the round end wait's object is not put back by loads", kSharedAssign);
+    }
     if (!Hook(image, kRoundHitTally, reinterpret_cast<void*>(&HitTallyDetour), reinterpret_cast<void**>(&g_origHitTally))) {
         Log("flow: the round's hit tallies stay unguarded (a trade can count differently on each side)");
     }
@@ -1240,15 +1330,21 @@ void MatchStopToDirector(uint8_t* battleFrame)
 
 void SetRoundDirectorPerTick(bool on, bool roundEndRollback)
 {
+    if (g_waitRefBacks || g_waitRefEmptied || g_waitRefLeft) {
+        Log("flow: round end wait's object put back by loads: %d times to a kept object, %d to none, %d left as it was",
+            g_waitRefBacks, g_waitRefEmptied, g_waitRefLeft);
+    }
+    g_waitRefBacks = g_waitRefEmptied = g_waitRefLeft = 0;
     g_directorPerTick = on && g_origDirectorCheck;
     g_roundEndRollback = g_directorPerTick && roundEndRollback;
-    for (MachineCopy& c : g_phaseRing) c.valid = false;
+    ForgetCopies();
     g_roundOverJournal.clear();
     // From 0 on both machines as the session takes the ticks over (the
     // warm-up ticks before differ).
     g_roundFlow.ticks = 0;
     // The freeze: what a load back to it puts back.
     g_freeze.valid = false;
+    ReleaseHeld(g_freeze.machine);
     if (!g_directorPerTick) return;
     g_freeze.hasDirector = false;
     if (const uint8_t* d = LiveRoundDirector()) {
@@ -1288,6 +1384,7 @@ void RestoreFreeze()
 void BeginDrivenTick()
 {
     if (g_directorPerTick) g_roundFlow.ticks++;
+    g_gameThread = GetCurrentThreadId();
 }
 
 uint32_t DrivenTicks()
@@ -1378,6 +1475,9 @@ bool SaveOutsideState(OutsideState* out, const OutsideState* previous)
         out->machine.clear();
         return false;
     }
+    // A keyframe keeps no reference (it has no place to let go of it): a load
+    // from it leaves the round end wait's object as it is.
+    ReleaseHeld(*c);
     // The round director's fields as they are (the snapshot has its copy only
     // once a driven tick ran it: not at frame 0).
     out->director.clear();
@@ -1568,7 +1668,7 @@ void RestoreOutsideState(const OutsideState& s)
         if (PutChunks(s.rounds, all.data(), kRoundHistoryBytes)) PutRoundHistory(context, all.data());
     }
     // What the copies and the journal held belongs to the timeline left.
-    for (MachineCopy& c : g_phaseRing) c.valid = false;
+    ForgetCopies();
     g_roundOverJournal.clear();
 }
 
