@@ -31,13 +31,13 @@ namespace {
 using namespace actor; // battle_actors.h
 using namespace ui;    // ui_kit.h
 
-enum Kind : uint8_t { Empty, Idle, Counter, Active, FirstActive, Recovery, Iasa, Parry, Stun, Invincible, StrikeInv, ProjInv };
+enum Kind : uint8_t { Empty, Idle, Counter, Active, FirstActive, Recovery, Iasa, Parry, Stun, ProxGuard, Invincible, StrikeInv, ProjInv };
 // Runs count FirstActive with Active; Empty (not recorded) is neutral too.
 Kind Group(Kind k) { return k == FirstActive ? Active : k == Empty ? Idle : k; }
 bool Actionable(Kind k) { return k == Idle || k == Iasa || k == Empty; }
 const char* KindName(Kind k)
 {
-    static const char* names[] = {"-", "idle", "cnt", "act", "act1", "rec", "iasa", "par", "stun", "inv", "sinv", "pinv"};
+    static const char* names[] = {"-", "idle", "cnt", "act", "act1", "rec", "iasa", "par", "stun", "prox", "inv", "sinv", "pinv"};
     return names[k];
 }
 
@@ -235,6 +235,9 @@ Kind Classify(const Sample& s)
     // committed to them, even where the script has no interrupt frame.
     const bool jump = s.script >= kScriptFirstJump && s.script <= kScriptLastJump;
     const bool action = interruptible || jump || s.firstHit >= 0 || s.counter;
+    // Proximity guard (the move file's FGUARD scripts) holds the guard pose
+    // with no attack blocked yet: the state object counts it as stun too.
+    if (s.script >= kScriptFirstFakeGuard && s.script <= kScriptLastFakeGuard) return ProxGuard;
     if (s.stun) return past ? Idle : Stun;
     if (s.hit) return Active;
     if (s.parry) return Parry;
@@ -407,7 +410,7 @@ void Count(const Record& r, int index)
         Player& p = g_p[i];
         const Kind k = r.kind[i];
         const bool actionable = Actionable(k);
-        const bool doing = !actionable && k != Stun;
+        const bool doing = !actionable && k != Stun && k != ProxGuard;
         // A move starts when the character acts from neutral or IASA, or
         // cancels into a script with hitboxes of its own (a script handing
         // over to its follow-up, a landing or a recovery, is the same move).
@@ -423,7 +426,7 @@ void Count(const Record& r, int index)
                 g_m.total[i] = index - p.moveStart;
                 p.moveStart = -1;
             }
-            else if (k == Stun) p.moveStart = -1;
+            else if (k == Stun || k == ProxGuard) p.moveStart = -1;
         }
         if (actionable && !p.actionable) p.actionableSince = index;
         p.actionable = actionable;
@@ -485,7 +488,7 @@ void Apply(const Record& r)
     bool fresh = !g_hasContent;
     for (int i = 0; i < 2; i++) {
         const Kind k = r.kind[i];
-        const bool starts = !Actionable(k) && k != Stun && g_p[i].actionable;
+        const bool starts = !Actionable(k) && k != Stun && k != ProxGuard && g_p[i].actionable;
         if (starts && Actionable(r.kind[1 - i]) && g_p[1 - i].actionable) fresh = true;
     }
     if (fresh) ClearBar();
@@ -700,6 +703,7 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold)
         case Iasa: return Rgba(42, 99, 196);
         case Parry: return Rgba(134, 87, 224);
         case Stun: return Rgba(242, 217, 74);
+        case ProxGuard: return Rgba(156, 104, 58);
         case Invincible: return Rgba(244, 241, 232);
         case StrikeInv: return Rgba(229, 67, 90);
         case ProjInv: return Rgba(240, 160, 48);

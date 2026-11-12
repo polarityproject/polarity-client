@@ -5,6 +5,13 @@ first paragraph is the summary players see in the game (Settings, Updates);
 `scripts/release.ps1` reads it, and refuses to publish a version that has no
 entry here. Newest first; the format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [Unreleased]
+
+### Changed
+
+- The frame meter shows proximity guard in brown, apart from the yellow of
+  hit and block stun.
+
 ## [0.4.0] - 2026-11-11
 
 SFVR is now Polarity, and this update moves your settings, replays and
