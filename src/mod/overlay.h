@@ -48,6 +48,8 @@ void ShowLastBenchmarkResult();
 // (the `shot` command; the test agents' screenshots, also where no outside
 // tool can capture the game, as in Steam's Game Mode on a Steam Deck).
 void RequestScreenshot(const std::string& path, int scale);
+// Research (`shotburst <dir> <frames> [scale]`): the next frames as shown, kept in memory, written after.
+void RequestShotBurst(const std::string& dir, int frames, int scale);
 void ToggleOverlay();
 // The Debug tab's previews of the match windows (`overlay preview ...`):
 // words hud, strip, desync, p1, p2 switch a window on; relay or p2p the link

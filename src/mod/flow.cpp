@@ -10,6 +10,7 @@
 #include "mod/entitlements.h"
 #include "mod/lifecycle.h"
 #include "mod/log.h"
+#include "mod/overlay.h"
 #include "mod/stack.h"
 #include "mod/ue4.h"
 #include "mod/variant_table.h"
@@ -440,6 +441,12 @@ uint64_t Step0Detour(void* self, void* data, uint8_t a, uint8_t b)
     return g_origStep0(self, data, a, b);
 }
 
+// Research (`burston`): a frame burst (overlay.h RequestShotBurst) each time
+// a flow event of that code comes, a few times.
+std::mutex g_burstOnMutex;
+int g_burstOnCode = -1, g_burstOnFrames = 0, g_burstOnScale = 4, g_burstOnLeft = 0, g_burstOnIndex = 0;
+std::string g_burstOnDir;
+
 uint64_t EventDetour(void* node, void* event, void* a3, void* a4)
 {
     if (event && IsReadable(static_cast<uint8_t*>(event), 0x10)) {
@@ -460,6 +467,15 @@ uint64_t EventDetour(void* node, void* event, void* a3, void* a4)
                 g_roundFlow.inFight = code == kFightStarts;
             }
             Log("flow: round flow event %d", code);
+            {
+                std::lock_guard lock(g_burstOnMutex);
+                if (code == g_burstOnCode && g_burstOnLeft > 0) {
+                    g_burstOnLeft--;
+                    const std::string dir = g_burstOnDir + "-" + std::to_string(++g_burstOnIndex);
+                    RequestShotBurst(dir, g_burstOnFrames, g_burstOnScale);
+                    Log("flow: frame burst into %s on flow event %d", dir.c_str(), code);
+                }
+            }
         }
     }
     return g_origEvent(node, event, a3, a4);
@@ -1164,6 +1180,18 @@ void SetLegacyPointerTest(bool on)
 {
     g_legacyPointerTest = on;
     Log("flow: phase restores take %s for pointers", on ? "any mapped aligned word (as before 2026-11-13)" : "only image addresses, objects with image vtables and 64-bit addresses");
+}
+
+void SetBurstOnEvent(int code, const std::string& dir, int frames, int scale, int count)
+{
+    std::lock_guard lock(g_burstOnMutex);
+    g_burstOnCode = code;
+    g_burstOnDir = dir;
+    g_burstOnFrames = frames;
+    g_burstOnScale = scale;
+    g_burstOnLeft = count;
+    g_burstOnIndex = 0;
+    Log("flow: a %d-frame burst into %s-N on each of the next %d flow events %d", frames, dir.c_str(), count, code);
 }
 
 void SetKoWaitRollback(bool on)

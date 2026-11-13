@@ -4286,22 +4286,13 @@ std::wstring Widen(const std::string& s)
     return w;
 }
 
-// The back buffer as it is about to be presented, to a PNG (written aside
-// and renamed into place: a reader never sees half a file).
-void TakeScreenshot(IDXGISwapChain* swapChain)
+// The back buffer as it is about to be presented, as RGB (1/scale size).
+bool ReadBack(IDXGISwapChain* swapChain, int scale, int* outW, int* outH, std::vector<uint8_t>* outRgb)
 {
-    std::string path;
-    int scale = 1;
-    {
-        std::lock_guard lock(g_shotMutex);
-        if (g_shotPath.empty()) return;
-        path.swap(g_shotPath);
-        scale = g_shotScale;
-    }
     ID3D11Texture2D* back = nullptr;
     if (FAILED(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&back))) || !back) {
         Log("overlay: screenshot: no back buffer");
-        return;
+        return false;
     }
     ID3D11Device* device = nullptr;
     back->GetDevice(&device);
@@ -4326,7 +4317,7 @@ void TakeScreenshot(IDXGISwapChain* swapChain)
     if (!bgr && !rgba && !rgb10) {
         Log("overlay: screenshot: back buffer format %d not handled", static_cast<int>(f));
         release();
-        return;
+        return false;
     }
     ID3D11Texture2D* source = back;
     if (desc.SampleDesc.Count > 1) {
@@ -4337,7 +4328,7 @@ void TakeScreenshot(IDXGISwapChain* swapChain)
         if (FAILED(device->CreateTexture2D(&rd, nullptr, &resolved))) {
             Log("overlay: screenshot: cannot resolve the back buffer");
             release();
-            return;
+            return false;
         }
         context->ResolveSubresource(resolved, 0, back, 0, f);
         source = resolved;
@@ -4354,13 +4345,13 @@ void TakeScreenshot(IDXGISwapChain* swapChain)
     if (FAILED(device->CreateTexture2D(&sd, nullptr, &staging))) {
         Log("overlay: screenshot: cannot make a staging texture");
         release();
-        return;
+        return false;
     }
     context->CopyResource(staging, source);
     if (FAILED(context->Map(staging, 0, D3D11_MAP_READ, 0, &mapped))) {
         Log("overlay: screenshot: cannot read the back buffer");
         release();
-        return;
+        return false;
     }
     const int w = static_cast<int>(desc.Width) / scale, h = static_cast<int>(desc.Height) / scale;
     std::vector<uint8_t> rgb(static_cast<size_t>(w) * h * 3);
@@ -4384,6 +4375,15 @@ void TakeScreenshot(IDXGISwapChain* swapChain)
     }
     context->Unmap(staging, 0);
     release();
+    *outW = w;
+    *outH = h;
+    *outRgb = std::move(rgb);
+    return true;
+}
+
+// Writes a PNG aside and renames it into place (a reader never sees half a file).
+bool WritePng(const std::string& path, int w, int h, const std::vector<uint8_t>& rgb)
+{
     const std::vector<uint8_t> png = EncodePng(w, h, rgb.data());
     std::wstring full = Widen(path);
     const bool absolute = full.size() > 1 && (full[1] == L':' || full[0] == L'\\' || full[0] == L'/');
@@ -4400,17 +4400,82 @@ void TakeScreenshot(IDXGISwapChain* swapChain)
     FILE* file = _wfopen(tmp.c_str(), L"wb");
     if (!file) {
         Log("overlay: screenshot: cannot write %s", path.c_str());
-        return;
+        return false;
     }
     const bool written = fwrite(png.data(), 1, png.size(), file) == png.size();
     fclose(file);
     if (!written || !MoveFileExW(tmp.c_str(), full.c_str(), MOVEFILE_REPLACE_EXISTING)) {
         Log("overlay: screenshot: cannot write %s", path.c_str());
         DeleteFileW(tmp.c_str());
-        return;
+        return false;
     }
-    Log("overlay: screenshot %s (%dx%d, %zu KB)", path.c_str(), w, h, png.size() / 1024);
+    return true;
 }
+
+// Research (`shotburst <dir> <frames> [scale]`): every presented frame for a
+// while, kept in memory and written after (a shot a frame stalls the frame,
+// and the HUD's movies run on real time), named by the newest driven tick.
+struct BurstFrame {
+    uint32_t tick;
+    int w, h;
+    std::vector<uint8_t> rgb;
+};
+std::string g_burstDir;
+int g_burstLeft = 0, g_burstScale = 2, g_burstIndex = 0;
+std::vector<BurstFrame> g_burstFrames;
+
+void TakeBurstFrame(IDXGISwapChain* swapChain)
+{
+    std::string dir;
+    {
+        std::lock_guard lock(g_shotMutex);
+        if (g_burstLeft <= 0) return;
+        dir = g_burstDir;
+    }
+    BurstFrame f{DrivenTicks(), 0, 0, {}};
+    if (ReadBack(swapChain, g_burstScale, &f.w, &f.h, &f.rgb)) g_burstFrames.push_back(std::move(f));
+    std::lock_guard lock(g_shotMutex);
+    if (--g_burstLeft > 0) return;
+    std::vector<BurstFrame> frames;
+    frames.swap(g_burstFrames);
+    std::thread([dir, frames = std::move(frames)] {
+        ThreadGuard running;
+        // The folder, relative to Win64 as WritePng takes it (one level).
+        std::wstring folder = Widen(dir);
+        if (!(folder.size() > 1 && folder[1] == L':')) {
+            std::wstring win64 = DataDir();
+            const size_t cut = win64.find_last_of(L"\\/");
+            if (cut != std::wstring::npos) win64.resize(cut);
+            folder = win64 + L"\\" + folder;
+        }
+        CreateDirectoryW(folder.c_str(), nullptr);
+        int i = 0;
+        for (const BurstFrame& b : frames) {
+            char name[64];
+            std::snprintf(name, sizeof(name), "\\%03d_t%u.png", i++, b.tick);
+            WritePng(dir + name, b.w, b.h, b.rgb);
+        }
+        Log("overlay: burst of %zu frames written to %s", frames.size(), dir.c_str());
+    }).detach();
+}
+
+void TakeScreenshot(IDXGISwapChain* swapChain)
+{
+    TakeBurstFrame(swapChain);
+    std::string path;
+    int scale = 1;
+    {
+        std::lock_guard lock(g_shotMutex);
+        if (g_shotPath.empty()) return;
+        path.swap(g_shotPath);
+        scale = g_shotScale;
+    }
+    int w = 0, h = 0;
+    std::vector<uint8_t> rgb;
+    if (!ReadBack(swapChain, scale, &w, &h, &rgb)) return;
+    if (WritePng(path, w, h, rgb)) Log("overlay: screenshot %s (%dx%d)", path.c_str(), w, h);
+}
+
 
 bool WriteTableSlot(void** slot, void* value)
 {
@@ -4579,6 +4644,15 @@ void ShutdownOverlay()
 void RequestSelectPreview(int phase, bool spectator) { g_selectRequest = phase + (spectator ? 4 : 0); }
 
 void ReloadOverlayChoices() { g_reloadChoices = true; }
+
+void RequestShotBurst(const std::string& dir, int frames, int scale)
+{
+    std::lock_guard lock(g_shotMutex);
+    g_burstDir = dir;
+    g_burstScale = std::clamp(scale, 1, 4);
+    g_burstLeft = std::clamp(frames, 0, 600);
+    g_burstFrames.clear();
+}
 
 void RequestScreenshot(const std::string& path, int scale)
 {

@@ -2389,6 +2389,7 @@ private:
         inputDelay_ = nc.inputDelay;
         roundCallFrame_ = -1;
         loweredEarly_ = false;
+        sawFight_ = false;
         pace_ = {};
         TakePaceStats(); // the pacer's figures start with the match too
         UpdatePredictionWindow();
@@ -2765,6 +2766,7 @@ private:
     // little slower over a long trip, while nobody can act yet).
     static constexpr int kRoundCallFrames = 196; // measured: flow event 5 to 6 (3.267 s)
     bool loggedInFight_ = false;
+    bool sawFight_ = false; // this match's fight has run (from then on every stage outside the fight is a round transition)
     static constexpr int kEarlyMargin = 2;
 
     void UpdatePredictionWindow()
@@ -2775,7 +2777,19 @@ private:
             loggedInFight_ = inFight;
             Log(inFight ? "netplay: fight from frame %d" : "netplay: fight over at frame %d", session_->NextFrame());
         }
-        const bool fight = !options_.lockstepPresentation || RoundInFight();
+        // From a KO to the next "FIGHT!" (or the match's end), and through
+        // round 1's call, in lockstep: the round's end and the call's
+        // banners then run only on confirmed inputs, so no load crosses
+        // them. The battle HUD is not rolled back (2026-11-13): a load across
+        // a round over counted the round's win again when it replayed (two
+        // markers for one round, or one on the other side), and a load across
+        // the call's switch from "ROUND n" to "FIGHT!" (about 60 ticks before
+        // the fight) put "ROUND n" back and the FIGHT banner never played.
+        // Round 1's intro (before its call) still rolls back.
+        const bool inFight = RoundInFight();
+        if (inFight) sawFight_ = true;
+        const bool transition = options_.lockstepTransitions && !inFight && (sawFight_ || RoundCallRunning());
+        const bool fight = (!options_.lockstepPresentation || inFight) && !transition;
         const uint8_t window = fight ? options_.predictionWindow : 0;
         const int frame = session_->NextFrame();
         // The round call's first frame, and its length in the log (to keep
@@ -2809,7 +2823,7 @@ private:
         if (window == predictionWindow_) return;
         session_->SetPredictionWindow(window);
         Log("netplay: prediction window %u from frame %d (%s)", window, session_->NextFrame(),
-            window ? "fight" : "presentation");
+            window ? "fight" : transition ? "round transition" : "presentation");
         predictionWindow_ = window;
     }
 

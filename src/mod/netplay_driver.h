@@ -65,6 +65,7 @@ struct NetplayOptions {
     uint8_t predictionWindow = 8;
     bool lockstepPresentation = false;     // [netplay] lockstep_round_stages: no prediction (so no rollbacks) outside the fight (flow.h); off by default
     bool lockstepDelay = true;             // there, a local input delay that covers the one-way trip
+    bool lockstepTransitions = true;       // [netplay] lockstep_round_transitions: no prediction from a KO to the next FIGHT, nor in round 1's call
     bool roundEndRollback = true;          // a round's end may be rolled back (flow.h), instead of held
     bool hasPick = false;                  // this player's own character choice
     PlayerSetup pick;
