@@ -752,11 +752,35 @@ void CapturePhases()
     }
 }
 
+// The game image's extent, from its PE header (for telling its addresses).
+uintptr_t ImageEnd()
+{
+    static uintptr_t end = 0;
+    if (!end && g_base) {
+        const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(g_base);
+        const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(g_base + dos->e_lfanew);
+        end = g_base + nt->OptionalHeader.SizeOfImage;
+    }
+    return end;
+}
+
+bool InImage(uint64_t v) { return g_base && v >= g_base && v < ImageEnd(); }
+
+std::atomic<bool> g_legacyPointerTest{false}; // research (`ptrtest old`): any mapped aligned word counts
+
 // A word that points into memory (aligned, mapped): timer rates (0x10000)
-// and packed small fields are not.
+// and packed small fields are not. Nor is a 32-bit value with an empty upper
+// half (a float, two counters) just because something is mapped there: a
+// phase's KO stop timer went 1.0f -> 180.0f (0x3F800000 -> 0x43340000), both
+// readable on that PC, so a load did not put it back and the round's end ran
+// a tick late, 182 frames after the KO (0.4.0 6176a044, 0.4.1 6cf317c6).
+// Such a word is a pointer only when it points into the game image or at an
+// object whose first word is one of its vtables.
 bool LooksLikePointer(uint64_t v)
 {
-    return v >= 0x10000 && v < 0x800000000000ull && (v & 7) == 0 && IsReadable(reinterpret_cast<const void*>(v), 8);
+    if (v < 0x10000 || v >= 0x800000000000ull || (v & 7) != 0 || !IsReadable(reinterpret_cast<const void*>(v), 8)) return false;
+    if ((v >> 32) || g_legacyPointerTest) return true;
+    return InImage(v) || InImage(*reinterpret_cast<const uint64_t*>(v));
 }
 
 // Puts a phase object back as it was in the copy.
@@ -1135,6 +1159,12 @@ void* KoWaitCtorDetour(uint8_t* self)
 }
 
 } // namespace
+
+void SetLegacyPointerTest(bool on)
+{
+    g_legacyPointerTest = on;
+    Log("flow: phase restores take %s for pointers", on ? "any mapped aligned word (as before 2026-11-13)" : "only image addresses, objects with image vtables and 64-bit addresses");
+}
 
 void SetKoWaitRollback(bool on)
 {

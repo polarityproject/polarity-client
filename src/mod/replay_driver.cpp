@@ -78,6 +78,18 @@ std::atomic<bool> g_callKeys{true}, g_crossRounds{false}, g_anyKeys{false}, g_ke
 std::atomic<bool> g_skipIntro{true};
 std::atomic<int> g_callPace{0}, g_callAfter{90}; // research: a run's pace through a round's call (ViewerFrame)
 std::atomic<int> g_latch{-1};    // `latch tick|game`: the pad latch the next replay uses (-1: by recording)
+// `forcerollback <frame>...` (research): in a mispredict replay, the frames
+// whose input's arrival loads the state before them and runs them again even
+// when the guess was right (a load into the window between a KO and the
+// round's end: 6176a044, 6cf317c6).
+std::mutex g_forcedMutex;
+std::vector<int> g_forcedRollbacks;
+std::atomic<uint32_t> g_forcedGuessXor{0}; // the forced frames first run on the remote input XOR this (a wrong guess)
+bool ForcedRollback(int frame)
+{
+    std::lock_guard lock(g_forcedMutex);
+    return std::find(g_forcedRollbacks.begin(), g_forcedRollbacks.end(), frame) != g_forcedRollbacks.end();
+}
 
 class NoTransport : public ITransport {
 public:
@@ -1336,7 +1348,9 @@ private:
         }
         const int arrived = f - delay_;
         if (arrived >= 0 && arrived <= last_) {
-            if (used_[arrived].p[remote_] != rf_.inputs[arrived].p[remote_]) {
+            const bool forced = ForcedRollback(arrived);
+            if (forced) Log("replay: rollback forced at frame %d (to the state before it)", arrived);
+            if (forced || used_[arrived].p[remote_] != rf_.inputs[arrived].p[remote_]) {
                 Resimulate(game, arrived, std::min(f, last_ + 1));
             }
             else {
@@ -1361,6 +1375,7 @@ private:
         SaveRegions(game.Regions(), ring_[k % ring_.size()].data());
         FrameInputs in = rf_.inputs[k];
         in.p[remote_] = Guess(k, known);
+        if (!rollingBack && g_forcedGuessXor && ForcedRollback(k)) in.p[remote_] ^= g_forcedGuessXor;
         game.Advance(in, rollingBack);
         used_[k] = in;
         std::vector<uint64_t> hashes(CheckRegions(game).size());
@@ -1986,6 +2001,17 @@ private:
 } // namespace
 
 void SetReplayLatch(int latch) { g_latch = latch; }
+
+void SetForcedRollbacks(std::vector<int> frames, uint32_t guessXor)
+{
+    g_forcedGuessXor = guessXor;
+    std::lock_guard lock(g_forcedMutex);
+    g_forcedRollbacks = std::move(frames);
+    std::string text;
+    for (int f : g_forcedRollbacks) text += " " + std::to_string(f);
+    Log("replay: forced rollbacks at frames:%s (first run on the remote input xor 0x%X)", text.empty() ? " none" : text.c_str(),
+        guessXor);
+}
 
 void RequestReplayView(const std::string& path, const std::string& title, std::function<void()> onLeave, int holdAt, int holdSeconds)
 {

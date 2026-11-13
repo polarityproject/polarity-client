@@ -307,6 +307,9 @@ std::vector<uintptr_t> DefaultLeanResimTasks();
 void SetSoundRollback(bool on);
 // The round end wait's mode (flow.cpp kKoWaitState) put back by loads (on by default).
 void SetKoWaitRollback(bool on);
+// Research (`ptrtest old|new`): the phase restores' pointer test as before
+// 2026-11-13 (any mapped, aligned word) or as now.
+void SetLegacyPointerTest(bool on);
 bool SoundRollbackOn();
 void SetTaskProfiling(bool on, uint64_t ticks = 0);
 // Research: logs the battle's phase machine and its phases (`phases`), with

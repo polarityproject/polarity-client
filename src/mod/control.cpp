@@ -1237,6 +1237,34 @@ void RunNetCommand(const std::string& line)
         SetResimTaskSkip(on ? DefaultLeanResimTasks() : std::vector<uintptr_t>{});
         Log("resim: replayed ticks %s", on ? "without presentation the newest tick makes up for" : "each a whole battle update");
     }
+    else if (cmd == "forcerollback") {
+        // forcerollback <frame>... [xor <hex>]: research (mispredict replays reload before
+        // those frames; with xor, the frames first ran on a wrong guess of the remote input)
+        std::vector<int> frames;
+        uint32_t guessXor = 0;
+        std::string w;
+        while (ss >> w) {
+            if (w == "xor") ss >> std::hex >> guessXor >> std::dec;
+            else frames.push_back(std::atoi(w.c_str()));
+        }
+        SetForcedRollbacks(std::move(frames), guessXor);
+    }
+    else if (cmd == "ptrtest") {
+        // ptrtest old|new: research (flow.h SetLegacyPointerTest)
+        std::string how;
+        ss >> how;
+        SetLegacyPointerTest(how == "old");
+    }
+    else if (cmd == "mapat") {
+        // mapat <hex address>...: research (commits 64 KB at each, zeroed: an address
+        // a player's process had mapped, for a test that depends on it)
+        std::string a;
+        while (ss >> a) {
+            const uintptr_t at = static_cast<uintptr_t>(std::stoull(a, nullptr, 16)) & ~uintptr_t{0xFFFF};
+            void* p = VirtualAlloc(reinterpret_cast<void*>(at), 0x10000, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            Log("mapat: %p %s", reinterpret_cast<void*>(at), p ? "committed" : "not free");
+        }
+    }
     else if (cmd == "kowaitmode") {
         // kowaitmode 0|1: loads put back the mode the round's end waits on (on by default; 0: as before)
         int on = 1;
@@ -2146,7 +2174,7 @@ bool Parse(const std::string& line, Step& step)
         return !ss.fail();
     }
     if (cmd == "host" || cmd == "join" || cmd == "matchchat" || cmd == "shot" || cmd == "warmupsleep" || cmd == "warmupextra" || cmd == "watchcamera" || cmd == "emptystage" || cmd == "spectate" || cmd == "ticket" || cmd == "presence" || cmd == "rooms" || cmd == "settings" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "crash" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
-        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "randomstages" || cmd == "randomoff" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "wordfilter" || cmd == "countryflag" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "rview" || cmd == "roundinfo" || cmd == "ufunc" || cmd == "uobj" || cmd == "rfind" || cmd == "dumpbac" || cmd == "actorlog" || cmd == "cinelog" || cmd == "camtrace" || cmd == "camrollback" || cmd == "camlog" || cmd == "hudstep" || cmd == "watchphase" || cmd == "watchname" || cmd == "rsnap" || cmd == "ptrscan" || cmd == "rpeek" || cmd == "rcmp" || cmd == "rdump" || cmd == "hitboxes" || cmd == "framemeter" || cmd == "benchmark" || cmd == "battledata" || cmd == "fmlog" || cmd == "freeze" || cmd == "ftrace" || cmd == "winsize" || cmd == "boxlog" || cmd == "rdiff" || cmd == "functrace" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "ofclass" || cmd == "gfx" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "soundlog" || cmd == "uisound" || cmd == "soundrollback" || cmd == "kowaitmode" || cmd == "frameids" || cmd == "leanresim" || cmd == "startprobe" || cmd == "phasecost" || cmd == "serialjobs" || cmd == "joborder" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "watchchat" || cmd == "wheel" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
+        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "randomstages" || cmd == "randomoff" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "wordfilter" || cmd == "countryflag" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "rview" || cmd == "roundinfo" || cmd == "ufunc" || cmd == "uobj" || cmd == "rfind" || cmd == "dumpbac" || cmd == "actorlog" || cmd == "cinelog" || cmd == "camtrace" || cmd == "camrollback" || cmd == "camlog" || cmd == "hudstep" || cmd == "watchphase" || cmd == "watchname" || cmd == "rsnap" || cmd == "ptrscan" || cmd == "rpeek" || cmd == "rcmp" || cmd == "rdump" || cmd == "hitboxes" || cmd == "framemeter" || cmd == "benchmark" || cmd == "battledata" || cmd == "fmlog" || cmd == "freeze" || cmd == "ftrace" || cmd == "winsize" || cmd == "boxlog" || cmd == "rdiff" || cmd == "functrace" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "ofclass" || cmd == "gfx" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "soundlog" || cmd == "uisound" || cmd == "soundrollback" || cmd == "kowaitmode" || cmd == "forcerollback" || cmd == "ptrtest" || cmd == "mapat" || cmd == "frameids" || cmd == "leanresim" || cmd == "startprobe" || cmd == "phasecost" || cmd == "serialjobs" || cmd == "joborder" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "watchchat" || cmd == "wheel" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
         step.kind = Step::Net;
         step.line = line;
         return true;

@@ -27,6 +27,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace sfv::mod {
 
@@ -137,6 +138,8 @@ bool RequestBenchmark(const std::string& path);
 // (SfvGame::latchEachTick), 0 keeps the game's once-per-rendered-frame latch,
 // -1 (the default) picks by the recording's build and the replay's mode.
 void SetReplayLatch(int latch);
+// Research: frames a mispredict replay rolls back to whatever the guess (empty: none).
+void SetForcedRollbacks(std::vector<int> frames, uint32_t guessXor);
 
 
 } // namespace sfv::mod
