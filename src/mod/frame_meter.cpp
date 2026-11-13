@@ -70,6 +70,7 @@ struct Record {
     bool lane[2] = {false, false};
     bool air[2] = {false, false};
     bool attack[2] = {false, false}; // the script has hitboxes of its own
+    bool move[2] = {false, false};   // the script has the counter-hit state on some frame (Sample::move)
     uint32_t script[2] = {0, 0};
     int frame[2] = {0, 0};             // the script's frame (a hand-over lands past 0, a new move at 0)
     int interrupt[2] = {0, 0}, firstHit[2] = {-1, -1}; // fmlog: what classified it
@@ -148,7 +149,7 @@ const uint8_t* Section(const uint8_t* script, int type, uint32_t* count)
 }
 
 // The script's status flags on that frame (sections whose condition needs no
-// script state).
+// script state); frame -1: on any of its frames.
 uint32_t StatusFlags(const uint8_t* script, int frame)
 {
     uint32_t count = 0;
@@ -160,7 +161,7 @@ uint32_t StatusFlags(const uint8_t* script, int frame)
     if (!IsReadable(ticks, count * 8) || !IsReadable(data, count * 8) || (flagsAt && !IsReadable(s + flagsAt, count * 16))) return 0;
     uint32_t flags = 0;
     for (uint32_t e = 0; e < count; e++) {
-        if (frame < At<int32_t>(ticks, e * 8) || frame >= At<int32_t>(ticks, e * 8 + 4)) continue;
+        if (frame >= 0 && (frame < At<int32_t>(ticks, e * 8) || frame >= At<int32_t>(ticks, e * 8 + 4))) continue;
         if (flagsAt && At<int32_t>(s + flagsAt, e * 16) != 0) continue; // active only in some script state
         flags |= At<uint32_t>(data, e * 8);
     }
@@ -183,6 +184,8 @@ struct Sample {
     int frame = 0, interrupt = -1, firstHit = -1;
     bool held = false, cinematic = false, frozen = false, stun = false;
     bool hit = false, strike = false, projectile = false, hurt = false, parry = false, armor = false, counter = false, air = false;
+    bool move = false; // the script has the counter-hit state on some frame: a move, all of it
+    bool jump = false; // one of the jump's scripts
     uint32_t side = 0;
 };
 
@@ -201,7 +204,9 @@ Sample Read(const uint8_t* r, const uint8_t* state)
         const uint32_t flags = StatusFlags(script, s.frame);
         s.counter = (flags & kStatusCounter) != 0;
         s.air = (flags & kStatusAir) != 0;
+        s.move = (StatusFlags(script, -1) & kStatusCounter) != 0;
     }
+    s.jump = s.script >= kScriptFirstJump && s.script <= kScriptLastJump;
     const auto* pos = At<const uint8_t*>(r - kPosition, 0);
     s.frozen = pos && IsReadable(pos + kSuperFreeze, 4) && At<uint32_t>(pos, kSuperFreeze) != 0;
     s.cinematic = At<uint32_t>(r, kCinematic) != 0;
@@ -244,13 +249,23 @@ Kind Classify(const Sample& s)
     // The jump's scripts (pre-jump, airborne, landing: the same indices in
     // every character's move file) are actions too: the character is
     // committed to them, even where the script has no interrupt frame.
-    const bool jump = s.script >= kScriptFirstJump && s.script <= kScriptLastJump;
+    // So is any script with the counter-hit state on some frame, all of it,
+    // and any airborne frame. A move that throws a projectile has no hitbox
+    // of its own, and many have no interrupt frame either: the script plays
+    // to its end or to the landing. Kage's and Akuma's air fireballs (Kage's
+    // A_HADO: counter-hit state on frames 0-8 of 43), Ryu's Critical Arts
+    // (CA_SHINKUU: 0-127 of 190) and Cammy's VT2 dive kick on hit
+    // (VT2_ATK_HIT: 0-14, then airborne) read as neutral past their
+    // counter-hit frames; her EX Cannon Strike bouncing off (EX_STRIKE_HIT /
+    // _GUARD) carries no flag at all but the air one. In every move file
+    // looked at, the counter-hit state is only in moves, and the airborne
+    // scripts without it are jumps, damage (stun) and moves.
     // STAND is standing, free to act, whatever its move file carries:
     // Akuma's and Birdie's STAND have a first hitbox frame (Akuma's at 401,
     // the long idle pose standing still plays) with no attack ever out, and
     // read as recovery, so the meter never began (both were never free to
     // act) and the idle counted as a move.
-    const bool action = !stand && (interruptible || jump || s.firstHit >= 0 || s.counter);
+    const bool action = !stand && (interruptible || s.jump || s.firstHit >= 0 || s.counter || s.move || s.air);
     // Proximity guard (the move file's FGUARD scripts) holds the guard pose
     // with no attack blocked yet: the state object counts it as stun too.
     if (s.script >= kScriptFirstFakeGuard && s.script <= kScriptLastFakeGuard) return ProxGuard;
@@ -401,6 +416,13 @@ int EffectOwnerOf(const uint8_t* slot, uint32_t side, uint64_t spawn, const Samp
     return owner;
 }
 
+// Each fighter as last read: its script, and whether that read was stun.
+struct Seen {
+    uint32_t script = ~0u;
+    bool stun = false;
+};
+Seen g_seen[2];
+
 // The frame the game is on now, read into a record (false: the fighters are
 // gone, a new battle). `fight`: in a round's fight (replays; else always).
 bool ReadFrame(SfvGame& game, bool fight, Record* out)
@@ -411,6 +433,17 @@ bool ReadFrame(SfvGame& game, bool fight, Record* out)
         if (!IsActor(g_p[i].actor, kFighterVtable)) return false;
         s[i] = Read(g_p[i].actor, g_p[i].state);
         if (!s[i].ok) return false;
+    }
+    // The state object's flag drops as a hit or a block lands, on the very
+    // read the fighter changes script (to a damage or guard script), and
+    // stays down through the stun, a knockdown and getting up. It drops in
+    // some of the fighter's own moves too, with no hit: Akuma's air fireball
+    // landing (ZANKU_GND) has it down on frames 6-9, which read as stun
+    // after the recovery and ended the move with no Total. So it is stun
+    // only from a script change on (2026-11-13).
+    for (int i = 0; i < 2; i++) {
+        s[i].stun = s[i].stun && (s[i].script != g_seen[i].script || g_seen[i].stun);
+        g_seen[i] = {s[i].script, s[i].stun};
     }
     r.valid = true;
     // Hitstop (both held), a super freeze and a cinematic are not counted.
@@ -444,6 +477,7 @@ bool ReadFrame(SfvGame& game, bool fight, Record* out)
         r.kind[i] = Classify(s[i]);
         r.air[i] = s[i].air;
         r.attack[i] = s[i].firstHit >= 0;
+        r.move[i] = s[i].move;
         r.script[i] = s[i].script;
         r.frame[i] = s[i].frame;
         r.interrupt[i] = s[i].interrupt;
@@ -553,8 +587,12 @@ void Count(const Record& r, int index)
         // from there, its startup read 5F, not 12F); his st.HK begins as #605
         // and goes on as #606 from its frame 0 with its hitbox out on that
         // very frame (counted from there, 1F, not 9F). No move that starts
-        // anew has a hitbox on its first frame.
-        if (doing && (!p.doing || (r.script[i] != p.script && r.attack[i] && r.frame[i] == 0 && r.firstHit[i] > 0))) {
+        // anew has a hitbox on its first frame. Out of a jump, a move without
+        // hitboxes of its own starts anew too (an air fireball: its startup
+        // from its own first frame, not from the pre-jump).
+        const bool fromJump = p.script >= kScriptFirstJump && p.script <= kScriptLastJump;
+        const bool newScript = r.script[i] != p.script && r.frame[i] == 0;
+        if (doing && (!p.doing || (newScript && ((r.attack[i] && r.firstHit[i] > 0) || (fromJump && r.move[i] && !r.attack[i]))))) {
             p.moveStart = index;
             g_m.startup[i] = -1;
             g_m.total[i] = -1;
@@ -667,6 +705,7 @@ bool Ready(SfvGame& game, bool replay)
     g_layout = game.LayoutVersion();
     g_records.clear();
     g_effectOwners.clear(); // (only here: a replay's rebuilds keep the live projectiles' owners)
+    g_seen[0] = g_seen[1] = Seen{};
     g_applied = -1;
     Reset();
     Log("framemeter: %s, P1 %p, P2 %p", replay ? "replay" : CurrentScene().c_str(), static_cast<const void*>(g_p[0].actor),
@@ -699,11 +738,11 @@ void LogRecord(int index, const Record& r)
 {
     if (g_log <= 0) return;
     g_log--;
-    char side[2][96];
+    char side[2][128];
     for (int i = 0; i < 2; i++) {
-        std::snprintf(side[i], sizeof(side[i]), "#%u f%d %s%s%s (side %u, int %d, hit at %d%s%s)", r.script[i], r.frame[i], KindName(r.kind[i]),
+        std::snprintf(side[i], sizeof(side[i]), "#%u f%d %s%s%s (side %u, int %d, hit at %d%s%s%s)", r.script[i], r.frame[i], KindName(r.kind[i]),
                       r.lane[i] ? "+proj" : "", r.air[i] ? "+air" : "", r.side[i], r.interrupt[i], r.firstHit[i], r.hit[i] ? ", box" : "",
-                      r.counter[i] ? ", cnt" : "");
+                      r.counter[i] ? ", cnt" : "", r.move[i] ? ", move" : "");
     }
     Log("fmlog %d: hold %d | P1 %s | P2 %s | written %d | startup %d/%d, total %d/%d", index, r.hold, side[0], side[1], g_written,
         g_m.startup[0], g_m.startup[1], g_m.total[0], g_m.total[1]);
