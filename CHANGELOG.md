@@ -5,6 +5,44 @@ first paragraph is the summary players see in the game (Settings, Updates);
 `scripts/release.ps1` reads it, and refuses to publish a version that has no
 entry here. Newest first; the format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [0.4.3] - 2026-11-13
+
+Fixes desyncs from the first frame of some matches and three seconds after
+a KO, a spectator crash as a match loaded and a freeze when closing the hub.
+Round win markers and the FIGHT banner now show right online, and the frame
+meter reads air fireballs and supers correctly. 0.4.3 plays only 0.4.3.
+
+### Changed
+
+- Round transitions run in lockstep online again: from a KO to the next
+  round's FIGHT, and round 1's call (the match's opening intro still rolls
+  back). A rollback across them re-ran the round's end under the HUD, which
+  isn't rolled back, so the round win markers doubled or landed on the
+  wrong side, and the FIGHT banner snapped back to "ROUND n" and often never
+  showed. `lockstep_round_transitions=0` under `[netplay]` in polarity.ini
+  lets them roll back.
+
+### Fixed
+
+- A desync from the first frame of some matches: a side could take the
+  match's starting state before the battle had finished setting up, so the
+  two players started from different states. Each side now waits for the
+  battle's state to settle first, and the joiner's log notes when the
+  host's state layout differs from its own.
+- A desync about three seconds (182 frames) after a KO, when a rollback
+  landed between the KO and the end of the round: a timer of the game's
+  round phases could stay as the other timeline had it, so the next phase
+  started a frame late on one side.
+- A crash for a spectator who stopped watching as the match loaded.
+- Closing the hub froze the game for about 21 seconds when a custom server
+  set in Polarity settings didn't answer.
+- Mod paks made with older tools weren't checked for battle data (the log
+  said "index out of the file").
+- Frame meter: air fireballs, Ryu's Critical Arts and Cammy's EX Cannon
+  Strike and V-Trigger 2 kick read as neutral once their counter-hit
+  frames ended, and now show their recovery. Akuma's air fireball landing
+  no longer counts as stun.
+
 ## [0.4.2] - 2026-11-12
 
 The benchmark now checks your game's battle data and names mods that
