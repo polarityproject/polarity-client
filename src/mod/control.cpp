@@ -3,6 +3,7 @@
 #include "core/random_stage.h"
 #include "core/version.h"
 #include "mod/benchmark.h"
+#include "mod/battle_data.h"
 #include "mod/battle_log_screen.h"
 #include "mod/hub_screen.h"
 #include "mod/rooms_screen.h"
@@ -488,9 +489,32 @@ bool RunResearchCommand(const std::string& cmd, std::stringstream& ss)
         ss >> on;
         SetFrameMeterForced(on != 0);
     }
+    else if (cmd == "battledata") {
+        // battledata [dump]: research (the loaded move data against the game's own; dump: their hashes to Polarity/research)
+        std::string what;
+        ss >> what;
+        if (what == "dump") RunOnGameThread([] { DumpLoadedBattleData(); });
+        else CheckBattleDataSoon("asked");
+        Log("battledata: mod paks: %s", ScanModPaks().Text().c_str());
+    }
     else if (cmd == "benchmark") {
         // benchmark: test (the built-in round under stress 8, as Settings' Run benchmark starts it)
-        if (!StartBenchmark(kPolarityVersion)) Log("benchmark: not started");
+        // | benchmark dump <frame>|off: research (runs save that frame's state, a reference for a failing run's) | benchmark file <path>
+        std::string what;
+        ss >> what;
+        if (what == "dump") {
+            std::string frame;
+            ss >> frame;
+            SetBenchmarkDumpFrame(frame.empty() || frame == "off" ? -1 : std::atoi(frame.c_str()));
+        }
+        else if (what == "file") {
+            // benchmark file <recording in Polarity\matches, or a full path>: research (any recording as the benchmark plays it)
+            std::string file;
+            std::getline(ss >> std::ws, file);
+            const std::string path = file.find(':') != std::string::npos ? file : Utf8Path(MatchesDir()) + "\\" + file;
+            if (!RequestBenchmark(path)) Log("benchmark: not started");
+        }
+        else if (!StartBenchmark(kPolarityVersion)) Log("benchmark: not started");
     }
     else if (cmd == "fmlog") {
         // fmlog <ticks>: research (each tick's frame meter classification)
@@ -1352,6 +1376,9 @@ void RunNetCommand(const std::string& line)
             OpenRoomsScreen();
         }
         else if (what == "hub") CloseRoomsScreen();
+        else if (what == "benchresult") {
+            ShowLastBenchmarkResult();
+        }
         else if (what == "battlelog") {
             OpenHub();
             OpenBattleLog();
@@ -2119,7 +2146,7 @@ bool Parse(const std::string& line, Step& step)
         return !ss.fail();
     }
     if (cmd == "host" || cmd == "join" || cmd == "matchchat" || cmd == "shot" || cmd == "warmupsleep" || cmd == "warmupextra" || cmd == "watchcamera" || cmd == "emptystage" || cmd == "spectate" || cmd == "ticket" || cmd == "presence" || cmd == "rooms" || cmd == "settings" || cmd == "server" || cmd == "packlogs" || cmd == "update" || cmd == "reports" || cmd == "crash" || cmd == "name" || cmd == "delay" || cmd == "transport" || cmd == "ready" || cmd == "choose" || cmd == "leave" || cmd == "netsim" || cmd == "mash" || cmd == "dumps" || cmd == "recordings" || cmd == "pick" ||
-        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "randomstages" || cmd == "randomoff" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "wordfilter" || cmd == "countryflag" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "rview" || cmd == "roundinfo" || cmd == "ufunc" || cmd == "uobj" || cmd == "rfind" || cmd == "dumpbac" || cmd == "actorlog" || cmd == "cinelog" || cmd == "camtrace" || cmd == "camrollback" || cmd == "camlog" || cmd == "hudstep" || cmd == "watchphase" || cmd == "watchname" || cmd == "rsnap" || cmd == "ptrscan" || cmd == "rpeek" || cmd == "rcmp" || cmd == "rdump" || cmd == "hitboxes" || cmd == "framemeter" || cmd == "benchmark" || cmd == "fmlog" || cmd == "freeze" || cmd == "ftrace" || cmd == "winsize" || cmd == "boxlog" || cmd == "rdiff" || cmd == "functrace" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "ofclass" || cmd == "gfx" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "soundlog" || cmd == "uisound" || cmd == "soundrollback" || cmd == "kowaitmode" || cmd == "frameids" || cmd == "leanresim" || cmd == "startprobe" || cmd == "phasecost" || cmd == "serialjobs" || cmd == "joborder" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "watchchat" || cmd == "wheel" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
+        cmd == "stage" || cmd == "netstatus" || cmd == "battle" || cmd == "setstage" || cmd == "setrounds" || cmd == "park" || cmd == "peek" || cmd == "battlenow" || cmd == "findptr" || cmd == "findbytes" || cmd == "keyconfigs" || cmd == "enuminfo" || cmd == "owner" || cmd == "layout" || cmd == "keys" || cmd == "input2" || cmd == "members" || cmd == "worldctx" || cmd == "poke" || cmd == "stages" || cmd == "randomstages" || cmd == "randomoff" || cmd == "nextstage" || cmd == "recdiff" || cmd == "outsidetest" || cmd == "tasklist" || cmd == "phases" || cmd == "regions" || cmd == "costumes" || cmd == "variants" || cmd == "presets" || cmd == "freeplay" || cmd == "relayonly" || cmd == "wordfilter" || cmd == "countryflag" || cmd == "vsync" || cmd == "uniqueparam" || cmd == "voicelang" || cmd == "datatable" || cmd == "replay" || cmd == "rview" || cmd == "roundinfo" || cmd == "ufunc" || cmd == "uobj" || cmd == "rfind" || cmd == "dumpbac" || cmd == "actorlog" || cmd == "cinelog" || cmd == "camtrace" || cmd == "camrollback" || cmd == "camlog" || cmd == "hudstep" || cmd == "watchphase" || cmd == "watchname" || cmd == "rsnap" || cmd == "ptrscan" || cmd == "rpeek" || cmd == "rcmp" || cmd == "rdump" || cmd == "hitboxes" || cmd == "framemeter" || cmd == "benchmark" || cmd == "battledata" || cmd == "fmlog" || cmd == "freeze" || cmd == "ftrace" || cmd == "winsize" || cmd == "boxlog" || cmd == "rdiff" || cmd == "functrace" || cmd == "classes" || cmd == "classinfo" || cmd == "named" || cmd == "ofclass" || cmd == "gfx" || cmd == "scene" || cmd == "relocate" || cmd == "menu" || cmd == "overlay" || cmd == "charas" || cmd == "find" || cmd == "watchregion" || cmd == "packages" || cmd == "preload" || cmd == "charcache" || cmd == "drawlog" || cmd == "bonelog" || cmd == "soundlog" || cmd == "uisound" || cmd == "soundrollback" || cmd == "kowaitmode" || cmd == "frameids" || cmd == "leanresim" || cmd == "startprobe" || cmd == "phasecost" || cmd == "serialjobs" || cmd == "joborder" || cmd == "resimskip" || cmd == "resimtasks" || cmd == "inputlog" || cmd == "mappedlog" || cmd == "versions" || cmd == "uipads" || cmd == "uistart" || cmd == "watchchat" || cmd == "wheel" || cmd == "echo" || cmd == "watchmatch" || cmd == "textures" || cmd == "showtex" || cmd == "savetex" || cmd == "paktex" || cmd == "skipcallbacks") {
         step.kind = Step::Net;
         step.line = line;
         return true;

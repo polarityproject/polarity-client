@@ -7,6 +7,23 @@ entry here. Newest first; the format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+
+- The benchmark's result says whether this game's battle data is the
+  game's own. Mods that change a character's moves or stage transitions
+  are named with the characters they change, since matches with those
+  characters fall out of sync against players without the same mods. Mods
+  that only change looks and sounds are fine. When the round itself played
+  with changed data, the result says which characters'.
+- Polarity's log and desync reports list each mod pak and whether it changes
+  battle data, and each match checks its characters' loaded data against
+  the game's own.
+- A failed benchmark keeps what's needed to find out why without the log:
+  whether the round itself or only a rollback's replay of it came out
+  different, how many frames differed, what this game session had played
+  before (matches, replays, Training, desyncs), and a snapshot of the first
+  frame that differed, saved in Polarity\logs (Pack logs includes it).
+
 ### Fixed
 
 - The frame meter never showed in a match with R. Mika: her partner

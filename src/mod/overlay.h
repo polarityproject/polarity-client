@@ -41,6 +41,8 @@ void UnhookPresentTable();
 void ShutdownOverlay();
 
 void SetOverlayVisible(bool visible);
+// Tests (`overlay benchresult`): Polarity settings open on the last benchmark result.
+void ShowLastBenchmarkResult();
 // The next frame as shown (the overlay drawn) to a PNG at `path` (relative to
 // the game's Win64 folder unless absolute), `scale` 1 full size, 2 half, ...
 // (the `shot` command; the test agents' screenshots, also where no outside

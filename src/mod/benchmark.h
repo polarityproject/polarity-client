@@ -26,6 +26,23 @@ struct BenchmarkResult {
     double drawMs = 0;      // the overlay and Present
     uint64_t when = 0;      // unix time
     std::string version;    // Polarity's
+    // The install's battle data (battle_data.h), when the run ended:
+    // mods: "none", or "<paks>[,<n>-battle][:<characters>]" (ModScan::Short);
+    // data: "stock", "changed:<characters>", "unknown" (this build has no
+    // table of the game's own, or the check had not finished), "" (an older run).
+    std::string mods, data;
+    // How it went wrong, to tell a cause apart without the player's log:
+    // differ "straight" (the round played forward came out different from
+    // the recording), "resim" (only a rollback's replay of a frame did),
+    // "both", or "" (it matched); the frames of each; the first resimulated
+    // frame's differing regions ("s300.0,flow.round"); the session before
+    // the run ("up12m,battles3,match2,replay0,training1,bench0,desync0");
+    // the state dump of the first differing frame (Polarity\logs, "" none).
+    std::string differ;
+    int straightFrames = 0, resimFrames = 0;
+    std::string regions, session, dump;
+    bool DataChanged() const { return data.rfind("changed:", 0) == 0; }
+    bool ModsChangeBattle() const { return mods.find("-battle") != std::string::npos; }
     bool Pass() const { return valid && matched && averageFps >= 59.0; }
 };
 
@@ -46,7 +63,23 @@ struct CapturedRun {
     bool matched = true;
     int firstDiffer = -1;
     bool stopped = false; // the player stopped it
+    int straightFirst = -1, resimFirst = -1; // the first frame of each kind of difference
+    int straightFrames = 0, resimFrames = 0;
+    std::string regions; // the first resimulated frame's differing regions, comma-separated
+    std::string session; // SessionActivityText() as the run began
+    std::string dump;    // the state dump's file name, "" none
 };
+
+// What this game session did before (the benchmark's result says): counts
+// of each kind ("match", "replay", "training", "benchmark", "desync") and
+// the battles, with the time since the game started.
+void NoteSessionActivity(const char* kind);
+std::string SessionActivityText();
+// Research (`benchmark dump <frame>`): the next runs save that frame's state
+// as a failing run saves its first differing frame's (a reference to compare
+// a player's dump with); -1 off.
+void SetBenchmarkDumpFrame(int frame);
+int BenchmarkDumpFrame();
 void FinishBenchmark(const CapturedRun& run);
 
 } // namespace sfv::mod

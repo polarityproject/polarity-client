@@ -1,4 +1,5 @@
 #include "mod/replay_driver.h"
+#include "mod/battle_data.h"
 
 #include "core/build_id.h"
 #include "core/netplay.h"
@@ -24,6 +25,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <ctime>
 #include <atomic>
 #include <cstring>
 #include <map>
@@ -1102,6 +1104,13 @@ private:
             RoundEndState().c_str(),
             differ ? ("differs in " + std::to_string(differ) + " regions").c_str() : "equal");
         if (viewer_) FindHudMovies(); // a run's ticks step them (Simulate)
+        // The loaded move data against the game's own (the benchmark's
+        // result says when it isn't; a worker thread).
+        CheckBattleDataSoon(bench_ ? "benchmark" : "replay");
+        // The session before this run (the benchmark's result says), then
+        // this run counted in it.
+        if (bench_) benchSession_ = SessionActivityText();
+        NoteSessionActivity(bench_ ? "benchmark" : "replay");
         if (stress_ > 0) {
             NetplayConfig nc;
             nc.stressCheckDistance = static_cast<unsigned char>(stress_);
@@ -1123,6 +1132,14 @@ private:
                 if (region >= game.Regions().size()) return;
                 const std::string& name = game.Regions()[region].name;
                 if (name == "viewtarget.clock" || name == "pawn.clock") return;
+                // The first resimulated frame that differs: its regions (the
+                // benchmark's result names them) and its state (a dump).
+                if (resimFirst_ < 0) resimFirst_ = frame;
+                if (frame == resimFirst_ && resimRegions_.size() < 4 &&
+                    std::find(resimRegions_.begin(), resimRegions_.end(), name) == resimRegions_.end()) {
+                    resimRegions_.push_back(name);
+                }
+                if (bench_ && failDump_.empty()) TakeFailDump(game, frame, "resim");
                 if (stressFrames_.insert(frame).second) {
                     stressRegionFrames_[name]++;
                     if (stressLogged_++ < 20) {
@@ -1621,6 +1638,30 @@ private:
 
     void CheckFrame(SfvGame& game, int f)
     {
+        const int before = firstMismatch_;
+        CheckFrameAgainstRecording(game, f);
+        // The benchmark: the first frame that came out different, kept as a
+        // state dump (or the frame asked for, `benchmark dump <frame>`).
+        if (bench_ && failDump_.empty() && before < 0 && firstMismatch_ >= 0) TakeFailDump(game, f, "straight");
+        else if (bench_ && failDump_.empty() && f == BenchmarkDumpFrame()) TakeFailDump(game, f, "reference");
+    }
+
+    // The state now, as the benchmark's dump (its region table with it: the
+    // layout may change later).
+    void TakeFailDump(SfvGame& game, int f, const char* label)
+    {
+        failDumpFrame_ = f;
+        failDumpLabel_ = label;
+        failDump_.resize(StateSize(game.Regions()));
+        SaveRegions(game.Regions(), failDump_.data());
+        failRegions_ = DescribeRegions(game.Regions());
+        failHashes_.assign(game.Regions().size(), 0);
+        HashRegions(game.Regions(), failHashes_.data());
+        Log("replay: benchmark state of frame %d kept (%s)", f, label);
+    }
+
+    void CheckFrameAgainstRecording(SfvGame& game, int f)
+    {
         if (f >= rf_.FrameCount() || rf_.hashes.empty()) return;
         std::vector<uint64_t> hashes(CheckRegions(game).size());
         HashRegions(CheckRegions(game), hashes.data());
@@ -1774,6 +1815,36 @@ private:
             }
             run.matched = firstMismatch_ < 0 && stressFrames_.empty();
             run.firstDiffer = firstMismatch_ >= 0 ? firstMismatch_ : stressFrames_.empty() ? -1 : *stressFrames_.begin();
+            run.straightFirst = firstMismatch_;
+            run.resimFirst = stressFrames_.empty() ? -1 : *stressFrames_.begin();
+            run.straightFrames = mismatchFrames_;
+            run.resimFrames = static_cast<int>(stressFrames_.size());
+            for (const std::string& r : resimRegions_) run.regions += (run.regions.empty() ? "" : ",") + r;
+            run.session = benchSession_;
+            if (!failDump_.empty()) {
+                // As a recording with one state dump (`polarity export`
+                // reads it; compared with a good run's dump of the same
+                // frame, it names the regions that differ).
+                ReplayFile d;
+                d.modVersion = rf_.modVersion;
+                d.gameBuild = game.BuildId();
+                d.matchId = rf_.matchId;
+                d.localPlayer = rf_.localPlayer;
+                d.setup = rf_.setup;
+                d.regions = failRegions_;
+                d.initialHashes = failHashes_;
+                d.dumps.push_back({failDumpFrame_, failDumpLabel_, std::move(failDump_)});
+                const std::string name = "benchmark_" + std::to_string(static_cast<long long>(std::time(nullptr))) + "_" + failDumpLabel_ +
+                                         "_frame" + std::to_string(failDumpFrame_) + ".sfvr";
+                std::string error;
+                if (SaveReplay(d, Utf8Path(LogsDir() + L"\\" + std::wstring(name.begin(), name.end())), &error, ReplayDetail::Full)) {
+                    run.dump = name;
+                    PruneOldest(LogsDir(), L"benchmark_*.sfvr", 6);
+                    Log("replay: benchmark state dump %s", name.c_str());
+                }
+                else Log("replay: cannot save the benchmark state dump: %s", error.c_str());
+                failDump_.clear();
+            }
             run.stopped = benchStopped_;
             FinishBenchmark(run);
             std::lock_guard lock(g_viewMutex);
@@ -1897,6 +1968,14 @@ private:
     int presentationFrames_ = 0; // camera / pawn clock differences (not a failure)
     std::map<std::string, int> regionFrames_; // frames each region differed on
     std::set<int> stressFrames_;                    // frames resimulated differently (not the clocks)
+    int resimFirst_ = -1;                           // the first of them reported
+    std::vector<std::string> resimRegions_;         // its differing regions (at most 4)
+    std::vector<uint8_t> failDump_;                 // the benchmark's first differing frame's state (TakeFailDump)
+    int failDumpFrame_ = -1;
+    std::string failDumpLabel_;
+    std::vector<RegionInfo> failRegions_;
+    std::vector<uint64_t> failHashes_;
+    std::string benchSession_;                      // SessionActivityText() as the benchmark began
     std::map<std::string, int> stressRegionFrames_;
     int stressLogged_ = 0;
     int logged_ = 0;

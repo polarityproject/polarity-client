@@ -1,4 +1,6 @@
 #include "mod/netplay_driver.h"
+#include "mod/battle_data.h"
+#include "mod/benchmark.h"
 #include "mod/entitlements.h"
 
 #include "core/display_name.h"
@@ -2294,6 +2296,10 @@ private:
                 game.CameraNotStarted() ? "; the camera has not begun its setup" : "");
             game.ArmStartProbe();
             Log("netplay: loaded %s", DescribeSetup(loadedSetup_).c_str());
+            // This side's move data against the game's own (a worker thread;
+            // its line in the log, and in a desync report's header).
+            CheckBattleDataSoon("match");
+            NoteSessionActivity("match"); // the benchmark's result counts them
         }
         if (++frozenFrames_ == kSettleFrames) {
             selfLoaded_ = true;
@@ -2351,6 +2357,7 @@ private:
         session_ = std::make_unique<NetplaySession>(game, *gekko_, nc);
         game.CaptureStartProbe("at the session's start");
         session_->onDesync = [this, &game](const DesyncInfo& d, const ReplayFile& rf) {
+            NoteSessionActivity("desync");
             desyncFrame_ = d.frame;
             if (d.frame <= kStartProbeFrames) game.LogStartProbe(("a desync at frame " + std::to_string(d.frame)).c_str());
             const std::string path = SaveReport(rf, "desync", true);
@@ -3101,6 +3108,8 @@ private:
                      options_.inputDelay);
         std::fprintf(f, "%s\n", summary.c_str());
         std::fprintf(f, "game files: %s\n", GameFilesText().c_str());
+        std::fprintf(f, "mods: %s\n", ScanModPaks().Text().c_str());
+        std::fprintf(f, "battle data: %s\n", LastDataCheck().Text().c_str());
         std::fprintf(f, "character versions: %s\n", CharaVersionsText().c_str());
         const int peerReports = peerReports_;
         std::fprintf(f, "desync reports: %s from this side, %s from the other side\n", ReportUploadsOn() ? "sent" : "not sent",

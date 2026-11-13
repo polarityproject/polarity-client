@@ -2,6 +2,7 @@
 
 #include "core/random_stage.h"
 
+#include "mod/benchmark.h"
 #include "mod/battle_setup.h"
 #include "mod/boot.h"
 #include "mod/control.h"
@@ -297,6 +298,7 @@ void RememberScene(const std::string& stateClassName)
     g_holdResults = false;
     g_resultsHeld = false;
     std::lock_guard lock(g_sceneMutex);
+    if (stateClassName == "TrainingBattleState" && g_lastScene != stateClassName) NoteSessionActivity("training");
     g_lastScene = stateClassName;
     g_sceneChangedAt = g_pumps.load();
 }

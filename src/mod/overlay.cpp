@@ -10,6 +10,7 @@
 #include "mod/profile.h"
 #include "mod/textures.h"
 
+#include "core/keeper_protocol.h"
 #include "core/match_code.h"
 #include "mod/config.h"
 #include "mod/control.h"
@@ -2572,6 +2573,55 @@ void DrawBenchmarkLaunch(const HubFonts& f)
     StepBenchmarkLaunch();
 }
 
+// What the result says about the install's battle data (benchmark.h
+// mods/data): kind -1 nothing to say (a run from before the check), 0 fine,
+// 1 a mod changes some characters' data, 2 this round's data was changed.
+struct BenchDataLine {
+    int kind = -1;
+    std::string head, body;
+};
+BenchDataLine BenchmarkDataLine(const BenchmarkResult& b)
+{
+    // "JRI,KEN,CMN" -> "Juri, Ken and every character's shared data".
+    auto names = [](const std::string& codes) {
+        std::vector<std::string> out;
+        size_t from = 0;
+        while (from < codes.size()) {
+            const size_t comma = codes.find(',', from);
+            const std::string code = codes.substr(from, comma == std::string::npos ? std::string::npos : comma - from);
+            from = comma == std::string::npos ? codes.size() : comma + 1;
+            if (code.empty()) continue;
+            const char* name = keeper::CharacterName(code);
+            out.push_back(code == "CMN" ? "every character's shared data" : code == "?" ? "a mod that can't be read" : *name ? name : code);
+        }
+        std::string s;
+        for (size_t i = 0; i < out.size(); i++) s += (i == 0 ? "" : i + 1 == out.size() ? " and " : ", ") + out[i];
+        return s;
+    };
+    BenchDataLine l;
+    if (b.DataChanged()) {
+        l.kind = 2;
+        l.head = "This round's battle data isn't the game's own: " + names(b.data.substr(8)) + ".";
+        l.body = "A mod changes it. Matches with these characters fall out of sync against players without that mod.";
+        return l;
+    }
+    if (b.ModsChangeBattle()) {
+        const size_t colon = b.mods.find(':');
+        l.kind = 1;
+        l.head = "Mods change the battle data of " + (colon == std::string::npos ? std::string("some characters") : names(b.mods.substr(colon + 1))) + ".";
+        l.body = "Matches with them fall out of sync against players who don't have the same mods.";
+        return l;
+    }
+    if (b.mods.empty()) return l;
+    l.kind = 0;
+    if (b.mods == "none") l.head = "No mods are installed.";
+    else {
+        const int count = std::atoi(b.mods.c_str());
+        l.head = std::to_string(count) + (count == 1 ? " mod is installed. It doesn't" : " mods are installed. None of them") + " change battle data.";
+    }
+    return l;
+}
+
 void DrawBenchmarkModal(const HubFonts& f, bool takeInput)
 {
     using namespace ui;
@@ -2607,8 +2657,9 @@ void DrawBenchmarkModal(const HubFonts& f, bool takeInput)
     else if (g_benchModal == BenchModal::Result) {
         const BenchmarkResult& b = g_benchShown;
         const bool pass = b.Pass();
+        const BenchDataLine data = BenchmarkDataLine(b);
         ModalSpec m;
-        m.x0 = 350, m.y0 = 120, m.w = 900, m.h = b.matched ? (pass ? 470 : 510) : 510;
+        m.x0 = 350, m.y0 = 120, m.w = 900, m.h = (b.matched ? (pass ? 470.0f : 510.0f) : 510.0f) + (data.kind < 0 ? 0.0f : data.body.empty() ? 44.0f : 74.0f);
         const std::time_t t = static_cast<std::time_t>(b.when);
         std::tm tm{};
         localtime_s(&tm, &t);
@@ -2666,7 +2717,24 @@ void DrawBenchmarkModal(const HubFonts& f, bool takeInput)
             Text(d, bold, g_v.L(19), g_v.P(m.x0 + 56, y), look::kCream,
                  "The round played differently from frame " + std::to_string(b.firstDiffer) + ".");
             Text(d, f.body, g_v.L(19), g_v.P(m.x0 + 56, y + 30), look::kSoft,
-                 "This PC would fall out of sync online. Pack logs in Polarity settings and send them in.");
+                 data.kind == 2 ? "This PC would fall out of sync online."
+                                : "This PC would fall out of sync online. Pack logs in Polarity settings and send them in.");
+        }
+        // The install's battle data: a tick, or a warning sign with what the
+        // mods change.
+        if (data.kind >= 0) {
+            float dy = y + (b.matched && pass ? 44 : 74);
+            const ImU32 mark = data.kind == 0 ? look::kOk : data.kind == 1 ? look::kGold : look::kDanger;
+            if (data.kind == 0) {
+                d->AddLine(g_v.P(m.x0 + 30, dy + 13), g_v.P(m.x0 + 36, dy + 19), mark, g_v.L(2.4f));
+                d->AddLine(g_v.P(m.x0 + 36, dy + 19), g_v.P(m.x0 + 46, dy + 7), mark, g_v.L(2.4f));
+            }
+            else {
+                d->AddTriangle(g_v.P(m.x0 + 38, dy + 4), g_v.P(m.x0 + 47, dy + 21), g_v.P(m.x0 + 29, dy + 21), mark, g_v.L(2.0f));
+                d->AddLine(g_v.P(m.x0 + 38, dy + 10), g_v.P(m.x0 + 38, dy + 15), mark, g_v.L(2.0f));
+            }
+            Text(d, bold, g_v.L(19), g_v.P(m.x0 + 56, dy), look::kCream, data.head);
+            if (!data.body.empty()) Text(d, f.body, g_v.L(19), g_v.P(m.x0 + 56, dy + 30), look::kSoft, data.body);
         }
         const float by = m.y0 + m.h - 46 - 22 - 48;
         const bool done = Button(d, bold, m.x0 + 28, by, m.x0 + m.w / 2 - 6, by + 48, "Done", g_benchChoice == 0);
@@ -4517,6 +4585,13 @@ void RequestScreenshot(const std::string& path, int scale)
     std::lock_guard lock(g_shotMutex);
     g_shotPath = path;
     g_shotScale = std::clamp(scale, 1, 4);
+}
+
+void ShowLastBenchmarkResult()
+{
+    OpenHub();
+    OpenSettingsScreen("benchlast");
+    OpenBenchmarkModal(true);
 }
 
 void SetOverlayVisible(bool visible)

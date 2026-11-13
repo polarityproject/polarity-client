@@ -4,6 +4,7 @@
 #include "core/battle_log.h"
 #include "core/build_id.h"
 #include "core/compress.h"
+#include "core/pak_index.h"
 #include "core/display_name.h"
 #include "core/input_delay.h"
 #include "core/lobby.h"
@@ -2383,6 +2384,79 @@ void TestKeeperProtocol()
     CHECK(NextOwner({5, 9, 3}, 5, 1) == 9 && NextOwner({1, 5, 9}, 9, 1) == 5 && NextOwner({5}, 5, 1) == 0 && NextOwner({}, 0, 1) == 0);
 }
 
+// A version 3 pak's index (a mod's: unencrypted, two files, one compressed),
+// read back, and the game's paths classified.
+void TestPakIndex()
+{
+    std::vector<uint8_t> pak(64, 0xAB); // file data before the index
+    const uint64_t indexAt = pak.size();
+    auto put = [&](const void* p, size_t n) { pak.insert(pak.end(), static_cast<const uint8_t*>(p), static_cast<const uint8_t*>(p) + n); };
+    auto put32 = [&](int32_t v) { put(&v, 4); };
+    auto put64 = [&](int64_t v) { put(&v, 8); };
+    auto str = [&](const std::string& t) {
+        put32(static_cast<int32_t>(t.size() + 1));
+        put(t.c_str(), t.size() + 1);
+    };
+    str("../../../StreetFighterV/Content/");
+    put32(2);
+    str("Chara/JRI/BattleResource/061/BAC_JRI.uasset");
+    put64(0), put64(100), put64(300), put32(1); // offset, size, uncompressed, zlib
+    put(std::vector<uint8_t>(20, 0).data(), 20); // hash
+    put32(1), put64(0), put64(100);              // one block
+    uint8_t enc = 0;
+    put(&enc, 1), put32(65536);
+    str("Chara/JRI/Texture/T_JRI_00_COL.uasset");
+    put64(100), put64(50), put64(50), put32(0);
+    put(std::vector<uint8_t>(20, 0).data(), 20);
+    put(&enc, 1), put32(0);
+    const uint64_t indexSize = pak.size() - indexAt;
+    uint8_t flag = 0;
+    put(&flag, 1);
+    put32(static_cast<int32_t>(0x5A6F12E1)), put32(3), put64(static_cast<int64_t>(indexAt)), put64(static_cast<int64_t>(indexSize));
+    put(std::vector<uint8_t>(20, 0).data(), 20);
+
+    PakIndex index;
+    std::string error;
+    CHECK(ParsePakIndex(pak.data(), pak.size(), pak.size(), 0, &index, &error));
+    CHECK(index.version == 3);
+    CHECK(index.entries.size() == 2);
+    if (index.entries.size() == 2) {
+        CHECK(index.entries[0].path == "StreetFighterV/Content/Chara/JRI/BattleResource/061/BAC_JRI.uasset");
+        CHECK(index.entries[0].uncompressedSize == 300 && index.entries[0].compression == 1);
+        CHECK(index.entries[1].path == "StreetFighterV/Content/Chara/JRI/Texture/T_JRI_00_COL.uasset");
+    }
+    // From the index on only, as ReadPakIndex reads it.
+    PakIndex tail;
+    CHECK(ParsePakIndex(pak.data() + indexAt, pak.size() - indexAt, pak.size(), indexAt, &tail, &error) && tail.entries.size() == 2);
+    // An encrypted index, a newer version, no pak at all.
+    std::vector<uint8_t> bad = pak;
+    bad[bad.size() - 45] = 1;
+    CHECK(!ParsePakIndex(bad.data(), bad.size(), bad.size(), 0, &index, &error) && error == "encrypted index");
+    bad = pak;
+    bad[bad.size() - 45 + 5] = 8;
+    CHECK(!ParsePakIndex(bad.data(), bad.size(), bad.size(), 0, &index, &error));
+    std::vector<uint8_t> none(100, 0);
+    CHECK(!ParsePakIndex(none.data(), none.size(), none.size(), 0, &index, &error));
+
+    auto kind = [](const char* path) { return ClassifyGamePath(path).kind; };
+    CHECK(kind("StreetFighterV/Content/Chara/KEN/BattleResource/061/BAC_KEN.uasset") == BattleFileKind::MoveData);
+    CHECK(kind("StreetFighterV/Content/Chara/KEN/BattleResource/061/BAC_KEN_eff.uexp") == BattleFileKind::MoveData);
+    CHECK(kind("StreetFighterV/Content/Chara/KEN/BattleResource/061/BCM_KEN.uasset") == BattleFileKind::MoveData);
+    CHECK(kind("StreetFighterV/Content/Chara/KEN/BattleResource/061/BCH_KEN.uasset") == BattleFileKind::MoveData);
+    CHECK(kind("StreetFighterV/Content/Chara/KEN/BattleResource/061/DA_KEN_BattleResource.uasset") == BattleFileKind::MoveData);
+    CHECK(kind("StreetFighterV/Content/Chara/KEN/BattleResource/061/BAI_KEN.uasset") == BattleFileKind::CpuAi);
+    CHECK(kind("StreetFighterV/Content/Chara/CMN/BattleResource/BAC_CMN.uasset") == BattleFileKind::MoveData);
+    CHECK(kind("StreetFighterV/Content/Chara/KEN/DataAsset/StageData/DA_KEN_Stage_BRZ.uasset") == BattleFileKind::StageData);
+    CHECK(kind("StreetFighterV/Content/Chara/KEN/Animation/KEN_SPA_SYORYU.uasset") == BattleFileKind::Other);
+    CHECK(kind("StreetFighterV/Content/Chara/KEN/Texture/T_KEN_00.uasset") == BattleFileKind::Other);
+    CHECK(kind("StreetFighterV/Content/UI/Battle/BAC_FAKE.uasset") == BattleFileKind::Other);
+    const BattleFile b = ClassifyGamePath(R"(StreetFighterV\Content\Chara\JRI\BattleResource\061\BAC_JRI.uasset)");
+    CHECK(b.kind == BattleFileKind::MoveData && b.character == "JRI" && b.version == "061");
+    CHECK(BattleDataKey("/Game/Chara/KEN/BattleResource/061/BAC_KEN") == "KEN/061/BAC_KEN");
+    CHECK(BattleDataKey("/Game/Chara/CMN/BattleResource/005/BCM_CMN") == "CMN/005/BCM_CMN");
+    CHECK(BattleDataKey("/Game/Chara/KEN/Texture/T_KEN").empty());
+}
+
 void TestTexturePackage()
 {
     // A package as the paks hold one: a name table entry first (the same
@@ -2570,6 +2644,7 @@ int main()
         {"migrate from sfvr", TestMigrateFromSfvr},
         {"update signature", TestUpdateSignature},
         {"texture package", TestTexturePackage},
+        {"pak index", TestPakIndex},
         {"key names", TestKeyNames},
         {"shown setup", TestShownSetup},
         {"rules format", TestRulesFormat},

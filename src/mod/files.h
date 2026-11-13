@@ -62,5 +62,8 @@ void OpenDataFolder(const std::wstring& select = L"");
 // Content\Paks (mods, often in ~mods: the game loads them all). Desyncs seen
 // on one player's machine only point at such files. Read once.
 std::string GameFilesText();
+// The paks besides the game's own (Content\Paks and its subfolders, as ~mods),
+// as full paths, sorted.
+std::vector<std::wstring> OtherPaks();
 
 } // namespace sfv::mod

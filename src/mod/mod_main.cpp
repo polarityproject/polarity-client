@@ -2,6 +2,7 @@
 #include "builtin_noise.h"
 #include "core/replay_file.h"
 #include "core/state.h"
+#include "mod/battle_data.h"
 #include "mod/battle_driver.h"
 #include "mod/camera_rollback.h"
 #include "mod/hud_step.h"
@@ -31,6 +32,8 @@
 #include "mod/ui_sound.h"
 
 #include <windows.h>
+
+#include <thread>
 
 #include <cstring>
 #include <string>
@@ -146,6 +149,11 @@ DWORD WINAPI ModMain(LPVOID self)
         Log("noise mask: built in (%zu words)", game.NoiseWords());
     }
     Log("game files: %s", GameFilesText().c_str());
+    // The mod paks' indexes (a few ms each): which change battle data.
+    std::thread([] {
+        ThreadGuard running;
+        Log("mods: %s", ScanModPaks().Text().c_str());
+    }).detach();
 
     if (!InstallProbes(image, config, &game, &stateMap, stateMapPath)) return 0;
     // The content the Steam account owns, into the profile as it loads (entitlements.h).

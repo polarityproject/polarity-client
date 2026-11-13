@@ -244,6 +244,10 @@ std::wstring PackLogsToShare(std::string* error)
     std::vector<std::pair<std::wstring, std::string>> files;
     // The event logs: this run's and the earlier ones kept.
     for (const auto& f : ListNewestFirst(LogsDir(), L"*.log")) files.push_back({LogsDir() + L"\\" + f.name, "logs/" + Narrow(f.name)});
+    // The benchmark's results, and the state dumps of its latest failed runs.
+    for (const auto& f : ListNewestFirst(LogsDir(), L"benchmark.txt")) files.push_back({LogsDir() + L"\\" + f.name, "logs/" + Narrow(f.name)});
+    const auto dumps = ListNewestFirst(LogsDir(), L"benchmark_*.sfvr");
+    for (size_t i = 0; i < dumps.size() && i < 2; i++) files.push_back({LogsDir() + L"\\" + dumps[i].name, "logs/" + Narrow(dumps[i].name)});
     // The latest crash reports (crash_report.h): notes and minidumps.
     const auto crashes = ListNewestFirst(CrashesDir(), L"*_crash_*");
     for (size_t i = 0; i < crashes.size() && i < kSharedCrashFiles; i++) {
@@ -320,6 +324,24 @@ void ListPaks(const std::wstring& root, const std::wstring& rel, int depth, std:
 }
 
 } // namespace
+
+std::vector<std::wstring> OtherPaks()
+{
+    wchar_t exe[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    std::wstring dir(exe);
+    dir = dir.substr(0, dir.find_last_of(L"\\/")); // Binaries\Win64
+    const std::wstring paks = dir + L"\\..\\..\\Content\\Paks";
+    std::vector<std::pair<std::wstring, uint64_t>> found;
+    ListPaks(paks, L"", 0, &found);
+    std::sort(found.begin(), found.end());
+    std::vector<std::wstring> out;
+    for (const auto& [path, size] : found) {
+        if (path.find(L'\\') == std::wstring::npos && IsGamePak(path)) continue;
+        out.push_back(paks + L"\\" + path);
+    }
+    return out;
+}
 
 std::string GameFilesText()
 {

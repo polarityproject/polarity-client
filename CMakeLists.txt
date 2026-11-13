@@ -150,6 +150,7 @@ add_library(sfvcore STATIC
   src/core/battle_log.cpp
   src/core/display_name.cpp
   src/core/rules.cpp
+  src/core/pak_index.cpp
   src/core/match_ticket.cpp
   src/core/keeper_protocol.cpp
   src/core/country_flags.cpp
@@ -251,6 +252,7 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/hub_screen.cpp
     src/mod/battle_log_screen.cpp
     src/mod/benchmark.cpp
+    src/mod/battle_data.cpp
     src/mod/rooms_screen.cpp
     src/mod/room_screen.cpp
     src/mod/watch_chat.cpp
@@ -292,6 +294,18 @@ if(SFV_BUILD_MOD AND WIN32)
   endif()
   file(CONFIGURE OUTPUT ${CMAKE_BINARY_DIR}/generated/builtin_benchmark.h
        CONTENT "#pragma once\n// Generated from data/benchmark.sfvr by CMakeLists.txt.\nnamespace sfv::mod {\ninline constexpr unsigned char kBenchmarkRound[] = {${SFV_BENCH_BYTES}};\n}\n")
+  # The game's own move data hashes (data/battle_data.txt, from a stock
+  # install with `battledata dump`), the same way; none: the check says so.
+  set(SFV_BATTLE_DATA_FILE ${CMAKE_SOURCE_DIR}/data/battle_data.txt)
+  if(EXISTS ${SFV_BATTLE_DATA_FILE})
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SFV_BATTLE_DATA_FILE})
+    file(READ ${SFV_BATTLE_DATA_FILE} SFV_BATTLE_DATA_HEX HEX)
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," SFV_BATTLE_DATA_BYTES "${SFV_BATTLE_DATA_HEX}")
+  else()
+    set(SFV_BATTLE_DATA_BYTES "0")
+  endif()
+  file(CONFIGURE OUTPUT ${CMAKE_BINARY_DIR}/generated/builtin_battle_data.h
+       CONTENT "#pragma once\n// Generated from data/battle_data.txt by CMakeLists.txt.\nnamespace sfv::mod {\ninline constexpr unsigned char kStockBattleData[] = {${SFV_BATTLE_DATA_BYTES}};\n}\n")
   # The Steam app -> entitlement code table (data/steam_grants.txt), the same way.
   set(SFV_GRANTS_FILE ${CMAKE_SOURCE_DIR}/data/steam_grants.txt)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SFV_GRANTS_FILE})

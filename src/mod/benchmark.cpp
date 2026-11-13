@@ -1,16 +1,21 @@
 #include "mod/benchmark.h"
+#include "mod/battle_data.h"
 
 #include "builtin_benchmark.h"
 #include "core/file_open.h"
 #include "mod/files.h"
+#include "mod/flow.h"
 #include "mod/log.h"
 #include "mod/replay_driver.h"
+
+#include <windows.h>
 
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <ctime>
 #include <fstream>
+#include <map>
 #include <mutex>
 #include <sstream>
 
@@ -27,12 +32,16 @@ std::wstring ResultsPath() { return LogsDir() + L"\\benchmark.txt"; }
 
 std::string Line(const BenchmarkResult& r)
 {
-    char b[400];
+    char b[1400];
     std::snprintf(b, sizeof(b),
                   "when=%llu version=%s pass=%d matched=%d first_differ=%d frames=%d seconds=%.2f average_fps=%.2f low_fps=%.2f "
-                  "slowest_ms=%.2f slow_frames=%d rollback_ms=%.2f game_ms=%.2f draw_ms=%.2f",
+                  "slowest_ms=%.2f slow_frames=%d rollback_ms=%.2f game_ms=%.2f draw_ms=%.2f mods=%s data=%s differ=%s "
+                  "straight_frames=%d resim_frames=%d regions=%s session=%s dump=%s",
                   static_cast<unsigned long long>(r.when), r.version.c_str(), r.Pass() ? 1 : 0, r.matched ? 1 : 0, r.firstDiffer, r.frames,
-                  r.seconds, r.averageFps, r.lowFps, r.slowestMs, r.slowFrames, r.rollbackMs, r.gameMs, r.drawMs);
+                  r.seconds, r.averageFps, r.lowFps, r.slowestMs, r.slowFrames, r.rollbackMs, r.gameMs, r.drawMs,
+                  r.mods.empty() ? "-" : r.mods.c_str(), r.data.empty() ? "-" : r.data.c_str(), r.differ.empty() ? "-" : r.differ.c_str(),
+                  r.straightFrames, r.resimFrames, r.regions.empty() ? "-" : r.regions.c_str(), r.session.empty() ? "-" : r.session.c_str(),
+                  r.dump.empty() ? "-" : r.dump.c_str());
     return b;
 }
 
@@ -58,12 +67,62 @@ BenchmarkResult Parse(const std::string& line)
         else if (k == "rollback_ms") r.rollbackMs = std::atof(v.c_str());
         else if (k == "game_ms") r.gameMs = std::atof(v.c_str());
         else if (k == "draw_ms") r.drawMs = std::atof(v.c_str());
+        else if (k == "mods") r.mods = v == "-" ? "" : v;
+        else if (k == "data") r.data = v == "-" ? "" : v;
+        else if (k == "differ") r.differ = v == "-" ? "" : v;
+        else if (k == "straight_frames") r.straightFrames = std::atoi(v.c_str());
+        else if (k == "resim_frames") r.resimFrames = std::atoi(v.c_str());
+        else if (k == "regions") r.regions = v == "-" ? "" : v;
+        else if (k == "session") r.session = v == "-" ? "" : v;
+        else if (k == "dump") r.dump = v == "-" ? "" : v;
     }
     r.valid = r.frames > 0;
     return r;
 }
 
 } // namespace
+
+namespace {
+std::mutex g_activityMutex;
+std::map<std::string, int> g_activity;
+std::atomic<int> g_dumpFrame{-1};
+} // namespace
+
+void NoteSessionActivity(const char* kind)
+{
+    std::lock_guard lock(g_activityMutex);
+    g_activity[kind ? kind : "?"]++;
+}
+
+std::string SessionActivityText()
+{
+    // Minutes since the game started (its process's creation).
+    FILETIME created{}, exited{}, kernel{}, user{};
+    long long minutes = -1;
+    if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user)) {
+        FILETIME now{};
+        GetSystemTimeAsFileTime(&now);
+        const auto ticks = [](const FILETIME& f) { return (static_cast<long long>(f.dwHighDateTime) << 32) | f.dwLowDateTime; };
+        minutes = (ticks(now) - ticks(created)) / 600000000ll;
+    }
+    std::lock_guard lock(g_activityMutex);
+    auto count = [](const char* k) {
+        const auto it = g_activity.find(k);
+        return it == g_activity.end() ? 0 : it->second;
+    };
+    char b[160];
+    std::snprintf(b, sizeof(b), "up%lldm,battles%llu,match%d,replay%d,training%d,bench%d,desync%d", minutes,
+                  static_cast<unsigned long long>(BattleSceneSwitches()), count("match"), count("replay"), count("training"),
+                  count("benchmark"), count("desync"));
+    return b;
+}
+
+void SetBenchmarkDumpFrame(int frame)
+{
+    g_dumpFrame = frame;
+    Log("benchmark: %s", frame >= 0 ? ("runs save frame " + std::to_string(frame) + "'s state").c_str() : "runs save no reference state");
+}
+int BenchmarkDumpFrame() { return g_dumpFrame; }
 
 bool StartBenchmark(const std::string& modVersion)
 {
@@ -108,7 +167,24 @@ void FinishBenchmark(const CapturedRun& run)
     r.valid = true;
     r.matched = run.matched;
     r.firstDiffer = run.firstDiffer;
+    r.differ = run.straightFrames && run.resimFrames ? "both" : run.straightFrames ? "straight" : run.resimFrames ? "resim" : "";
+    r.straightFrames = run.straightFrames;
+    r.resimFrames = run.resimFrames;
+    r.regions = run.regions;
+    r.session = run.session;
+    r.dump = run.dump;
     r.when = static_cast<uint64_t>(std::time(nullptr));
+    // What this install's battle data is: a round that played differently is
+    // explained by a mod that changes it.
+    r.mods = ScanModPaks().Short();
+    const DataCheck check = LastDataCheck();
+    r.data = !check.done || !check.table ? "unknown"
+           : check.changed.empty()       ? "stock"
+                                         : "changed:" + [&] {
+                                               std::string c = check.Characters();
+                                               c.erase(std::remove(c.begin(), c.end(), ' '), c.end());
+                                               return c;
+                                           }();
     {
         std::lock_guard lock(g_mutex);
         r.version = g_version;
