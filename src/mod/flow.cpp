@@ -1247,7 +1247,7 @@ std::string FStringText(const uint8_t* fstring)
 
 } // namespace
 
-void WaitForStageThenSwitch(void* manager, void* stateClass, uint8_t* loader, int frames);
+void WaitForStageThenSwitch(void* manager, void* stateClass, uint8_t* loader, int frames, uint64_t sceneAt, int generation);
 void StartLoaderWhenReady(int frames, uint8_t* seen, int seenAt);
 void JumpOnGameThread(int setupFrames);
 
@@ -2444,7 +2444,7 @@ void JumpOnGameThread(int setupFrames)
         // the battle state uses the stage already prepared.
         if (g_origStep) g_origStep(loader, 0, 1);
         if (lentTo) std::memcpy(lentTo + 0x10, saved, 16);
-        WaitForStageThenSwitch(manager, stateClass, loader, 0);
+        WaitForStageThenSwitch(manager, stateClass, loader, 0, g_sceneChangedAt.load(), g_jumpGeneration.load());
     }
 }
 
@@ -2467,8 +2467,19 @@ void ChangeScene(const std::string& stateClassName, const std::string& paramName
     });
 }
 
-void WaitForStageThenSwitch(void* manager, void* stateClass, uint8_t* loader, int frames)
+void WaitForStageThenSwitch(void* manager, void* stateClass, uint8_t* loader, int frames, uint64_t sceneAt, int generation)
 {
+    // A scene change while the stage loads (a session left and went back to
+    // the menu, the loader kept) or a newer jump: this one is not wanted any
+    // more. A 0.4.1 spectator stopped watching 0.3 s into a set's next jump;
+    // the menu came, then this switched to the battle anyway with no setup
+    // (a bare jump's defaults), whose HUD read null at rva 0x13958B0
+    // (16a56551, 2026-11-12).
+    if (g_sceneChangedAt != sceneAt || g_jumpGeneration != generation) {
+        Log("flow: jump to battle cancelled (%s while its stage loaded)",
+            g_jumpGeneration != generation ? "another jump came" : ("the scene changed to " + LastScene()).c_str());
+        return;
+    }
     // The scene may have moved on meanwhile (leave, back to the menu): the
     // loader is then gone.
     if (BattleLoader() != loader) {
@@ -2487,7 +2498,7 @@ void WaitForStageThenSwitch(void* manager, void* stateClass, uint8_t* loader, in
     using DoneFn = bool (*)(void*, int);
     const bool loaded = reinterpret_cast<DoneFn>(g_base + kLoaderStepDone)(loader, 0);
     if (!loaded && frames < kStageWaitFrames) {
-        RunOnGameThreadAfter(1, [=] { WaitForStageThenSwitch(manager, stateClass, loader, frames + 1); });
+        RunOnGameThreadAfter(1, [=] { WaitForStageThenSwitch(manager, stateClass, loader, frames + 1, sceneAt, generation); });
         return;
     }
     Log("flow: stage %s after %d frames; switching to the battle", loaded ? "loaded" : "NOT loaded", frames);

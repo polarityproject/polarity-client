@@ -12,7 +12,13 @@ namespace sfv {
 namespace {
 
 constexpr uint32_t kPakMagic = 0x5A6F12E1;
-constexpr size_t kFooterSize = 45; // encrypted index flag, magic, version, index offset, index size, index hash
+// The footer: magic, version, index offset, index size, index hash. The
+// game's own paks have an encrypted-index flag byte before it; paks made with
+// older tools (u4pak, UnrealPak before 4.16) end their index right at the
+// magic, and read with the flag taken as given every mod pak of a 0.4.2 host
+// was "index out of the file" (2026-11-13).
+constexpr size_t kFooterSize = 44;
+constexpr size_t kFlagSize = 1;
 
 struct Reader {
     const uint8_t* p;
@@ -109,14 +115,16 @@ bool ParsePakIndex(const uint8_t* bytes, size_t size, uint64_t fileSize, uint64_
     const uint8_t* footer = bytes + size - kFooterSize;
     uint32_t magic = 0, version = 0;
     uint64_t indexAt = 0, indexSize = 0;
-    std::memcpy(&magic, footer + 1, 4);
-    std::memcpy(&version, footer + 5, 4);
-    std::memcpy(&indexAt, footer + 9, 8);
-    std::memcpy(&indexSize, footer + 17, 8);
+    std::memcpy(&magic, footer, 4);
+    std::memcpy(&version, footer + 4, 4);
+    std::memcpy(&indexAt, footer + 8, 8);
+    std::memcpy(&indexSize, footer + 16, 8);
     if (magic != kPakMagic) return fail("not a pak (no pak footer)");
     if (version < 1 || version > 3) return fail("pak version not read here");
-    if (footer[0] != 0) return fail("encrypted index");
-    if (indexAt < at || indexAt + indexSize > fileSize - kFooterSize) return fail("index out of the file");
+    const uint64_t footerAt = fileSize - kFooterSize;
+    if (indexAt < at || indexSize > footerAt || indexAt > footerAt - indexSize) return fail("index out of the file");
+    // A byte between the index and the footer is the encrypted-index flag.
+    if (indexAt + indexSize + kFlagSize <= footerAt && footer[-1] != 0) return fail("encrypted index");
     Reader r{bytes + (indexAt - at), static_cast<size_t>(indexSize)};
     PakIndex index;
     index.version = version;
@@ -168,7 +176,7 @@ bool ReadPakIndex(const std::string& path, PakIndex* out, std::string* error)
     _fseeki64(f, static_cast<int64_t>(fileSize - kFooterSize), SEEK_SET);
     const bool got = std::fread(footer, 1, kFooterSize, f) == kFooterSize;
     uint64_t indexAt = 0;
-    std::memcpy(&indexAt, footer + 9, 8);
+    std::memcpy(&indexAt, footer + 8, 8);
     if (!got || indexAt >= fileSize || fileSize - indexAt > (256ull << 20)) {
         std::fclose(f);
         if (error) *error = got ? "index out of the file" : "cannot read";

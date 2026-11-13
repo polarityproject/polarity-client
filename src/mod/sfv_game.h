@@ -149,6 +149,10 @@ public:
         warmupTicks_ = 0;
         objectsAt_ = -1;
         cameraWait_ = 0;
+        settleCount_ = 0;
+        settleSame_ = 0;
+        settleCalls_ = 0;
+        settleLogs_ = 0;
     }
     bool WarmupStep();
     int WarmupTicks() const { return warmupTicks_; }
@@ -324,6 +328,8 @@ private:
     int warmupTicks_ = 0;
     int cameraWait_ = 0;
     int objectsAt_ = -1;
+    size_t settleCount_ = 0; // WarmupStep: the region count, how many calls it held, calls since regions came
+    int settleSame_ = 0, settleCalls_ = 0, settleLogs_ = 0;
     std::atomic<uint64_t> lastFrameMs_{0};
     std::map<size_t, std::set<size_t>> noise_;
     const StateMap* stateMap_ = nullptr;

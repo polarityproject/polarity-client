@@ -1200,6 +1200,25 @@ bool SfvGame::WarmupStep()
         warmupTicks_++;
         return true;
     }
+    // The battle's state can still be registering as its first regions show
+    // up: a host whose objects came after 3 ticks had 369 regions, its joiner
+    // 549 (90 of a pool of 128 objects, vtable rva 0x2C4E598, one 4-byte and
+    // one 8-byte region each, not there yet), and nine matches between them
+    // parted from frame 0 (0.4.2, 0826be3b and eight more, 2026-11-13). So the
+    // freeze waits until the count has held for kSettleSteps calls, without
+    // ticking (more ticks would move the battle: warmupextra), at most
+    // kSettleMax calls (whatever registers only in ticks never comes).
+    constexpr int kSettleSteps = 12, kSettleMax = 240;
+    if (Regions().size() != settleCount_) {
+        if (settleCount_ && settleLogs_++ < 6) {
+            Log("warmup: %zu state regions (was %zu) at neutral tick %d, %d calls after the first", Regions().size(), settleCount_,
+                warmupTicks_, settleCalls_);
+        }
+        settleCount_ = Regions().size();
+        settleSame_ = 0;
+    }
+    if (settleCalls_++ < kSettleMax && settleSame_++ < kSettleSteps) return true;
+    if (settleCalls_ == kSettleMax + 1) Log("warmup: the state regions still changed after %d calls; going on with %zu", kSettleMax, Regions().size());
     if (objectsAt_ < 0) objectsAt_ = warmupTicks_;
     // Test only (warmupextra): more ticks once the objects exist. They move
     // the fighters, the round's flow and the camera (40 regions differ after

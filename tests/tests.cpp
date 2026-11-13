@@ -2437,6 +2437,16 @@ void TestPakIndex()
     CHECK(!ParsePakIndex(bad.data(), bad.size(), bad.size(), 0, &index, &error));
     std::vector<uint8_t> none(100, 0);
     CHECK(!ParsePakIndex(none.data(), none.size(), none.size(), 0, &index, &error));
+    // Older tools' paks: no flag byte, the footer right after the index.
+    std::vector<uint8_t> old = pak;
+    old.erase(old.end() - 45);
+    CHECK(ParsePakIndex(old.data(), old.size(), old.size(), 0, &index, &error) && index.entries.size() == 2);
+    CHECK(ParsePakIndex(old.data() + indexAt, old.size() - indexAt, old.size(), indexAt, &tail, &error) && tail.entries.size() == 2);
+    // An index that runs into the footer.
+    bad = old;
+    const int64_t longer = static_cast<int64_t>(indexSize + 1);
+    std::memcpy(bad.data() + bad.size() - 44 + 16, &longer, 8);
+    CHECK(!ParsePakIndex(bad.data(), bad.size(), bad.size(), 0, &index, &error) && error == "index out of the file");
 
     auto kind = [](const char* path) { return ClassifyGamePath(path).kind; };
     CHECK(kind("StreetFighterV/Content/Chara/KEN/BattleResource/061/BAC_KEN.uasset") == BattleFileKind::MoveData);

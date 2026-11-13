@@ -2211,6 +2211,7 @@ private:
         {
             std::lock_guard lock(mutex_);
             requested_ = false;
+            layoutNote_.clear();
             hostHashes_.clear();
             hostHashParts_.clear();
             hostRegions_.clear();
@@ -3076,11 +3077,13 @@ private:
         std::string names[kNumPlayers];
         std::string server;
         NetView::Path path;
+        std::string layout;
         {
             std::lock_guard lock(mutex_);
             for (int i = 0; i < kNumPlayers; i++) names[i] = seats_[i].name;
             server = options_.udp ? "direct UDP" : options_.server;
             path = linkPath_;
+            layout = layoutNote_;
         }
         const std::string logPath = recording.substr(0, recording.rfind('.')) + ".log";
         if (!ReportUploadsOn()) KeepReportLocal(reportDir_, logPath.substr(logPath.find_last_of('\\') + 1));
@@ -3111,6 +3114,7 @@ private:
         std::fprintf(f, "mods: %s\n", ScanModPaks().Text().c_str());
         std::fprintf(f, "battle data: %s\n", LastDataCheck().Text().c_str());
         std::fprintf(f, "character versions: %s\n", CharaVersionsText().c_str());
+        if (!layout.empty()) std::fprintf(f, "state layout: %s\n", layout.c_str());
         const int peerReports = peerReports_;
         std::fprintf(f, "desync reports: %s from this side, %s from the other side\n", ReportUploadsOn() ? "sent" : "not sent",
                      peerReports > 0 ? "sent" : peerReports == 0 ? "not sent" : "not known if sent");
@@ -3334,6 +3338,7 @@ private:
     Clock::time_point bothLoadedAt_{};
     // Joiner, guarded by mutex_: the host's hashes, then the regions to fetch.
     std::vector<uint64_t> hostHashes_;
+    std::string layoutNote_; // joiner: the host's region count differs from this side's (under mutex_)
     std::vector<bool> hostHashParts_;
     bool requested_ = false;
     std::map<uint32_t, std::vector<uint8_t>> hostRegions_;      // region -> bytes
@@ -3444,6 +3449,13 @@ private:
         requested_ = true;
         Log("netplay: frozen states differ in %zu of %zu regions; taking the host's", hostRegionChunks_.size(),
             hostHashes_.size());
+        // Taking the host's values can't mend a battle built with other
+        // objects: a different count desyncs from frame 0 (0.4.2: 369 vs 549).
+        if (hostHashes_.size() != frozenHashes_.size()) {
+            layoutNote_ = "the host's battle has " + std::to_string(hostHashes_.size()) + " state regions, this side's " +
+                          std::to_string(frozenHashes_.size()) + ": the two games built the battle differently";
+            Log("netplay: %s", layoutNote_.c_str());
+        }
         if (hostRegionChunks_.empty()) hostDataComplete_ = true;
     }
 

@@ -226,16 +226,14 @@ struct WeyveService::Impl {
     // firewall refuses an address after 6 in 30 s (two PCs behind one router,
     // a few quick hosts and joins). The first client to connect is kept; the
     // other is closed when its connect returns. Null if neither connects.
+    // Each connect runs on its own thread, also with no `alsoPort`: a stop
+    // (the hub closing its connection) gives up on it at once. Waited for, a
+    // custom server that gave no answer held whoever closed the service for
+    // 21 s: the render thread, from the settings' Server row, and with it
+    // the game (0.4.2 freeze c311abed, 2026-11-13).
     static constexpr auto kAlsoAfter = std::chrono::milliseconds(1500);
     WeyveClient* Connect()
     {
-        if (!alsoPort) {
-            WeyveClient* c = weyve_client_create();
-            if (weyve_connect(c, host.c_str(), port)) return c;
-            Log("weyve: cannot connect to %s:%u", host.c_str(), port);
-            weyve_client_destroy(c);
-            return nullptr;
-        }
         struct Race {
             std::mutex m;
             std::condition_variable done;
@@ -267,8 +265,8 @@ struct WeyveService::Impl {
         std::unique_lock lock(race->m);
         const auto alsoAt = std::chrono::steady_clock::now() + kAlsoAfter;
         int dialed = 1;
-        while (!race->winner && !stop && (dialed == 1 || race->finished < dialed)) {
-            if (dialed == 1 && (race->finished == 1 || std::chrono::steady_clock::now() >= alsoAt)) {
+        while (!race->winner && !stop && ((alsoPort && dialed == 1) || race->finished < dialed)) {
+            if (alsoPort && dialed == 1 && (race->finished == 1 || std::chrono::steady_clock::now() >= alsoAt)) {
                 Log("weyve: no answer on port %u yet: trying port %u too", port, alsoPort);
                 lock.unlock();
                 dial(alsoPort);
