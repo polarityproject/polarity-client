@@ -74,6 +74,7 @@ struct Record {
     int frame[2] = {0, 0};             // the script's frame (a hand-over lands past 0, a new move at 0)
     int interrupt[2] = {0, 0}, firstHit[2] = {-1, -1}; // fmlog: what classified it
     bool hit[2] = {false, false}, counter[2] = {false, false};
+    uint32_t side[2] = {0, 0};
     int round = 0; // a replay's round, from its call (the meter starts again with each); training: 0
 };
 
@@ -357,6 +358,49 @@ bool FindFighters(SfvGame& game)
     return true;
 }
 
+// A projectile's owner: the fighter it faced like when it appeared (an
+// effect is spawned facing as its owner faces), kept for the effect's life,
+// which its spawn point marks (its position object's +0x1D0, fixed while it
+// lives; a slot used again starts elsewhere). Told by side on each frame
+// instead, a projectile left out while its owner crossed over (Urien's
+// Aegis Reflector, then a jump over the opponent) counted for the other
+// player. The game keeps no owner link near the effect (research
+// 2026-11-12: no pointer to either fighter around the 16 slots).
+struct EffectOwner {
+    const uint8_t* slot = nullptr;
+    uint64_t spawn = 0;
+    int owner = 0;
+};
+std::vector<EffectOwner> g_effectOwners;
+
+float FighterX(int i)
+{
+    const auto* pos = At<const uint8_t*>(g_p[i].actor - kPosition, 0);
+    return pos && IsReadable(pos + kFighterXY, 4) ? At<float>(pos, kFighterXY) : 0.0f;
+}
+
+// The owner of the live effect at `slot` (side, spawn point as read now).
+int EffectOwnerOf(const uint8_t* slot, uint32_t side, uint64_t spawn, const Sample s[2])
+{
+    for (EffectOwner& e : g_effectOwners) {
+        if (e.slot != slot) continue;
+        if (e.spawn == spawn) return e.owner;
+        g_effectOwners.erase(g_effectOwners.begin() + (&e - g_effectOwners.data()));
+        break;
+    }
+    // Appeared now: the fighter on its side; with both on one side (as one
+    // passes the other), the one nearer where it appeared.
+    int owner = 0;
+    if (s[0].side != s[1].side) owner = s[0].side == side ? 0 : 1;
+    else {
+        float x;
+        std::memcpy(&x, &spawn, sizeof(x));
+        owner = std::fabs(FighterX(0) - x) <= std::fabs(FighterX(1) - x) ? 0 : 1;
+    }
+    g_effectOwners.push_back({slot, spawn, owner});
+    return owner;
+}
+
 // The frame the game is on now, read into a record (false: the fighters are
 // gone, a new battle). `fight`: in a round's fight (replays; else always).
 bool ReadFrame(SfvGame& game, bool fight, Record* out)
@@ -372,22 +416,29 @@ bool ReadFrame(SfvGame& game, bool fight, Record* out)
     // Hitstop (both held), a super freeze and a cinematic are not counted.
     const bool freeze = s[0].frozen || s[1].frozen || s[0].cinematic || s[1].cinematic;
     r.hold = !fight ? 3 : freeze ? 2 : s[0].held && s[1].held ? 1 : 0;
-    // The players' projectiles: live effect slots with an attacking box, the
-    // owner told by side (an effect faces as its owner did).
-    if (r.hold == 0) {
-        for (const StateRegion& reg : game.Regions()) {
-            if (reg.size != kRegionSize || !IsActor(reg.ptr, kEffectVtable)) continue;
-            if (!At<uint32_t>(reg.ptr, kEffectLiveA) && !At<uint32_t>(reg.ptr, kEffectLiveB)) continue;
-            const uint32_t side = At<uint32_t>(reg.ptr, kSide);
-            if (side > 1 || s[0].side == s[1].side) continue;
-            bool hit = false;
-            for (size_t at = kHitList; at + kEntrySize <= kHitListEnd && !hit; at += kEntrySize) {
-                const uint8_t* e = reg.ptr + at;
-                hit = At<uintptr_t>(e, kEntryVtableAt) == g_base + kEntryVtable && At<uint32_t>(e, kEntryId) != 0xFFFFFFFFu &&
-                      e[kEntryType] != 4 && e[kEntryType] <= 5;
-            }
-            if (hit) r.lane[s[0].side == side ? 0 : 1] = true;
+    // The players' projectiles: live effect slots with an attacking box, each
+    // in its owner's lane (EffectOwnerOf; every frame, freezes too, so that
+    // one spawned in a super freeze is seen as it appears).
+    for (const StateRegion& reg : game.Regions()) {
+        if (reg.size != kRegionSize || !IsActor(reg.ptr, kEffectVtable)) continue;
+        const uint32_t side = At<uint32_t>(reg.ptr, kSide);
+        if (side > 1 || (!At<uint32_t>(reg.ptr, kEffectLiveA) && !At<uint32_t>(reg.ptr, kEffectLiveB))) {
+            g_effectOwners.erase(std::remove_if(g_effectOwners.begin(), g_effectOwners.end(),
+                                                [&](const EffectOwner& e) { return e.slot == reg.ptr; }),
+                                 g_effectOwners.end());
+            continue;
         }
+        const auto* pos = At<const uint8_t*>(reg.ptr - kPosition, 0);
+        const uint64_t spawn = pos && IsReadable(pos + kEffectSpawnXY, 8) ? At<uint64_t>(pos, kEffectSpawnXY) : 0;
+        const int owner = EffectOwnerOf(reg.ptr, side, spawn, s);
+        if (r.hold != 0) continue;
+        bool hit = false;
+        for (size_t at = kHitList; at + kEntrySize <= kHitListEnd && !hit; at += kEntrySize) {
+            const uint8_t* e = reg.ptr + at;
+            hit = At<uintptr_t>(e, kEntryVtableAt) == g_base + kEntryVtable && At<uint32_t>(e, kEntryId) != 0xFFFFFFFFu &&
+                  e[kEntryType] != 4 && e[kEntryType] <= 5;
+        }
+        if (hit) r.lane[owner] = true;
     }
     for (int i = 0; i < 2; i++) {
         r.kind[i] = Classify(s[i]);
@@ -399,6 +450,7 @@ bool ReadFrame(SfvGame& game, bool fight, Record* out)
         r.firstHit[i] = s[i].firstHit;
         r.hit[i] = s[i].hit;
         r.counter[i] = s[i].counter;
+        r.side[i] = s[i].side;
     }
     *out = r;
     return true;
@@ -494,12 +546,15 @@ void Count(const Record& r, int index)
         const bool doing = !actionable && k != Stun && k != ProxGuard;
         // A move starts when the character acts from neutral or IASA, or
         // cancels into a script with hitboxes of its own, from that script's
-        // start. A script handing over to its follow-up, a landing or a
-        // recovery is the same move, and so is a hand-over past the new
-        // script's start: Urien's st.HP begins as 5HP_HOLD and, let go of
-        // early, goes on as 5HP from its frame 7 (counted from there, its
-        // startup read 5F instead of 12F).
-        if (doing && (!p.doing || (r.script[i] != p.script && r.attack[i] && r.frame[i] == 0))) {
+        // start, with startup frames before its first hitbox. A script
+        // handing over to its follow-up, a landing or a recovery is the same
+        // move, and so are hand-overs of a held move let go of: Urien's st.HP
+        // begins as 5HP_HOLD and goes on as 5HP from its frame 7 (counted
+        // from there, its startup read 5F, not 12F); his st.HK begins as #605
+        // and goes on as #606 from its frame 0 with its hitbox out on that
+        // very frame (counted from there, 1F, not 9F). No move that starts
+        // anew has a hitbox on its first frame.
+        if (doing && (!p.doing || (r.script[i] != p.script && r.attack[i] && r.frame[i] == 0 && r.firstHit[i] > 0))) {
             p.moveStart = index;
             g_m.startup[i] = -1;
             g_m.total[i] = -1;
@@ -611,6 +666,7 @@ bool Ready(SfvGame& game, bool replay)
     if (!FindFighters(game)) return false;
     g_layout = game.LayoutVersion();
     g_records.clear();
+    g_effectOwners.clear(); // (only here: a replay's rebuilds keep the live projectiles' owners)
     g_applied = -1;
     Reset();
     Log("framemeter: %s, P1 %p, P2 %p", replay ? "replay" : CurrentScene().c_str(), static_cast<const void*>(g_p[0].actor),
@@ -645,11 +701,12 @@ void LogRecord(int index, const Record& r)
     g_log--;
     char side[2][96];
     for (int i = 0; i < 2; i++) {
-        std::snprintf(side[i], sizeof(side[i]), "#%u f%d %s%s%s (int %d, hit at %d%s%s)", r.script[i], r.frame[i], KindName(r.kind[i]),
-                      r.lane[i] ? "+proj" : "", r.air[i] ? "+air" : "", r.interrupt[i], r.firstHit[i], r.hit[i] ? ", box" : "",
+        std::snprintf(side[i], sizeof(side[i]), "#%u f%d %s%s%s (side %u, int %d, hit at %d%s%s)", r.script[i], r.frame[i], KindName(r.kind[i]),
+                      r.lane[i] ? "+proj" : "", r.air[i] ? "+air" : "", r.side[i], r.interrupt[i], r.firstHit[i], r.hit[i] ? ", box" : "",
                       r.counter[i] ? ", cnt" : "");
     }
-    Log("fmlog %d: hold %d | P1 %s | P2 %s | written %d", index, r.hold, side[0], side[1], g_written);
+    Log("fmlog %d: hold %d | P1 %s | P2 %s | written %d | startup %d/%d, total %d/%d", index, r.hold, side[0], side[1], g_written,
+        g_m.startup[0], g_m.startup[1], g_m.total[0], g_m.total[1]);
 }
 
 // Text over the fight: a thin black outline round it and a drop shadow under

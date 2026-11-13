@@ -22,7 +22,7 @@ constexpr size_t kRunnerScript = 0x40, kRunnerIndex = 0x48, kRunnerFrame = 0x4C,
 // region s300 at +0x764), and +0xB90 is 1 while a super freeze holds it; an
 // effect's x, y at +0x1F0 (+0x1D0 is where it was spawned).
 constexpr size_t kPosition = 0x40;
-constexpr size_t kFighterXY = 0x790, kEffectXY = 0x1F0, kSuperFreeze = 0xB90;
+constexpr size_t kFighterXY = 0x790, kEffectXY = 0x1F0, kEffectSpawnXY = 0x1D0, kSuperFreeze = 0xB90;
 
 // R+0x3DB8: the side (0 on the left, facing right; 1 on the right; -1 in an
 // effect slot never used). R+0x3DD8: 1 while a cinematic plays (a Critical

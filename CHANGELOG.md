@@ -34,9 +34,14 @@ LB from a KO or the results. 0.4.2 plays only 0.4.2.
 
 - The frame meter never showed in a match with R. Mika: her partner
   Nadeshiko counts as a third fighter, and the meter only started with two.
-- Startup on moves that can be held (Urien's standing HP) was counted from
-  where the held version hands over to the normal one, not from the
-  button press: a tapped Urien st.HP read 5 frames instead of 12.
+- Startup on moves that can be held (Urien's standing HP and HK) was
+  counted from where the held version hands over to the released one, not
+  from the button press: a tapped Urien st.HP read 5 frames instead of 12,
+  and a tapped st.HK 1 frame instead of 9.
+- A projectile left on screen while its owner crossed over to the other
+  side (Urien's Aegis Reflector, then a jump over the opponent) showed on
+  the opponent's row of the frame meter. A projectile now stays with the
+  player who threw it.
 - Akuma's and Birdie's idle animations counted as moves on the frame meter
   (startup, then active frames on Akuma's long idle pose), and against them
   the meter often didn't start at all.
