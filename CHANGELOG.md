@@ -5,7 +5,13 @@ first paragraph is the summary players see in the game (Settings, Updates);
 `scripts/release.ps1` reads it, and refuses to publish a version that has no
 entry here. Newest first; the format follows [Keep a Changelog](https://keepachangelog.com).
 
-## [Unreleased]
+## [0.4.2] - 2026-11-12
+
+The benchmark now checks your game's battle data and names mods that
+change characters' moves (those fall out of sync against players without
+them). Logs and desync reports list your mod paks. Frame meter fixes for
+R. Mika, held moves and idle poses, and the Battle Log keeps its HUD after
+LB from a KO or the results. 0.4.2 plays only 0.4.2.
 
 ### Added
 
