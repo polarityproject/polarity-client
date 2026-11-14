@@ -1,50 +1,50 @@
 # Polarity
 
-Polarity is unofficial online play for Street Fighter V: rollback netplay
-built on the game's local Versus mode and its own rollback manager, using
-[GekkoNet](https://github.com/HeatXD/GekkoNet) for the session and
-[Weyvelength](https://github.com/HeatXD/Weyvelength) rooms for finding
-players, with peer-to-peer links (or TURN relays when two players can't link
-directly). The game's online code (ProudNet, Capcom's servers, CFN) is never
-used.
+Polarity is unofficial online play for Street Fighter V. It's in public
+beta: download it and read the install steps at <https://polaritymod.link>.
+Once it's installed, Polarity offers each new version when the game starts.
 
-It's in public beta. Download it and read the install steps at
-<https://polaritymod.link>. Installed copies update themselves from there:
-Polarity offers each new version when the game starts.
+Matches use rollback netplay. Polarity builds on the game's local Versus mode
+and the rollback manager the game already has, runs the session with
+[GekkoNet](https://github.com/HeatXD/GekkoNet), and finds players through
+[Weyvelength](https://github.com/HeatXD/Weyvelength) rooms. Players connect
+peer to peer, or through a TURN relay when they can't reach each other
+directly.
 
-## What it does
+## Features
 
-- **Custom rooms**: public or private rooms with tables, rules (rounds,
-  timer, stage), spectators, chat and room moderation, listed per Polarity
-  version. Direct Match by code, too.
-- **Rollback netplay** with a fixed input delay each player chooses (with a
-  suggestion from the ping), checksums every frame and desync reports.
-- **The game's own select screen and presentation online**: intros, round
-  calls, KOs and win poses, with Start to skip once both players press it.
-- **Battle Log**: every match is recorded. Watch it back, step through it
-  and take over a replay at any point.
-- **Training and replay tools**: a frame meter, a hitbox display, and an
-  online benchmark that checks your PC and battle data.
-- **Offline boot**: the game goes straight to its main menu with no Capcom
-  login. The profile gets the DLC content the Steam account owns.
+- Custom rooms, public or private, with tables, rules (rounds, timer,
+  stage), spectators, chat and moderation. You only see rooms on your own
+  Polarity version. You can also Direct Match someone by code.
+- Rollback netplay with a fixed input delay. Each player picks their own,
+  and Polarity suggests one from the ping. Every frame is checksummed, and
+  desyncs produce a report.
+- The game's own select screen, intros, round calls, KOs and win poses,
+  online. Start skips them once both players press it.
+- A Battle Log of every match. Watch a match back, step through it, or take
+  over the replay at any point.
+- A frame meter and a hitbox display in Training and replays, and an online
+  benchmark that checks your PC and your battle data.
+- The game boots straight to its main menu, and your profile gets the DLC
+  content your Steam account owns.
 
-Polarity checks the game's exe and the code at every address it uses, and
-does nothing on a mismatch. Delete `xinput1_3.dll` and `polarity.dll` from
-the game's `Binaries\Win64` folder to uninstall it.
+Polarity checks the game's exe and the code at every address it uses. If
+anything doesn't match, it does nothing. To uninstall it, delete
+`xinput1_3.dll` and `polarity.dll` from the game's `Binaries\Win64` folder.
 
 ## Repositories
 
-| Repository | What it holds |
+| Repository | What's in it |
 | --- | --- |
-| [polarity-client](https://github.com/polarityproject/polarity-client) (this one) | the mod (`polarity.dll`), its loader (`xinput1_3.dll`), the core library and its tests, the `polarity` command-line tool, the rooms keeper, test bots and the test and release scripts |
+| [polarity-client](https://github.com/polarityproject/polarity-client) (this one) | the mod (`polarity.dll`) and its loader (`xinput1_3.dll`), the core library and its tests, the `polarity` command-line tool, the rooms keeper, test bots, and the test and release scripts |
 | [polarity-installer](https://github.com/polarityproject/polarity-installer) | the Windows and Linux installers |
 | [polarity-server](https://github.com/polarityproject/polarity-server) | the rooms server's Docker stack, the reports service and the rooms API |
-| [polarity-web](https://github.com/polarityproject/polarity-web) | the website at polaritymod.link and the update info the updater reads |
+| [polarity-web](https://github.com/polarityproject/polarity-web) | the website at polaritymod.link, and the update info the updater reads |
 | [polarity-discord](https://github.com/polarityproject/polarity-discord) | the Discord bot that lists the public rooms |
 
-The Weyvelength commit is pinned in two places that must match: `GIT_TAG` in
-`CMakeLists.txt` here and `WEYVELENGTH_COMMIT` in polarity-server's
-`docker/server.Dockerfile`.
+The client and the server have to run the same Weyvelength commit. It's
+pinned in two places: `GIT_TAG` in this repo's `CMakeLists.txt`, and
+`WEYVELENGTH_COMMIT` in polarity-server's `docker/server.Dockerfile`.
 
 ## Layout
 
@@ -67,10 +67,11 @@ data/          the checksum noise mask, battle data hashes and the
                benchmark round, all built into the DLL
 ```
 
-## Build
+## Building
 
-Needs Visual Studio 2022 Build Tools (C++ x64, CMake, Ninja) and network
-access on the first configure (dependencies are fetched at pinned commits).
+You need Visual Studio 2022 Build Tools (C++ x64, CMake, Ninja). The first
+configure also needs network access, because it fetches the dependencies at
+pinned commits.
 
 ```bat
 build.cmd
@@ -78,12 +79,12 @@ build\Release\sfvtests.exe
 ```
 
 To try a build in the game, copy `build\Release\xinput1_3.dll` and
-`build\Release\polarity.dll` to `StreetFighterV\Binaries\Win64\` (next to the
-64 MB exe, not the launcher). Settings live in `polarity.ini` there;
-`polarity.ini.example` lists them. Logs, recordings and reports go to
-`Polarity\` in the same folder.
+`build\Release\polarity.dll` into `StreetFighterV\Binaries\Win64\`, next to
+the 64 MB exe (not the launcher). Settings go in `polarity.ini` in that
+folder, and `polarity.ini.example` lists them all. Logs, recordings and
+reports end up in `Polarity\` beside it.
 
-## Desync tooling without the game
+## Desync tools without the game
 
 ```bat
 build\Release\polarity.exe demo demo
@@ -91,17 +92,14 @@ build\Release\polarity.exe diff demo\machine-value_p1.sfvr demo\machine-value_p2
 build\Release\polarity.exe verify demo\machine-value_p2.sfvr --mock-bug machine-value
 ```
 
-`polarity diff` compares two players' recordings of one match and names the
-first frame and state region that differ.
+`polarity diff` takes both players' recordings of one match and tells you the
+first frame where they disagree, and which part of the game state differs.
 
-## Docs
+## More
 
-[docs/](docs/README.md) covers testing, desync reports and replays, the
-Battle Log's replay rules, rollback of the round's stages, input delay, the
-frame meter, the hitbox display and the updater.
-
-## Changes
-
-See [CHANGELOG.md](CHANGELOG.md).
+- [docs/](docs/README.md): testing, desync reports and replays, how the
+  Battle Log decides which replays it can play, rollback of the round's
+  stages, input delay, the frame meter, the hitbox display and the updater.
+- [CHANGELOG.md](CHANGELOG.md): what changed in each release.
 
 Polarity isn't affiliated with or endorsed by Capcom.
