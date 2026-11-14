@@ -1,7 +1,7 @@
 # Copies polarity-keeper's sources (src/keeper and the core files it shares with
-# the mod), the Weyvelength patches and the deploy files into polarity-server's
-# deploy/keeper/, so the VPS builds it with install-keeper.sh. Run after a
-# keeper change, then commit the polarity-server side.
+# the mod) and the Weyvelength patches into polarity-server's deploy/keeper/,
+# which its keeper image builds from. Run after a keeper change, then commit
+# the polarity-server side.
 #   scripts/keeper-bundle.ps1 [-Server <polarity-server checkout>]
 # (default: the polarity-server folder beside this repository, or sfvr-server,
 # its name before the rename).
@@ -22,9 +22,6 @@ foreach ($f in $files) {
   New-Item -ItemType Directory -Force (Split-Path $to) | Out-Null
   Copy-Item (Join-Path $repo $f) $to
 }
-Copy-Item (Join-Path $PSScriptRoot 'keeper-deploy\install-keeper.sh') $dest
-# The unit keeps its deployed name (the VPS's sfvr-* units stay).
-Copy-Item (Join-Path $PSScriptRoot 'keeper-deploy\sfvr-keeper.service') $dest
 $commit = (git -C $repo rev-parse --short HEAD).Trim()
 $dirty = if (git -C $repo status --porcelain -- src/keeper src/core third_party cmake) { ' (with uncommitted changes)' } else { '' }
 "polarity-keeper sources from polarity-client $commit$dirty, $(Get-Date -Format 'yyyy-MM-dd HH:mm')" | Set-Content (Join-Path $dest 'SOURCE.txt')
