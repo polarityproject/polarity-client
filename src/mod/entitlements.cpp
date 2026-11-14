@@ -542,11 +542,81 @@ void MergeEntitlements(ByteArray* a)
         g_wantSummary.c_str(), setVersion ? (", free content " + std::to_string(freeCount) + ", version set").c_str() : "");
 }
 
+// The slot's file name (FString at +0x48: data, count with the 0), as the
+// loader passes it to the save system.
+std::string SlotName(void* slot)
+{
+    const auto* base = static_cast<const uint8_t*>(slot);
+    const auto* name = *reinterpret_cast<const wchar_t* const*>(base + 0x48);
+    const int32_t count = *reinterpret_cast<const int32_t*>(base + 0x50);
+    std::string out;
+    if (!name || count <= 1 || count > 260 || !IsReadable(name, static_cast<size_t>(count) * sizeof(wchar_t))) return out;
+    for (int32_t i = 0; i < count - 1; i++) out += name[i] > 32 && name[i] < 127 ? static_cast<char>(name[i]) : '_';
+    return out;
+}
+
+// Where the save system keeps a slot's file:
+// %LOCALAPPDATA%\StreetFighterV\Saved\SaveGames\<name>.sav.
+std::wstring SlotFile(const std::string& name)
+{
+    wchar_t local[MAX_PATH] = {};
+    const DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH);
+    if (name.empty() || n == 0 || n >= MAX_PATH) return L"";
+    return std::wstring(local) + L"\\StreetFighterV\\Saved\\SaveGames\\" + std::wstring(name.begin(), name.end()) + L".sav";
+}
+
+std::atomic<int> g_emptyReads{0};
+// [research] empty_save_test=<slot name>: that slot's first read is taken
+// as empty, to test the path below without an empty file.
+std::string g_emptyTest;
+void* g_loadingSlot = nullptr;
+
 void __fastcall DecodeDetour(ByteArray* a)
 {
+    if (!g_emptyTest.empty() && g_loadingSlot && SlotName(g_loadingSlot) == g_emptyTest && a->num > 0) {
+        Log("entitlements: test: %s's read taken as empty (%d bytes)", g_emptyTest.c_str(), a->num);
+        g_emptyTest.clear();
+        a->num = 0;
+    }
+    // The game decodes whatever the read gave, and the decoder writes
+    // through the array's data even when the file was empty (0 bytes: a
+    // write that failed or had not finished), a null pointer then. An
+    // empty array is left alone: the loader takes it as a file with nothing
+    // in it, and LoaderDetour reads the slot again.
+    if (a->num <= 0 || !a->data) {
+        g_emptyReads++;
+        Log("entitlements: a save file read back empty; not decoded");
+        return;
+    }
     g_decodes++;
     g_origDecode(a);
     MergeEntitlements(a);
+}
+
+// After an empty read the slot holds nothing from its file: its file is
+// deleted if it is still empty (the game then builds and writes a default
+// one) and the slot loaded again. Once.
+void ReloadAfterEmptyRead(void* slot, uint8_t arg)
+{
+    auto* loaded = static_cast<uint8_t*>(slot) + 0x41;
+    if (*loaded != 1) return;
+    const std::string name = SlotName(slot);
+    const std::wstring file = SlotFile(name);
+    WIN32_FILE_ATTRIBUTE_DATA fa{};
+    const bool found = !file.empty() && GetFileAttributesExW(file.c_str(), GetFileExInfoStandard, &fa);
+    const uint64_t size = found ? (static_cast<uint64_t>(fa.nFileSizeHigh) << 32) | fa.nFileSizeLow : 0;
+    if (found && size == 0) {
+        const bool removed = DeleteFileW(file.c_str()) != 0;
+        Log("entitlements: %s.sav is empty: %s", name.c_str(),
+            removed ? "removed; the game writes a default one" : ("cannot remove it (error " + std::to_string(GetLastError()) + ")").c_str());
+    }
+    else {
+        Log("entitlements: %s.sav %s; reading it again", name.c_str(),
+            found ? ("has " + std::to_string(size) + " bytes now").c_str() : "is not there now");
+    }
+    *loaded = 0;
+    g_origLoader(slot, arg);
+    if (*loaded != 1) Log("entitlements: %s did not load again", name.c_str());
 }
 
 // With no save file the loader builds a default profile and writes it,
@@ -554,15 +624,25 @@ void __fastcall DecodeDetour(ByteArray* a)
 // cleared) sends a fresh profile through the decode like a saved one.
 void __fastcall LoaderDetour(void* slot, uint8_t arg)
 {
+    void* const outer = g_loadingSlot;
+    g_loadingSlot = slot;
     const int before = g_decodes.load();
+    int empty = g_emptyReads.load();
     g_origLoader(slot, arg);
+    if (g_emptyReads.load() != empty) {
+        empty = g_emptyReads.load();
+        ReloadAfterEmptyRead(slot, arg);
+    }
     auto* loaded = static_cast<uint8_t*>(slot) + 0x41;
-    if (g_decodes.load() != before || *loaded != 1) return;
-    Log("entitlements: no save yet (the game wrote a default one); loading it back");
-    *loaded = 0;
-    g_freshProfile = true;
-    g_origLoader(slot, arg);
-    g_freshProfile = false;
+    if (g_merge && g_decodes.load() == before && *loaded == 1) {
+        Log("entitlements: no save yet (the game wrote a default one); loading it back");
+        *loaded = 0;
+        g_freshProfile = true;
+        g_origLoader(slot, arg);
+        g_freshProfile = false;
+        if (g_emptyReads.load() != empty) ReloadAfterEmptyRead(slot, arg);
+    }
+    g_loadingSlot = outer;
 }
 
 bool Hook(uintptr_t rva, const uint8_t* head, size_t n, LPVOID detour, LPVOID* original, const char* name)
@@ -597,10 +677,13 @@ void InstallEntitlements(uintptr_t imageBase, const std::wstring& iniPath)
               reinterpret_cast<LPVOID*>(&g_origDecode), "save decoder")) {
         return;
     }
-    if (g_merge) {
-        Hook(kLoaderRva, kLoaderHead, sizeof(kLoaderHead), reinterpret_cast<LPVOID>(&LoaderDetour),
-             reinterpret_cast<LPVOID*>(&g_origLoader), "save loader");
-    }
+    // Also without the merge: it reads a slot again after an empty read.
+    Hook(kLoaderRva, kLoaderHead, sizeof(kLoaderHead), reinterpret_cast<LPVOID>(&LoaderDetour),
+         reinterpret_cast<LPVOID*>(&g_origLoader), "save loader");
+    wchar_t test[64] = {};
+    GetPrivateProfileStringW(L"research", L"empty_save_test", L"", test, 64, iniPath.c_str());
+    for (const wchar_t* c = test; *c; c++) g_emptyTest += static_cast<char>(*c);
+    if (!g_emptyTest.empty()) Log("entitlements: test: the first read of %s is taken as empty", g_emptyTest.c_str());
     Log("entitlements: on (%zu Steam apps in the table)", g_grants.size());
 }
 
