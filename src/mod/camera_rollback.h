@@ -1,5 +1,5 @@
 #pragma once
-// Camera view changes across rollbacks (docs/throw-cinematic-camera.md).
+// Camera view changes across rollbacks (docs/rollback-presentation.md).
 //
 // Throws with a camera and Critical Arts move the view to a camera actor
 // and back with UE4's view-target blends (APlayerCameraManager::SetViewTarget,

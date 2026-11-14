@@ -38,9 +38,9 @@ the game's `Binaries\Win64` folder to uninstall it.
 | --- | --- |
 | [polarity-client](https://github.com/polarityproject/polarity-client) (this one) | the mod (`polarity.dll`), its loader (`xinput1_3.dll`), the core library and its tests, the `polarity` command-line tool, the rooms keeper, test bots and the test and release scripts |
 | [polarity-installer](https://github.com/polarityproject/polarity-installer) | the Windows and Linux installers |
-| polarity-server | the rooms server's Docker stack, the reports service and the rooms API |
-| polarity-web | the website at polaritymod.link and the update info the updater reads |
-| polarity-discord | the Discord bot that lists the public rooms |
+| [polarity-server](https://github.com/polarityproject/polarity-server) | the rooms server's Docker stack, the reports service and the rooms API |
+| [polarity-web](https://github.com/polarityproject/polarity-web) | the website at polaritymod.link and the update info the updater reads |
+| [polarity-discord](https://github.com/polarityproject/polarity-discord) | the Discord bot that lists the public rooms |
 
 The Weyvelength commit is pinned in two places that must match: `GIT_TAG` in
 `CMakeLists.txt` here and `WEYVELENGTH_COMMIT` in polarity-server's
@@ -93,6 +93,12 @@ build\Release\polarity.exe verify demo\machine-value_p2.sfvr --mock-bug machine-
 
 `polarity diff` compares two players' recordings of one match and names the
 first frame and state region that differ.
+
+## Docs
+
+[docs/](docs/README.md) covers testing, desync reports and replays, the
+Battle Log's replay rules, rollback of the round's stages, input delay, the
+frame meter, the hitbox display and the updater.
 
 ## Changes
 

@@ -81,6 +81,11 @@ input_delay=2
 ; the round director, phase machine and round end wait follow loads). The
 ; older lockstep_presentation key is no longer read.
 lockstep_round_stages=0
+; 1 (the default): no prediction from a KO to the next round's FIGHT, nor in
+; round 1's call, even with lockstep_round_stages=0 (the match's opening
+; intro still rolls back). A rollback across them re-ran the round's end under
+; the HUD. 0: they roll back too.
+lockstep_round_transitions=1
 ; 1: back to the main menu when a session ends (the other player left,
 ; leave), ready for the next one.
 menu_after_match=1
