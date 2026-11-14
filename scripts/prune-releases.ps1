@@ -3,9 +3,8 @@
 # update.json of their channel (public\update.json, public\rooms\update.json),
 # so a release nothing names is never fetched again; the package and symbols
 # stay in dist\ here. -WhatIf lists them without removing anything.
-# -Site: the polarity-web folder beside this repository (or sfvr-site, its name
-# before the rename).
-param([string]$Site = $(foreach ($n in 'polarity-web', 'sfvr-site') { $p = Join-Path $PSScriptRoot "..\..\$n"; if (Test-Path $p) { $p; break } }), [switch]$WhatIf)
+# -Site: the polarity-web folder beside this repository.
+param([string]$Site = (Join-Path $PSScriptRoot '..\..\polarity-web'), [switch]$WhatIf)
 $ErrorActionPreference = 'Stop'
 $public = Join-Path (Resolve-Path $Site) 'public'
 # legacy\: the old site's update info (release.ps1 -Bridge), frozen at the

@@ -35,10 +35,10 @@
 # Then commit here and in polarity-web, tag this repository v<version>, and
 # build the site's upload (polarity-web\build.ps1).
 # Needs PowerShell 7 (for the key's PKCS#8 import and export).
-# -Site: the polarity-web folder beside this repository (or sfvr-site, its
-# name before the rename). The signing key keeps its place under .sfvr\.
+# -Site: the polarity-web folder beside this repository. The signing key keeps
+# its place under .sfvr\.
 param([string]$Notes = '',
-      [string]$Site = $(foreach ($n in 'polarity-web', 'sfvr-site') { $p = Join-Path $PSScriptRoot "..\..\$n"; if (Test-Path $p) { $p; break } }),
+      [string]$Site = (Join-Path $PSScriptRoot '..\..\polarity-web'),
       [string]$KeyFile = (Join-Path $env:USERPROFILE '.sfvr\update-signing-key.txt'),
       [ValidateSet('main', 'rooms')][string]$Channel = 'main',
       [string]$SiteUrl = 'https://polaritymod.link',

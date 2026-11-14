@@ -3,9 +3,8 @@
 # which its keeper image builds from. Run after a keeper change, then commit
 # the polarity-server side.
 #   scripts/keeper-bundle.ps1 [-Server <polarity-server checkout>]
-# (default: the polarity-server folder beside this repository, or sfvr-server,
-# its name before the rename).
-param([string]$Server = $(foreach ($n in 'polarity-server', 'sfvr-server') { $p = Join-Path $PSScriptRoot "..\..\$n"; if (Test-Path $p) { $p; break } }))
+# (default: the polarity-server folder beside this repository).
+param([string]$Server = (Join-Path $PSScriptRoot '..\..\polarity-server'))
 $ErrorActionPreference = 'Stop'
 $repo = Resolve-Path (Join-Path $PSScriptRoot '..')
 $dest = Join-Path (Resolve-Path $Server) 'deploy\keeper'

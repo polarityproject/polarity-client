@@ -96,7 +96,7 @@ if ($Deploy) {
   RemoteDeploy
   $dll = Join-Path $PSScriptRoot '..\build\Release\polarity.dll'
   $back = Join-Path $Out 'dll-back.bin'
-  RemoteGet 'sfv-rollback\build\Release\sfv_rollback.dll' $back | Out-Null
+  RemoteGet 'sfv-rollback\build\Release\polarity.dll' $back | Out-Null
   Check 'the mod deploys (the build folder''s DLL matches)' ((Sha ([IO.File]::ReadAllBytes($dll))) -eq (Sha ([IO.File]::ReadAllBytes($back))))
 }
 
