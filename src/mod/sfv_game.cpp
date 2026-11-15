@@ -523,28 +523,31 @@ bool SfvGame::RefreshRegions()
                    *reinterpret_cast<const uintptr_t*>(object + vtableAt) == image_.base + vtable &&
                    IsReadable(object + at, size);
         };
-        const size_t named = fresh.size();
-        for (size_t i = 0; i < named; i++) {
-            const StateRegion& r = fresh[i];
+        // Gathered apart and appended after: adding to `fresh` while reading
+        // it moved the regions being read (0.4.3: std::out_of_range in the
+        // warm-up, the game ended itself, three crash reports).
+        std::vector<StateRegion> named;
+        for (const StateRegion& r : fresh) {
             if (r.size == kVitalityRegionSize && r.name.rfind("s372.", 0) == 0) {
                 uint8_t* fighter = r.ptr - kVitalityRegionAt;
                 if (owned(fighter, kVitalityOwnerAt, kVitalityOwnerVtable, kFighterEventAt, kFighterEventSize)) {
-                    fresh.push_back({"fighter.event." + r.name.substr(5), fighter + kFighterEventAt, kFighterEventSize, {}});
+                    named.push_back({"fighter.event." + r.name.substr(5), fighter + kFighterEventAt, kFighterEventSize, {}});
                 }
                 for (size_t s = 0; s < kEffectSwitchCount; s++) {
                     const size_t at = kEffectSwitchesAt + s * kEffectSwitchStride + kEffectSwitchFieldsAt;
                     if (!owned(fighter, kVitalityOwnerAt, kVitalityOwnerVtable, at, kEffectSwitchFieldsSize)) continue;
-                    fresh.push_back({"fighter.switch" + std::to_string(s) + "." + r.name.substr(5), fighter + at,
+                    named.push_back({"fighter.switch" + std::to_string(s) + "." + r.name.substr(5), fighter + at,
                                      kEffectSwitchFieldsSize, {}});
                 }
             }
             if (r.size == kEffectSlotsSize && r.name.rfind("s392.", 0) == 0) {
                 uint8_t* owner = r.ptr - kEffectSlotsAt;
                 if (owned(owner, kEffectOwnerVtableAt, kEffectOwnerVtable, kEffectOwnerValueAt, kEffectOwnerValueSize)) {
-                    fresh.push_back({"effects.owner." + r.name.substr(5), owner + kEffectOwnerValueAt, kEffectOwnerValueSize, {}});
+                    named.push_back({"effects.owner." + r.name.substr(5), owner + kEffectOwnerValueAt, kEffectOwnerValueSize, {}});
                 }
             }
         }
+        fresh.insert(fresh.end(), named.begin(), named.end());
     }
 
     regions_ = std::move(fresh);
