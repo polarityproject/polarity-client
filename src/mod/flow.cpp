@@ -1307,7 +1307,7 @@ std::string FStringText(const uint8_t* fstring)
 
 void WaitForStageThenSwitch(void* manager, void* stateClass, uint8_t* loader, int frames, uint64_t sceneAt, int generation);
 void StartLoaderWhenReady(int frames, uint8_t* seen, int seenAt);
-void JumpOnGameThread(int setupFrames);
+void JumpOnGameThread(int generation, int setupFrames);
 
 void RunOnGameThreadAfter(int frames, std::function<void()> task)
 {
@@ -2265,6 +2265,13 @@ std::string JumpStageCode()
 std::atomic<int> g_jumpGeneration{0};
 std::atomic<int> g_jumpRetries{0};
 constexpr int kJumpRetries = 5;
+void CancelBattleJump()
+{
+    // Each step of a jump checks its generation (JumpOnGameThread,
+    // WaitForStageThenSwitch).
+    g_jumpGeneration++;
+    Log("flow: jump to battle called off");
+}
 
 void ReturnToMainMenu(int delayFrames)
 {
@@ -2299,7 +2306,7 @@ void JumpToBattle()
         SetPendingSetup(setup);
         Log("flow: jump to battle without a match setup: Ryu against Ken in local Versus");
     }
-    g_jumpGeneration++;
+    const int generation = ++g_jumpGeneration;
     g_jumpRequestedAt = g_pumps.load();
     g_jumpRetries = 0;
     // Names are needed to find the scene objects; right after loading, the
@@ -2314,7 +2321,7 @@ void JumpToBattle()
         }).detach();
         return;
     }
-    RunOnGameThread([] { JumpOnGameThread(0); });
+    RunOnGameThread([generation] { JumpOnGameThread(generation, 0); });
 }
 
 namespace {
@@ -2360,9 +2367,15 @@ uint8_t* BattleLoader()
 } // namespace
 
 // The jump, on the game thread. `setupFrames` counts the frames since this
-// jump switched to Versus battle setup (0: not switched).
-void JumpOnGameThread(int setupFrames)
+// jump switched to Versus battle setup (0: not switched). Each step goes on
+// only while `generation` is the latest jump's: a newer jump or
+// CancelBattleJump ends it, whichever step it waits in.
+void JumpOnGameThread(int generation, int setupFrames)
 {
+    if (generation != g_jumpGeneration) {
+        Log("flow: jump to battle cancelled (another jump came or it was called off)");
+        return;
+    }
     {
         void* stateClass = CachedObject("VersusBattleState", "Class");
         void* manager = g_manager;
@@ -2378,13 +2391,13 @@ void JumpOnGameThread(int setupFrames)
             static uint64_t loggedAt = 0;
             if (g_pumps - loggedAt > 60) Log("flow: jump to battle: waiting for a preload to end");
             loggedAt = g_pumps;
-            RunOnGameThreadAfter(1, [] { JumpOnGameThread(0); });
+            RunOnGameThreadAfter(1, [generation] { JumpOnGameThread(generation, 0); });
             return;
         }
         // A scene change still settling (for example back to the main menu
         // after a match): switching again now crashed the game.
         if (!setupFrames && g_pumps - g_sceneChangedAt < kSceneSettleFrames) {
-            RunOnGameThreadAfter(1, [] { JumpOnGameThread(0); });
+            RunOnGameThreadAfter(1, [generation] { JumpOnGameThread(generation, 0); });
             return;
         }
         // Outside Versus (main menu, other modes) there is no battle loader:
@@ -2418,7 +2431,7 @@ void JumpOnGameThread(int setupFrames)
             if (!setupClass || !message) return;
             RememberScene("VersusBattleSetupState");
             g_origChange(manager, setupClass, message);
-            RunOnGameThreadAfter(1, [] { JumpOnGameThread(1); });
+            RunOnGameThreadAfter(1, [generation] { JumpOnGameThread(generation, 1); });
             return;
         }
         if (setupFrames && setupFrames % 60 == 0) {
@@ -2430,7 +2443,7 @@ void JumpOnGameThread(int setupFrames)
                 Log("flow: jump to battle: no battle setup after %d frames", setupFrames);
                 return;
             }
-            RunOnGameThreadAfter(1, [setupFrames] { JumpOnGameThread(setupFrames + 1); });
+            RunOnGameThreadAfter(1, [generation, setupFrames] { JumpOnGameThread(generation, setupFrames + 1); });
             return;
         }
         if (setupFrames) Log("flow: jump to battle: battle setup ready after %d frames", setupFrames);
@@ -2502,7 +2515,7 @@ void JumpOnGameThread(int setupFrames)
         // the battle state uses the stage already prepared.
         if (g_origStep) g_origStep(loader, 0, 1);
         if (lentTo) std::memcpy(lentTo + 0x10, saved, 16);
-        WaitForStageThenSwitch(manager, stateClass, loader, 0, g_sceneChangedAt.load(), g_jumpGeneration.load());
+        WaitForStageThenSwitch(manager, stateClass, loader, 0, g_sceneChangedAt.load(), generation);
     }
 }
 
@@ -2535,7 +2548,7 @@ void WaitForStageThenSwitch(void* manager, void* stateClass, uint8_t* loader, in
     // (16a56551, 2026-11-12).
     if (g_sceneChangedAt != sceneAt || g_jumpGeneration != generation) {
         Log("flow: jump to battle cancelled (%s while its stage loaded)",
-            g_jumpGeneration != generation ? "another jump came" : ("the scene changed to " + LastScene()).c_str());
+            g_jumpGeneration != generation ? "another jump came or it was called off" : ("the scene changed to " + LastScene()).c_str());
         return;
     }
     // The scene may have moved on meanwhile (leave, back to the menu): the
@@ -2547,7 +2560,7 @@ void WaitForStageThenSwitch(void* manager, void* stateClass, uint8_t* loader, in
         if (g_sceneChangedAt < g_jumpRequestedAt && g_jumpRetries < kJumpRetries) {
             g_jumpRetries++;
             Log("flow: the battle loader went away without a scene change; jumping again (%d)", g_jumpRetries.load());
-            RunOnGameThreadAfter(kSceneSettleFrames, [] { JumpOnGameThread(0); });
+            RunOnGameThreadAfter(kSceneSettleFrames, [generation] { JumpOnGameThread(generation, 0); });
             return;
         }
         Log("flow: jump to battle cancelled (the battle loader went away)");

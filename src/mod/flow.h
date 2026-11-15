@@ -38,6 +38,10 @@ void RunOnGameThreadAfter(int frames, std::function<void()> task);
 // (ChangeSceneState(VersusBattleState)), skipping stage and character select.
 // The battle uses the battle settings as they are (and a pending match setup).
 void JumpToBattle();
+// Calls off the jump under way, whichever step it waits in (a preload, a
+// scene settling, its stage loading): its battle never comes. A jump that
+// already switched to the battle scene goes on.
+void CancelBattleJump();
 // Back to the main menu after `delayFrames`, unless a jump to a battle starts
 // in the meantime.
 void ReturnToMainMenu(int delayFrames);

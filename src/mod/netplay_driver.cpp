@@ -1821,12 +1821,20 @@ private:
             // can be let go of here.
             if (GetState() != State::Jumping || game_.BattleRunning()) return;
             DetachFrameDriver();
-            // Ending mid-jump: the battle the jump asked for still takes this
-            // match's setup (EndAfterJumpTick then goes back to the menu).
-            // Cleared, the battle was built on a bare jump's defaults and
-            // crashed at its start (rva 0x2FF130 -> 0x13958B0; the other
-            // player left during the jump, 0.3.x crash reports).
-            FinishMatch(game_, next == Next::End);
+            // Leaving mid-jump, the battle the jump asked for still takes this
+            // match's setup. Cleared, the battle was built on a bare jump's
+            // defaults and crashed at its start (rva 0x2FF130 -> 0x13958B0:
+            // 0.3.x reports for a session that ended, four 0.4.3 reports for
+            // one that went back to the lobby). Ending, EndAfterJumpTick goes
+            // back to the menu once it runs. Back to the lobby (the other side
+            // chose character select, a watched match ended), the jump is
+            // called off, and a battle that comes anyway goes to the menu.
+            FinishMatch(game_, next == Next::End || next == Next::Lobby);
+            if (next == Next::Lobby) {
+                Log("netplay: back to the lobby during the jump: calling it off");
+                CancelBattleJump();
+                ReturnToMenuOnceBattleRuns(game_, switchesAtJump_);
+            }
         }
         next_ = Next::None;
         switch (next) {
