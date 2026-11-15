@@ -102,6 +102,14 @@ constexpr uint32_t kCountersSize = 0x30;
 constexpr uint32_t kRoundParam = 0x2178;
 // Reset counter that tags the input ring entries (rva 0x43C37C).
 constexpr uint32_t kRingTag = 0x217C;
+// The buttons each pad held early in the battle, taken once (rva 0x43A760:
+// flag +0x2234, then a uint32 per pad from +0x2238), outside the game's
+// snapshot. Urien's part picks his thong from it on its first tick (LP+LK+HK,
+// rva 0x3BC6B0); 0x348643 and 0x3E19F6 read it too. A machine that took a
+// predicted remote input kept it after the rollback (bundle 065748: three
+// frame-0 desyncs, the Urien players holding LP+LK+HK).
+constexpr uint32_t kHeldBegin = 0x2234;
+constexpr uint32_t kHeldSize = 0xC; // the flag and two pads
 } // namespace inputunit
 
 namespace singleton {

@@ -507,6 +507,9 @@ bool SfvGame::RefreshRegions()
     }
     if (extras && inputUnit_) {
         fresh.push_back({"inputunit.counters", inputUnit_ + game::inputunit::kCountersBegin, game::inputunit::kCountersSize, {}});
+        // Rolled back with the counters, the capture runs again on the
+        // corrected inputs (Urien's thong, sfv_offsets.h kHeldBegin).
+        fresh.push_back({"inputunit.held", inputUnit_ + game::inputunit::kHeldBegin, game::inputunit::kHeldSize, {}});
     }
     if (extras && battleFrame_) {
         fresh.push_back({"battleframe.state", battleFrame_ + game::battleframe::kStateBegin, game::battleframe::kStateSize, {}});
@@ -922,7 +925,7 @@ std::string SfvGame::BuildId() const
 {
     char buf[128];
     const uint64_t noise = NoiseHash();
-    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-12/sim-%d/map-%016llx/noise-%016llx", image_.timestamp, kSimVersion,
+    std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-13/sim-%d/map-%016llx/noise-%016llx", image_.timestamp, kSimVersion,
                   static_cast<unsigned long long>(stateMap_ ? stateMap_->Fingerprint() : 0),
                   static_cast<unsigned long long>(noise));
     return buf;
