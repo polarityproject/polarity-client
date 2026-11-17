@@ -30,6 +30,7 @@
 #include "core/texture_package.h"
 #include "core/verifier.h"
 #include "mod/migrate.h"
+#include "proxy/loader_choice.h"
 #include "testbed/match_runner.h"
 
 #include <cctype>
@@ -154,6 +155,22 @@ void TestPingTiers()
     CHECK(PingTier(166, 0) == 3);
     CHECK(PingTier(167, 0) == core::kPingTierHeavy);
     CHECK(PingTier(135, 17) == core::kPingTierHeavy);
+}
+
+void TestLoaderChoice()
+{
+    using proxy::HasArgument;
+    const wchar_t* flag = L"-sfve_loader=launcher";
+    CHECK(HasArgument(L"\"C:\\Game\\StreetFighterV.exe\" -sfve_loader=launcher -sfve_mode=netplay", flag));
+    CHECK(HasArgument(L"x.exe\t-sfve_loader=launcher", flag));
+    CHECK(HasArgument(L"-sfve_loader=launcher", flag));
+    // Only the whole argument, in its own case.
+    CHECK(!HasArgument(L"x.exe -sfve_loader=launcher2", flag));
+    CHECK(!HasArgument(L"x.exe x-sfve_loader=launcher", flag));
+    CHECK(!HasArgument(L"x.exe -SFVE_LOADER=LAUNCHER", flag));
+    CHECK(!HasArgument(L"x.exe -sfve_loader=launch", flag));
+    CHECK(!HasArgument(L"", flag));
+    CHECK(!HasArgument(nullptr, flag));
 }
 
 void TestDisplayName()
@@ -2631,6 +2648,7 @@ int main()
         {"hashes", TestHashes},
         {"input delay suggestion", TestInputDelaySuggestion},
         {"display names", TestDisplayName},
+        {"loader choice", TestLoaderChoice},
         {"ping tiers", TestPingTiers},
         {"ignore mask", TestIgnoreMask},
         {"skipped saves", TestSkippedSaves},

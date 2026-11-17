@@ -16,6 +16,10 @@
 // moved it) the game's own single-instance
 // check (a mutex named "StreetFighterV") is made per process. Two instances
 // write the same save files, so this is for testing only.
+//
+// A game that SFV Ember's launcher started loads nothing (loader_choice.h).
+
+#include "proxy/loader_choice.h"
 
 #include <windows.h>
 
@@ -137,6 +141,10 @@ inline void WaitForRestartedGame()
 
 inline void Start(HMODULE self)
 {
+    // Before anything below changes the game: a game without Polarity is
+    // left exactly as it would be without this proxy.
+    if (StartedByEmber()) return;
+
     // Tells the mod that Polarity's loader runs: only then does it delete
     // SFVR's DLL (migrate.h). SFVR's loader loads nothing else.
     SetEnvironmentVariableW(L"POLARITY_LOADER", L"1");
