@@ -23,6 +23,7 @@ Copy-Item (Join-Path $build 'xinput1_3.dll'), (Join-Path $build 'polarity.dll') 
 $fonts = New-Item -ItemType Directory -Force (Join-Path $win 'Polarity\fonts')
 Copy-Item (Join-Path $build 'fonts\NotoSansCJK-Medium.ttc') $fonts
 & (Join-Path $PSScriptRoot 'fonts-license.ps1') (Join-Path $win 'polarity_fonts_license.txt')
+Copy-Item (Join-Path $root 'THIRD_PARTY_NOTICES.md') (Join-Path $win 'polarity_third_party_notices.txt')
 $ini = Get-Content (Join-Path $root 'polarity.ini.example')
 $serverAddress = if ($Server -match ':') { $Server } else { "${Server}:5555" }
 $ini = $ini -replace '^server=.*$', "server=$serverAddress"
@@ -56,7 +57,8 @@ that off: in the panel, Settings, Logs, untick "Send desync and crash
 reports".
 
 Uninstall: delete xinput1_3.dll, polarity.dll, sfv_noise.txt (0.1.0),
-polarity_fonts_license.txt and polarity.ini from Binaries\Win64\ (and the Polarity
+polarity_fonts_license.txt, polarity_third_party_notices.txt and polarity.ini
+from Binaries\Win64\ (and the Polarity
 folder, with the logs and the fonts).
 "@ | Set-Content (Join-Path $out 'INSTALL.txt')
   $zip = Join-Path $root "dist\$name.zip"

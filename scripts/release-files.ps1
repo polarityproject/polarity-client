@@ -37,6 +37,7 @@ $installed = [ordered]@{
   'polarity.dll'                          = Join-Path $build 'polarity.dll'
   'Polarity/fonts/NotoSansCJK-Medium.ttc' = Join-Path $build 'fonts\NotoSansCJK-Medium.ttc'
   'polarity_fonts_license.txt'            = $license
+  'polarity_third_party_notices.txt'      = Join-Path $root 'THIRD_PARTY_NOTICES.md'
 }
 $manifest = foreach ($path in $installed.Keys) {
   $name = Split-Path $path -Leaf

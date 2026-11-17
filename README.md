@@ -102,4 +102,11 @@ first frame where they disagree, and which part of the game state differs.
   stages, input delay, the frame meter, the hitbox display and the updater.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each release.
 
+## License
+
+Polarity is under the [MIT License](LICENSE). The libraries and fonts built
+into it keep their own licenses, listed with their full texts in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), which releases ship as
+`polarity_third_party_notices.txt`.
+
 Polarity isn't affiliated with or endorsed by Capcom.

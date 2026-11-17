@@ -24,7 +24,7 @@ Each release on GitHub (`v<version>`) holds:
 
 | File | What it is |
 | --- | --- |
-| `xinput1_3.dll`, `polarity.dll`, `NotoSansCJK-Medium.ttc`, `polarity_fonts_license.txt` | the files the updater installs |
+| `xinput1_3.dll`, `polarity.dll`, `NotoSansCJK-Medium.ttc`, `polarity_fonts_license.txt`, `polarity_third_party_notices.txt` | the files the updater installs |
 | `update-files.json` | where the updater puts each of them |
 | `polarity-<version>.zip` | the full package for first installs |
 | `polarity.pdb` | symbols for reading crash addresses |
