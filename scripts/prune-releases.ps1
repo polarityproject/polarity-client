@@ -1,13 +1,15 @@
 # Removes the site's release folders (polarity-web\public\releases\<version>)
 # that no update info points at. Updaters only ever read the current
 # update.json of their channel (public\update.json, public\rooms\update.json),
-# so a release nothing names is never fetched again; the package and symbols
-# stay in dist\ here. -WhatIf lists them without removing anything.
+# so a release nothing names is never fetched again. Releases from GitHub
+# (release.ps1) keep no folder on the site; only addresses on -SiteUrl count.
+# -WhatIf lists the folders without removing anything.
 # -Site: the polarity-web folder beside this repository.
-param([string]$Site = (Join-Path $PSScriptRoot '..\..\polarity-web'), [switch]$WhatIf)
+param([string]$Site = (Join-Path $PSScriptRoot '..\..\polarity-web'),
+      [string]$SiteUrl = 'https://polaritymod.link', [switch]$WhatIf)
 $ErrorActionPreference = 'Stop'
 $public = Join-Path (Resolve-Path $Site) 'public'
-# legacy\: the old site's update info (release.ps1 -Bridge), frozen at the
+# legacy\: the old site's update info (written at 0.4.0), frozen at the
 # first Polarity release: what it names is never removed.
 $legacy = Join-Path (Resolve-Path $Site) 'legacy'
 $infos = @(Get-ChildItem $public -Recurse -Filter 'update.json') + @(Get-ChildItem $legacy -Recurse -Filter 'update.json' -ErrorAction SilentlyContinue)
@@ -18,6 +20,7 @@ foreach ($f in $infos) {
   $info = Get-Content $f.FullName -Raw | ConvertFrom-Json
   $urls = @($info.download) + @($info.files | ForEach-Object url) + @($info.more_files | Where-Object { $_ } | ForEach-Object url)
   foreach ($u in $urls) {
+    if ($u.Contains('://') -and -not $u.StartsWith("$SiteUrl/")) { continue }
     $m = [regex]::Match($u, '(?:^|/)releases/([^/]+)/')
     if (-not $m.Success) { throw "$($f.FullName): '$u' is not under releases/" }
     [void]$kept.Add($m.Groups[1].Value)

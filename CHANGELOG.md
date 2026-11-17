@@ -4,8 +4,8 @@ Releases of Polarity, unofficial online play for Street Fighter V. Newest
 first, in the [Keep a Changelog](https://keepachangelog.com) format.
 
 Each version's first paragraph is the summary players see in the game
-(Polarity settings › Updates). `scripts/release.ps1` reads it, and won't
-publish a version that has no entry here.
+(Polarity settings › Updates). A release tag doesn't build without its
+version's entry here, and the entry becomes the GitHub release's description.
 
 ## [0.4.3] - 2026-11-13
 
