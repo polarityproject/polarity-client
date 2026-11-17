@@ -17,7 +17,8 @@
 // check (a mutex named "StreetFighterV") is made per process. Two instances
 // write the same save files, so this is for testing only.
 //
-// A game that SFV Ember's launcher started loads nothing (loader_choice.h).
+// A game that SFV Ember's launcher started, or [loader] load=none, loads
+// nothing (loader_choice.h).
 
 #include "proxy/loader_choice.h"
 
@@ -141,18 +142,21 @@ inline void WaitForRestartedGame()
 
 inline void Start(HMODULE self)
 {
+    DWORD n = GetModuleFileNameW(self, g_dir, MAX_PATH);
+    while (n > 0 && g_dir[n - 1] != L'\\' && g_dir[n - 1] != L'/') n--;
+    g_dir[n] = 0;
+    if (n + 40 >= MAX_PATH) return;
+    wchar_t ini[MAX_PATH];
+    wsprintfW(ini, L"%spolarity.ini", g_dir);
+    if (!Exists(ini)) wsprintfW(ini, L"%ssfv_rollback.ini", g_dir);
     // Before anything below changes the game: a game without Polarity is
     // left exactly as it would be without this proxy.
-    if (StartedByEmber()) return;
+    if (!LoadsPolarity(ini)) return;
 
     // Tells the mod that Polarity's loader runs: only then does it delete
     // SFVR's DLL (migrate.h). SFVR's loader loads nothing else.
     SetEnvironmentVariableW(L"POLARITY_LOADER", L"1");
     WaitForRestartedGame();
-    DWORD n = GetModuleFileNameW(self, g_dir, MAX_PATH);
-    while (n > 0 && g_dir[n - 1] != L'\\' && g_dir[n - 1] != L'/') n--;
-    g_dir[n] = 0;
-    if (n + 40 >= MAX_PATH) return;
 
     for (g_instance = 0; g_instance < 8; g_instance++) {
         wchar_t name[64];
@@ -165,9 +169,6 @@ inline void Start(HMODULE self)
     wsprintfW(value, L"%d", g_instance);
     SetEnvironmentVariableW(L"SFV_INSTANCE", value);
 
-    wchar_t ini[MAX_PATH];
-    wsprintfW(ini, L"%spolarity.ini", g_dir);
-    if (!Exists(ini)) wsprintfW(ini, L"%ssfv_rollback.ini", g_dir);
     if (GetPrivateProfileIntW(L"mod", L"multi_instance", 0, ini)) AllowMultipleInstances();
 
     if (HANDLE t = CreateThread(nullptr, 0, LoadMod, nullptr, 0, nullptr)) CloseHandle(t);

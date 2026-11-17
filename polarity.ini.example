@@ -2,6 +2,13 @@
 ; (StreetFighterV\Binaries\Win64\). A second game instance on the same PC
 ; reads polarity.1.ini if it exists (see multi_instance).
 
+[loader]
+; What xinput1_3.dll loads when the game starts (read from polarity.ini only):
+; polarity  Polarity (the default)
+; none      nothing: plain Street Fighter V
+; A game that SFV Ember's launcher started never loads Polarity.
+load=polarity
+
 [mod]
 ; probe          hooks, netplay (host/join), desync tooling; the normal mode
 ; off            load and verify the exe, nothing else

@@ -171,6 +171,17 @@ void TestLoaderChoice()
     CHECK(!HasArgument(L"x.exe -sfve_loader=launch", flag));
     CHECK(!HasArgument(L"", flag));
     CHECK(!HasArgument(nullptr, flag));
+
+    wchar_t ini[MAX_PATH];
+    GetTempPathW(MAX_PATH, ini);
+    lstrcatW(ini, L"sfvtests_loader.ini");
+    DeleteFileW(ini);
+    CHECK(proxy::LoadsPolarity(ini)); // no file: the default
+    WritePrivateProfileStringW(L"loader", L"load", L"none", ini);
+    CHECK(!proxy::LoadsPolarity(ini));
+    WritePrivateProfileStringW(L"loader", L"load", L"polarity", ini);
+    CHECK(proxy::LoadsPolarity(ini));
+    DeleteFileW(ini);
 }
 
 void TestDisplayName()
