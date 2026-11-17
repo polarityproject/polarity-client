@@ -1,25 +1,25 @@
 # Publishes a release that the build workflow (.github/workflows/build.yml)
-# put in a draft GitHub Release, and writes the signed update info the updater
-# (src/mod/updater.h) and the installers read from the site (the polarity-web
-# repository next to this one):
+# put in a draft GitHub Release, with the signed update info the updater
+# (src/mod/updater.h) and the installers read. The site redirects
+# /update.json and /update.json.sig to the latest release's copies, so
+# publishing is what offers the update:
 #   release.ps1
 #     for v<kPolarityVersion>: downloads the draft's files into
 #     dist\release\<version>\, checks that GitHub Actions built each one (its
-#     attestation), keeps polarity.pdb in dist\symbols\<version>\, publishes
-#     the draft, then writes public\update.json with the files' GitHub
-#     addresses and signs it into public\update.json.sig. The notes players
-#     see are the first paragraph of the release's description (the version's
-#     CHANGELOG.md section; edit the draft to change them).
+#     attestation), keeps polarity.pdb in dist\symbols\<version>\, writes
+#     update.json with the files' GitHub addresses, signs it into
+#     update.json.sig, attaches both to the release and publishes it as the
+#     latest. The notes players see are the first paragraph of the release's
+#     description (the version's CHANGELOG.md section; edit the draft to
+#     change them). -Force signs a published release's update info again.
 #   release.ps1 -NewKey
 #     makes the update signing key, once: the private half goes to -KeyFile
 #     (outside the repositories: keep a backup, never share it), the public
 #     half into src\mod\update_key.h. Builds made after that install only
 #     updates signed with it.
-# Then commit polarity-web and build its upload (polarity-web\build.ps1).
 # Needs PowerShell 7 (for the key's PKCS#8 import and export) and gh signed in
 # with an account that can publish releases in -Repo.
-param([string]$Site = (Join-Path $PSScriptRoot '..\..\polarity-web'),
-      [string]$KeyFile = (Join-Path $env:USERPROFILE '.sfvr\update-signing-key.txt'),
+param([string]$KeyFile = (Join-Path $env:USERPROFILE '.sfvr\update-signing-key.txt'),
       [string]$Repo = 'polarityproject/polarity-client',
       [switch]$NewKey, [switch]$Force)
 $ErrorActionPreference = 'Stop'
@@ -58,25 +58,25 @@ if ((@($built) -join ',') -ne ((PublicKeyOf $ecdsa) -join ',')) { throw "src\mod
 
 $version = (Select-String -Path (Join-Path $root 'src\core\version.h') -Pattern 'kPolarityVersion = "([^"]+)"').Matches.Groups[1].Value
 $tag = "v$version"
-$public = Join-Path (Resolve-Path $Site) 'public'
-$current = Get-Content (Join-Path $public 'update.json') -Raw | ConvertFrom-Json
-if ($current.version -eq $version -and -not $Force) { throw "the site already offers $version; raise kPolarityVersion" }
 
 # The release the workflow made for the tag.
 function Gh { & gh @args; if ($LASTEXITCODE) { throw "gh $($args -join ' ') failed" } }
 $release = Gh release view $tag --repo $Repo --json isDraft,body,assets,url | ConvertFrom-Json
+if (-not $release.isDraft -and -not $Force) { throw "$($release.url) is published already; -Force signs its update info again" }
 $notes = (($release.body.Trim() -split "\r?\n\s*\r?\n")[0] -replace '\s*\r?\n\s*', ' ').Trim()
 if (-not $notes -or $notes.StartsWith('#')) { throw "the description of $($release.url) does not start with the summary paragraph" }
 
-# Its files, each checked to come from this repository's build workflow.
+# Its files, each checked to come from this repository's build workflow. The
+# update info is signed here instead, so a -Force run leaves it out.
+$built = @($release.assets | Where-Object { $_.name -notlike 'update.json*' })
 $dir = Join-Path $root "dist\release\$version"
 if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
 New-Item -ItemType Directory -Force $dir | Out-Null
-Gh release download $tag --repo $Repo --dir $dir
-foreach ($asset in $release.assets) {
+foreach ($asset in $built) {
+  Gh release download $tag --repo $Repo --dir $dir --pattern $asset.name
   Gh attestation verify (Join-Path $dir $asset.name) --repo $Repo --signer-workflow "$Repo/.github/workflows/build.yml" | Out-Null
 }
-"$($release.assets.Count) files checked: built by $Repo's build workflow"
+"$($built.Count) files checked: built by $Repo's build workflow"
 $symbols = New-Item -ItemType Directory -Force (Join-Path $root "dist\symbols\$version")
 Copy-Item (Join-Path $dir 'polarity.pdb') $symbols -Force
 
@@ -101,17 +101,14 @@ $info = [ordered]@{
   more_files = @($moreFiles)
 }
 
-# The release goes public before the update info names its files.
-if ($release.isDraft) { Gh release edit $tag --repo $Repo --draft=false --latest | Out-Null }
-"published $($release.url)"
-
 $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($info | ConvertTo-Json -Depth 4) + "`n")
-[IO.File]::WriteAllBytes((Join-Path $public 'update.json'), $bytes)
-[IO.File]::WriteAllText((Join-Path $public 'update.json.sig'), [Convert]::ToBase64String($ecdsa.SignData($bytes, [Security.Cryptography.HashAlgorithmName]::SHA256)))
-# Installs from the old rooms branch read rooms\update.json. Its addresses are
-# absolute now, so it is the same file with the same signature.
-$rooms = Join-Path $public 'rooms'
-if (Test-Path $rooms) { Copy-Item (Join-Path $public 'update.json'), (Join-Path $public 'update.json.sig') $rooms -Force }
-"Polarity $version offered in $public ($($files.Count) files + $($moreFiles.Count) more, signed)"
-"notes: $notes"
-"next: commit polarity-web, then polarity-web\build.ps1 for the upload"
+$infoFile = Join-Path $dir 'update.json'
+[IO.File]::WriteAllBytes($infoFile, $bytes)
+[IO.File]::WriteAllText("$infoFile.sig", [Convert]::ToBase64String($ecdsa.SignData($bytes, [Security.Cryptography.HashAlgorithmName]::SHA256)))
+"update info signed ($($files.Count) files + $($moreFiles.Count) more), notes: $notes"
+
+# Both go on the release before it is published, so the latest release always
+# carries its own update info.
+Gh release upload $tag --repo $Repo --clobber $infoFile "$infoFile.sig"
+if ($release.isDraft) { Gh release edit $tag --repo $Repo --draft=false --latest | Out-Null }
+"Polarity $version is offered: $($release.url)"

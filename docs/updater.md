@@ -1,10 +1,10 @@
 # Updates and releases
 
-Installed copies of Polarity update themselves. They read signed update info
-from the project site, <https://polaritymod.link>, and download the files it
-lists from the release on GitHub. They always ask first. This doc covers what
-gets published, how the client checks and installs it, and how a release is
-made.
+Installed copies of Polarity update themselves from the latest release on
+GitHub. They read its signed update info through the project site,
+<https://polaritymod.link>, which redirects there, and download the files it
+lists. They always ask first. This doc covers what gets published, how the
+client checks and installs it, and how a release is made.
 
 Code:
 - `src/mod/updater.{h,cpp}`: checking, downloading and swapping files in;
@@ -13,24 +13,29 @@ Code:
 - `src/mod/update_key.h`: the public half of the release key;
 - `.github/workflows/build.yml` and `scripts/release-files.ps1`: building a
   release;
-- `scripts/release.ps1` and `scripts/prune-releases.ps1`: publishing it.
+- `scripts/release.ps1`: signing and publishing it.
 
 The installers in polarity-installer read the same update info and check it
 the same way.
 
 ## What gets published
 
-Each release on GitHub (`v<version>`) holds the files the updater installs,
-`update-files.json` (where each one goes), `polarity-<version>.zip` for first
-installs, and `polarity.pdb` for reading crash addresses.
-
-The polarity-web repository's `public/` holds:
+Each release on GitHub (`v<version>`) holds:
 
 | File | What it is |
 | --- | --- |
-| `update.json` | `product` ("Polarity"), `version`, `published`, `notes`, `download` (the full package for first installs), and `files`: each file's `path`, `size`, `sha256` and `url`, the release asset's address on GitHub. A relative `url` is read from beside `update.json` |
+| `xinput1_3.dll`, `polarity.dll`, `NotoSansCJK-Medium.ttc`, `polarity_fonts_license.txt` | the files the updater installs |
+| `update-files.json` | where the updater puts each of them |
+| `polarity-<version>.zip` | the full package for first installs |
+| `polarity.pdb` | symbols for reading crash addresses |
+| `update.json` | `product` ("Polarity"), `version`, `published`, `notes`, `download` (the zip), and `files`: each file's `path`, `size`, `sha256` and `url`, the asset's address on GitHub. A relative `url` is read from beside the address the client was given |
 | `update.json.sig` | base64 of an ECDSA P-256 signature (r, s) over `update.json`'s exact bytes |
-| `releases/0.4.0/` | the files of the last release served from the site, which the old address's update info still names (see the end of this doc) |
+
+The site's `_redirects` sends `/update.json` and `/update.json.sig` (and the
+same under `/rooms/`, for installs from the old rooms branch) to
+`releases/latest/download/` on GitHub. So the release GitHub marks as the
+latest is the one every install is offered, and publishing a release is what
+offers it. Drafts and pre-releases are never the latest.
 
 A file's `path` is a plain name in `Binaries\Win64` with a `.dll`, `.pdb` or
 `.txt` extension, or a `.ttc` font under `Polarity/fonts/`. The client
@@ -41,9 +46,9 @@ refuses update info with any other path.
 `release.ps1 -NewKey` makes the signing key once. The private half stays on
 the PC that publishes releases, outside every repository. The public half is
 built into the client (`src/mod/update_key.h`) and the installers. A build
-installs only update info signed with that key, so whoever controls the site
-or its address still can't push code to players. Losing the key means a new
-one and a build that players install by hand.
+installs only update info signed with that key, so whoever controls the site,
+its address or the GitHub account still can't push code to players. Losing
+the key means a new one and a build that players install by hand.
 
 ## In the game
 
@@ -82,13 +87,10 @@ state in the log).
 4. Run `scripts\release.ps1` (PowerShell 7, with gh signed in to an account
    that can publish releases). It downloads the draft's files, checks each
    one's attestation, keeps `polarity.pdb` in `dist\symbols\<version>\`,
-   publishes the release, then writes and signs `public\update.json` in
-   polarity-web.
-5. Commit the site. Run `scripts\prune-releases.ps1` to remove release
-   folders no update info names any more (`-WhatIf` lists them first).
-6. Run `polarity-web\build.ps1`, which minifies the pages and writes
-   `dist\polarity-web-<version>.zip`, then upload that to the Cloudflare
-   Pages project.
+   writes and signs `update.json`, attaches both to the release, and
+   publishes it as the latest. Installs are offered the update from then on.
+
+To take a release back, mark the previous one as the latest on GitHub.
 
 Every push to main and every pull request runs the same build and tests. The
 run keeps the release files as an artifact for two weeks, which is handy for
@@ -101,5 +103,5 @@ regression check (see [replay-versioning.md](replay-versioning.md)).
 
 Installs from before the move to Polarity (SFVR 0.3.1 and older) read update
 info from the old site. The release script wrote that once, at the first
-Polarity release, into `polarity-web\legacy\`. It's frozen there, and
-`prune-releases.ps1` keeps the release it names.
+Polarity release, into `polarity-web\legacy\`, naming the files of 0.4.0 on
+the new site. It's frozen there, and the site keeps `releases/0.4.0/` for it.
