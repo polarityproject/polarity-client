@@ -240,10 +240,13 @@ bool ApplyMatchSetup(const MatchSetup& setup)
     Put<int32_t>(data, bd::kSpecRounds, g_specRoundsForTest ? g_specRoundsForTest : bestOf);
     Put<int32_t>(data, bd::kVersusFlag, 1);
     // The level itself comes from the stage request (flow.h SetPendingStage);
-    // the id here does not change it. But a battle entered from another
-    // battle's results kept a stale id (LDN after CHN), and the battle reads
-    // its stage id from here (music, stage name): keep the two the same.
-    if (setup.stage != kKeepStage) Put<int32_t>(data, bd::kStage, setup.stage);
+    // the index here does not change it. Kept the same as the level, so
+    // what reads the index (and ReadMatchSetup) sees the stage played.
+    if (setup.stage != kKeepStage) {
+        const int32_t before = Get<int32_t>(data, bd::kStage);
+        Put<int32_t>(data, bd::kStage, setup.stage);
+        if (before != setup.stage) Log("battle setup: stage index %d -> %u", before, setup.stage);
+    }
     // The stage's code, as the menus write it: a battle from another
     // battle's results has none, so its fighters had no stage data (no stage
     // transition; a spectator or replay from the menus had them).

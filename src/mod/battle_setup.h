@@ -29,7 +29,11 @@ constexpr uint32_t kRounds = 0x04;  // int
 constexpr uint32_t kSpecRounds = 0x08;
 constexpr uint32_t kTimer = 0x0C;   // int, frames (99 s = 5940)
 constexpr uint32_t kVersusFlag = 0x40; // int, 1 in local Versus, 0 in the defaults
-constexpr uint32_t kStage = 0x60;   // int, stage and setting id (0 = The Grid Alternative); read only, see ApplyMatchSetup
+// int, the stage's index in the game's stage table (flow.cpp StageIndex).
+// This block is also the battle situation's data (situation:: below), and
+// this is its StageIndex. +0x60 is the matches played (situation::
+// kBattleCount), not the stage.
+constexpr uint32_t kStage = 0x54;
 constexpr uint32_t kRecordStride = 0x590;
 // char[16], the stage's code ("CHN"; the copy at rva 0x2F0024 moves 16
 // bytes). The menus set it (a KWBattleSpec setter, rva 0x7CAB90); a battle
