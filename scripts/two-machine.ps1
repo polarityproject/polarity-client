@@ -16,6 +16,8 @@
 # afterwards. -Delay: both players' input delay (default 0: the most
 # rollbacks). -Choices with no entries ('-Choices @()') plays one match.
 # -Commands: mod commands every game runs before the session ('skipcallbacks ...').
+# -SpectateAfter S: the spectator joins S seconds into the first match
+# instead of before it, as a late watcher does (no preload in the lobby).
 # -SideCommands: more of them for one role, after -Commands
 # (@{ joiner = 'warmupsleep 80'; spectator = 'warmupsleep 150' }).
 # -Pairs: one match per entry, 'P1/P2' or 'P1/P2@STAGE' character codes, each
@@ -26,7 +28,7 @@ param([Parameter(Mandatory)][string]$Agent, [Parameter(Mandatory)][string]$Token
       [string]$HostAgent = '', [int]$Spectate = -1, [string[]]$Pairs = @(),
       [string[]]$Choices = @('rematch', 'select'), [string[]]$Picks = @('RYU', 'KEN'), [string]$Stage = 'CHN',
       [switch]$Deploy, [switch]$NoMash, [int]$EndHoldSeconds = 0, [int]$TimeoutSeconds = 1200, [string]$Out = '', [int]$Delay = 0,
-      [string]$Commands = '', [hashtable]$SideCommands = @{})
+      [string]$Commands = '', [hashtable]$SideCommands = @{}, [int]$SpectateAfter = 0)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'remote.ps1') -Agent $Agent -Token $Token
 . (Join-Path $PSScriptRoot 'lib.ps1')
@@ -142,14 +144,17 @@ try {
   Say "code $code"
   $mash = if ($NoMash) { '' } else { 'mash 22; ' }
   Send-SideCmd $joinSide "$(Pre $joinSide)server $serverAddress; name Player 2; delay $Delay; ${mash}$(PickCmd $Picks[1]); join $code"
-  foreach ($s in $sides | Where-Object { $_.Name -eq 'spectator' }) {
-    Send-SideCmd $s "$(Pre $s)server $(if ($s.Agent) { $serverAddress } else { $hostServer }); name Watcher; spectate $code"
-  }
+  function Watch($s) { Send-SideCmd $s "$(Pre $s)server $(if ($s.Agent) { $serverAddress } else { $hostServer }); name Watcher; spectate $code" }
+  $watchers = @($sides | Where-Object { $_.Name -eq 'spectator' })
+  $watchAt = $null
+  if ($SpectateAfter -gt 0) { Wait-Side $hostSide 'session started as' 120 | Out-Null; $watchAt = (Get-Date).AddSeconds($SpectateAfter) }
+  else { foreach ($s in $watchers) { Watch $s } }
 
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   $decided = 0
   while ((Get-Date) -lt $deadline) {
     Start-Sleep 1
+    if ($watchAt -and (Get-Date) -ge $watchAt) { foreach ($s in $watchers) { Watch $s }; Say "spectator joining late"; $watchAt = $null }
     foreach ($s in $sides) { Read-Side $s | Out-Null }
     if ($hostSide.Lines -match 'session over' -or $joinSide.Lines -match 'session over') { Say 'the session ended early'; break }
     $now = @($hostSide.Lines | Where-Object { $_ -match 'the match is decided' }).Count
