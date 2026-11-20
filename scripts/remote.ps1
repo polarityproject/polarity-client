@@ -7,10 +7,21 @@
 #   scripts\remote.ps1 -Agent 192.168.1.20 -Token <secret> -Op ping
 param([string]$Agent = $env:SFV_AGENT, [string]$Token = $env:SFV_AGENT_TOKEN, [int]$Port = 47100, [string]$Op = '')
 
-$script:agentHost = $Agent
 $script:agentToken = $Token
 $script:agentPort = $Port
-$script:remoteLogLines = @{}
+
+# Several agents (same token and port): each keeps its own log positions, and
+# the calls that follow Use-Agent go to that one. The -Agent given here is the
+# first.
+$script:agentStates = @{}
+function Use-Agent([string]$Address) {
+  if (-not $script:agentStates.ContainsKey($Address)) { $script:agentStates[$Address] = @{ LogLines = @{}; Pending = @{} } }
+  $state = $script:agentStates[$Address]
+  $script:agentHost = $Address
+  $script:remoteLogLines = $state.LogLines
+  $script:remotePending = $state.Pending # lines RemoteCmd -Wait read, kept for the next RemoteLog
+}
+Use-Agent $Agent
 
 function Remote([string]$op, [hashtable]$fields = @{}) {
   $q = @{ token = $script:agentToken; op = $op } + $fields
@@ -29,8 +40,6 @@ function Remote([string]$op, [hashtable]$fields = @{}) {
   if (-not $answer.ok) { throw "agent: $($answer.error)" }
   $answer
 }
-
-$script:remotePending = @{} # lines RemoteCmd -Wait read, kept for the next RemoteLog
 
 function RemoteFetch([int]$instance) {
   $out = @()
