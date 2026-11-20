@@ -16,6 +16,8 @@
 # afterwards. -Delay: both players' input delay (default 0: the most
 # rollbacks). -Choices with no entries ('-Choices @()') plays one match.
 # -Commands: mod commands every game runs before the session ('skipcallbacks ...').
+# -SideCommands: more of them for one role, after -Commands
+# (@{ joiner = 'warmupsleep 80'; spectator = 'warmupsleep 150' }).
 # -Pairs: one match per entry, 'P1/P2' or 'P1/P2@STAGE' character codes, each
 # with an optional ':costume' ('RYU/KEN', 'BLR:3/Z37:1@TRN'), each after a
 # character select; it replaces -Picks, -Stage and -Choices. -Picks takes the
@@ -24,7 +26,7 @@ param([Parameter(Mandatory)][string]$Agent, [Parameter(Mandatory)][string]$Token
       [string]$HostAgent = '', [int]$Spectate = -1, [string[]]$Pairs = @(),
       [string[]]$Choices = @('rematch', 'select'), [string[]]$Picks = @('RYU', 'KEN'), [string]$Stage = 'CHN',
       [switch]$Deploy, [switch]$NoMash, [int]$EndHoldSeconds = 0, [int]$TimeoutSeconds = 1200, [string]$Out = '', [int]$Delay = 0,
-      [string]$Commands = '')
+      [string]$Commands = '', [hashtable]$SideCommands = @{})
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'remote.ps1') -Agent $Agent -Token $Token
 . (Join-Path $PSScriptRoot 'lib.ps1')
@@ -128,19 +130,20 @@ try {
     # Nothing left over from an earlier run.
     Send-SideCmd $s 'leave; mash 0; netsim 0 0 0' -Wait
   }
-  $pre = if ($Commands) { "$Commands; " } else { '' }
+  # -Commands, then the role's own -SideCommands.
+  function Pre($side) { (@($Commands, $SideCommands[$side.Name]) | Where-Object { $_ } | ForEach-Object { "$_; " }) -join '' }
   if ($Commands) { Say "every game first: $Commands" }
   $hostServer = if ($HostAgent) { $serverAddress } else { "127.0.0.1:$($serverAddress.Split(':')[1])" }
   $mash = if ($NoMash) { '' } else { 'mash 11; ' }
-  Send-SideCmd $hostSide "${pre}server $hostServer; delay $Delay; ${mash}$(PickCmd $Picks[0]); stage $Stage; host"
+  Send-SideCmd $hostSide "$(Pre $hostSide)server $hostServer; delay $Delay; ${mash}$(PickCmd $Picks[0]); stage $Stage; host"
   $m = Wait-Side $hostSide 'hosting, code (\S+)|session over: (.*)' 30
   if (-not $m[1]) { throw "host: hosting failed: $($m[2])" }
   $code = $m[1]
   Say "code $code"
   $mash = if ($NoMash) { '' } else { 'mash 22; ' }
-  Send-SideCmd $joinSide "${pre}server $serverAddress; name Player 2; delay $Delay; ${mash}$(PickCmd $Picks[1]); join $code"
+  Send-SideCmd $joinSide "$(Pre $joinSide)server $serverAddress; name Player 2; delay $Delay; ${mash}$(PickCmd $Picks[1]); join $code"
   foreach ($s in $sides | Where-Object { $_.Name -eq 'spectator' }) {
-    Send-SideCmd $s "${pre}server $(if ($s.Agent) { $serverAddress } else { $hostServer }); name Watcher; spectate $code"
+    Send-SideCmd $s "$(Pre $s)server $(if ($s.Agent) { $serverAddress } else { $hostServer }); name Watcher; spectate $code"
   }
 
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
