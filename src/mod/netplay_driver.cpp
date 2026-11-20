@@ -103,13 +103,6 @@ constexpr int kRelayWatchDelayFrames = 120;
 constexpr int kStreamBatchesAhead = 4;
 constexpr auto kStreamResend = std::chrono::milliseconds(300);
 
-// A value that may be an address in this process (or the peer's): never
-// copied between the peers.
-bool PointerLike(uint64_t v)
-{
-    return v >= 0x10000000000ull && v < 0x800000000000ull;
-}
-
 // Characters the random setup draws from (codes from the game's own table).
 const char* const kRandomCharacters[] = {"RYU", "KEN", "CNL", "CMY", "NSH", "VEG", "KRN", "LAR", "FAN", "RSD",
                                          "RMK", "ZGF", "NCL", "DSM", "BLR", "ALX", "GUL", "IBK", "JRI", "URN"};
@@ -3588,67 +3581,28 @@ private:
     {
         const auto& regions = game.Regions();
         std::map<uint32_t, std::vector<uint8_t>> host;
-        std::multiset<uint64_t> hostHashes;
+        std::vector<uint64_t> hostHashes;
         {
             std::lock_guard lock(mutex_);
             host = hostRegions_;
-            hostHashes.insert(hostHashes_.begin(), hostHashes_.end());
+            hostHashes = hostHashes_;
         }
-        std::vector<bool> taken(regions.size(), false);
-        for (size_t i = 0; i < regions.size(); i++) {
-            // Regions with an equal on the host are not candidates.
-            auto it = hostHashes.find(frozenHashes_[i]);
-            if (it != hostHashes.end()) {
-                hostHashes.erase(it);
-                taken[i] = true;
-            }
-        }
-        size_t regionsChanged = 0, wordsCopied = 0, pointersKept = 0, fetched = 0;
-        for (const auto& [hostIndex, bytes] : host) {
+        std::vector<OtherRegion> sent;
+        size_t fetched = 0;
+        for (const auto& [index, bytes] : host) {
+            sent.push_back({index, bytes.data(), bytes.size()});
             fetched += bytes.size();
-            size_t best = SIZE_MAX, bestDiff = SIZE_MAX;
-            for (size_t i = 0; i < regions.size(); i++) {
-                if (taken[i] || regions[i].size != bytes.size()) continue;
-                size_t diff = 0;
-                for (size_t w = 0; w + 8 <= bytes.size(); w += 8) diff += std::memcmp(regions[i].ptr + w, &bytes[w], 8) != 0;
-                if (diff < bestDiff) {
-                    best = i;
-                    bestDiff = diff;
-                }
-            }
-            if (best == SIZE_MAX) {
-                Log("netplay: no region here pairs with the host's region %u (%zu bytes)", hostIndex, bytes.size());
-                continue;
-            }
-            taken[best] = true;
-            const StateRegion& r = regions[best];
-            size_t copied = 0;
-            for (size_t w = 0; w + 8 <= bytes.size(); w += 8) {
-                const size_t word = w / 8;
-                if (word / 8 < r.ignore.size() && (r.ignore[word / 8] >> (word % 8) & 1)) continue;
-                uint64_t mine, theirs;
-                std::memcpy(&mine, r.ptr + w, 8);
-                std::memcpy(&theirs, &bytes[w], 8);
-                if (mine == theirs) continue;
-                if (PointerLike(mine) || PointerLike(theirs)) {
-                    pointersKept++;
-                    continue;
-                }
-                std::memcpy(r.ptr + w, &theirs, 8);
-                copied++;
-            }
-            if (copied) {
-                regionsChanged++;
-                wordsCopied += copied;
-                Log("netplay:   %s (%zu bytes): %zu words from the host", r.name.c_str(), r.size, copied);
-            }
+        }
+        const TakenState taken = TakeOtherState(regions, frozenHashes_, hostHashes, sent);
+        for (const std::string& line : DescribeTakenState(regions, taken, "the host")) {
+            Log("netplay: %s", line.c_str());
         }
         std::vector<uint64_t> hashes(regions.size());
         HashRegions(regions, hashes.data());
         frozenChecksum_ = FoldChecksum(hashes.data(), hashes.size());
         frozenHashes_ = hashes;
         Log("netplay: took the host's values: %zu words in %zu regions (%zu pointer-like words kept, %zu bytes fetched); checksum now %08X",
-            wordsCopied, regionsChanged, pointersKept, fetched, frozenChecksum_);
+            taken.wordsCopied, taken.regionsChanged, taken.pointersKept, fetched, frozenChecksum_);
     }
 
     // Both loaded: start when the frozen states agree, when the joiner has

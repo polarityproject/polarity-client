@@ -284,6 +284,38 @@ void TestIgnoreMask()
     CHECK(same);
 }
 
+// Taking another side's frame 0: equal regions stay, a differing region takes
+// the other's plain words but keeps masked words and pointer-like values, and
+// a sent region with nothing to pair with is reported.
+void TestTakeOtherState()
+{
+    auto word = [](uint8_t* p, size_t at, uint64_t v) { std::memcpy(p + at, &v, 8); };
+    uint8_t same[16] = {}, differs[32] = {}, alone[8] = {};
+    word(differs, 0, 1);
+    word(differs, 8, 2);                      // masked below
+    word(differs, 16, 0x00007FF600001000ull); // pointer-like here
+    std::vector<StateRegion> regions{{"same", same, sizeof(same), {}}, {"differs", differs, sizeof(differs), {0x02}},
+                                     {"alone", alone, sizeof(alone), {}}};
+    std::vector<uint64_t> hashes(regions.size());
+    HashRegions(regions, hashes.data());
+
+    uint8_t theirs[32] = {}, extra[24] = {};
+    word(theirs, 0, 7);  // copied
+    word(theirs, 8, 9);  // masked: kept
+    word(theirs, 16, 5); // here is pointer-like: kept
+    word(theirs, 24, 3); // copied
+    const std::vector<uint64_t> otherHashes{hashes[0], Hash64(theirs, sizeof(theirs)), Hash64(extra, sizeof(extra))};
+    const TakenState t = TakeOtherState(regions, hashes, otherHashes,
+                                        {{0, same, sizeof(same)}, {1, theirs, sizeof(theirs)}, {2, extra, sizeof(extra)}});
+
+    uint64_t v[4];
+    std::memcpy(v, differs, sizeof(v));
+    CHECK(v[0] == 7 && v[1] == 2 && v[2] == 0x00007FF600001000ull && v[3] == 3);
+    CHECK(t.wordsCopied == 2 && t.pointersKept == 1 && t.regionsChanged == 1);
+    CHECK(t.regions.size() == 1 && t.regions[0].here == 1 && t.regions[0].there == 1);
+    CHECK(t.unpaired.size() == 1 && t.unpaired[0].index == 2); // 24 bytes: no region that size here
+}
+
 // A delay that covers the latency: most saves can never be loaded and skip
 // their copy. The match stays in sync and every load (jitter still causes
 // some) restores its saved state; with skipping off nothing is skipped.
@@ -2662,6 +2694,7 @@ int main()
         {"loader choice", TestLoaderChoice},
         {"ping tiers", TestPingTiers},
         {"ignore mask", TestIgnoreMask},
+        {"take other state", TestTakeOtherState},
         {"skipped saves", TestSkippedSaves},
         {"replay file round trip", TestReplayRoundTrip},
         {"xpress huffman decoder", TestXpressHuffmanDecoder},

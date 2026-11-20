@@ -1170,9 +1170,7 @@ private:
     }
 
     // Copies the recording's state before frame 0 (its dump) into the regions
-    // that differ, as ApplyHostState in netplay_driver.cpp does: each recorded
-    // region without an equal here pairs with the most similar region of the
-    // same size; masked words and pointer-like values stay.
+    // that differ, as a joiner takes the host's (TakeOtherState).
     void TakeRecordedStart(SfvGame& game, const std::vector<uint64_t>& hashes)
     {
         const StateDump* dump = rf_.FindDump(-1);
@@ -1181,66 +1179,19 @@ private:
             return;
         }
         const auto& regions = CheckRegions(game); // as `hashes` (a later build's added regions keep theirs)
-        std::multiset<uint64_t> mine(hashes.begin(), hashes.end());
-        std::multiset<uint64_t> recorded(rf_.initialHashes.begin(), rf_.initialHashes.end());
-        std::vector<bool> taken(regions.size(), false);
-        for (size_t i = 0; i < regions.size(); i++) {
-            auto it = recorded.find(hashes[i]);
-            if (it == recorded.end()) continue;
-            recorded.erase(it);
-            taken[i] = true;
-        }
-        size_t at = 0, changed = 0, words = 0, pointers = 0;
+        // The dump holds every recorded region back to back.
+        std::vector<OtherRegion> recorded;
+        size_t at = 0;
         for (size_t j = 0; j < rf_.regions.size(); j++) {
             const size_t size = static_cast<size_t>(rf_.regions[j].size);
-            const uint8_t* bytes = dump->bytes.data() + at;
+            if (at + size > dump->bytes.size()) break;
+            recorded.push_back({static_cast<uint32_t>(j), dump->bytes.data() + at, size});
             at += size;
-            if (at > dump->bytes.size()) break;
-            auto it = mine.find(rf_.initialHashes[j]);
-            if (it != mine.end()) {
-                mine.erase(it);
-                continue;
-            }
-            size_t best = SIZE_MAX, bestDiff = SIZE_MAX;
-            for (size_t i = 0; i < regions.size(); i++) {
-                if (taken[i] || regions[i].size != size) continue;
-                size_t diff = 0;
-                for (size_t w = 0; w + 8 <= size; w += 8) diff += std::memcmp(regions[i].ptr + w, bytes + w, 8) != 0;
-                if (diff < bestDiff) {
-                    best = i;
-                    bestDiff = diff;
-                }
-            }
-            if (best == SIZE_MAX) continue;
-            taken[best] = true;
-            const StateRegion& r = regions[best];
-            size_t copied = 0;
-            for (size_t w = 0; w + 8 <= size; w += 8) {
-                const size_t word = w / 8;
-                if (word / 8 < r.ignore.size() && (r.ignore[word / 8] >> (word % 8) & 1)) continue;
-                uint64_t here, there;
-                std::memcpy(&here, r.ptr + w, 8);
-                std::memcpy(&there, bytes + w, 8);
-                if (here == there) continue;
-                const auto pointerLike = [](uint64_t v) { return v >= 0x10000000000ull && v < 0x800000000000ull; };
-                if (pointerLike(here) || pointerLike(there)) {
-                    if (pointers++ < 8) {
-                        Log("replay:   %s +0x%zx kept: %016llx here, %016llx recorded", r.name.c_str(), w,
-                            static_cast<unsigned long long>(here), static_cast<unsigned long long>(there));
-                    }
-                    continue;
-                }
-                std::memcpy(r.ptr + w, &there, 8);
-                copied++;
-            }
-            if (copied) {
-                changed++;
-                words += copied;
-                Log("replay:   %s (%zu bytes): %zu words from the recording", r.name.c_str(), r.size, copied);
-            }
         }
-        Log("replay: took the recording's start: %zu words in %zu regions (%zu pointer-like words kept)", words, changed,
-            pointers);
+        const TakenState taken = TakeOtherState(regions, hashes, rf_.initialHashes, recorded);
+        for (const std::string& line : DescribeTakenState(regions, taken, "the recording")) Log("replay: %s", line.c_str());
+        Log("replay: took the recording's start: %zu words in %zu regions (%zu pointer-like words kept)", taken.wordsCopied,
+            taken.regionsChanged, taken.pointersKept);
     }
 
     bool StraightFrame(SfvGame& game)
