@@ -16,8 +16,12 @@
 # afterwards. -Delay: both players' input delay (default 0: the most
 # rollbacks). -Choices with no entries ('-Choices @()') plays one match.
 # -Commands: mod commands every game runs before the session ('skipcallbacks ...').
+# -Pairs: one match per entry, 'P1/P2' or 'P1/P2@STAGE' character codes, each
+# with an optional ':costume' ('RYU/KEN', 'BLR:3/Z37:1@TRN'), each after a
+# character select; it replaces -Picks, -Stage and -Choices. -Picks takes the
+# same 'CODE' or 'CODE:costume' form.
 param([Parameter(Mandatory)][string]$Agent, [Parameter(Mandatory)][string]$Token, [Parameter(Mandatory)][string]$Server,
-      [string]$HostAgent = '', [int]$Spectate = -1,
+      [string]$HostAgent = '', [int]$Spectate = -1, [string[]]$Pairs = @(),
       [string[]]$Choices = @('rematch', 'select'), [string[]]$Picks = @('RYU', 'KEN'), [string]$Stage = 'CHN',
       [switch]$Deploy, [switch]$NoMash, [int]$EndHoldSeconds = 0, [int]$TimeoutSeconds = 1200, [string]$Out = '', [int]$Delay = 0,
       [string]$Commands = '')
@@ -64,6 +68,18 @@ function Wait-Side($side, [string]$pattern, [int]$seconds) {
 }
 
 $serverAddress = if ($Server -match ':') { $Server } else { "${Server}:5555" }
+# -Pairs: [P1, P2, stage or ''] per match.
+$pairList = @($Pairs | ForEach-Object {
+  if ($_ -notmatch '^([A-Z0-9]{3}(?::\d+)?)/([A-Z0-9]{3}(?::\d+)?)(?:@([A-Z0-9]{3}))?$') { throw "-Pairs: '$_' is not P1/P2 or P1/P2@STAGE" }
+  , @($Matches[1], $Matches[2], $Matches[3])
+})
+# A pick command for 'CODE' or 'CODE:costume' (color 2, V-Skill and V-Trigger 1).
+function PickCmd([string]$p) { $c = $p.Split(':'); "pick $($c[0]) $(if ($c.Count -gt 1) { $c[1] } else { 0 }) 1 0 1 1" }
+if ($pairList.Count) {
+  $Picks = @($pairList[0][0], $pairList[0][1])
+  if ($pairList[0][2]) { $Stage = $pairList[0][2] }
+  $Choices = @(@('select') * ($pairList.Count - 1))
+}
 $hostSide = New-Side 'host' $HostAgent 0
 $joinSide = New-Side 'joiner' $Agent 0
 $sides = @($hostSide, $joinSide)
@@ -116,13 +132,13 @@ try {
   if ($Commands) { Say "every game first: $Commands" }
   $hostServer = if ($HostAgent) { $serverAddress } else { "127.0.0.1:$($serverAddress.Split(':')[1])" }
   $mash = if ($NoMash) { '' } else { 'mash 11; ' }
-  Send-SideCmd $hostSide "${pre}server $hostServer; delay $Delay; ${mash}pick $($Picks[0]) 0 1 0 1 1; stage $Stage; host"
+  Send-SideCmd $hostSide "${pre}server $hostServer; delay $Delay; ${mash}$(PickCmd $Picks[0]); stage $Stage; host"
   $m = Wait-Side $hostSide 'hosting, code (\S+)|session over: (.*)' 30
   if (-not $m[1]) { throw "host: hosting failed: $($m[2])" }
   $code = $m[1]
   Say "code $code"
   $mash = if ($NoMash) { '' } else { 'mash 22; ' }
-  Send-SideCmd $joinSide "${pre}server $serverAddress; name Player 2; delay $Delay; ${mash}pick $($Picks[1]) 0 1 0 1 1; join $code"
+  Send-SideCmd $joinSide "${pre}server $serverAddress; name Player 2; delay $Delay; ${mash}$(PickCmd $Picks[1]); join $code"
   foreach ($s in $sides | Where-Object { $_.Name -eq 'spectator' }) {
     Send-SideCmd $s "${pre}server $(if ($s.Agent) { $serverAddress } else { $hostServer }); name Watcher; spectate $code"
   }
@@ -145,6 +161,16 @@ try {
       break
     }
     $c = "choose $($Choices[$decided - 1])"
+    if ($pairList.Count) {
+      # The next pair: picks (and the stage) before the character select
+      # that takes them.
+      $next = $pairList[$decided]
+      $stageCmd = if ($next[2]) { "; stage $($next[2])" } else { '' }
+      Say "next: $($next[0]) vs $($next[1])$(if ($next[2]) { " at $($next[2])" })"
+      Send-SideCmd $hostSide "$(PickCmd $next[0])$stageCmd; $c"
+      Send-SideCmd $joinSide "$(PickCmd $next[1]); $c"
+      continue
+    }
     Send-SideCmd $hostSide $c
     Send-SideCmd $joinSide $c
   }
