@@ -54,6 +54,15 @@ struct OtherRegion {
     size_t size = 0;
 };
 
+// An unmasked word that differed in a paired region. Pointer-like values
+// (on either side) are never copied, so `copied` is false for them.
+struct WordDifference {
+    size_t region = 0; // this side's region
+    size_t offset = 0;
+    uint64_t here = 0, there = 0;
+    bool copied = false;
+};
+
 struct TakenState {
     struct Region {
         size_t here = 0;    // this side's region
@@ -62,6 +71,8 @@ struct TakenState {
     };
     std::vector<Region> regions;               // paired regions, in the other side's order
     std::vector<OtherRegion> unpaired;         // sent regions with no same-size region left here
+    std::vector<size_t> unmatched;             // regions here with no equal and no pair: they keep this side's bytes
+    std::vector<WordDifference> differences;   // every differing unmasked word, copied or kept
     size_t wordsCopied = 0, pointersKept = 0, regionsChanged = 0;
 };
 
@@ -75,7 +86,10 @@ TakenState TakeOtherState(const std::vector<StateRegion>& regions, const std::ve
                           const std::vector<uint64_t>& otherHashes, const std::vector<OtherRegion>& other);
 
 // Log lines for a TakeOtherState result, `who` being "the host" or "the
-// recording": each changed region and each unpaired region.
+// recording": each changed region, each unpaired region, and the differing
+// words. The words show what differs at frame 0, for the work on making both
+// sides start equal without a copy. A normal start has a few; the count is
+// capped so a state that differs everywhere can't flood the log.
 std::vector<std::string> DescribeTakenState(const std::vector<StateRegion>& regions, const TakenState& taken, const char* who);
 
 } // namespace sfv

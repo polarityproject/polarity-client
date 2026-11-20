@@ -286,7 +286,7 @@ void TestIgnoreMask()
 
 // Taking another side's frame 0: equal regions stay, a differing region takes
 // the other's plain words but keeps masked words and pointer-like values, and
-// a sent region with nothing to pair with is reported.
+// regions with nothing to pair with are reported on both sides.
 void TestTakeOtherState()
 {
     auto word = [](uint8_t* p, size_t at, uint64_t v) { std::memcpy(p + at, &v, 8); };
@@ -312,8 +312,12 @@ void TestTakeOtherState()
     std::memcpy(v, differs, sizeof(v));
     CHECK(v[0] == 7 && v[1] == 2 && v[2] == 0x00007FF600001000ull && v[3] == 3);
     CHECK(t.wordsCopied == 2 && t.pointersKept == 1 && t.regionsChanged == 1);
+    CHECK(t.differences.size() == 3); // the masked word is not a difference
     CHECK(t.regions.size() == 1 && t.regions[0].here == 1 && t.regions[0].there == 1);
     CHECK(t.unpaired.size() == 1 && t.unpaired[0].index == 2); // 24 bytes: no region that size here
+    CHECK(t.unmatched.size() == 1 && t.unmatched[0] == 2);     // "alone" kept its bytes
+    const auto lines = DescribeTakenState(regions, t, "the host");
+    CHECK(std::count_if(lines.begin(), lines.end(), [](const std::string& l) { return l.find("frame 0 word:") != std::string::npos; }) == 3);
 }
 
 // A delay that covers the latency: most saves can never be loaded and skip

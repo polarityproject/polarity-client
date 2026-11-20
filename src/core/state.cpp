@@ -305,7 +305,9 @@ TakenState TakeOtherState(const std::vector<StateRegion>& regions, const std::ve
             if (IsIgnored(r.ignore, w)) continue;
             const uint64_t here = Read64(r.ptr + w), there = Read64(o.bytes + w);
             if (here == there) continue;
-            if (PointerLike(here) || PointerLike(there)) {
+            const bool copy = !PointerLike(here) && !PointerLike(there);
+            out.differences.push_back({best, w, here, there, copy});
+            if (!copy) {
                 out.pointersKept++;
                 continue;
             }
@@ -316,11 +318,15 @@ TakenState TakeOtherState(const std::vector<StateRegion>& regions, const std::ve
         if (pair.copied) out.regionsChanged++;
         out.regions.push_back(pair);
     }
+    for (size_t i = 0; i < regions.size(); i++) {
+        if (!taken[i]) out.unmatched.push_back(i);
+    }
     return out;
 }
 
 std::vector<std::string> DescribeTakenState(const std::vector<StateRegion>& regions, const TakenState& taken, const char* who)
 {
+    constexpr size_t maxWords = 64;
     std::vector<std::string> lines;
     char buf[320];
     for (const TakenState::Region& p : taken.regions) {
@@ -331,6 +337,30 @@ std::vector<std::string> DescribeTakenState(const std::vector<StateRegion>& regi
     }
     for (const OtherRegion& o : taken.unpaired) {
         std::snprintf(buf, sizeof(buf), "no region here pairs with %s's region %u (%zu bytes)", who, o.index, o.size);
+        lines.push_back(buf);
+    }
+    for (size_t i = 0; i < taken.differences.size() && i < maxWords; i++) {
+        const WordDifference& d = taken.differences[i];
+        const StateRegion& r = regions[d.region];
+        std::snprintf(buf, sizeof(buf), "  frame 0 word: %s (%zu bytes) +0x%zx: here %016llx, %s %016llx, %s", r.name.c_str(),
+                      r.size, d.offset, static_cast<unsigned long long>(d.here), who, static_cast<unsigned long long>(d.there),
+                      d.copied ? "copied" : "kept");
+        lines.push_back(buf);
+    }
+    if (taken.differences.size() > maxWords) {
+        std::snprintf(buf, sizeof(buf), "  frame 0 words: %zu more differ", taken.differences.size() - maxWords);
+        lines.push_back(buf);
+    }
+    // Regions that found nothing to pair with usually mean the two battles
+    // were built with different objects, not that a few words differ.
+    constexpr size_t maxRegions = 32;
+    for (size_t i = 0; i < taken.unmatched.size() && i < maxRegions; i++) {
+        const StateRegion& r = regions[taken.unmatched[i]];
+        std::snprintf(buf, sizeof(buf), "  frame 0 region unmatched: %s (%zu bytes)", r.name.c_str(), r.size);
+        lines.push_back(buf);
+    }
+    if (taken.unmatched.size() > maxRegions) {
+        std::snprintf(buf, sizeof(buf), "  frame 0 regions unmatched: %zu more", taken.unmatched.size() - maxRegions);
         lines.push_back(buf);
     }
     return lines;
