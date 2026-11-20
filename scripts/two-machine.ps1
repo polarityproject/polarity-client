@@ -18,6 +18,8 @@
 # -Commands: mod commands every game runs before the session ('skipcallbacks ...').
 # -SpectateAfter S: the spectator joins S seconds into the first match
 # instead of before it, as a late watcher does (no preload in the lobby).
+# -Settings: more polarity.ini values for the agents, 'section.key=value'
+# ('netplay.reconcile_start=0'), put back with the rest at the end.
 # -SideCommands: more of them for one role, after -Commands
 # (@{ joiner = 'warmupsleep 80'; spectator = 'warmupsleep 150' }).
 # -Pairs: one match per entry, 'P1/P2' or 'P1/P2@STAGE' character codes, each
@@ -28,7 +30,7 @@ param([Parameter(Mandatory)][string]$Agent, [Parameter(Mandatory)][string]$Token
       [string]$HostAgent = '', [int]$Spectate = -1, [string[]]$Pairs = @(),
       [string[]]$Choices = @('rematch', 'select'), [string[]]$Picks = @('RYU', 'KEN'), [string]$Stage = 'CHN',
       [switch]$Deploy, [switch]$NoMash, [int]$EndHoldSeconds = 0, [int]$TimeoutSeconds = 1200, [string]$Out = '', [int]$Delay = 0,
-      [string]$Commands = '', [hashtable]$SideCommands = @{}, [int]$SpectateAfter = 0)
+      [string]$Commands = '', [hashtable]$SideCommands = @{}, [int]$SpectateAfter = 0, [string[]]$Settings = @())
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'remote.ps1') -Agent $Agent -Token $Token
 . (Join-Path $PSScriptRoot 'lib.ps1')
@@ -109,10 +111,14 @@ foreach ($a in $agents) {
     try { RemoteGet $f (Join-Path $dir $f) | Out-Null; $iniBackups[$a] += $f } catch { } # absent: nothing to keep
   }
   $count = 1 + @($sides | Where-Object { $_.Agent -eq $a -and $_.Instance -gt 0 }).Count
-  $settings = @(@('control', 'virtual_pads', '1'), @('control', 'always_active', '1'), @('netplay', 'upload_reports', '0'),
+  $iniValues = @(@('control', 'virtual_pads', '1'), @('control', 'always_active', '1'), @('netplay', 'upload_reports', '0'),
                 @('weyve', 'server', $serverAddress))
-  if ($count -gt 1) { $settings += , @('mod', 'multi_instance', '1') }
-  foreach ($s in $settings) { (Remote 'ini' @{ file = 'polarity.ini'; section = $s[0]; key = $s[1]; value = $s[2] }).output | Out-Null }
+  if ($count -gt 1) { $iniValues += , @('mod', 'multi_instance', '1') }
+  foreach ($s in $Settings) {
+    if ($s -notmatch '^(\w+)\.(\w+)=(.*)$') { throw "-Settings: '$s' is not section.key=value" }
+    $iniValues += , @($Matches[1], $Matches[2], $Matches[3])
+  }
+  foreach ($s in $iniValues) { (Remote 'ini' @{ file = 'polarity.ini'; section = $s[0]; key = $s[1]; value = $s[2] }).output | Out-Null }
   # The panel files override the ini's upload setting.
   foreach ($f in $iniBackups[$a] | Where-Object { $_ -like 'polarity.panel*' }) {
     (Remote 'ini' @{ file = $f; section = 'netplay'; key = 'upload_reports'; value = '0' }).output | Out-Null
