@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <new>
 
 // Layout: "SFVR" u32 version, then chunks {u32 tag, u32 size, payload}, closed
 // by an "END " chunk holding the CRC-32 of every byte before it. Unknown chunks
@@ -204,12 +205,20 @@ bool ReadHashRows(Reader& r, ReplayFile& rf, int first, int count, std::vector<u
     return r.ok();
 }
 
+// The most region hashes a file may hold (frames times regions, 512 MB):
+// both counts come from the file. Recordings hold 8.4 million at most.
+constexpr uint64_t kMaxHashes = uint64_t{64} << 20;
+
 // Version 2: every frame's region hashes, from the state before frame 0 on.
 bool ReadHashes(Reader& r, ReplayFile& rf, std::string* error) {
     const uint32_t frames = r.Get<uint32_t>();
     const uint32_t regions = r.Get<uint32_t>();
     if (regions != rf.RegionCount() || frames != static_cast<uint32_t>(rf.FrameCount())) {
         if (error) *error = "hash table does not match the region or frame count";
+        return false;
+    }
+    if (uint64_t{frames} * regions > kMaxHashes) {
+        if (error) *error = "hash table too large";
         return false;
     }
     std::vector<uint64_t> prev = rf.initialHashes;
@@ -261,6 +270,10 @@ bool ReadHashWindows(Reader& r, ReplayFile& rf, std::string* error) {
     const uint32_t windows = r.Get<uint32_t>();
     if (regions != rf.RegionCount() || frames != static_cast<uint32_t>(rf.FrameCount())) {
         if (error) *error = "hash windows do not match the region or frame count";
+        return false;
+    }
+    if (uint64_t{frames} * regions > kMaxHashes) {
+        if (error) *error = "hash table too large";
         return false;
     }
     rf.hashes.assign(size_t(frames) * regions, 0);
@@ -485,7 +498,13 @@ std::vector<uint8_t> SerializeReplay(const ReplayFile& rf, ReplayDetail detail) 
     return std::move(w.buf);
 }
 
-bool DeserializeReplay(const uint8_t* data, size_t len, ReplayFile* out, std::string* error) {
+namespace {
+
+// What a file's chunks may unpack to in all (each comes from the file):
+// recordings unpack to 25 MB at most.
+constexpr uint64_t kMaxUnpacked = uint64_t{256} << 20;
+
+bool Deserialize(const uint8_t* data, size_t len, ReplayFile* out, std::string* error) {
     auto fail = [&](const char* msg) {
         if (error) *error = msg;
         return false;
@@ -498,6 +517,7 @@ bool DeserializeReplay(const uint8_t* data, size_t len, ReplayFile* out, std::st
 
     ReplayFile rf;
     bool sawEnd = false, sawInputs = false, sawHashes = false;
+    uint64_t unpacked = 0;
 
     // One chunk's payload; a PACK chunk's comes here once uncompressed.
     auto handle = [&](uint32_t tag, Reader& c) {
@@ -610,6 +630,8 @@ bool DeserializeReplay(const uint8_t* data, size_t len, ReplayFile* out, std::st
         if (tag == kPack) {
             const uint32_t inner = c.Get<uint32_t>();
             const uint32_t rawSize = c.Get<uint32_t>();
+            unpacked += rawSize;
+            if (unpacked > kMaxUnpacked) return fail("file unpacks to too much: it is corrupt");
             std::vector<uint8_t> raw;
             if (!c.ok() || inner == kPack || !Decompress(c.pos(), c.left(), rawSize, &raw)) {
                 return fail("cannot uncompress a chunk: file is corrupt");
@@ -636,6 +658,17 @@ bool DeserializeReplay(const uint8_t* data, size_t len, ReplayFile* out, std::st
 
     *out = std::move(rf);
     return true;
+}
+
+} // namespace
+
+bool DeserializeReplay(const uint8_t* data, size_t len, ReplayFile* out, std::string* error) {
+    try {
+        return Deserialize(data, len, out, error);
+    } catch (const std::bad_alloc&) {
+        if (error) *error = "not enough memory to read it";
+        return false;
+    }
 }
 
 bool SaveReplay(const ReplayFile& replay, const std::string& path, std::string* error, ReplayDetail detail) {

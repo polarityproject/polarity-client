@@ -559,6 +559,70 @@ void TestXpressHuffmanDecoder() {
     std::printf("    %d inputs decoded as Windows encoded them\n", checked);
 }
 
+void TestRecordingLimits() {
+    // A size over the cap is refused before anything is allocated.
+    const uint8_t some[300] = {};
+    std::vector<uint8_t> out;
+    CHECK(!Decompress(some, sizeof(some), kMaxRawSize + 1, &out) && !DecompressXpressHuffman(some, sizeof(some), 0xFFFFFFFFu, &out));
+    // Files: "SFVR", the version, then chunks of a tag, a size and a payload.
+    auto u32 = [](std::vector<uint8_t>& v, uint32_t x) {
+        for (int i = 0; i < 4; i++) v.push_back(static_cast<uint8_t>(x >> (8 * i)));
+    };
+    auto chunk = [&](std::vector<uint8_t>& file, const char* tag, const std::vector<uint8_t>& payload) {
+        file.insert(file.end(), tag, tag + 4);
+        u32(file, static_cast<uint32_t>(payload.size()));
+        file.insert(file.end(), payload.begin(), payload.end());
+    };
+    auto pack = [&](const char* inner, uint32_t rawSize, const std::vector<uint8_t>& packed) {
+        std::vector<uint8_t> p(inner, inner + 4);
+        u32(p, rawSize);
+        p.insert(p.end(), packed.begin(), packed.end());
+        return p;
+    };
+    std::vector<uint8_t> head{'S', 'F', 'V', 'R'};
+    u32(head, kReplayFormatVersion);
+    ReplayFile rf;
+    std::string error;
+    // A chunk that claims 128 MB, over the chunk cap; one that claims 4 GB,
+    // over the file's.
+    std::vector<uint8_t> big = head;
+    chunk(big, "PACK", pack("INPT", 128u << 20, std::vector<uint8_t>(300)));
+    CHECK(!DeserializeReplay(big.data(), big.size(), &rf, &error) && error == "cannot uncompress a chunk: file is corrupt");
+    std::vector<uint8_t> huge = head;
+    chunk(huge, "PACK", pack("INPT", 0xFFFFFFFFu, std::vector<uint8_t>(300)));
+    CHECK(!DeserializeReplay(huge.data(), huge.size(), &rf, &error) && error == "file unpacks to too much: it is corrupt");
+    // Chunks that unpack to more than 256 MB in all.
+    std::vector<uint8_t> zeros(size_t{60} << 20, 0), packed;
+    if (Compress(zeros.data(), zeros.size(), &packed)) {
+        std::vector<uint8_t> bomb = head;
+        for (int i = 0; i < 5; i++) chunk(bomb, "PACK", pack("XTRA", static_cast<uint32_t>(zeros.size()), packed));
+        CHECK(bomb.size() < (size_t{1} << 20));
+        CHECK(!DeserializeReplay(bomb.data(), bomb.size(), &rf, &error) && error == "file unpacks to too much: it is corrupt");
+    } else {
+        std::printf("    no Windows encoder here: the total skipped\n");
+    }
+    // A region hash table of 10,000 regions over 7,000 frames (70 million
+    // hashes) from a file of a few hundred KB.
+    std::vector<uint8_t> regions, inputs, windows;
+    u32(regions, 10000);
+    for (int i = 0; i < 10000; i++) {
+        u32(regions, 0); // name
+        u32(regions, 8); // size, 64-bit
+        u32(regions, 0);
+        u32(regions, 0); // mask
+    }
+    u32(inputs, 7000);
+    inputs.resize(inputs.size() + 7000 * 8);
+    u32(windows, 7000);
+    u32(windows, 10000);
+    u32(windows, 0);
+    std::vector<uint8_t> table = head;
+    chunk(table, "RGNS", regions);
+    chunk(table, "INPT", inputs);
+    chunk(table, "HWIN", windows);
+    CHECK(!DeserializeReplay(table.data(), table.size(), &rf, &error) && error == "hash table too large");
+}
+
 void TestCompactRecording() {
     ReplayFile rf;
     rf.regions = {{"a", 16, {}}, {"b", 4, {}}, {"c", 1000, {}}};
@@ -2698,6 +2762,7 @@ int main() {
         {"skipped saves", TestSkippedSaves},
         {"replay file round trip", TestReplayRoundTrip},
         {"xpress huffman decoder", TestXpressHuffmanDecoder},
+        {"recording limits", TestRecordingLimits},
         {"compact recording", TestCompactRecording},
         {"clean match", TestCleanMatch},
         {"hash on confirm", TestHashOnConfirm},

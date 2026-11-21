@@ -59,6 +59,7 @@ bool DecompressXpressHuffman(const uint8_t* data, size_t size, size_t rawSize, s
     constexpr int kMaxBits = 15;
     // What would not get smaller Windows stores as it is (as its own
     // decoder reads it: the same size in as out).
+    if (rawSize > kMaxRawSize) return false;
     if (size == rawSize) {
         out->assign(data, data + size);
         return true;
@@ -158,6 +159,7 @@ bool Decompress(const uint8_t* data, size_t size, size_t rawSize, std::vector<ui
     // Windows' own codec where it has one; else (Proton's cabinet.dll) the
     // decoder here: recordings made on Windows, and the benchmark's round,
     // read on a Steam Deck too.
+    if (rawSize > kMaxRawSize) return false;
     const Codec& api = Cabinet();
     DECOMPRESSOR_HANDLE d = nullptr;
     if (!api.canDecompress || !api.createDecompressor(kAlgorithm, nullptr, &d) || !d) return DecompressXpressHuffman(data, size, rawSize, out);

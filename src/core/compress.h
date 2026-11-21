@@ -11,10 +11,16 @@
 
 namespace sfv {
 
+// The largest size Decompress accepts: a chunk's size before compression
+// comes from the file, and is allocated before decoding. Recordings' chunks
+// unpack to 4 MB at most.
+constexpr size_t kMaxRawSize = size_t{64} << 20;
+
 // False when the codec is unavailable or fails; `out` is then untouched.
 bool Compress(const uint8_t* data, size_t size, std::vector<uint8_t>* out);
 // `rawSize` is the size before compression; false unless exactly that many
-// bytes come back. Without the codec (Proton) it decodes on its own.
+// bytes come back, and above kMaxRawSize. Without the codec (Proton) it
+// decodes on its own.
 bool Decompress(const uint8_t* data, size_t size, size_t rawSize, std::vector<uint8_t>* out);
 // The decoder on its own, for any Windows (or Wine): XPRESS Huffman in raw
 // mode, as [MS-XCA] 2.2.4 describes it.
