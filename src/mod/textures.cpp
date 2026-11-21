@@ -102,7 +102,7 @@ void LogTextures(const std::string& filter, int limit) {
 }
 
 const void* FindOrLoadTexture(const std::string& nameOrPath) {
-    if (nameOrPath.find('/') != std::string::npos) return LoadAsset("Texture2D", nameOrPath);
+    if (nameOrPath.find('/') != std::string::npos) return FlowLoadAsset("Texture2D", nameOrPath);
     return ue4::FindObject(nameOrPath, "Texture2D");
 }
 

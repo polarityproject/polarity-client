@@ -146,7 +146,7 @@ SelectCard MyCharacterCard(const RoomsView& rooms) {
     }
     const std::string loads = eleven ? "ELEVEN" : card.charaName;
     double seconds = 0;
-    switch (PreloadStatus(UnpackCode(o.pick.character), o.pick.costume, &seconds)) {
+    switch (FlowPreloadStatus(UnpackCode(o.pick.character), o.pick.costume, &seconds)) {
         case 2:
             card.status = loads + " is ready";
             card.statusRight = "ready";

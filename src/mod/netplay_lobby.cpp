@@ -295,7 +295,7 @@ lobby::Seat NetplayDriver::OwnSeat() {
     const bool otherKnown = options_.randomSetup || role_ != Role::Player ||
                             (seats_[host_ ? 1 : 0].present && seats_[host_ ? 1 : 0].hasPick);
     const bool settled = options_.randomSetup || state_ != State::Lobby || BothReadyLocked();
-    seat.preloaded = otherKnown && settled && PreloadsDoneFor(picks);
+    seat.preloaded = otherKnown && settled && FlowPreloadsDoneFor(picks);
     seat.choice = myChoice_;
     seat.screen = selectScreen_;
     seat.row = selectRow_;
@@ -310,7 +310,7 @@ uint16_t NetplayDriver::StageRule() {
     if (hostStageRule_ >= 0) return static_cast<uint16_t>(hostStageRule_.load());
     if (options_.stageCode == "random") return lobby::kRandomStage;
     if (!options_.stageCode.empty()) {
-        const int i = StageIndex(options_.stageCode);
+        const int i = FlowStageIndex(options_.stageCode);
         return i >= 0 ? static_cast<uint16_t>(i) : lobby::kAnyStage;
     }
     return options_.stage;

@@ -222,7 +222,7 @@ DWORD ComposeState(DWORD user, XINPUT_STATE* state) {
 DWORD WINAPI GetStateDetour(DWORD user, XINPUT_STATE* state) {
     HookGuard guard;
     // The engine polls pad 0 on the game thread once per frame.
-    if (user == 0) PumpGameThread();
+    if (user == 0) FlowPumpGameThread();
     const DWORD result = ComposeState(user, state);
     if (user >= XUSER_MAX_COUNT) return result;
     if (result == ERROR_SUCCESS) {
@@ -368,7 +368,7 @@ void LogPolls() {
         n += std::snprintf(buf + n, sizeof(buf) - n, " %llu", static_cast<unsigned long long>(p - lastPolls[u]));
         lastPolls[u] = p;
     }
-    Log("xinput polls per 60 s by user:%s; %s", buf, PumpStats().c_str());
+    Log("xinput polls per 60 s by user:%s; %s", buf, FlowPumpStats().c_str());
 }
 
 } // namespace

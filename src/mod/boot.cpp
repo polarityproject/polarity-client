@@ -157,7 +157,7 @@ void WatchStep() {
     const int status = LoginStatus();
     const int last = g_lastStatus.exchange(status);
     if (status != last) Log("boot: login status %d (was %d)", status, last);
-    if (!Stopping()) RunOnGameThreadAfter(30, WatchStep);
+    if (!Stopping()) FlowRunOnGameThreadAfter(30, WatchStep);
 }
 
 // Waits (once per frame) for InitialState to reach its login step, then
@@ -176,7 +176,7 @@ void OfflineAtLoginStep(uint8_t* state, int frame) {
     }
     auto* step = reinterpret_cast<uintptr_t*>(state + kStateStep);
     if (*step != g_base + kInitialStateLoginStep) {
-        if (frame < kOfflineWaitFrames) RunOnGameThreadAfter(1, [=] { OfflineAtLoginStep(state, frame + 1); });
+        if (frame < kOfflineWaitFrames) FlowRunOnGameThreadAfter(1, [=] { OfflineAtLoginStep(state, frame + 1); });
         else Log("boot: offline: InitialState never reached its login step");
         return;
     }
@@ -189,7 +189,7 @@ void OfflineAtLoginStep(uint8_t* state, int frame) {
 } // namespace
 
 void GoOfflineFromTitle() {
-    RunOnGameThreadAfter(1, [] { OfflineAtLoginStep(nullptr, 0); });
+    FlowRunOnGameThreadAfter(1, [] { OfflineAtLoginStep(nullptr, 0); });
 }
 
 using InFreePlayPeriodFn = bool (*)(void* info);
@@ -275,7 +275,7 @@ int LoginStatus() {
 }
 
 void WatchLoginStatus() {
-    RunOnGameThread(WatchStep);
+    FlowRunOnGameThread(WatchStep);
 }
 
 } // namespace sfv::mod

@@ -4,21 +4,21 @@ namespace sfv::mod::overlay {
 
 Tables ReadTables() {
     Tables t;
-    for (int i = 0; i < CharaCount() && !Stopping(); i++) {
-        const std::string name = CharaName(i);
+    for (int i = 0; i < FlowCharaCount() && !Stopping(); i++) {
+        const std::string name = FlowCharaName(i);
         if (!IsFighter(i) || name.empty()) continue;
         std::vector<int> costumes;
         std::vector<std::string> names;
         std::vector<std::vector<int>> colors;
         std::vector<bool> costumeOwned;
         std::vector<std::vector<bool>> colorOwned;
-        const std::map<int, CostumeSpec> specs = CharaCostumeSpecs(i);
+        const std::map<int, CostumeSpec> specs = FlowCharaCostumeSpecs(i);
         std::string charaCode;
         for (const auto& [k, spec] : specs) {
             if (charaCode.empty()) charaCode = spec.charaCode;
         }
-        for (int k = 0; k < CharaCostumeCount(i); k++) {
-            const int n = CostumeColorCount(i, k);
+        for (int k = 0; k < FlowCharaCostumeCount(i); k++) {
+            const int n = FlowCostumeColorCount(i, k);
             if (n <= 0) continue;
             costumes.push_back(k);
             const auto spec = specs.find(k);
@@ -46,18 +46,18 @@ Tables ReadTables() {
         t.costumeOwned.push_back(std::move(costumeOwned));
         t.colorOwned.push_back(std::move(colorOwned));
         std::vector<CostumeSwatches> swatches;
-        for (int k : costumes) swatches.push_back(CostumeSwatchColors(i, k));
+        for (int k : costumes) swatches.push_back(FlowCostumeSwatchColors(i, k));
         t.swatches.push_back(std::move(swatches));
         t.vcomments.emplace_back();
-        t.elevenCostume.push_back(CostumeInFolder(i, "0C"));
-        t.charas.push_back(CharaCode(i));
+        t.elevenCostume.push_back(FlowCostumeInFolder(i, "0C"));
+        t.charas.push_back(FlowCharaCode(i));
         t.charaIndex.push_back(i);
         t.labels.push_back(name);
         t.costumes.push_back(std::move(costumes));
         t.costumeNames.push_back(std::move(names));
         t.colors.push_back(std::move(colors));
-        t.vskills.push_back(SkillNames(CharaCode(i), false));
-        t.vtriggers.push_back(SkillNames(CharaCode(i), true));
+        t.vskills.push_back(FlowSkillNames(FlowCharaCode(i), false));
+        t.vtriggers.push_back(FlowSkillNames(FlowCharaCode(i), true));
     }
     std::vector<size_t> order(t.charas.size());
     for (size_t k = 0; k < order.size(); k++) order[k] = k;
@@ -87,7 +87,7 @@ Tables ReadTables() {
     reorder(t.charaOwned);
     reorder(t.costumeOwned);
     reorder(t.colorOwned);
-    if (const int eleven = CharaIndex("ELV"); eleven >= 0) {
+    if (const int eleven = FlowCharaIndex("ELV"); eleven >= 0) {
         t.charas.push_back("ELV");
         t.charaIndex.push_back(eleven);
         t.labels.push_back("ELEVEN");
@@ -103,19 +103,19 @@ Tables ReadTables() {
         t.costumeOwned.push_back({true});
         t.colorOwned.push_back({{true}});
     }
-    for (int i = 0; i < StageCount() && !Stopping(); i++) {
-        if (!IsMenuStage(i)) continue;
-        t.stages.push_back(StageCode(i));
-        const std::string name = StageName(i);
-        t.stageLabels.push_back(name.empty() ? StageCode(i) : name);
-        t.stageOwned.push_back(OwnsEntitlement(StageAvailableCode(i)));
+    for (int i = 0; i < FlowStageCount() && !Stopping(); i++) {
+        if (!FlowIsMenuStage(i)) continue;
+        t.stages.push_back(FlowStageCode(i));
+        const std::string name = FlowStageName(i);
+        t.stageLabels.push_back(name.empty() ? FlowStageCode(i) : name);
+        t.stageOwned.push_back(OwnsEntitlement(FlowStageAvailableCode(i)));
         std::vector<std::string> codes, names;
         std::vector<bool> owned;
-        for (int k : StageSettings(i)) {
-            if (!IsPlayableStage(k)) continue;
-            codes.push_back(StageCode(k));
-            names.push_back(StageName(k).empty() ? StageCode(k) : StageName(k));
-            owned.push_back(OwnsEntitlement(StageAvailableCode(k)));
+        for (int k : FlowStageSettings(i)) {
+            if (!FlowIsPlayableStage(k)) continue;
+            codes.push_back(FlowStageCode(k));
+            names.push_back(FlowStageName(k).empty() ? FlowStageCode(k) : FlowStageName(k));
+            owned.push_back(OwnsEntitlement(FlowStageAvailableCode(k)));
         }
         t.settings.push_back(std::move(codes));
         t.settingLabels.push_back(std::move(names));
@@ -151,7 +151,7 @@ void ReadComments(std::vector<std::string> codes) {
         auto out = std::make_unique<std::map<std::string, std::vector<std::string>>>();
         for (const std::string& code : codes) {
             if (Stopping()) return;
-            if (code != "ELV") (*out)[code] = VCommentNames(code);
+            if (code != "ELV") (*out)[code] = FlowVCommentNames(code);
         }
         Log("overlay: V-Comment names read in %llu ms", GetTickCount64() - from);
         std::lock_guard lock(g_tablesMutex);
@@ -171,18 +171,18 @@ void LoadTables() {
         }
         return;
     }
-    const std::string scene = CurrentScene();
+    const std::string scene = FlowCurrentScene();
     if (scene.empty() || scene == "BootState" || scene == "InitialState") return;
-    if (!StageNamesReady()) return;
+    if (!FlowStageNamesReady()) return;
     {
         std::lock_guard lock(g_tablesMutex);
         if (g_readTables) {
             if (g_readTables->loaded) {
                 g_tables = std::move(*g_readTables);
                 Log("overlay: character lists read: %zu characters, %zu stages (scene %s)", g_tables.charas.size(),
-                    g_tables.stages.size(), CurrentScene().c_str());
+                    g_tables.stages.size(), FlowCurrentScene().c_str());
                 ReadComments(g_tables.charas);
-                LoungeCommentText(0);
+                FlowLoungeCommentText(0);
             }
             g_readTables.reset();
             g_readingTables = false;
@@ -196,7 +196,7 @@ void LoadTables() {
         auto t = std::make_unique<Tables>(ReadTables());
         tries++;
         Log("overlay: character lists %s in %llu ms (try %d, scene %s)", t->loaded ? "read" : "not there yet", GetTickCount64() - from, tries,
-            CurrentScene().c_str());
+            FlowCurrentScene().c_str());
         if (!t->loaded) Sleep(1000);
         std::lock_guard lock(g_tablesMutex);
         g_readTables = std::move(t);
@@ -329,7 +329,7 @@ std::string ColorLabel(int id) {
 }
 
 std::string StageText(uint16_t index) {
-    const std::string code = StageCode(index);
+    const std::string code = FlowStageCode(index);
     const auto it = std::find(g_tables.stages.begin(), g_tables.stages.end(), code);
     if (code.empty()) return "as prepared";
     return it == g_tables.stages.end() ? code : g_tables.stageLabels[it - g_tables.stages.begin()];
@@ -356,7 +356,7 @@ void SaveChoices() {
 
 int VariantsOf(int chara, int costume) {
     if (chara < 0 || chara >= static_cast<int>(g_tables.charaIndex.size())) return 0;
-    const std::optional<uint8_t> variants = CostumeVariantsKnown(g_tables.charaIndex[chara], costume);
+    const std::optional<uint8_t> variants = FlowCostumeVariantsKnown(g_tables.charaIndex[chara], costume);
     return variants ? *variants : -1;
 }
 

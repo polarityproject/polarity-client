@@ -85,7 +85,7 @@ SelectSide SelectSideFor(const NetView& v, int i) {
     s.rows[1].swatch2 = swatch.second;
     s.rows[1].hint = "";
     const int variants = mine ? VariantsOf(chara, pick.costume) : 1;
-    s.rows[2].value = variants < 0 ? "checking..." : VariantLabel(code, pick.variation);
+    s.rows[2].value = variants < 0 ? "checking..." : FlowVariantLabel(code, pick.variation);
     s.rows[2].fixed = mine && variants <= 0;
     s.rows[2].hint = variants == 0 ? "This costume has no variants." : "";
     s.rows[3].value = SkillText(code, false, pick.vskill);
@@ -106,7 +106,7 @@ int SelectStageFor(const NetView& v, int* setting) {
         return g_choices.stage - 2;
     }
     if (v.stageRule == lobby::kRandomStage || v.stageRule == lobby::kAnyStage) return count;
-    const std::string code = StageCode(v.stageRule);
+    const std::string code = FlowStageCode(v.stageRule);
     for (int i = 0; i < count; i++) {
         const auto& settings = g_tables.settings[i];
         const auto it = std::find(settings.begin(), settings.end(), code);

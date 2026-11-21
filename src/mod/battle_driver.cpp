@@ -109,7 +109,7 @@ std::atomic<int> g_drawLog{0};                          // research: draws left 
 std::atomic<uint32_t> g_drawLogFrom{1}, g_drawLogTo{0}; // research: driven ticks whose draws are all logged
 
 bool InDrawLogTicks() {
-    const uint32_t t = DrivenTicks();
+    const uint32_t t = FlowDrivenTicks();
     return t >= g_drawLogFrom && t <= g_drawLogTo;
 }
 
@@ -181,7 +181,7 @@ uint32_t TickDrawState(const uint8_t* stream, uintptr_t site) {
     const uint64_t who = slot >= 0 ? static_cast<uint64_t>(slot)
                                    : 1ull << 63 | static_cast<uint64_t>(site - g_imageBase) << 24 | NextInTick(site);
     const uint64_t key = static_cast<uint64_t>(Mix(who)) << 32 | NextInTick(reinterpret_cast<uintptr_t>(stream));
-    return Mix(g_drawSeed ^ (static_cast<uint64_t>(DrivenTicks()) << 32) ^ Mix(key));
+    return Mix(g_drawSeed ^ (static_cast<uint64_t>(FlowDrivenTicks()) << 32) ^ Mix(key));
 }
 
 uint32_t* g_globalRandom = nullptr; // kGlobalRandomState, once the picks are hooked
@@ -194,11 +194,11 @@ void SeedGlobalPick(uintptr_t site) {
     // The site as an rva: the same in every process.
     const uint32_t pick = NextInTick(site);
     const uint64_t key = static_cast<uint64_t>(site - g_imageBase) << 16 | pick;
-    *g_globalRandom = Mix(g_drawSeed ^ (static_cast<uint64_t>(DrivenTicks()) << 32) ^ Mix(key));
+    *g_globalRandom = Mix(g_drawSeed ^ (static_cast<uint64_t>(FlowDrivenTicks()) << 32) ^ Mix(key));
     const bool window = InDrawLogTicks();
     if (window || g_drawLog > 0) {
         if (!window) g_drawLog--;
-        Log("draw: tick %u, global pick %u at rva 0x%llX, state %08X", DrivenTicks(), pick,
+        Log("draw: tick %u, global pick %u at rva 0x%llX, state %08X", FlowDrivenTicks(), pick,
             static_cast<unsigned long long>(site - g_imageBase), *g_globalRandom);
     }
 }
@@ -232,7 +232,7 @@ uint32_t DrawDetour(uint8_t* stream) {
                     region = r.name + "+0x" + std::to_string(stream + kStreamState - r.ptr);
                 }
             }
-            Log("draw: tick %u, stream %p (state %s) %08X, from rva 0x%llX", DrivenTicks(), static_cast<void*>(stream),
+            Log("draw: tick %u, stream %p (state %s) %08X, from rva 0x%llX", FlowDrivenTicks(), static_cast<void*>(stream),
                 region.c_str(), *reinterpret_cast<const uint32_t*>(stream + kStreamState), static_cast<unsigned long long>(caller));
         }
     }
@@ -333,7 +333,7 @@ int* GaugeAddDetour(uint8_t* gauge, int* out, int amount, int flags) {
             std::snprintf(cause, sizeof(cause), "from rva 0x%llX", static_cast<unsigned long long>(from));
         }
         Log("gauge: tick %u%s, vitality %.0f/%.0f, add %.3f (flags %d) %s, now %.2f/%.0f level %d (was %.2f level %d)",
-            DrivenTicks(), g_replayingTick ? " replayed" : "", vitality[0] / unit, vitality[1] / unit, amount / unit, flags,
+            FlowDrivenTicks(), g_replayingTick ? " replayed" : "", vitality[0] / unit, vitality[1] / unit, amount / unit, flags,
             cause, after[0] / unit, after[1] / unit, after[2], before[0] / unit, before[2]);
     }
     return result;
@@ -384,7 +384,7 @@ void BonePositionDetour(uint8_t* fighter, const void* bone, float* out, int flag
     g_boneLog--;
     uint32_t bits[3];
     std::memcpy(bits, out, sizeof(bits));
-    Log("bone: tick %u%s, from rva 0x%llX, fighter %p bone %p: %.6f %.6f %.6f (%08X %08X %08X)", DrivenTicks(),
+    Log("bone: tick %u%s, from rva 0x%llX, fighter %p bone %p: %.6f %.6f %.6f (%08X %08X %08X)", FlowDrivenTicks(),
         g_replayingTick ? " replayed" : "", static_cast<unsigned long long>(from), static_cast<void*>(fighter), bone,
         out[0], out[1], out[2], bits[0], bits[1], bits[2]);
 }
@@ -435,7 +435,7 @@ uint64_t CuePlayDetour(void* player, int sheet, int cue, int a, int b) {
         g_soundLog--;
         const uintptr_t from = reinterpret_cast<uintptr_t>(_ReturnAddress()) - g_imageBase;
         Log("sound: cue %d (sheet %d, %d %d) %s tick %u%s%s, thread %lu, from rva 0x%llX", cue, sheet, a, b,
-            g_inDriver ? "in driven" : "outside driven", DrivenTicks(), g_inDriver && g_replayingTick ? " replayed" : "",
+            g_inDriver ? "in driven" : "outside driven", FlowDrivenTicks(), g_inDriver && g_replayingTick ? " replayed" : "",
             capture ? " (captured)" : "", GetCurrentThreadId(), static_cast<unsigned long long>(from));
         if (g_soundStacks > 0) {
             g_soundStacks--;
@@ -536,9 +536,9 @@ uint64_t PhaseDetour(void* scheduler, int phase) {
                                                             : kPart8;
     if (phase != 1 && phase != 2 && phase != 4 && phase != 8) return g_origPhase(scheduler, phase);
     if (g_skipResimPresentation && g_inDriver && g_replayingTick && (phase == 4 || phase == 8)) return 0;
-    if (g_inDriver) SetSchedulerPhase(phase, g_replayingTick);
+    if (g_inDriver) FlowSetSchedulerPhase(phase, g_replayingTick);
     const uint64_t r = Timed(part, [&] { return g_origPhase(scheduler, phase); });
-    SetSchedulerPhase(0);
+    FlowSetSchedulerPhase(0);
     return r;
 }
 
@@ -597,7 +597,7 @@ void LogJobOrder(uint8_t* queue) {
         std::snprintf(b, sizeof(b), " %p side %d", static_cast<void*>(owner), side);
         sides += b;
     }
-    Log("joborder: tick %u%s, fighters%s", DrivenTicks(), g_replayingTick ? " replayed" : "", sides.c_str());
+    Log("joborder: tick %u%s, fighters%s", FlowDrivenTicks(), g_replayingTick ? " replayed" : "", sides.c_str());
     int n = 0;
     for (uint8_t* job = *reinterpret_cast<uint8_t**>(queue + kJobQueueList); job && n < 400; n++) {
         if (!IsReadable(job, 0x48)) break;
@@ -672,7 +672,7 @@ void CountPhaseTick() {
 
 void SeedTickRandom() {
     g_tickCountUsed = 0;
-    if (g_srand) g_srand(Mix(g_drawSeed ^ (static_cast<uint64_t>(DrivenTicks()) << 32 | 0x52414E44u)));
+    if (g_srand) g_srand(Mix(g_drawSeed ^ (static_cast<uint64_t>(FlowDrivenTicks()) << 32 | 0x52414E44u)));
 }
 
 void LogGameInputs(int ticks) {
@@ -768,7 +768,7 @@ void LogRandomDraws(int count) {
 
 bool InstallBattleDriver(const GameImage& image, SfvGame* game) {
     g_game = game;
-    SetRegionLookup([game](const void* p) -> std::string {
+    FlowSetRegionLookup([game](const void* p) -> std::string {
         for (const StateRegion& r : game->Regions()) {
             if (p >= r.ptr && p < r.ptr + r.size) {
                 char buf[96];
@@ -867,7 +867,7 @@ void SetResimPresentationSkip(bool on) {
 
 void SetPhaseTiming(bool on) {
     g_phaseTiming = on;
-    SetTaskProfiling(on, g_profiledTicks);
+    FlowSetTaskProfiling(on, g_profiledTicks);
     g_profiledTicks = 0;
     Log("phasecost: %s", on ? "timing the battle update's parts" : "off");
 }
@@ -1196,7 +1196,7 @@ void CineLogTick() {
         g_cineSeen[i].script = f[i].script;
         g_cineSeen[i].cine = f[i].cine;
     }
-    Log("cinelog tick %u%s%s", DrivenTicks(), g_inDriver && g_replayingTick ? " replayed" : "", line.c_str());
+    Log("cinelog tick %u%s%s", FlowDrivenTicks(), g_inDriver && g_replayingTick ? " replayed" : "", line.c_str());
 }
 
 void CineLogFrame() {
@@ -1210,7 +1210,7 @@ void CineLogFrame() {
     float jump = 0;
     for (int i = 0; i < 3; i++) jump = std::max(jump, std::fabs(v[i] - g_cineCam[i]));
     std::memcpy(g_cineCam, v, sizeof(g_cineCam));
-    Log("cinelog frame: tick %u cam %.1f %.1f %.1f r %.2f %.2f %.2f fov %.2f%s", DrivenTicks(), v[0], v[1], v[2], v[3], v[4], v[5], v[6],
+    Log("cinelog frame: tick %u cam %.1f %.1f %.1f r %.2f %.2f %.2f fov %.2f%s", FlowDrivenTicks(), v[0], v[1], v[2], v[3], v[4], v[5], v[6],
         jump > 60 ? " CUT" : "");
 }
 
@@ -1271,7 +1271,7 @@ void TraceCameraObjects(uint32_t from, uint32_t to, const std::string& text) {
 void CamTraceRecord(int kind) {
     if (!g_camFile) return;
     if (kind == 0 && g_inDriver && g_replayingTick) kind = 1;
-    const uint32_t tick = DrivenTicks();
+    const uint32_t tick = FlowDrivenTicks();
     if (tick > g_camTo + 2) {
         std::fclose(g_camFile);
         g_camFile = nullptr;

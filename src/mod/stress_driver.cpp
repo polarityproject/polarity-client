@@ -65,7 +65,7 @@ public:
             // As in a netplay session: the round director per tick, and the
             // round's end rolled back (flow.h); every frame is replayed
             // `distance` deep, so every round's end is crossed.
-            SetRoundDirectorPerTick(true, true);
+            FlowSetRoundDirectorPerTick(true, true);
         }
 
         // The battle ended or changed under the test (a KO, a menu): stop.
@@ -128,7 +128,7 @@ private:
     }
 
     void Finish(SfvGame& game) {
-        SetRoundDirectorPerTick(false, false);
+        FlowSetRoundDirectorPerTick(false, false);
         InputScriptedPad(0, false);
         InputScriptedPad(1, false);
         game.bothPadsLocal = false;

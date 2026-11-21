@@ -91,7 +91,7 @@ bool Wanted() {
     if (g_forced) return true;
     const ReplayView v = ReplayViewNow();
     if (v.active) return !v.benchmark && HitboxesInReplays();
-    return HitboxesInTraining() && CurrentScene() == "TrainingBattleState";
+    return HitboxesInTraining() && FlowCurrentScene() == "TrainingBattleState";
 }
 
 void Collect(SfvGame& game, std::vector<WorldBox>& boxes) {
@@ -190,7 +190,7 @@ void CollectHitboxes(SfvGame& game) {
         const uint8_t* manager = FindCameraManager(game);
         g_cameraVtable = manager ? At<uintptr_t>(manager, 0) : 0;
         g_camera = manager;
-        Log("hitboxes: %s, camera %s", CurrentScene().c_str(), manager ? ue4::Describe(manager).c_str() : "not found");
+        Log("hitboxes: %s, camera %s", FlowCurrentScene().c_str(), manager ? ue4::Describe(manager).c_str() : "not found");
     }
     std::vector<WorldBox> boxes;
     Collect(game, boxes);

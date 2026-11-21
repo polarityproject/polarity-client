@@ -440,7 +440,7 @@ void DrawFace(ImDrawList* d, const std::string& chara, float x, float y, float w
 
 std::string RoomTitleText(const keeper::RoomTitle& title, const std::string& owner) {
     if (title.id == 0 || !keeper::ValidTitle(title)) return owner.empty() ? std::string("Room") : owner + "'s room";
-    std::string s = LoungeCommentText(title.id);
+    std::string s = FlowLoungeCommentText(title.id);
     if (s.empty()) s = keeper::TitleTemplate(title.id);
     for (int i = 0; i < 2; i++) {
         const std::string key = "{common" + std::to_string(i + 1) + "}";

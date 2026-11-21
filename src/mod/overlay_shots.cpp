@@ -139,7 +139,7 @@ void TakeBurstFrame(IDXGISwapChain* swapChain) {
         if (g_burstLeft <= 0) return;
         dir = g_burstDir;
     }
-    BurstFrame f{DrivenTicks(), 0, 0, {}};
+    BurstFrame f{FlowDrivenTicks(), 0, 0, {}};
     if (ReadBack(swapChain, g_burstScale, &f.w, &f.h, &f.rgb)) g_burstFrames.push_back(std::move(f));
     std::lock_guard lock(g_shotMutex);
     if (--g_burstLeft > 0) return;

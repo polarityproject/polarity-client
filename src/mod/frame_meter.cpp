@@ -701,7 +701,7 @@ bool Wanted(bool* replay, int* frame, bool* fight) {
     *fight = !v.active || v.roundFrame >= 0;
     if (g_forced) return true;
     if (v.active) return !v.benchmark && FrameMeterInReplays();
-    return FrameMeterInTraining() && CurrentScene() == "TrainingBattleState";
+    return FrameMeterInTraining() && FlowCurrentScene() == "TrainingBattleState";
 }
 
 // A viewed replay (not the benchmark's) with its meter hidden still records.
@@ -717,7 +717,7 @@ bool Ready(SfvGame& game, bool replay) {
     g_seen[0] = g_seen[1] = Seen{};
     g_applied = -1;
     Reset();
-    Log("framemeter: %s, P1 %p, P2 %p", replay ? "replay" : CurrentScene().c_str(), static_cast<const void*>(g_p[0].actor),
+    Log("framemeter: %s, P1 %p, P2 %p", replay ? "replay" : FlowCurrentScene().c_str(), static_cast<const void*>(g_p[0].actor),
         static_cast<const void*>(g_p[1].actor));
     return true;
 }

@@ -167,7 +167,7 @@ DWORD WINAPI ModMain(LPVOID self) {
     InstallBattleSetup(image);
     InstallBootProbes(image, config.verbose);
     InstallFreePlayGuard(image);
-    InstallFlowProbes(image);
+    FlowInstallProbes(image);
     WatchLoginStatus();
     InstallBattleDriver(image, &game);
     InstallCameraRollback(image);
@@ -175,7 +175,7 @@ DWORD WINAPI ModMain(LPVOID self) {
     SetCameraRollback(config.netplay.cameraRollback);
     if (config.netplay.skipLoadCallbacks) SetSkippedLoadCallbacks(DefaultSkippedLoadCallbacks());
     SetLeanResim(config.netplay.leanResim);
-    if (!config.netplay.leanResim) SetResimTaskSkip({});
+    if (!config.netplay.leanResim) FlowSetResimTaskSkip({});
     NetInstall(&game, config.reportDir, kModVersion, config.netplay);
     WeyveService::SetHideCountry(!config.netplay.shareCountry);
     SetStreamerMode(config.netplay.streamerMode);

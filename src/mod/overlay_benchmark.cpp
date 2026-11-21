@@ -30,11 +30,11 @@ void StepBenchmarkLaunch() {
             AddToast("The benchmark can't start now.", kRed, 4);
             return;
         }
-        l.switchesAt = BattleSceneSwitches();
+        l.switchesAt = FlowBattleSceneSwitches();
         l.step = 1;
         l.stepSince = now;
     }
-    if (l.step == 1 && BattleSceneSwitches() != l.switchesAt) {
+    if (l.step == 1 && FlowBattleSceneSwitches() != l.switchesAt) {
         l.step = 2;
         l.stepSince = l.blackFrom = now;
     }

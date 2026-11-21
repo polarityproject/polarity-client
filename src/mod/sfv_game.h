@@ -70,7 +70,7 @@ void SetWarmupSleep(int ms);
 void SetGameFrameIds(bool on);
 // Replayed ticks without presentation work the newest tick makes up for
 // (on by default; [netplay] lean_resim): BattleFrame::Update's parts
-// without scheduler phase 8 and some phase-4 tasks (flow.cpp
+// without scheduler phase 8 and some phase-4 tasks (flow_tasks.cpp
 // kLeanResimTasks). Off: every tick is a whole BattleFrame::Update.
 void SetLeanResim(bool on);
 bool LeanResimOn();
@@ -148,7 +148,7 @@ public:
     // more (2026-10-30: two players at 3, their spectator at 16; 43c9c9cb):
     // its jump had found the loader's stage request empty, so no stage was
     // loaded before the switch and the battle loaded it in its own setup
-    // (fixed in flow.cpp's jump, 2026-11-05; `emptystage` reproduces it).
+    // (fixed in flow_jump.cpp, 2026-11-05; `emptystage` reproduces it).
     void BeginWarmup() {
         warmupTicks_ = 0;
         objectsAt_ = -1;

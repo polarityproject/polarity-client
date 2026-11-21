@@ -74,9 +74,9 @@ uint64_t ReadSettingsDetour(uint8_t* self, void* a2, void* a3, void* a4) {
     // starts (Arcade, Versus, Training) got them: the last session's stage
     // in every stage request (even the menus' BLK), and after Battle now Ryu
     // and Ken. A session sets both again before each match's jump.
-    if (HasPendingSetup() || !PendingStage().empty()) Log("battle setup: pending setup and stage used up");
+    if (HasPendingSetup() || !FlowPendingStage().empty()) Log("battle setup: pending setup and stage used up");
     ClearPendingSetup();
-    SetPendingStage("");
+    FlowSetPendingStage("");
     return g_origReadSettings(self, a2, a3, a4);
 }
 
@@ -204,7 +204,7 @@ bool ApplyMatchSetup(const MatchSetup& setup) {
         if (chara == "URN") Put<int32_t>(r, bd::kUniqueParams + 4 * 2, special ? 2 : 0);
         if (chara == "Z41") Put<int32_t>(r, bd::kUniqueParams, special ? 1 : 0);
         // Not part of the match: each game's own player's choice.
-        if (const int voice = VoiceLanguageFor(chara); voice >= 0) Put<int32_t>(r, bd::kVoiceLanguage, voice);
+        if (const int voice = FlowVoiceLanguageFor(chara); voice >= 0) Put<int32_t>(r, bd::kVoiceLanguage, voice);
         for (int k = 0; k < 8; k++) {
             if (g_uniqueParams[p][k] >= 0) Put<int32_t>(r, bd::kUniqueParams + 4 * k, g_uniqueParams[p][k]);
         }
@@ -217,7 +217,7 @@ bool ApplyMatchSetup(const MatchSetup& setup) {
         // here: the mod injects each side's (control.cpp clears the pads).
         Put<int32_t>(r, bd::kPadId, p);
     }
-    // A battle entered straight from another (flow.h JumpToBattle) gets its
+    // A battle entered straight from another (flow.h FlowJumpToBattle) gets its
     // data from defaults that are not local Versus (infinite time, P2 a CPU).
     Put<int32_t>(data, bd::kMode, 1);
     // The match's rules (core/rules.h, the M0 spike): best of 1, 3 or 5
@@ -230,7 +230,7 @@ bool ApplyMatchSetup(const MatchSetup& setup) {
     Put<int32_t>(data, bd::kTimer, seconds * 60);
     Put<int32_t>(data, bd::kSpecRounds, g_specRoundsForTest ? g_specRoundsForTest : bestOf);
     Put<int32_t>(data, bd::kVersusFlag, 1);
-    // The level itself comes from the stage request (flow.h SetPendingStage);
+    // The level itself comes from the stage request (flow.h FlowSetPendingStage);
     // the index here does not change it. Kept the same as the level, so
     // what reads the index (and ReadMatchSetup) sees the stage played.
     if (setup.stage != kKeepStage) {
@@ -241,7 +241,7 @@ bool ApplyMatchSetup(const MatchSetup& setup) {
     // The stage's code, as the menus write it: a battle from another
     // battle's results has none, so its fighters had no stage data (no stage
     // transition; a spectator or replay from the menus had them).
-    const std::string stageCode = JumpStageCode();
+    const std::string stageCode = FlowJumpStageCode();
     if (stageCode.size() == 3 && IsReadable(data + bd::kStageName, bd::kStageNameSize)) {
         char* name = reinterpret_cast<char*>(data + bd::kStageName);
         if (std::strncmp(name, stageCode.c_str(), bd::kStageNameSize) != 0) {
@@ -267,15 +267,15 @@ bool ApplyMatchSetup(const MatchSetup& setup) {
 void SetMatchRoundsForTest(int rounds) { g_specRoundsForTest = rounds; }
 
 bool IsElevenPick(const PlayerSetup& p) {
-    const int index = CharaIndex(UnpackCode(p.character));
-    return index >= 0 && p.costume == CostumeInFolder(index, "0C");
+    const int index = FlowCharaIndex(UnpackCode(p.character));
+    return index >= 0 && p.costume == FlowCostumeInFolder(index, "0C");
 }
 
 LookRules GameLookRules() {
     LookRules rules;
     rules.isEleven = IsElevenPick;
     rules.elevenOtherColor = 1; // the 0C costume's color 2 of 2
-    rules.colorsOf = [](const PlayerSetup& p) { return CostumeColorIds(CharaIndex(UnpackCode(p.character)), p.costume); };
+    rules.colorsOf = [](const PlayerSetup& p) { return CostumeColorIds(FlowCharaIndex(UnpackCode(p.character)), p.costume); };
     return rules;
 }
 
@@ -284,52 +284,52 @@ bool IsFighter(int index) {
     // assist and event characters; "*NDK" and untranslated "ID_..." names are
     // placeholders, and X codes are helpers (X01: the partner Akira's
     // V-Trigger calls in).
-    if (CharaCostumeCount(index) < 10 || CharaCode(index).rfind('X', 0) == 0) return false;
-    const std::string name = CharaName(index);
+    if (FlowCharaCostumeCount(index) < 10 || FlowCharaCode(index).rfind('X', 0) == 0) return false;
+    const std::string name = FlowCharaName(index);
     return name.empty() || (name[0] != '*' && name.rfind("ID_", 0) != 0);
 }
 
 std::vector<int> CostumeColorIds(int index, int costume) {
-    const auto specs = CharaCostumeSpecs(index);
+    const auto specs = FlowCharaCostumeSpecs(index);
     const auto spec = specs.find(costume);
     if (spec != specs.end() && !spec->second.colors.empty()) return spec->second.colors;
     std::vector<int> ids;
-    for (int k = 0; k < CostumeColorCount(index, costume); k++) ids.push_back(k);
+    for (int k = 0; k < FlowCostumeColorCount(index, costume); k++) ids.push_back(k);
     return ids;
 }
 
 PickTables GamePickTables() {
     PickTables t;
-    t.charaIndex = CharaIndex;
+    t.charaIndex = FlowCharaIndex;
     t.isFighter = IsFighter;
-    t.costumeCount = CharaCostumeCount;
-    t.colorCount = CostumeColorCount;
+    t.costumeCount = FlowCharaCostumeCount;
+    t.colorCount = FlowCostumeColorCount;
     t.colorIds = CostumeColorIds;
     t.isEleven = IsElevenPick;
-    t.skillCount = SkillCountKnown;
-    t.commentCount = VCommentCount;
-    t.variants = CostumeVariantsKnown;
-    t.isPlayableStage = IsPlayableStage;
+    t.skillCount = FlowSkillCountKnown;
+    t.commentCount = FlowVCommentCount;
+    t.variants = FlowCostumeVariantsKnown;
+    t.isPlayableStage = FlowIsPlayableStage;
     return t;
 }
 
 void LogOfferedPickCheck() {
     const PickTables tables = GamePickTables();
     int checked = 0, failed = 0;
-    for (int index = 0; index < CharaCount(); index++) {
-        if (!IsFighter(index) || CharaName(index).empty()) continue;
-        const std::string code = CharaCode(index);
+    for (int index = 0; index < FlowCharaCount(); index++) {
+        if (!IsFighter(index) || FlowCharaName(index).empty()) continue;
+        const std::string code = FlowCharaCode(index);
         PlayerSetup pick;
         pick.character = PackCode(code.c_str());
         pick.vskill = static_cast<uint8_t>(std::max<size_t>(tables.skillCount(code, false), 2) - 1);
         pick.vtrigger = static_cast<uint8_t>(std::max<size_t>(tables.skillCount(code, true), 2) - 1);
-        pick.comment = static_cast<uint8_t>(VCommentNames(code).size()); // waits for the list
-        const int eleven = CostumeInFolder(index, "0C");
-        for (int costume = 0; costume < CharaCostumeCount(index); costume++) {
-            const bool offered = CostumeColorCount(index, costume) > 0;
+        pick.comment = static_cast<uint8_t>(FlowVCommentNames(code).size()); // waits for the list
+        const int eleven = FlowCostumeInFolder(index, "0C");
+        for (int costume = 0; costume < FlowCharaCostumeCount(index); costume++) {
+            const bool offered = FlowCostumeColorCount(index, costume) > 0;
             if (!offered && costume != eleven) continue;
             pick.costume = static_cast<uint16_t>(costume);
-            pick.variation = CostumeVariants(index, costume);
+            pick.variation = FlowCostumeVariants(index, costume);
             const std::vector<int> colors = offered ? CostumeColorIds(index, costume) : std::vector<int>{0, 1};
             for (int color : colors) {
                 pick.color = static_cast<uint8_t>(color);
@@ -340,8 +340,8 @@ void LogOfferedPickCheck() {
         }
     }
     int stages = 0, stagesFailed = 0;
-    for (int stage = 0; stage < StageCount(); stage++) {
-        if (!IsSelectableStage(stage)) continue;
+    for (int stage = 0; stage < FlowStageCount(); stage++) {
+        if (!FlowIsSelectableStage(stage)) continue;
         stages++;
         if (!StageRuleCheck(static_cast<uint16_t>(stage), tables).Fine()) stagesFailed++;
     }
@@ -380,12 +380,12 @@ std::string DescribeSetup(const MatchSetup& s) {
         const std::string version = ps.version >= 0 ? " version " + std::to_string(ps.version) : "";
         std::snprintf(buf, sizeof(buf), "P%d %s costume %u color %u comment %u V-Skill %u V-Trigger %u%s%s | ", p + 1,
                       UnpackCode(ps.character).c_str(), ps.costume, ps.color + 1, ps.comment, ps.vskill + 1,
-                      ps.vtrigger + 1, ps.variation ? (" " + VariantLabel(UnpackCode(ps.character), ps.variation)).c_str() : "",
+                      ps.vtrigger + 1, ps.variation ? (" " + FlowVariantLabel(UnpackCode(ps.character), ps.variation)).c_str() : "",
                       version.c_str());
         out += buf;
     }
     if (s.stage == kKeepStage) return out + "stage as prepared";
-    std::snprintf(buf, sizeof(buf), "stage %u %s", s.stage, StageCode(s.stage).c_str());
+    std::snprintf(buf, sizeof(buf), "stage %u %s", s.stage, FlowStageCode(s.stage).c_str());
     return out + buf;
 }
 

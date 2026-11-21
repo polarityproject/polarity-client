@@ -309,7 +309,7 @@ void ApplySetting(const SettingsInput& in) {
     }
 }
 
-bool InTrainingScene() { return CurrentScene().find("Training") != std::string::npos; }
+bool InTrainingScene() { return FlowCurrentScene().find("Training") != std::string::npos; }
 
 void StartRoomTraining(const RoomsView& rooms) {
     const NetView nv = NetViewNow();
@@ -321,7 +321,7 @@ void StartRoomTraining(const RoomsView& rooms) {
     g_roomTraining = RoomTraining::Asked;
     g_roomTrainingAt = ImGui::GetTime();
     Log("overlay: Training while waiting at a table");
-    ChangeScene("TrainingBattleSetupState");
+    FlowChangeScene("TrainingBattleSetupState");
 }
 
 void StepRoomTraining() {
@@ -336,7 +336,7 @@ void StepRoomTraining() {
         return;
     }
     if (!training) {
-        Log("overlay: back from Training (%s)", CurrentScene().c_str());
+        Log("overlay: back from Training (%s)", FlowCurrentScene().c_str());
         g_roomTraining = RoomTraining::Off;
         return;
     }
@@ -347,7 +347,7 @@ void StepRoomTraining() {
         if (s.phase != keeper::TablePhase::Call || (s.seat[0] != rooms.self && s.seat[1] != rooms.self)) continue;
         Log("overlay: Table %zu calls (call %u): Training ends", t + 1, s.call);
         g_roomTraining = RoomTraining::Off;
-        ChangeScene("MainMenuState");
+        FlowChangeScene("MainMenuState");
         return;
     }
 }
@@ -476,7 +476,7 @@ void OpenHubRooms(const NetplayOptions& o) {
 }
 
 std::string StageLabelOf(uint16_t stage) {
-    const std::string code = StageCode(stage);
+    const std::string code = FlowStageCode(stage);
     for (size_t i = 0; i < g_tables.stages.size(); i++) {
         if (g_tables.stages[i] == code) return i < g_tables.stageLabels.size() ? g_tables.stageLabels[i] : "";
         for (size_t k = 0; i < g_tables.settings.size() && k < g_tables.settings[i].size(); k++) {
@@ -612,7 +612,7 @@ void DrawHubScreens(bool takeInput) {
         if (in.back) CloseBattleLog();
         if (!in.watch.empty() && !g_logLaunch.active) {
             Log("battle log: watching %s", in.watch.c_str());
-            g_logLaunch = {true, BattleSceneSwitches(), ImGui::GetTime(), -1};
+            g_logLaunch = {true, FlowBattleSceneSwitches(), ImGui::GetTime(), -1};
             RequestReplayView(in.watch, in.watchTitle, [] { g_reopenLog = true; });
             if (!CurrentFrameDriver()) {
                 g_logLaunch = {};
@@ -621,7 +621,7 @@ void DrawHubScreens(bool takeInput) {
         }
         if (g_logLaunch.active) {
             const double now = ImGui::GetTime();
-            if (g_logLaunch.blackFrom < 0 && BattleSceneSwitches() != g_logLaunch.switchesAt) g_logLaunch.blackFrom = now;
+            if (g_logLaunch.blackFrom < 0 && FlowBattleSceneSwitches() != g_logLaunch.switchesAt) g_logLaunch.blackFrom = now;
             const double black = g_logLaunch.blackFrom < 0 ? 0 : std::min(1.0, (now - g_logLaunch.blackFrom) / kLaunchToBlack);
             if (black > 0) {
                 ImGui::GetForegroundDrawList()->AddRectFilled(ImVec2(0, 0), ImGui::GetIO().DisplaySize,

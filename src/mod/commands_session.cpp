@@ -35,7 +35,7 @@ std::string g_testName;
 std::string TestName() { return g_testName.empty() ? "Player " + std::to_string(StatusInstance() + 1) : g_testName; }
 
 void CanceljumpCommand(const std::string&, std::stringstream&) {
-    CancelBattleJump();
+    FlowCancelBattleJump();
 }
 
 void WheelCommand(const std::string&, std::stringstream& ss) {
@@ -248,7 +248,7 @@ void CrashCommand(const std::string&, std::stringstream& ss) {
     if (how == "thread") {
         std::thread([] { *reinterpret_cast<volatile int*>(16) = 1; }).detach();
     } else if (how == "overflow") {
-        RunOnGameThread([] {
+        FlowRunOnGameThread([] {
             struct Deep {
 #pragma warning(suppress : 4717) // endless on purpose
                 static int Down(volatile int n) {
@@ -260,24 +260,24 @@ void CrashCommand(const std::string&, std::stringstream& ss) {
             Deep::Down(0);
         });
     } else if (how == "hang") {
-        RunOnGameThread([] {
+        FlowRunOnGameThread([] {
             for (volatile bool spin = true; spin;) {
             }
         });
     } else if (how == "fastfail") {
-        RunOnGameThread([] { __fastfail(7); });
+        FlowRunOnGameThread([] { __fastfail(7); });
     } else if (how == "raise") {
-        RunOnGameThread([] { RaiseException(1, 0, 0, nullptr); });
+        FlowRunOnGameThread([] { RaiseException(1, 0, 0, nullptr); });
     } else if (how == "stub") {
-        RunOnGameThread([] {
+        FlowRunOnGameThread([] {
             static const char dll[] = "cabinet.dll";
             const ULONG_PTR args[2] = {reinterpret_cast<ULONG_PTR>(dll), 33};
             RaiseException(kWineStubException, EXCEPTION_NONCONTINUABLE, 2, args);
         });
     } else if (how == "exit") {
-        RunOnGameThread([] { TerminateProcess(GetCurrentProcess(), 3); });
+        FlowRunOnGameThread([] { TerminateProcess(GetCurrentProcess(), 3); });
     } else {
-        RunOnGameThread([] { *reinterpret_cast<volatile int*>(16) = 1; });
+        FlowRunOnGameThread([] { *reinterpret_cast<volatile int*>(16) = 1; });
     }
 }
 
@@ -391,7 +391,7 @@ void BurstonCommand(const std::string&, std::stringstream& ss) {
     int code = 5, frames = 300, scale = 4, count = 4;
     std::string dir;
     ss >> code >> dir >> frames >> scale >> count;
-    SetBurstOnEvent(code, dir, frames, scale, count);
+    FlowSetBurstOnEvent(code, dir, frames, scale, count);
 }
 
 void ShotburstCommand(const std::string&, std::stringstream& ss) {
@@ -424,9 +424,9 @@ void UisoundCommand(const std::string&, std::stringstream& ss) {
 void VoicelangCommand(const std::string&, std::stringstream& ss) {
     std::string what;
     ss >> what;
-    SetVoiceLanguageOverride(what == "ja" ? 0 : what == "en" ? 1
-                                                             : -1);
-    Log("voicelang: %s (Ryu speaks %d)", what.c_str(), VoiceLanguageFor("RYU"));
+    FlowSetVoiceLanguageOverride(what == "ja" ? 0 : what == "en" ? 1
+                                                                 : -1);
+    Log("voicelang: %s (Ryu speaks %d)", what.c_str(), FlowVoiceLanguageFor("RYU"));
 }
 
 void VsyncCommand(const std::string&, std::stringstream& ss) {
@@ -489,7 +489,7 @@ void OverlayCommand(const std::string&, std::stringstream& ss) {
 }
 
 void MenuCommand(const std::string&, std::stringstream&) {
-    ReturnToMainMenu(1);
+    FlowReturnToMainMenu(1);
 }
 
 void ReplayCommand(const std::string&, std::stringstream& ss) {
@@ -566,7 +566,7 @@ void RviewCommand(const std::string&, std::stringstream& ss) {
 void NextstageCommand(const std::string&, std::stringstream& ss) {
     std::string code;
     ss >> code;
-    SetPendingStage(code);
+    FlowSetPendingStage(code);
     Log("next stage: %s", code.empty() ? "(game's choice)" : code.c_str());
 }
 
@@ -585,15 +585,15 @@ void RandomstagesCommand(const std::string&, std::stringstream& ss) {
     std::mt19937_64 rng{std::random_device{}()};
     std::map<std::string, int> counts;
     for (int i = 0; i < n; i++) {
-        const int owned = RandomStage(rng(), true, o.randomOff), any = RandomStage(rng(), false);
-        counts["owned " + (owned < 0 ? std::string("none") : StageCode(owned))]++;
-        counts["any " + (any < 0 ? std::string("none") : StageCode(any))]++;
+        const int owned = FlowRandomStage(rng(), true, o.randomOff), any = FlowRandomStage(rng(), false);
+        counts["owned " + (owned < 0 ? std::string("none") : FlowStageCode(owned))]++;
+        counts["any " + (any < 0 ? std::string("none") : FlowStageCode(any))]++;
     }
     for (const auto& [code, count] : counts) Log("randomstages: %s %d", code.c_str(), count);
 }
 
 void BattlenowCommand(const std::string&, std::stringstream&) {
-    JumpToBattle();
+    FlowJumpToBattle();
 }
 
 void NetsimCommand(const std::string&, std::stringstream& ss) {
@@ -666,7 +666,7 @@ void PickCommand(const std::string&, std::stringstream& ss) {
         const uint32_t roll = static_cast<uint32_t>(GetTickCount64());
         std::string as;
         int silver = 0;
-        if (ElevenStandIn(roll, &as, &silver)) {
+        if (FlowElevenStandIn(roll, &as, &silver)) {
             o.pick = PlayerSetup{};
             o.pick.character = PackCode(as.c_str());
             o.pick.costume = static_cast<uint16_t>(silver);

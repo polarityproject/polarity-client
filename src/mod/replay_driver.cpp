@@ -184,12 +184,12 @@ public:
         if (!jumped_) {
             // A viewer restarted from inside a fight: its jump waits in the
             // game-thread queue, which nothing else runs there.
-            if (viewer_ || bench_) PumpGameThread();
+            if (viewer_ || bench_) FlowPumpGameThread();
             if (BattleCreationCount() == creationsAtJump_) return false;
             jumped_ = true;
             game.ForgetBattleObjects();
             game.BeginWarmup();
-            Log("replay: battle created (%s)", RoundEndState().c_str());
+            Log("replay: battle created (%s)", FlowRoundEndState().c_str());
         }
         if (!ready_) return Warmup(game);
         if (holdUntil_) {
@@ -252,7 +252,7 @@ private:
         const bool crossFight = crossFight_ && keys_[k].fight && wasFight_;
         if (g_anyKeys) return k; // research: every key loads
         // Since the round end wait's whole tail and the latest round's record
-        // follow loads (flow.cpp), any key from the first FIGHT on loads, from
+        // follow loads (flow_rounds.cpp), any key from the first FIGHT on loads, from
         // anywhere: across round ends, from between fights, from after the
         // match's last KO (seek tests on LAR vs NCL 364c0a17, 2026-11-10: 0
         // frames differing over every kind). Keys from the opening (before
@@ -279,7 +279,7 @@ private:
     // A round's fight still to come (as known: the file's rounds, or those
     // seen; not known yet: unless the match is decided).
     bool FightAhead() const {
-        if (MatchDecided()) return false;
+        if (FlowMatchDecided()) return false;
         const int shown = frame_ - 1;
         for (const ActionRange& r : ActionRanges()) {
             if (r.first > shown) return true;
@@ -326,7 +326,7 @@ private:
         if (!Valid(game)) return false;
         hudTicks_ = 0;
         if (frame_ == 0 && keys_.empty()) {
-            roundEndsSeen_ = RoundEndEvents();
+            roundEndsSeen_ = FlowRoundEndEvents();
             RecordBattleSounds(true); // for a restart to stop (Finish)
             Log("replay: viewing %s, %d frames%s", title_.c_str(), last_ + 1, startAt_ > 0 ? " (restarted)" : "");
             if (startAt_ > 0) {
@@ -373,7 +373,7 @@ private:
                 return false;
             }
             Publish();
-            PumpGameThread();
+            FlowPumpGameThread();
             return true;
         }
         if (restarting_) {
@@ -388,7 +388,7 @@ private:
             if (GetTickCount64() < koHoldUntil_) return false;
             const int pace = g_callPace;
             if (pace <= 0 || frame_ - runFrom < pace) return true;
-            const bool banner = RoundCallRunning() || (wasFight_ && !roundStarts_.empty() && frame_ - roundStarts_.back() <= g_callAfter);
+            const bool banner = FlowRoundCallRunning() || (wasFight_ && !roundStarts_.empty() && frame_ - roundStarts_.back() <= g_callAfter);
             return !banner;
         };
         if (target_ >= 0) {
@@ -411,8 +411,8 @@ private:
             // A jump back from between fights (Seek): on to the next fight
             // (waiting out a KO screen on the way), then the load.
             const ULONGLONG until = GetTickCount64() + 40;
-            while (!wasFight_ && frame_ <= last_ && GetTickCount64() < until && koScreenOver() && !MatchDecided()) Simulate(game, true);
-            if (wasFight_ || frame_ > last_ || MatchDecided()) {
+            while (!wasFight_ && frame_ <= last_ && GetTickCount64() < until && koScreenOver() && !FlowMatchDecided()) Simulate(game, true);
+            if (wasFight_ || frame_ > last_ || FlowMatchDecided()) {
                 const int target = std::exchange(runToFight_, -1);
                 if (wasFight_) Seek(game, target);
                 else RestartAt(game, target); // no fight came: the battle again
@@ -458,7 +458,7 @@ private:
         Publish();
         // The game-thread queue does not run in a driven fight (its pumps are
         // the scene tick and the pad poll): tasks asked for meanwhile run here.
-        PumpGameThread();
+        FlowPumpGameThread();
         return true;
     }
 
@@ -487,7 +487,7 @@ private:
     static constexpr int kTakeoverRunMax = 60 * 60;        // ticks behind the black looking for a fight
     static constexpr int kTakeoverWarm = 60;               // frames run in full before the start point (the camera)
     // The KO screen's ticks: within the per-tick copies a rollback restores
-    // from (flow.cpp kPhaseRing, 64): past them a load back diverged (997
+    // from (flow_rounds.cpp kPhaseRing, 64): past them a load back diverged (997
     // frames after a run on to the next round, 2026-11-09).
     static constexpr int kTakeoverKoTicks = 56;
 
@@ -531,7 +531,7 @@ private:
         t.start.fight = true;
         t.start.regions.resize(StateSize(game.Regions()));
         SaveRegions(game.Regions(), t.start.regions.data());
-        SaveOutsideState(&t.start.outside, keys_.empty() ? nullptr : &keys_.back().outside);
+        FlowSaveOutsideState(&t.start.outside, keys_.empty() ? nullptr : &keys_.back().outside);
         tk_ = std::move(t);
         paused_ = true;
         Log("replay: takeover of P%d from frame %d", tk_.side + 1, frame_ - 1);
@@ -559,7 +559,7 @@ private:
                 g_tickRound = CallsThrough(frame_ - 1);
                 game.Advance(in, false);
                 frame_++;
-                wasFight_ = RoundInFight();
+                wasFight_ = FlowRoundInFight();
                 if (!wasFight_) {
                     // The KO's state kept, as netplay saves before a tick: back to
                     // it after the KO screen as a rollback goes (the round's end
@@ -589,11 +589,11 @@ private:
                 // same from between fights), then the load; with no fight to
                 // come (the takeover decided the match), the battle again.
                 const ULONGLONG until = now + 40;
-                while (!wasFight_ && !MatchDecided() && tk_.ticks < kTakeoverRunMax && GetTickCount64() < until) TakeoverTick(game);
+                while (!wasFight_ && !FlowMatchDecided() && tk_.ticks < kTakeoverRunMax && GetTickCount64() < until) TakeoverTick(game);
                 if (wasFight_) TakeoverLoad(game);
-                else if (MatchDecided() || tk_.ticks >= kTakeoverRunMax) {
+                else if (FlowMatchDecided() || tk_.ticks >= kTakeoverRunMax) {
                     const int start = tk_.start.frame;
-                    Log("replay: no fight after the takeover's round (%s): the battle again to frame %d", MatchDecided() ? "the match decided" : "none came", start - 1);
+                    Log("replay: no fight after the takeover's round (%s): the battle again to frame %d", FlowMatchDecided() ? "the match decided" : "none came", start - 1);
                     tk_ = Takeover{};
                     paused_ = true;
                     RestartAt(game, start);
@@ -613,7 +613,7 @@ private:
         game.Advance(FrameInputs{}, false);
         frame_++;
         tk_.ticks++;
-        wasFight_ = RoundInFight();
+        wasFight_ = FlowRoundInFight();
     }
 
     void TakeoverFadeOut() {
@@ -634,7 +634,7 @@ private:
             LoadRegions(game.Regions(), tk_.ko.data());
             game.OnStateLoaded(tk_.koFrame - 1);
             frame_ = tk_.koFrame;
-            wasFight_ = RoundInFight();
+            wasFight_ = FlowRoundInFight();
             Log("replay: back at the takeover's KO frame %d (%d ticks after it undone)", frame_ - 1, tk_.ticks);
         }
         tk_.ticks = 0;
@@ -660,10 +660,10 @@ private:
         } else {
             const Keyframe& kept = tk_.start;
             LoadRegions(game.Regions(), kept.regions.data());
-            RestoreOutsideState(kept.outside);
+            FlowRestoreOutsideState(kept.outside);
             game.OnStateLoaded(kept.frame - 1);
             frame_ = kept.frame;
-            wasFight_ = RoundInFight();
+            wasFight_ = FlowRoundInFight();
             paused_ = true;
             tk_ = Takeover{};
             MuteGameSounds(false);
@@ -683,7 +683,7 @@ private:
         // nothing on screen, a KO's screen plays in real time anyway (a run
         // waits it out), and a step costs 0.3-0.9 ms (TestPC).
         if (viewer_ && hudTicks_++ > 0 &&
-            (RoundCallRunning() || (wasFight_ && !roundStarts_.empty() && frame_ - roundStarts_.back() <= kHudFightFrames))) {
+            (FlowRoundCallRunning() || (wasFight_ && !roundStarts_.empty() && frame_ - roundStarts_.back() <= kHudFightFrames))) {
             StepHudMovies(1.0f / 60.0f);
         }
         // (roundStarts_ may hold later rounds already: a restart keeps them.)
@@ -694,7 +694,7 @@ private:
             k.fight = wasFight_;
             k.regions.resize(StateSize(game.Regions()));
             SaveRegions(game.Regions(), k.regions.data());
-            if (!SaveOutsideState(&k.outside, keys_.empty() ? nullptr : &keys_.back().outside) && keyWarnings_++ < 3) {
+            if (!FlowSaveOutsideState(&k.outside, keys_.empty() ? nullptr : &keys_.back().outside) && keyWarnings_++ < 3) {
                 Log("replay: keyframe at frame %d without the phase machine", frame_);
             }
             keys_.push_back(std::move(k));
@@ -705,7 +705,7 @@ private:
         if (!wasFight_ && firstPass) {
             scratch_.regions.resize(StateSize(game.Regions()));
             SaveRegions(game.Regions(), scratch_.regions.data());
-            SaveOutsideState(&scratch_.outside, keys_.empty() ? nullptr : &keys_.back().outside);
+            FlowSaveOutsideState(&scratch_.outside, keys_.empty() ? nullptr : &keys_.back().outside);
             scratch_.frame = frame_;
         }
         // Lean only in a round's fight, as rollbacks run: the intro, the round
@@ -717,16 +717,16 @@ private:
         game.Advance(rf_.inputs[frame_], lean && wasFight_);
         if (postLoadLogs_ > 0) {
             postLoadLogs_--;
-            Log("replay: frame %d after the load: %s, battle frame stop flags %08X %08X", frame_, RoundEndState().c_str(),
+            Log("replay: frame %d after the load: %s, battle frame stop flags %08X %08X", frame_, FlowRoundEndState().c_str(),
                 game.BattleFrameObject() ? *reinterpret_cast<const uint32_t*>(game.BattleFrameObject() + 0x190) : 0u,
                 game.BattleFrameObject() ? *reinterpret_cast<const uint32_t*>(game.BattleFrameObject() + 0x194) : 0u);
         }
         CheckFrame(game, frame_);
-        const bool fight = RoundInFight();
+        const bool fight = FlowRoundInFight();
         if (fight && !wasFight_ && (roundStarts_.empty() || roundStarts_.back() < frame_)) {
             roundStarts_.push_back(frame_);
         }
-        const bool call = RoundCallRunning();
+        const bool call = FlowRoundCallRunning();
         if (call && !wasCall_ && (roundCalls_.empty() || roundCalls_.back() < frame_)) roundCalls_.push_back(frame_);
         if (call && !wasCall_ && scratch_.frame == frame_) {
             // The state before the call's tick: a keyframe (a round jump loads
@@ -752,7 +752,7 @@ private:
             koMs_ = GetTickCount64();
             if (lean) Log("replay: a run passed the KO at frame %d", frame_);
         }
-        if (const uint32_t ends = RoundEndEvents(); ends != roundEndsSeen_) {
+        if (const uint32_t ends = FlowRoundEndEvents(); ends != roundEndsSeen_) {
             roundEndsSeen_ = ends;
             if (lean && koMs_) koHoldUntil_ = koMs_ + kKoScreenMs;
         }
@@ -812,15 +812,15 @@ private:
             }
             const Keyframe& key = keys_[k];
             LoadRegions(game.Regions(), key.regions.data());
-            RestoreOutsideState(key.outside);
+            FlowRestoreOutsideState(key.outside);
             game.OnStateLoaded(key.frame - 1);
             frame_ = key.frame;
-            wasFight_ = RoundInFight();
+            wasFight_ = FlowRoundInFight();
             seeks_++;
             logged_ = 0; // each load logs its own first differing frames
             Log("replay: loaded the keyframe of frame %d (%s, %s)", key.frame, key.fight ? "fight" : key.call ? "round call"
                                                                                                               : "between fights",
-                RoundEndState().c_str());
+                FlowRoundEndState().c_str());
             postLoadLogs_ = 4;
         }
         target_ = target;
@@ -986,7 +986,7 @@ private:
         const int round = static_cast<int>(next - roundCalls_.begin());
         const int rounds = static_cast<int>(std::count_if(rf_.summary.rounds.begin(), rf_.summary.rounds.end(), [](const RoundResult& r) { return r.fightFrame >= 0; }));
         if (rounds > 0) return round < rounds;
-        return frame_ <= last_ && !MatchDecided();
+        return frame_ <= last_ && !FlowMatchDecided();
     }
 
     // LB: the previous round's call while this round's has just begun (its
@@ -1034,7 +1034,7 @@ private:
     static constexpr ULONGLONG kKoScreenMs = 1500;
     ULONGLONG koMs_ = 0;         // when the last KO was simulated
     ULONGLONG koHoldUntil_ = 0;  // a run waits until then
-    uint32_t roundEndsSeen_ = 0; // RoundEndEvents as of the last tick
+    uint32_t roundEndsSeen_ = 0; // FlowRoundEndEvents as of the last tick
     int target_ = -1;            // seeking: the frame to simulate next once there
     int fast_ = 0;               // frames a rendered frame while playing (0, 1: as played)
     int keyWarnings_ = 0;
@@ -1061,7 +1061,7 @@ private:
         game.latchEachTick = stress_ > 0 || delay_ > 0 || BuildAdapterVersion(rf_.gameBuild) >= 9;
         if (const int latch = g_latch.exchange(-1); latch >= 0) game.latchEachTick = latch != 0;
         if (!game.latchEachTick) Log("replay: %s predates adapter-9: the game's own pad latch", rf_.gameBuild.c_str());
-        SetRoundDirectorPerTick(true, true);
+        FlowSetRoundDirectorPerTick(true, true);
         SetMatchDrawSeed(rf_.setup.seed);
         game.Recanonicalize();
         std::vector<uint64_t> hashes(CheckRegions(game).size());
@@ -1089,7 +1089,7 @@ private:
         }
         const int differ = Compare(game, hashes.data(), rf_.initialHashes.data(), -1);
         Log("replay: battle objects ready after %d neutral ticks (%s); state before frame 0 %s", game.ObjectsAt(),
-            RoundEndState().c_str(),
+            FlowRoundEndState().c_str(),
             differ ? ("differs in " + std::to_string(differ) + " regions").c_str() : "equal");
         if (viewer_) FindHudMovies(); // a run's ticks step them (Simulate)
         // The loaded move data against the game's own (the benchmark's
@@ -1151,7 +1151,7 @@ private:
             Finish(game);
             return false;
         }
-        if (frame_ == 0) Log("replay: frame 0 is driven tick %u", DrivenTicks() + 1);
+        if (frame_ == 0) Log("replay: frame 0 is driven tick %u", FlowDrivenTicks() + 1);
         game.Advance(rf_.inputs[frame_], false);
         CheckFrame(game, frame_);
         WatchFrame(game, frame_);
@@ -1185,7 +1185,7 @@ private:
                 Finish(game);
                 return false;
             }
-            const bool fight = RoundInFight();
+            const bool fight = FlowRoundInFight();
             if (fight && !benchCapturing_ && !benchMeasured_) {
                 hitch::BeginCapture();
                 benchCapturing_ = true;
@@ -1210,7 +1210,7 @@ private:
             Finish(game);
             return false;
         }
-        if (session_->NextFrame() == 0) Log("replay: frame 0 is driven tick %u", DrivenTicks() + 1);
+        if (session_->NextFrame() == 0) Log("replay: frame 0 is driven tick %u", FlowDrivenTicks() + 1);
         session_->Update();
         // The state now is the end of the newest frame (after its
         // resimulation): it must equal the recording too.
@@ -1239,7 +1239,7 @@ private:
             return false;
         }
         if (f == 0) {
-            Log("replay: frame 0 is driven tick %u; P%d's inputs arrive %d frames late", DrivenTicks() + 1, remote_ + 1,
+            Log("replay: frame 0 is driven tick %u; P%d's inputs arrive %d frames late", FlowDrivenTicks() + 1, remote_ + 1,
                 delay_);
             ring_.assign(delay_ + 2, std::vector<uint8_t>(StateSize(game.Regions())));
             used_.assign(last_ + 1, FrameInputs{});
@@ -1326,7 +1326,7 @@ private:
             if (t.region == "director") {
                 // The round director itself (not a region: flow.round copies
                 // parts of it), e.g. its counts at +0x11128.
-                uint8_t* d = RoundDirector();
+                uint8_t* d = FlowRoundDirector();
                 if (!d) {
                     Log("replay: trap: no round director");
                     continue;
@@ -1381,7 +1381,7 @@ private:
         std::vector<uint64_t> hashes(game.Regions().size());
         HashRegions(game.Regions(), hashes.data());
         Log("replay: watch frame %d: %s %s | %s | state %08x | camera %s", f, watchRegion_.c_str(), bytes.c_str(),
-            RoundEndState().c_str(), FoldChecksum(hashes.data(), hashes.size()), CameraText().c_str());
+            FlowRoundEndState().c_str(), FoldChecksum(hashes.data(), hashes.size()), CameraText().c_str());
     }
 
     // `watch <from> <to> trails` (research, finding 33): the motion trail
@@ -1779,7 +1779,7 @@ private:
         const std::string restartPath = path_, restartTitle = title_;
         const RestartPending restartWith{startAt_, paused_, fast_, roundStarts_, roundEnds_, roundCalls_};
         const bool restart = viewer_ && restarting_;
-        SetRoundDirectorPerTick(false, false);
+        FlowSetRoundDirectorPerTick(false, false);
         InputIsolatePads(false);
         // Stress: frames whose resimulation differed outside the presentation clocks.
         const int stressDesyncs = static_cast<int>(stressFrames_.size());
@@ -1823,7 +1823,7 @@ private:
         } else if (viewer) {
             // Straight to the menus (this is the game thread; the queue a
             // later return goes through does not run mid-fight).
-            ChangeScene("MainMenuState");
+            FlowChangeScene("MainMenuState");
             if (leave) leave();
         }
     }
@@ -2017,8 +2017,8 @@ void RequestReplay(const std::string& path, int stressDistance, int watchFrom, i
     // other player recolored, core/look.h), so its frozen state hashes the
     // same; the host's view for a recording made outside a session.
     SetPendingSetup(ShownSetup(rf.setup, rf.localPlayer == 1 ? 1 : 0, GameLookRules()));
-    SetPendingStage(rf.setup.stage == kKeepStage ? "" : StageCode(rf.setup.stage));
-    Log("replay: stage %s", rf.setup.stage == kKeepStage ? "as prepared" : StageCode(rf.setup.stage).c_str());
+    FlowSetPendingStage(rf.setup.stage == kKeepStage ? "" : FlowStageCode(rf.setup.stage));
+    Log("replay: stage %s", rf.setup.stage == kKeepStage ? "as prepared" : FlowStageCode(rf.setup.stage).c_str());
     auto* driver = new ReplayDriver(std::move(rf), name, stressDistance, watchFrom, watchTo, watchRegion);
     if (benchmark) driver->SetBenchmark();
     if (!viewTitle.empty()) {
@@ -2038,11 +2038,11 @@ void RequestReplay(const std::string& path, int stressDistance, int watchFrom, i
     if (jumpNow) {
         // A viewer's restart, on the game thread from inside the battle (where
         // the game-thread queue does not run): the characters are loaded.
-        JumpToBattle();
+        FlowJumpToBattle();
         return;
     }
     if (!preload) picks.clear();
-    PreloadCharacters(std::move(picks), [] { JumpToBattle(); });
+    FlowPreloadCharacters(std::move(picks), [] { FlowJumpToBattle(); });
 }
 
 } // namespace sfv::mod

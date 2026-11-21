@@ -31,7 +31,7 @@ void WatchnameCommand(const std::string&, std::stringstream& ss) {
 
 void WatchphaseCommand(const std::string&, std::stringstream&) {
     constexpr uint32_t kRequestedPhaseOff = 0x134;
-    uint8_t* m = PhaseMachineObject();
+    uint8_t* m = FlowPhaseMachineObject();
     if (!m) Log("watchphase: no phase machine");
     else Log("watchphase: %s", ArmWatch(1, m + kRequestedPhaseOff, 4, ImageBase()) ? "armed on the requested phase" : "not armed");
 }
@@ -39,33 +39,33 @@ void WatchphaseCommand(const std::string&, std::stringstream&) {
 void CamrollbackCommand(const std::string& cmd, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    if (cmd == "camlog") RunOnGameThread([on] { SetCameraRollbackLog(on != 0); });
-    else RunOnGameThread([on] { SetCameraRollback(on != 0); });
+    if (cmd == "camlog") FlowRunOnGameThread([on] { SetCameraRollbackLog(on != 0); });
+    else FlowRunOnGameThread([on] { SetCameraRollback(on != 0); });
 }
 
 void HudstepCommand(const std::string&, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    RunOnGameThread([on] { SetHudStep(on); });
+    FlowRunOnGameThread([on] { SetHudStep(on); });
 }
 
 void CamtraceCommand(const std::string&, std::stringstream& ss) {
     uint32_t from = 0, to = 0;
     std::string text = "Camera";
     ss >> from >> to >> text;
-    RunOnGameThread([=] { TraceCameraObjects(from, to, text); });
+    FlowRunOnGameThread([=] { TraceCameraObjects(from, to, text); });
 }
 
 void CinelogCommand(const std::string&, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    RunOnGameThread([on] { LogCinematics(on); });
+    FlowRunOnGameThread([on] { LogCinematics(on); });
 }
 
 void ActorlogCommand(const std::string&, std::stringstream& ss) {
     int ticks = 120;
     ss >> ticks;
-    RunOnGameThread([ticks] { LogActors(ticks); });
+    FlowRunOnGameThread([ticks] { LogActors(ticks); });
 }
 
 void RcmpCommand(const std::string&, std::stringstream& ss) {
@@ -73,7 +73,7 @@ void RcmpCommand(const std::string&, std::stringstream& ss) {
     ss >> a >> b >> f >> t;
     auto hex = [](const std::string& s) { return s.rfind('-', 0) == 0 ? -std::stoll(s.substr(1), nullptr, 16) : std::stoll(s, nullptr, 16); };
     const long long from = hex(f), to = hex(t);
-    RunOnGameThread([=] { CompareRegions(a, b, from, to); });
+    FlowRunOnGameThread([=] { CompareRegions(a, b, from, to); });
 }
 
 void RpeekCommand(const std::string&, std::stringstream& ss) {
@@ -81,18 +81,18 @@ void RpeekCommand(const std::string&, std::stringstream& ss) {
     int qwords = 4;
     ss >> name >> off >> qwords;
     const long long offset = off.rfind('-', 0) == 0 ? -std::stoll(off.substr(1), nullptr, 16) : std::stoll(off, nullptr, 16);
-    RunOnGameThread([=] { PeekRegion(name, offset, qwords); });
+    FlowRunOnGameThread([=] { PeekRegion(name, offset, qwords); });
 }
 
 void PtrscanCommand(const std::string&, std::stringstream& ss) {
     std::string from, to;
     size_t before = 0, after = 0;
     ss >> from >> std::hex >> before >> after >> std::dec >> to;
-    RunOnGameThread([=] { ScanForPointers(from, before, after, to); });
+    FlowRunOnGameThread([=] { ScanForPointers(from, before, after, to); });
 }
 
 void RsnapCommand(const std::string&, std::stringstream&) {
-    RunOnGameThread([] { SnapRegions(); });
+    FlowRunOnGameThread([] { SnapRegions(); });
 }
 
 void BoxlogCommand(const std::string&, std::stringstream& ss) {
@@ -117,7 +117,7 @@ void WinsizeCommand(const std::string&, std::stringstream& ss) {
 void FtraceCommand(const std::string&, std::stringstream& ss) {
     int ticks = 600;
     ss >> ticks;
-    RunOnGameThread([ticks] { TraceRegions(ticks); });
+    FlowRunOnGameThread([ticks] { TraceRegions(ticks); });
 }
 
 void FreezeCommand(const std::string&, std::stringstream& ss) {
@@ -135,7 +135,7 @@ void FramemeterCommand(const std::string&, std::stringstream& ss) {
 void BattledataCommand(const std::string&, std::stringstream& ss) {
     std::string what;
     ss >> what;
-    if (what == "dump") RunOnGameThread([] { DumpLoadedBattleData(); });
+    if (what == "dump") FlowRunOnGameThread([] { DumpLoadedBattleData(); });
     else CheckBattleDataSoon("asked");
     Log("battledata: mod paks: %s", ScanModPaks().Text().c_str());
 }
@@ -155,25 +155,25 @@ void HitboxesCommand(const std::string&, std::stringstream& ss) {
 void RdumpCommand(const std::string&, std::stringstream& ss) {
     std::string name, tag;
     ss >> name >> tag;
-    RunOnGameThread([=] { DumpRegion(name, tag); });
+    FlowRunOnGameThread([=] { DumpRegion(name, tag); });
 }
 
 void RdiffCommand(const std::string&, std::stringstream& ss) {
     std::string mode = "side", prefix;
     ss >> mode >> prefix;
-    RunOnGameThread([mode, prefix] { DiffRegions(mode, prefix); });
+    FlowRunOnGameThread([mode, prefix] { DiffRegions(mode, prefix); });
 }
 
 void DumpbacCommand(const std::string&, std::stringstream& ss) {
     std::string name;
     ss >> name;
-    RunOnGameThread([name] { DumpMoveFile(name); });
+    FlowRunOnGameThread([name] { DumpMoveFile(name); });
 }
 
 void RfindCommand(const std::string&, std::stringstream& ss) {
     std::string kind, a, b;
     ss >> kind >> a >> b;
-    RunOnGameThread([kind, a, b] { FindInRegions(kind, a, b); });
+    FlowRunOnGameThread([kind, a, b] { FindInRegions(kind, a, b); });
 }
 
 void WarmupsleepCommand(const std::string&, std::stringstream& ss) {
@@ -196,7 +196,7 @@ void WatchcameraCommand(const std::string&, std::stringstream& ss) {
 }
 
 void EmptystageCommand(const std::string&, std::stringstream&) {
-    TestEmptyStageRequest();
+    FlowTestEmptyStageRequest();
     Log("control: the next jump's stage request is emptied (test)");
 }
 
@@ -233,7 +233,7 @@ void ResimtasksCommand(const std::string&, std::stringstream& ss) {
         if (word[0] == 'v') rvas.push_back(kResimTaskByClass | static_cast<uintptr_t>(std::stoull(word.substr(1), nullptr, 16)));
         else rvas.push_back(static_cast<uintptr_t>(std::stoull(word, nullptr, 16)));
     }
-    SetResimTaskSkip(standard ? DefaultLeanResimTasks() : std::move(rvas));
+    FlowSetResimTaskSkip(standard ? FlowDefaultLeanResimTasks() : std::move(rvas));
 }
 
 void ResimskipCommand(const std::string&, std::stringstream& ss) {
@@ -267,7 +267,7 @@ void StartprobeCommand(const std::string&, std::stringstream&) {
 void SoundrollbackCommand(const std::string&, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    SetSoundRollback(on != 0);
+    FlowSetSoundRollback(on != 0);
 }
 
 void FrameidsCommand(const std::string&, std::stringstream& ss) {
@@ -281,7 +281,7 @@ void LeanresimCommand(const std::string&, std::stringstream& ss) {
     int on = 1;
     ss >> on;
     SetLeanResim(on != 0);
-    SetResimTaskSkip(on ? DefaultLeanResimTasks() : std::vector<uintptr_t>{});
+    FlowSetResimTaskSkip(on ? FlowDefaultLeanResimTasks() : std::vector<uintptr_t>{});
     Log("resim: replayed ticks %s", on ? "without presentation the newest tick makes up for" : "each a whole battle update");
 }
 
@@ -299,13 +299,13 @@ void ForcerollbackCommand(const std::string&, std::stringstream& ss) {
 void PtrtestCommand(const std::string&, std::stringstream& ss) {
     std::string how;
     ss >> how;
-    SetLegacyPointerTest(how == "old");
+    FlowSetLegacyPointerTest(how == "old");
 }
 
 void KowaitmodeCommand(const std::string&, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    SetKoWaitRollback(on != 0);
+    FlowSetKoWaitRollback(on != 0);
 }
 
 void SoundlogCommand(const std::string&, std::stringstream& ss) {
@@ -349,7 +349,7 @@ void WatchregionCommand(const std::string&, std::stringstream& ss) {
 }
 
 void RoundinfoCommand(const std::string&, std::stringstream&) {
-    RunOnGameThread([] { LogRoundInfo(); });
+    FlowRunOnGameThread([] { FlowLogRoundInfo(); });
 }
 
 void RegionsCommand(const std::string&, std::stringstream& ss) {
@@ -359,13 +359,13 @@ void RegionsCommand(const std::string&, std::stringstream& ss) {
 }
 
 void PhasesCommand(const std::string&, std::stringstream&) {
-    LogPhaseMachine();
+    FlowLogPhaseMachine();
 }
 
 void TasklistCommand(const std::string&, std::stringstream& ss) {
     int calls = 3000;
     ss >> calls;
-    TaskCensus(calls);
+    FlowTaskCensus(calls);
 }
 
 void OutsidetestCommand(const std::string&, std::stringstream& ss) {

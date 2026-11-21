@@ -108,7 +108,7 @@ std::string SessionActivityText() {
     };
     char b[160];
     std::snprintf(b, sizeof(b), "up%lldm,battles%llu,match%d,replay%d,training%d,bench%d,desync%d", minutes,
-                  static_cast<unsigned long long>(BattleSceneSwitches()), count("match"), count("replay"), count("training"),
+                  static_cast<unsigned long long>(FlowBattleSceneSwitches()), count("match"), count("replay"), count("training"),
                   count("benchmark"), count("desync"));
     return b;
 }

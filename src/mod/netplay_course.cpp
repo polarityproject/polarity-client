@@ -90,7 +90,7 @@ void NetplayDriver::Transitions() {
         FinishMatch(game_, next == Next::End || next == Next::Lobby);
         if (next == Next::Lobby) {
             Log("netplay: back to the lobby during the jump: calling it off");
-            CancelBattleJump();
+            FlowCancelBattleJump();
             ReturnToMenuOnceBattleRuns(game_, switchesAtJump_, NoBattle::Stay);
         }
     }
@@ -115,7 +115,7 @@ void NetplayDriver::Transitions() {
             SetState(State::Lobby);
             if (host_ && ticket_.after == AfterMatch::Set) SetStageLocked(false);
             if (game_.BattleRunning()) {
-                SetHoldResults(true);
+                FlowSetHoldResults(true);
                 holdOverResults_ = true;
                 SetFrameDriver(this);
                 InputIsolatePads(true);
@@ -126,12 +126,12 @@ void NetplayDriver::Transitions() {
             const State before = GetState();
             ReleaseResults();
             SetState(State::Ended);
-            if (!options_.menuAfterMatch) SetHoldResults(false);
+            if (!options_.menuAfterMatch) FlowSetHoldResults(false);
             if (options_.menuAfterMatch && (before == State::Jumping || before == State::Loading)) {
                 Log("netplay: the session ended during a jump: back to the menu once its battle is up");
                 ReturnToMenuOnceBattleRuns(game_, switchesAtJump_, NoBattle::Menu);
             } else if (options_.menuAfterMatch && game_.BattleRunning()) {
-                ReturnToMainMenu(kMenuAfterMatchFrames);
+                FlowReturnToMainMenu(kMenuAfterMatchFrames);
             }
             if (weyve_) weyve_->LeaveRoom();
             break;
@@ -160,10 +160,10 @@ void NetplayDriver::EndSessionFor(const std::string& why, const std::string& the
 bool NetplayDriver::LacksVersion(const MatchSetup& s, std::string* here, std::string* there) {
     for (const PlayerSetup& p : s.players) {
         const std::string code = UnpackCode(p.character);
-        if (p.version < 0 || HasCharaVersion(code, p.version)) continue;
-        const int index = CharaIndex(code);
-        const std::string name = index >= 0 ? CharaName(index) : code;
-        const int newest = NewestLocalVersion(code);
+        if (p.version < 0 || FlowHasCharaVersion(code, p.version)) continue;
+        const int index = FlowCharaIndex(code);
+        const std::string name = index >= 0 ? FlowCharaName(index) : code;
+        const int newest = FlowNewestLocalVersion(code);
         Log("netplay: this game lacks %s version %d (its newest: %d)", code.c_str(), p.version, newest);
         *here = "this game lacks " + name + "'s final version (" + std::to_string(p.version) + ", newest here " +
                 std::to_string(newest) + "): verify the game files in Steam";
@@ -237,7 +237,7 @@ PlayerSetup NetplayDriver::RollEleven(const PlayerSetup& before) {
     std::string code;
     int costume = 0;
     for (int tries = 0; tries < 8; tries++) {
-        if (!ElevenStandIn(static_cast<uint32_t>(rng_()), &code, &costume)) return before;
+        if (!FlowElevenStandIn(static_cast<uint32_t>(rng_()), &code, &costume)) return before;
         if (PackCode(code.c_str()) != before.character) break;
     }
     PlayerSetup p;
@@ -259,7 +259,7 @@ MatchSetup NetplayDriver::ChooseSetup(bool rematch) {
             p.vtrigger = static_cast<uint8_t>(rng_() % 2);
             p.comment = 0;
         }
-        const int stage = RandomStage(rng_(), false);
+        const int stage = FlowRandomStage(rng_(), false);
         s.stage = stage < 0 ? kKeepStage : static_cast<uint16_t>(stage);
     } else {
         MatchSetup current;
@@ -281,11 +281,11 @@ MatchSetup NetplayDriver::ChooseSetup(bool rematch) {
         const uint16_t rule = StageRule();
         s.stage = rule == lobby::kAnyStage ? kKeepStage : rule;
         if (rule == lobby::kRandomStage) {
-            const int stage = RandomStage(rng_(), true, options_.randomOff);
+            const int stage = FlowRandomStage(rng_(), true, options_.randomOff);
             s.stage = stage < 0 ? kKeepStage : static_cast<uint16_t>(stage);
         }
     }
-    for (auto& p : s.players) p.version = static_cast<int16_t>(FinalCharaVersion(UnpackCode(p.character)));
+    for (auto& p : s.players) p.version = static_cast<int16_t>(FlowFinalCharaVersion(UnpackCode(p.character)));
     ApplyRulesToSetup(ticket_.rules, &s);
     s.seed = rng_();
     return s;

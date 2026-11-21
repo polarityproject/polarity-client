@@ -91,7 +91,7 @@ std::string Name(const void* object) {
 void LogRequest(const char* what, const Request& r) {
     if (!g_log || g_logs++ > 2000) return;
     Log("camera: %s: tick %u%s%s phase %d, %s -> %s, blend %.3f (function %u), now view %s pending %s, to go %.3f", what, r.tick,
-        r.inTick ? "" : " (outside a tick)", InReplayedTick() ? " replayed" : "", SchedulerPhaseNow(), Name(r.manager).c_str(),
+        r.inTick ? "" : " (outside a tick)", InReplayedTick() ? " replayed" : "", FlowSchedulerPhaseNow(), Name(r.manager).c_str(),
         Name(r.target).c_str(), r.transition.blendTime, r.transition.function, Name(At<void*>(r.manager, kViewTarget)).c_str(),
         Name(At<void*>(r.manager, kPendingTarget)).c_str(), At<float>(r.manager, kBlendTimeToGo));
 }
@@ -101,7 +101,7 @@ void SetViewTargetDetour(uint8_t* manager, void* target, const Transition* trans
         g_origSetViewTarget(manager, target, transition);
         return;
     }
-    const Request r{manager, DrivenTicks(), target, *transition, g_inTick};
+    const Request r{manager, FlowDrivenTicks(), target, *transition, g_inTick};
     if (r.inTick) {
         // The same request at the same tick as before the load: let off while
         // its effect is still on screen (a blend under way keeps its
@@ -180,7 +180,7 @@ void CameraLoaded(uint32_t tick) {
 
 void CameraFrameEnd() {
     if (!g_on) return;
-    const uint32_t now = DrivenTicks();
+    const uint32_t now = FlowDrivenTicks();
     // Requests the new timeline did not make again are forgotten: the game's
     // camera task puts the view right itself in the resimulated ticks (it
     // asks again, with no blend, for what the loaded state has: a throw

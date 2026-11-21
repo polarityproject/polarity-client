@@ -115,7 +115,7 @@ void LoadTextures() {
         g_texBatchMs += ms;
         g_texSlowestMs = std::max(g_texSlowestMs, ms);
     }
-    RunOnGameThread(LoadTextures); // the rest next frame
+    FlowRunOnGameThread(LoadTextures); // the rest next frame
 }
 
 const TextureView* Texture(const std::string& path) {
@@ -141,7 +141,7 @@ const TextureView* Texture(const std::string& path) {
     g_texQueue.push_back(path);
     if (!g_texLoading) {
         g_texLoading = true;
-        RunOnGameThread(LoadTextures);
+        FlowRunOnGameThread(LoadTextures);
     }
     return nullptr;
 }

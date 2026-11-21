@@ -105,12 +105,12 @@ const char* RejectText(lobby::RejectReason r) {
 }
 
 void ReturnToMenuOnceBattleRuns(SfvGame& game, uint64_t switchesAtJump, NoBattle none, int framesLeft) {
-    RunOnGameThreadAfter(10, [&game, switchesAtJump, none, framesLeft] {
-        if (BattleSceneSwitches() > switchesAtJump + 1 || CurrentFrameDriver()) return;
-        if (BattleSceneSwitches() != switchesAtJump && game.BattleRunning()) {
+    FlowRunOnGameThreadAfter(10, [&game, switchesAtJump, none, framesLeft] {
+        if (FlowBattleSceneSwitches() > switchesAtJump + 1 || CurrentFrameDriver()) return;
+        if (FlowBattleSceneSwitches() != switchesAtJump && game.BattleRunning()) {
             Log("netplay: the battle of the session that ended during its jump runs: back to the menu");
             ClearPendingSetup();
-            ReturnToMainMenu(1);
+            FlowReturnToMainMenu(1);
             return;
         }
         if (framesLeft > 10) {
@@ -120,7 +120,7 @@ void ReturnToMenuOnceBattleRuns(SfvGame& game, uint64_t switchesAtJump, NoBattle
         ClearPendingSetup();
         if (none == NoBattle::Menu) {
             Log("netplay: no battle after the ended session's jump: back to the menu");
-            ReturnToMainMenu(1);
+            FlowReturnToMainMenu(1);
         }
     });
 }
@@ -289,7 +289,7 @@ void NetplayDriver::SetStage(const std::string& code) {
         Log("netplay: the stage is locked in (ready)");
         return;
     }
-    const int index = code.empty() || code == "random" ? -1 : StageIndex(code);
+    const int index = code.empty() || code == "random" ? -1 : FlowStageIndex(code);
     hostStageRule_ = code == "random" ? lobby::kRandomStage : index >= 0 ? index
                                                                          : lobby::kAnyStage;
     Log("netplay: stage %s", code.empty() ? "as prepared" : code.c_str());
@@ -393,7 +393,7 @@ void NetplayDriver::Stop() {
     InputIsolatePads(false);
     game_.localInput = nullptr;
     game_.exclusiveTicks = false;
-    SetRoundDirectorPerTick(false, false);
+    FlowSetRoundDirectorPerTick(false, false);
     if (session_) {
         const ReplayFile rf = WithSummary(session_->Recording(), true);
         const auto rb = session_->RollbackStats();
@@ -432,7 +432,7 @@ void NetplayDriver::Stop() {
 bool NetplayDriver::OnFrame(SfvGame& game) {
     if (holdOverResults_ && !matchLive_) return true;
     if (next_ != Next::None && matchLive_) {
-        const bool watchOn = role_ == Role::Spectator && spectate_ && next_ != Next::End && !MatchDecided() && !switchNow_;
+        const bool watchOn = role_ == Role::Spectator && spectate_ && next_ != Next::End && !FlowMatchDecided() && !switchNow_;
         if (!watchOn) {
             FinishMatch(game);
             return false;
@@ -622,7 +622,7 @@ void EndForNewSession() {
         had = g_driver != nullptr;
     }
     Replace(nullptr);
-    if (had && g_options.menuAfterMatch && g_game && g_game->BattleRunning()) ReturnToMainMenu(1);
+    if (had && g_options.menuAfterMatch && g_game && g_game->BattleRunning()) FlowReturnToMainMenu(1);
 }
 
 } // namespace
@@ -633,7 +633,7 @@ void NetInstall(SfvGame* game, const std::wstring& reportDir, const std::string&
     g_game = game;
     g_reportDir = reportDir;
     g_modVersion = modVersion;
-    SetPreloadSource([] {
+    FlowSetPreloadSource([] {
         std::vector<PreloadPick> picks;
         {
             std::unique_lock lock(g_driverMutex, std::try_to_lock);
@@ -683,7 +683,7 @@ void NetJoin(const std::string& code, const NetplayOptions& options, bool specta
 
 void NetLeave() {
     Replace(nullptr);
-    if (g_options.menuAfterMatch && g_game && g_game->BattleRunning()) ReturnToMainMenu(1);
+    if (g_options.menuAfterMatch && g_game && g_game->BattleRunning()) FlowReturnToMainMenu(1);
     SetStatus("");
     Log("netplay: left");
 }

@@ -3,7 +3,7 @@
 namespace sfv::mod::overlay {
 
 bool OnMenuScreen() {
-    const std::string scene = CurrentScene();
+    const std::string scene = FlowCurrentScene();
     return !scene.empty() && scene != "BootState" && scene != "InitialState" && scene.find("Battle") == std::string::npos;
 }
 
@@ -110,7 +110,7 @@ void Draw(IDXGISwapChain* swapChain) {
     static bool bootWarmed = false;
     if (!bootWarmed && g_tables.loaded && OnMenuScreen()) {
         bootWarmed = true;
-        RunOnGameThread([data = PreviewSelectData()] {
+        FlowRunOnGameThread([data = PreviewSelectData()] {
             ProfileFavorites favorites;
             ReadProfileFavorites(&favorites);
             WarmBootTextures(data, favorites.chara, favorites.stage);
@@ -217,9 +217,9 @@ void Draw(IDXGISwapChain* swapChain) {
     const double now = ImGui::GetTime();
     if (lobby) {
         holding = true;
-        switchesAtJump = BattleSceneSwitches();
+        switchesAtJump = FlowBattleSceneSwitches();
         blackFrom = -1;
-    } else if (holding && phase == NetView::Phase::Jumping && BattleSceneSwitches() != switchesAtJump) {
+    } else if (holding && phase == NetView::Phase::Jumping && FlowBattleSceneSwitches() != switchesAtJump) {
         holding = false;
         blackFrom = now;
     } else if (holding && phase != NetView::Phase::Jumping) {

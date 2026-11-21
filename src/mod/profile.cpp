@@ -16,8 +16,8 @@ namespace {
 // KWUserProfileDetails.
 constexpr size_t kIsMainUser = 0x28;          // bit 0
 constexpr size_t kFavorites = 0x68;           // KWFavoriteBattleSettings
-constexpr size_t kFavoriteChara = kFavorites; // FString CharaCode
-constexpr size_t kFavoriteStage = 0x90;       // FString StageCode
+constexpr size_t kFavoriteChara = kFavorites; // FString FlowCharaCode
+constexpr size_t kFavoriteStage = 0x90;       // FString FlowStageCode
 constexpr size_t kCharaSettings = 0xA0;       // TArray of 0x38-byte entries
 constexpr size_t kRandomMask = 0x108;         // KWRandomStageSelectSetting: MaskStageCodes TArray<FString>
 constexpr size_t kProfileSize = 0x118;

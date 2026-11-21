@@ -196,7 +196,7 @@ void SfvGame::OnInputUnit(uint8_t* inputUnit) {
 void SfvGame::OnRollbackUnitTick(uint8_t* unit) {
     if (unit != unit_) {
         unit_ = unit;
-        ResetRoundFlow();
+        FlowResetRoundFlow();
         Log("RollbackUnit at %p (new battle)", unit);
     }
 }
@@ -324,7 +324,7 @@ uint8_t* SfvGame::SingletonTicks() const {
                : nullptr;
 }
 
-// The sound manager's post-restore callback (flow.cpp kSoundReconcileTask).
+// The sound manager's post-restore callback (flow_tasks.cpp kSoundReconcileTask).
 constexpr uintptr_t kSoundRestoreCallback = 0x4B6230;
 
 // Rose's soul entity (vtable rva 0x2C5E2A8): the game snapshots 884 bytes of
@@ -422,7 +422,7 @@ bool SfvGame::RefreshRegions() {
     // appearing mid-session would change the state size under the session.
     std::vector<ExtraRegion> flow;
     if (extras) {
-        flow.push_back({"flow.round", RoundFlowState(), kRoundFlowStateSize});
+        flow.push_back({"flow.round", FlowRoundFlowState(), kRoundFlowStateSize});
         // Rose's soul entity: the game's region is its +0xF0..+0x463; the
         // countdown that applies a new soul level (+0x61C, rva 0x3C14F9 and
         // 0x3C1990), the level table and its counters lie after it. A
@@ -878,12 +878,12 @@ void SfvGame::RunPostRestoreCallbacks(const game::FrameId& gameId, const game::F
         // Two callbacks read the restored frame from id +4 and compare it
         // with frames the game stamped from InputUnit +0x2180: the sound
         // manager's (rva 0x4B6230: sounds played after it are replay
-        // candidates, flow.cpp kSoundReconcileTask) and 0x4D5820 (flags the
+        // candidates, flow_tasks.cpp kSoundReconcileTask) and 0x4D5820 (flags the
         // items of its objects that started after it). They get the game's
         // own id, as every callback does (soundrollback 0 / frameids 0: the
         // mod's old id, for comparison).
         const bool sound = target == kSoundRestoreCallback;
-        const bool useGame = sound ? SoundRollbackOn() : g_gameFrameIds.load();
+        const bool useGame = sound ? FlowSoundRollbackOn() : g_gameFrameIds.load();
         LARGE_INTEGER a, b;
         QueryPerformanceCounter(&a);
         fn(ctx, useGame ? &gameId : &oldId);
@@ -926,7 +926,7 @@ void SfvGame::Advance(const FrameInputs& inputs, bool rollingBack) {
     SetReplayingTick(rollingBack);
     // Start reaches the game only when both players pressed it outside the
     // fight (flow.h): one player cannot skip the intro, or pause the fight.
-    const PackedInput start = PresentationStart(inputs.p[0], inputs.p[1]);
+    const PackedInput start = FlowPresentationStart(inputs.p[0], inputs.p[1]);
     inject_[0] = (inputs.p[0] & ~kStart) | start;
     inject_[1] = (inputs.p[1] & ~kStart) | start;
     // Set at round start from a machine-specific global (rva 0x438EBD): it
@@ -934,14 +934,14 @@ void SfvGame::Advance(const FrameInputs& inputs, bool rollingBack) {
     // diverges when the fight starts. Same value everywhere.
     if (inputUnit_) *reinterpret_cast<int32_t*>(inputUnit_ + game::inputunit::kRoundParam) = 0;
     injecting_ = true;
-    BeginDrivenTick();
+    FlowBeginDrivenTick();
     SeedTickRandom();
     CameraTickBegin();
     RunBattleTick(rollingBack);
     CameraTickEnd();
     injecting_ = false;
     // The round director's check for this tick, and its state into the snapshot.
-    RunRoundDirector();
+    FlowRunRoundDirector();
     LatchInputs();
     if (probeTicks_ > 0 && !rollingBack) {
         CaptureStartProbe(probeTicks_ == 2 ? "after the first tick" : "after the second tick");
@@ -977,7 +977,7 @@ void SfvGame::RunBattleTick(bool replayed) {
         return;
     }
     // A replayed tick: BattleFrame::Update's parts without scheduler phase 8,
-    // and phase 4 without the tasks flow.cpp leaves out of replayed ticks
+    // and phase 4 without the tasks flow_tasks.cpp leaves out of replayed ticks
     // (kLeanResimTasks); the newest tick of the frame is a whole update and
     // runs them. Measured 2026-11-08 (stress replays): what can be left out
     // is presentation the newest tick makes up for, and leaving it out
@@ -1020,9 +1020,9 @@ void SfvGame::RunBattleTick(bool replayed) {
     *reinterpret_cast<uint64_t*>(frame + bf::kExtraTicks) = 0;
 }
 
-bool SfvGame::OutcomeDecided() { return MatchDecided(); }
+bool SfvGame::OutcomeDecided() { return FlowMatchDecided(); }
 
-uint8_t SfvGame::FrameFlags() { return RoundInFight() ? kFrameFight : 0; }
+uint8_t SfvGame::FrameFlags() { return FlowRoundInFight() ? kFrameFight : 0; }
 
 bool SfvGame::MatchWins(uint32_t& left, uint32_t& right) const {
     // The battle's round state is the one 228-byte region: +0xb4 the round,
@@ -1193,7 +1193,7 @@ bool SfvGame::WarmupStep() {
     // the fighters, the round's flow and the camera (40 regions differ after
     // 2), and a session started so desyncs from frame 0 even after the
     // reconcile (2026-11-05). (43c9c9cb, the 3-tick start, was a battle
-    // started without its stage loaded first: flow.cpp's jump.)
+    // started without its stage loaded first: flow_jump.cpp.)
     const int after = warmupTicks_ - objectsAt_;
     if (after < g_warmupExtra) {
         Advance(FrameInputs{}, false);
@@ -1287,14 +1287,14 @@ void SfvGame::OnStateLoaded(int frame) {
         if (restoresLogged_ < 5) {
             restoresLogged_++;
             Log("restore: to frame %d (InputUnit tag %d, simulated frame %d, driven tick %u)", frame, gameId.lo, gameId.hi,
-                DrivenTicks());
+                FlowDrivenTicks());
         }
     }
     RunPostRestoreCallbacks(gameId, oldId);
-    CameraLoaded(DrivenTicks());
+    CameraLoaded(FlowDrivenTicks());
     QueryPerformanceCounter(&b);
-    RoundDirectorFromSnapshot();
-    MatchStopToDirector(battleFrame_);
+    FlowRoundDirectorFromSnapshot();
+    FlowMatchStopToDirector(battleFrame_);
     LatchInputs();
     QueryPerformanceCounter(&c);
     ownLoadTicks_ += c.QuadPart - b.QuadPart;

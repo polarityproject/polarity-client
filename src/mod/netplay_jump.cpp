@@ -32,7 +32,7 @@ void NetplayDriver::BeginJump() {
         matchRoundWins_[0] = matchRoundWins_[1] = 0;
     }
     switchNow_ = false;
-    switchesAtJump_ = BattleSceneSwitches();
+    switchesAtJump_ = FlowBattleSceneSwitches();
     ReleaseResults();
     if (nextDelay_ >= 0) options_.inputDelay = static_cast<uint8_t>(nextDelay_.exchange(-1));
     const MatchSetup shown = ShownSetup(setup_, ViewerSide(), GameLookRules());
@@ -77,9 +77,9 @@ void NetplayDriver::BeginJump() {
 }
 
 void NetplayDriver::RunJump() {
-    SetPendingStage(setup_.stage == kKeepStage ? "" : StageCode(setup_.stage));
-    Log("netplay: jumping into the battle (stage %s)", setup_.stage == kKeepStage ? "as prepared" : StageCode(setup_.stage).c_str());
-    JumpToBattle();
+    FlowSetPendingStage(setup_.stage == kKeepStage ? "" : FlowStageCode(setup_.stage));
+    Log("netplay: jumping into the battle (stage %s)", setup_.stage == kKeepStage ? "as prepared" : FlowStageCode(setup_.stage).c_str());
+    FlowJumpToBattle();
     const auto direct = Clock::now() + std::chrono::seconds(kDirectJumpSeconds);
     while (!stop_ && !Stopping() && GetState() == State::Jumping && BattleCreationCount() == creationsAtJump_ &&
            Clock::now() < direct) {
@@ -111,7 +111,7 @@ bool NetplayDriver::FrameWhileLoading(SfvGame& game) {
         objectsReady_ = true;
         InputIsolatePads(true);
         game.exclusiveTicks = true;
-        SetRoundDirectorPerTick(true, options_.roundEndRollback);
+        FlowSetRoundDirectorPerTick(true, options_.roundEndRollback);
         SetMatchDrawSeed(setup_.seed);
         game.Recanonicalize();
         std::vector<uint64_t> hashes(game.Regions().size());
@@ -126,7 +126,7 @@ bool NetplayDriver::FrameWhileLoading(SfvGame& game) {
         Log("netplay: battle objects ready after %d neutral ticks (%zu regions, checksum %08X); frozen",
             game.ObjectsAt(), hashes.size(), frozenChecksum_);
         game.WatchCameraIfAsked();
-        Log("netplay: at the freeze, %s", RoundEndState().c_str());
+        Log("netplay: at the freeze, %s", FlowRoundEndState().c_str());
         Log("netplay: at the freeze, %s%s%s", game.CameraSetupText().c_str(),
             game.CameraWaitTicks() ? (" (" + std::to_string(game.CameraWaitTicks()) + " ticks after the objects)").c_str() : "",
             game.CameraNotStarted() ? "; the camera has not begun its setup" : "");

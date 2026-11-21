@@ -31,7 +31,7 @@ constexpr uint32_t kRounds = 0x04; // int
 constexpr uint32_t kSpecRounds = 0x08;
 constexpr uint32_t kTimer = 0x0C;      // int, frames (99 s = 5940)
 constexpr uint32_t kVersusFlag = 0x40; // int, 1 in local Versus, 0 in the defaults
-// int, the stage's index in the game's stage table (flow.cpp StageIndex).
+// int, the stage's index in the game's stage table (flow_specs.cpp FlowStageIndex).
 // This block is also the battle situation's data (situation:: below), and
 // this is its StageIndex. +0x60 is the matches played (situation::
 // kBattleCount), not the stage.
@@ -43,7 +43,7 @@ constexpr uint32_t kRecordStride = 0x590;
 // battle pawn's setup (rva 0x4EB2B0, the name read by 0x7B6500) looks up
 // its CharaStageData (pawn +0x580, DA_<chara>_Stage_<stage>) by it: none
 // without it, so no stage transition at a KO, and the round's end waits
-// differently (flow.cpp kKoWaitState).
+// differently (flow_rounds.cpp kKoWaitState).
 constexpr uint32_t kStageName = 0x16D0;
 constexpr size_t kStageNameSize = 16;
 constexpr uint32_t kCharaCode = 0x90; // char[4] + wchar_t[4], e.g. "KEN"
@@ -135,7 +135,7 @@ bool IsFighter(int index);
 std::vector<int> CostumeColorIds(int index, int costume);
 
 // This game's tables for core/pick_check.h. Not from the game thread: a
-// character's V-Comments may load there first (VCommentNames).
+// character's V-Comments may load there first (FlowVCommentNames).
 PickTables GamePickTables();
 // Testing (pickcheck): runs every pick the select screen offers, with every
 // color, the last V-Skill, V-Trigger and V-Comment and all its variants, and

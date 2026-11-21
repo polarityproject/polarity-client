@@ -64,7 +64,7 @@ constexpr uintptr_t kAllocationGranularity = 0x10000;
 void UobjCommand(const std::string&, std::stringstream& ss) {
     std::string name, how;
     ss >> name >> how;
-    RunOnGameThread([name, dump = how == "dump"] { LogObjectsNamed(name, dump); });
+    FlowRunOnGameThread([name, dump = how == "dump"] { FlowLogObjectsNamed(name, dump); });
 }
 
 void MembersCommand(const std::string&, std::stringstream& ss) {
@@ -146,11 +146,11 @@ void PreloadCommand(const std::string&, std::stringstream& ss) {
     std::string code;
     int costume = 0;
     ss >> code >> costume;
-    PreloadCharacter(code, costume);
+    FlowPreloadCharacter(code, costume);
 }
 
 void VersionsCommand(const std::string&, std::stringstream&) {
-    LogCharaVersions();
+    FlowLogCharaVersions();
 }
 
 void TexturesCommand(const std::string&, std::stringstream& ss) {
@@ -167,7 +167,7 @@ void ShowtexCommand(const std::string&, std::stringstream& ss) {
         OverlaySetTexture(nullptr, 0, 0, "");
         return;
     }
-    RunOnGameThread([which] {
+    FlowRunOnGameThread([which] {
         const void* texture = FindOrLoadTexture(which);
         if (!texture) {
             Log("showtex: no texture %s", which.c_str());
@@ -187,7 +187,7 @@ void PaktexCommand(const std::string&, std::stringstream& ss) {
     else if (what == "dump") {
         std::thread([path] { DumpPakPackage(path, Utf8Path(DataDir()) + "\\textures\\" + path.substr(path.rfind('/') + 1) + ".uasset"); }).detach();
     } else if (what == "format") {
-        RunOnGameThread([path] {
+        FlowRunOnGameThread([path] {
             const TextureView view = ViewOfTexture(FindOrLoadTexture(path + "." + path.substr(path.rfind('/') + 1)), true);
             if (!view.srv) return;
             auto* srv = static_cast<ID3D11ShaderResourceView*>(view.srv);
@@ -223,7 +223,7 @@ void SavetexCommand(const std::string&, std::stringstream& ss) {
     std::vector<std::string> which;
     std::string word;
     while (ss >> word) which.push_back(word);
-    RunOnGameThread([which] {
+    FlowRunOnGameThread([which] {
         for (const std::string& w : which) {
             const void* texture = FindOrLoadTexture(w);
             const TextureView view = texture ? ViewOfTexture(texture) : TextureView{};
@@ -249,7 +249,7 @@ void MapatCommand(const std::string&, std::stringstream& ss) {
 }
 
 void CharcacheCommand(const std::string&, std::stringstream&) {
-    LogCharaCache();
+    FlowLogCharaCache();
 }
 
 void DatatableCommand(const std::string&, std::stringstream& ss) {
@@ -257,31 +257,31 @@ void DatatableCommand(const std::string&, std::stringstream& ss) {
     int limit = 200;
     ss >> name >> filter >> limit;
     if (filter == "-") filter.clear();
-    LogDataTable(name, filter, limit);
+    FlowLogDataTable(name, filter, limit);
 }
 
 void VariantsCommand(const std::string&, std::stringstream&) {
-    LogAllVariants();
+    FlowLogAllVariants();
 }
 
 void PresetsCommand(const std::string&, std::stringstream& ss) {
     std::string code;
     ss >> code;
-    LogCostumePresets(code);
+    FlowLogCostumePresets(code);
 }
 
 void CostumesCommand(const std::string&, std::stringstream& ss) {
     std::string code;
     ss >> code;
-    LogCharaCostumes(code);
+    FlowLogCharaCostumes(code);
 }
 
 void CharasCommand(const std::string&, std::stringstream&) {
     std::string list;
-    for (int i = 0; i < CharaCount(); i++) {
-        list += " " + CharaCode(i) + "=" + CharaName(i) + "(" + std::to_string(CharaCostumeCount(i)) + ")";
+    for (int i = 0; i < FlowCharaCount(); i++) {
+        list += " " + FlowCharaCode(i) + "=" + FlowCharaName(i) + "(" + std::to_string(FlowCharaCostumeCount(i)) + ")";
     }
-    Log("characters (%d):%s", CharaCount(), list.c_str());
+    Log("characters (%d):%s", FlowCharaCount(), list.c_str());
 }
 
 void RelocateCommand(const std::string&, std::stringstream&) {
@@ -292,7 +292,7 @@ void RelocateCommand(const std::string&, std::stringstream&) {
 void SceneCommand(const std::string&, std::stringstream& ss) {
     std::string name, param;
     ss >> name >> param;
-    ChangeScene(name, param);
+    FlowChangeScene(name, param);
 }
 
 void NamedCommand(const std::string&, std::stringstream& ss) {
@@ -606,7 +606,7 @@ void FindptrCommand(const std::string&, std::stringstream& ss) {
 void UfuncCommand(const std::string&, std::stringstream& ss) {
     std::string name;
     ss >> name;
-    RunOnGameThread([name] { LogFunction(name); });
+    FlowRunOnGameThread([name] { FlowLogFunction(name); });
 }
 
 void FunctraceCommand(const std::string&, std::stringstream& ss) {
@@ -614,15 +614,15 @@ void FunctraceCommand(const std::string&, std::stringstream& ss) {
     uint32_t offset = 0;
     ss >> name >> owner >> std::hex >> offset;
     if (owner == "-") owner.clear();
-    RunOnGameThread([name, owner, offset] { TraceFunction(name, owner, offset); });
+    FlowRunOnGameThread([name, owner, offset] { FlowTraceFunction(name, owner, offset); });
 }
 
 void StagesCommand(const std::string&, std::stringstream&) {
-    LogStageTable();
+    FlowLogStageTable();
 }
 
 void WorldctxCommand(const std::string&, std::stringstream&) {
-    LogWorldContext();
+    FlowLogWorldContext();
 }
 
 void PeekCommand(const std::string&, std::stringstream& ss) {

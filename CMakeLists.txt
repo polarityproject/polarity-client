@@ -222,6 +222,13 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/report_upload.cpp
     src/mod/crash_report.cpp
     src/mod/flow.cpp
+    src/mod/flow_jump.cpp
+    src/mod/flow_preload.cpp
+    src/mod/flow_research.cpp
+    src/mod/flow_rounds.cpp
+    src/mod/flow_specs.cpp
+    src/mod/flow_tables.cpp
+    src/mod/flow_tasks.cpp
     src/mod/hitch.cpp
     src/mod/pacing.cpp
     src/mod/outside_probe.cpp

@@ -31,10 +31,10 @@ bool NetplayDriver::FrameWhileRunning(SfvGame& game) {
     const bool wait = waitFrames_ > 0;
     if (wait) waitFrames_--;
     LogPace(ahead, wait);
-    if (!wait && !ResultsHeld()) session_->Update();
+    if (!wait && !FlowResultsHeld()) session_->Update();
     sessionSyncing_ = session_->Phase() == NetplayPhase::Syncing;
 
-    if (s == State::Running && MatchDecided()) {
+    if (s == State::Running && FlowMatchDecided()) {
         uint32_t now[2] = {};
         const bool counted = winsKnown_ && game_.MatchWins(now[0], now[1]);
         const int winner = !counted ? -1 : now[0] > winsAtStart_[0] ? 0
@@ -53,7 +53,7 @@ bool NetplayDriver::FrameWhileRunning(SfvGame& game) {
         }
         matchWinner_ = winner;
         if (winner >= 0) setWins_[winner]++;
-        ReadRoundResults(&matchRounds_, matchRoundWins_);
+        FlowReadRoundResults(&matchRounds_, matchRoundWins_);
         if (winner >= 0) Log("netplay: P%d won the match", winner + 1);
         else Log("netplay: the match's winner is not known (win counts %s)", counted ? "unchanged" : "not found");
         if (host_) {
@@ -66,7 +66,7 @@ bool NetplayDriver::FrameWhileRunning(SfvGame& game) {
         }
         decidedAt_ = Clock::now();
         SetState(State::PostMatch);
-        SetHoldResults(true);
+        FlowSetHoldResults(true);
         if (options_.mashSeed || !options_.inputLoop.empty()) InputScriptedPad(0, true, 0);
         Log("netplay: the match is decided at frame %d", session_->NextFrame());
     }
@@ -211,7 +211,7 @@ bool NetplayDriver::FrameWhileWatching(SfvGame& game) {
         }
         spectate_->Add(static_cast<int>(m.first), inputs, sums);
     }
-    if (!ResultsHeld()) spectate_->Update();
+    if (!FlowResultsHeld()) spectate_->Update();
     specWanted_ = spectate_->NextWanted();
     specPlayed_ = spectate_->NextFrame();
     framesRun_++;
@@ -221,9 +221,9 @@ bool NetplayDriver::FrameWhileWatching(SfvGame& game) {
         std::lock_guard lock(mutex_);
         desyncReport_ = path;
     }
-    if (GetState() == State::Running && MatchDecided()) {
+    if (GetState() == State::Running && FlowMatchDecided()) {
         SetState(State::PostMatch);
-        SetHoldResults(true);
+        FlowSetHoldResults(true);
         Log("netplay: the match is decided at frame %d", spectate_->NextFrame());
         if ((next_ == Next::None || next_ == Next::Lobby) && peerLeftRoom_) {
             const std::string over = SetOverText();
@@ -247,17 +247,17 @@ bool NetplayDriver::FrameWhileWatching(SfvGame& game) {
 }
 
 void NetplayDriver::UpdatePredictionWindow() {
-    if (const bool inFight = RoundInFight(); inFight != loggedInFight_) {
+    if (const bool inFight = FlowRoundInFight(); inFight != loggedInFight_) {
         loggedInFight_ = inFight;
         Log(inFight ? "netplay: fight from frame %d" : "netplay: fight over at frame %d", session_->NextFrame());
     }
-    const bool inFight = RoundInFight();
+    const bool inFight = FlowRoundInFight();
     if (inFight) sawFight_ = true;
-    const bool transition = options_.lockstepTransitions && !inFight && (sawFight_ || RoundCallRunning());
+    const bool transition = options_.lockstepTransitions && !inFight && (sawFight_ || FlowRoundCallRunning());
     const bool fight = (!options_.lockstepPresentation || inFight) && !transition;
     const uint8_t window = fight ? options_.predictionWindow : 0;
     const int frame = session_->NextFrame();
-    if (RoundCallRunning()) {
+    if (FlowRoundCallRunning()) {
         if (roundCallFrame_ < 0) roundCallFrame_ = frame;
     } else if (roundCallFrame_ >= 0) {
         if (fight) Log("netplay: the round call took %d frames", frame - roundCallFrame_);
@@ -379,7 +379,7 @@ void NetplayDriver::FinishMatch(SfvGame& game, bool keepSetup) {
     InputIsolatePads(false);
     game.localInput = nullptr;
     game.exclusiveTicks = false;
-    SetRoundDirectorPerTick(false, false);
+    FlowSetRoundDirectorPerTick(false, false);
     InputScriptedPad(0, false);
     if (!keepSetup) ClearPendingSetup();
     if (session_) {
@@ -549,7 +549,7 @@ void NetplayDriver::WriteMatchLog(const std::string& recording, const ReplayFile
     std::fprintf(f, "game files: %s\n", GameFilesText().c_str());
     std::fprintf(f, "mods: %s\n", ScanModPaks().Text().c_str());
     std::fprintf(f, "battle data: %s\n", LastDataCheck().Text().c_str());
-    std::fprintf(f, "character versions: %s\n", CharaVersionsText().c_str());
+    std::fprintf(f, "character versions: %s\n", FlowCharaVersionsText().c_str());
     const int peerReports = peerReports_;
     std::fprintf(f, "desync reports: %s from this side, %s from the other side\n", ReportUploadsOn() ? "sent" : "not sent",
                  peerReports > 0 ? "sent" : peerReports == 0 ? "not sent"
