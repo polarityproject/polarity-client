@@ -275,17 +275,27 @@ LookRules GameLookRules() {
     LookRules rules;
     rules.isEleven = IsElevenPick;
     rules.elevenOtherColor = 1; // the 0C costume's color 2 of 2
-    rules.colorsOf = [](const PlayerSetup& p) {
-        const int index = CharaIndex(UnpackCode(p.character));
-        if (index < 0) return std::vector<int>{};
-        const auto specs = CharaCostumeSpecs(index);
-        const auto spec = specs.find(p.costume);
-        if (spec != specs.end() && !spec->second.colors.empty()) return spec->second.colors;
-        std::vector<int> ids;
-        for (int k = 0; k < CostumeColorCount(index, p.costume); k++) ids.push_back(k);
-        return ids;
-    };
+    rules.colorsOf = [](const PlayerSetup& p) { return CostumeColorIds(CharaIndex(UnpackCode(p.character)), p.costume); };
     return rules;
+}
+
+bool IsFighter(int index) {
+    // Entries with a handful of costumes or fewer are random select, dummies,
+    // assist and event characters; "*NDK" and untranslated "ID_..." names are
+    // placeholders, and X codes are helpers (X01: the partner Akira's
+    // V-Trigger calls in).
+    if (CharaCostumeCount(index) < 10 || CharaCode(index).rfind('X', 0) == 0) return false;
+    const std::string name = CharaName(index);
+    return name.empty() || (name[0] != '*' && name.rfind("ID_", 0) != 0);
+}
+
+std::vector<int> CostumeColorIds(int index, int costume) {
+    const auto specs = CharaCostumeSpecs(index);
+    const auto spec = specs.find(costume);
+    if (spec != specs.end() && !spec->second.colors.empty()) return spec->second.colors;
+    std::vector<int> ids;
+    for (int k = 0; k < CostumeColorCount(index, costume); k++) ids.push_back(k);
+    return ids;
 }
 
 void SetUniqueParamOverride(int player, int index, int value) {

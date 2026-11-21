@@ -24,7 +24,7 @@
 #include "mod/netplay_driver.h"
 #include "mod/select_screen.h"
 #include "mod/battle_log_screen.h"
-#include "mod/benchmark.h"
+#include "mod/battle_setup.h"
 #include "mod/benchmark.h"
 #include "mod/replay_driver.h"
 #include "mod/fight_ui.h"
@@ -706,13 +706,9 @@ Tables g_tables;
 Tables ReadTables() {
     Tables t;
     for (int i = 0; i < CharaCount() && !Stopping(); i++) {
-        // Entries with a handful of costumes or fewer are not fighters
-        // (random select, dummies, assist and event characters).
-        if (CharaCostumeCount(i) < 10) continue;
-        // Placeholders: "*NDK" and untranslated "ID_..." names; X codes are
-        // helpers (X01: the partner Akira's V-Trigger calls in).
+        // A fighter whose name has loaded (listed by name).
         const std::string name = CharaName(i);
-        if (name.empty() || name[0] == '*' || name.rfind("ID_", 0) == 0 || CharaCode(i).rfind('X', 0) == 0) continue;
+        if (!IsFighter(i) || name.empty()) continue;
         std::vector<int> costumes;
         std::vector<std::string> names;
         std::vector<std::vector<int>> colors;

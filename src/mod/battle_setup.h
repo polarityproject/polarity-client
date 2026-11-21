@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace sfv::mod {
 
@@ -123,5 +124,13 @@ void LogBattleSetup(const char* when);
 LookRules GameLookRules();
 // Eleven plays a fighter in its 0C costume (the silver model).
 bool IsElevenPick(const PlayerSetup& p);
+
+// Whether character table entry `index` is a fighter: random select,
+// dummies, helpers and event characters are not. A name the game has not
+// loaded yet does not count against it.
+bool IsFighter(int index);
+// The color ids of a costume as the select screen lists them (EX colors,
+// 100.., after the rest); empty when not known.
+std::vector<int> CostumeColorIds(int index, int costume);
 
 } // namespace sfv::mod
