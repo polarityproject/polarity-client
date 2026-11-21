@@ -251,12 +251,15 @@ struct Watcher {
     bool keeper = false;          // the keeper's relay (a table set's only spectator)
 };
 
-// After a session left during its jump (its driver gone, so not
-// EndAfterJumpTick): back to the main menu once the battle it asked for runs
-// (up to 30 s), unless another jump or driver took over meanwhile. The
-// switch can come after the leave, so it counts from the jump's start.
-void ReturnToMenuOnceBattleRuns(SfvGame& game, uint64_t switchesAtJump, int framesLeft = 1800) {
-    RunOnGameThreadAfter(10, [&game, switchesAtJump, framesLeft] {
+// What a session that let go of its match during the jump does once no battle came.
+enum class NoBattle { Stay,
+                      Menu };
+
+// After a session let go of its match during the jump: back to the main
+// menu once the battle it asked for runs (up to 30 s), unless another jump
+// or driver took over meanwhile.
+void ReturnToMenuOnceBattleRuns(SfvGame& game, uint64_t switchesAtJump, NoBattle none, int framesLeft = 1800) {
+    RunOnGameThreadAfter(10, [&game, switchesAtJump, none, framesLeft] {
         if (BattleSceneSwitches() > switchesAtJump + 1 || CurrentFrameDriver()) return;
         if (BattleSceneSwitches() != switchesAtJump && game.BattleRunning()) {
             Log("netplay: the battle of the session that ended during its jump runs: back to the menu");
@@ -264,8 +267,15 @@ void ReturnToMenuOnceBattleRuns(SfvGame& game, uint64_t switchesAtJump, int fram
             ReturnToMainMenu(1);
             return;
         }
-        if (framesLeft > 10) ReturnToMenuOnceBattleRuns(game, switchesAtJump, framesLeft - 10);
-        else ClearPendingSetup(); // no battle came: the setup is not for a later one
+        if (framesLeft > 10) {
+            ReturnToMenuOnceBattleRuns(game, switchesAtJump, none, framesLeft - 10);
+            return;
+        }
+        ClearPendingSetup();
+        if (none == NoBattle::Menu) {
+            Log("netplay: no battle after the ended session's jump: back to the menu");
+            ReturnToMainMenu(1);
+        }
     });
 }
 
@@ -598,7 +608,7 @@ public:
             if (!leftMidJump_) { // Stop can run twice (a leave, then the destructor)
                 leftMidJump_ = true;
                 Log("netplay: left during the jump: the battle keeps this session's setup, then back to the menu");
-                ReturnToMenuOnceBattleRuns(game_, switchesAtJump_);
+                ReturnToMenuOnceBattleRuns(game_, switchesAtJump_, NoBattle::Stay);
             }
         } else {
             ClearPendingSetup();
@@ -748,7 +758,6 @@ private:
         }
         if (host_) StreamToWatchers();
         Transitions();
-        EndAfterJumpTick();
 
         // A select screen change goes out at once (at most every kMinBeat).
         const auto now = Clock::now();
@@ -1731,7 +1740,7 @@ private:
             // match's setup. Cleared, the battle was built on a bare jump's
             // defaults and crashed at its start (rva 0x2FF130 -> 0x13958B0:
             // 0.3.x reports for a session that ended, four 0.4.3 reports for
-            // one that went back to the lobby). Ending, EndAfterJumpTick goes
+            // one that went back to the lobby). Ending, ReturnToMenuOnceBattleRuns goes
             // back to the menu once it runs. Back to the lobby (the other side
             // chose character select, a watched match ended), the jump is
             // called off, and a battle that comes anyway goes to the menu.
@@ -1739,7 +1748,7 @@ private:
             if (next == Next::Lobby) {
                 Log("netplay: back to the lobby during the jump: calling it off");
                 CancelBattleJump();
-                ReturnToMenuOnceBattleRuns(game_, switchesAtJump_);
+                ReturnToMenuOnceBattleRuns(game_, switchesAtJump_, NoBattle::Stay);
             }
         }
         next_ = Next::None;
@@ -1793,10 +1802,9 @@ private:
                     // reset its battle loader, which was made again without the
                     // setup (used up) and crashed on the defaults (rva 0x2FF130,
                     // flow.cpp JumpToBattle). Back to the menu once that battle
-                    // is up instead (EndAfterJumpTick).
-                    endAfterJump_ = true;
-                    endAfterJumpAt_ = Clock::now();
+                    // is up instead (ReturnToMenuOnceBattleRuns).
                     Log("netplay: the session ended during a jump: back to the menu once its battle is up");
+                    ReturnToMenuOnceBattleRuns(game_, switchesAtJump_, NoBattle::Menu);
                 } else if (options_.menuAfterMatch && game_.BattleRunning()) {
                     ReturnToMainMenu(kMenuAfterMatchFrames);
                 }
@@ -1806,23 +1814,6 @@ private:
             case Next::None:
                 break;
         }
-    }
-
-    // After a session that ended mid-jump (Next::End): the battle it was
-    // jumping to is up (the scene switched and a battle runs), or it never
-    // came: back to the main menu.
-    void EndAfterJumpTick() {
-        if (!endAfterJump_) return;
-        // The switch can come before the end (a rematch switches at once),
-        // so it counts from the jump's start. A battle that never comes (its
-        // loader found no setup once the session let go) waits 15 s at most.
-        const bool up = BattleSceneSwitches() != switchesAtJump_ && game_.BattleRunning();
-        const bool late = Clock::now() - endAfterJumpAt_ > std::chrono::seconds(15);
-        if (!up && !late) return;
-        endAfterJump_ = false;
-        if (!up) ClearPendingSetup(); // kept for a battle that did not come (Transitions)
-        Log("netplay: %s: back to the menu", up ? "the battle the ended session jumped to is up" : "no battle after the ended session's jump");
-        ReturnToMainMenu(kMenuAfterMatchFrames);
     }
 
     // Something the other side sent that this game does not have: refused
@@ -2084,7 +2075,7 @@ private:
             matchRoundWins_[0] = matchRoundWins_[1] = 0;
         }
         switchNow_ = false;
-        switchesAtJump_ = BattleSceneSwitches(); // EndAfterJumpTick: has this jump's battle scene come?
+        switchesAtJump_ = BattleSceneSwitches(); // ReturnToMenuOnceBattleRuns: has this jump's battle scene come?
         ReleaseResults();
         // A delay chosen between matches takes effect with this one.
         if (nextDelay_ >= 0) options_.inputDelay = static_cast<uint8_t>(nextDelay_.exchange(-1));
@@ -3169,10 +3160,8 @@ private:
     Clock::time_point startsDifferAt_{}; // game thread: when the frozen starts were found to differ
     std::atomic<bool> peerLeft_{false};
     std::atomic<bool> peerLeftRoom_{false}; // the server said so while the link held (the match went on)
-    bool endAfterJump_ = false;             // Next::End came mid-jump: the menu waits for that battle (EndAfterJumpTick)
     uint64_t switchesAtJump_ = 0;
     bool leftMidJump_ = false; // Stop found the jump under way and set up the menu return
-    Clock::time_point endAfterJumpAt_{};
     std::atomic<bool> sessionSyncing_{false};
 
     std::unique_ptr<NetplaySession> session_;
