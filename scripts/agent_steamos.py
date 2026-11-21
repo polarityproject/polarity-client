@@ -16,8 +16,11 @@
 # {"token":..., "op":..., ...}, and answers one JSON line. Ops (agent.ps1's):
 #   ping                          host name, game instances running, the game
 #                                 folder, and checks of this Deck's setup
-#   start  count                  starts the game through Steam (one instance)
-#                                 and waits for its main menu
+#   start  count                  starts the game through Steam and waits for
+#                                 its main menu; count 2 also starts a second
+#                                 copy in the first one's Proton container
+#                                 (needs multi_instance=1 and the launcher
+#                                 service below)
 #   stop                          closes it
 #   cmd    instance commands      mod commands (';'-separated), as cmd.ps1 writes them
 #   log    instance from          the log from line `from` on (from -1: its count)
@@ -28,9 +31,15 @@
 #   shot   instance [scale]       a screenshot (PNG, base64), taken by the mod
 #                                 itself (its shot command): works in Game Mode
 #   server                        not here (the Weyvelength server runs elsewhere)
+#   reload                        starts this script again (a deploy's new copy)
 # The game must load the mod under Proton: its Steam launch options need
 #   WINEDLLOVERRIDES="xinput1_3=n,b" %command%
-# (ping says whether they have it). Anyone who can reach the port and knows
+# (ping says whether they have it). A second copy also needs Steam's
+# command-launcher service in the game's container:
+#   STEAM_COMPAT_LAUNCHER_SERVICE=proton WINEDLLOVERRIDES="xinput1_3=n,b" %command%
+# Steam starts one copy of a game only: the second runs through the Steam
+# Linux Runtime's steam-runtime-launch-client, `wine StreetFighterV.exe` in
+# the same container and Wine prefix. Anyone who can reach the port and knows
 # the token can run game commands and write files in the game folder: LAN
 # only, a token you made up.
 
@@ -47,6 +56,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 
 APP_ID = '310950'
@@ -118,6 +128,20 @@ class Agent:
                 continue
         return found
 
+    def game_env(self, name):
+        # A variable of the running game's environment (its launch options
+        # are there once Steam has started it), or None.
+        for pid, win64 in self.game_pids():
+            try:
+                with open(f'/proc/{pid}/environ', 'rb') as f:
+                    for item in f.read().split(b'\0'):
+                        k, _, v = item.partition(b'=')
+                        if k.decode('utf-8', 'replace') == name:
+                            return v.decode('utf-8', 'replace')
+            except OSError:
+                continue
+        return None
+
     def games(self):
         pids = self.game_pids()
         win64 = [p for p, w in pids if w]
@@ -155,6 +179,34 @@ class Agent:
                 seen = True
         return '' if seen else None
 
+    def launch_client(self):
+        # The Steam Linux Runtime's client for a running game's
+        # command-launcher service (sniper's first: current Protons use it).
+        for lib in steam_libraries():
+            for runtime in ('SteamLinuxRuntime_sniper', 'SteamLinuxRuntime_soldier'):
+                p = os.path.join(lib, 'steamapps', 'common', runtime, 'pressure-vessel', 'bin', 'steam-runtime-launch-client')
+                if os.path.isfile(p):
+                    return p
+        return ''
+
+    def services(self):
+        # The launcher services running (steam-runtime-launch-client --list).
+        client = self.launch_client()
+        if not client:
+            return ''
+        try:
+            r = subprocess.run([client, '--list'], capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError) as e:
+            return f'(failed: {e})'
+        return ' '.join((r.stdout + r.stderr).split())
+
+    def multi_instance(self):
+        try:
+            text = open(os.path.join(self.game, 'polarity.ini'), encoding='utf-8-sig', errors='replace').read()
+        except OSError:
+            return False
+        return re.search(r'^\s*multi_instance\s*=\s*1\s*$', text, re.M) is not None
+
     # ----- ops -------------------------------------------------------------------
 
     def op_ping(self, q):
@@ -168,6 +220,11 @@ class Agent:
             'steam': shutil.which('steam') or '',
             'launchOptions': opts if opts is not None else '(not found)',
             'modLoads': bool(opts and 'xinput1_3' in opts),
+            'launcherService': bool(opts and 'STEAM_COMPAT_LAUNCHER_SERVICE=proton' in opts),
+            'launchClient': self.launch_client(),
+            'gameLauncherService': self.game_env('STEAM_COMPAT_LAUNCHER_SERVICE'),
+            'gameDllOverrides': self.game_env('WINEDLLOVERRIDES'),
+            'services': self.services(),
             'mod': os.path.exists(os.path.join(self.game, 'polarity.dll')),
             'loader': os.path.exists(os.path.join(self.game, 'xinput1_3.dll')),
         }
@@ -198,10 +255,23 @@ class Agent:
                          start_new_session=True)
         return ' '.join(cmd)
 
-    def at_menu(self, mark):
+    def launch_copy(self):
+        # The second copy, in the first one's container (the bus name is
+        # Steam's for the app). Its output goes to Polarity/logs/agent-launch.log.
+        client = self.launch_client()
+        cmd = [client, f'--bus-name=com.steampowered.App{APP_ID}', f'--directory={self.game}', '--', 'wine',
+               os.path.join(self.game, 'StreetFighterV.exe')]
+        os.makedirs(os.path.join(self.game, 'Polarity', 'logs'), exist_ok=True)
+        with open(os.path.join(self.game, 'Polarity', 'logs', 'agent-launch.log'), 'ab') as out:
+            out.write(f'{now_text()} {" ".join(cmd)}\n'.encode('utf-8'))
+            out.flush()
+            subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+        return ' '.join(cmd)
+
+    def at_menu(self, mark, instance=0):
         # up.ps1's test: since `mark`, the mod's start line, then the menu's
         # scene, then its map load (the menu's stage request 'BLK').
-        path = self.log_path(0)
+        path = self.log_path(instance)
         if not os.path.exists(path):
             return False
         try:
@@ -223,15 +293,64 @@ class Agent:
 
     def op_start(self, q):
         count = int(q.get('count') or 1)
+        if count > 2:
+            return {'output': f'cannot start {count}: two instances at most on SteamOS'}
         if count > 1:
-            return {'output': f'cannot start {count}: one instance on SteamOS'}
+            # cmd.ps1's wording, which remote.ps1 looks for.
+            if not self.multi_instance():
+                return {'output': f'{count} instances need multi_instance=1 in polarity.ini'}
+            if not self.launch_client():
+                return {'output': 'cannot start a second copy: no steam-runtime-launch-client (Steam Linux Runtime) found'}
         out = []
         running = self.games()
         out += self.copy_build(running > 0)
-        if running:
+        if running >= count:
             out.append('the game is running already')
             return {'output': '\n'.join(out)}
         timeout = int(q.get('timeout') or 240)
+        if not running and not self.start_first(timeout, out):
+            return {'output': '\n'.join(out)}
+        if count > 1:
+            self.start_copy(timeout, out)
+        return {'output': '\n'.join(out)}
+
+    def start_copy(self, timeout, out):
+        # Steam's DRM restart is skipped with steam_appid.txt beside the exe
+        # (the Windows install has one), so the copy stays up.
+        appid = os.path.join(self.game, 'steam_appid.txt')
+        if not os.path.exists(appid):
+            with open(appid, 'w') as f:
+                f.write(APP_ID)
+            out.append('wrote steam_appid.txt')
+        # The game's launcher service (its launch options; Steam writes them
+        # to localconfig.vdf only on exit, so the running game is asked).
+        bus = f'--bus-name=com.steampowered.App{APP_ID}'
+        listed = ''
+        for _ in range(20):
+            listed = subprocess.run([self.launch_client(), '--list'], capture_output=True, text=True, timeout=30).stdout
+            if bus in listed:
+                break
+            time.sleep(1)
+        else:
+            env = self.game_env('STEAM_COMPAT_LAUNCHER_SERVICE')
+            out.append('cannot start a second copy: the game has no launcher service '
+                       '(its launch options need STEAM_COMPAT_LAUNCHER_SERVICE=proton; the game has '
+                       f'{env!r}; the services listed: {" ".join(listed.split()) or "none"})')
+            return False
+        start = time.time()
+        mark = datetime.datetime.now().strftime('%H:%M:%S.%f')[:12]
+        out.append('launching a second copy: ' + self.launch_copy())
+        while time.time() < start + timeout:
+            time.sleep(1)
+            if self.at_menu(mark, 1):
+                out.append(f'instance 1 at the main menu after {int(time.time() - start)} s')
+                return True
+        out.append(f'not all started instances reached the main menu in {timeout} s '
+                   f'({self.games()} running; see Polarity/logs/agent-launch.log)')
+        return False
+
+    def start_first(self, timeout, out):
+        # The first copy, through Steam; True once at its main menu.
         retries = 2
         start = time.time()
         mark = datetime.datetime.now().strftime('%H:%M:%S.%f')[:12]
@@ -243,7 +362,7 @@ class Agent:
             time.sleep(1)
             if self.at_menu(mark):
                 out.append(f'instance 0 at the main menu after {int(time.time() - start)} s')
-                return {'output': '\n'.join(out)}
+                return True
             n = self.games()
             if n:
                 seen, gone_since = True, None
@@ -253,14 +372,14 @@ class Agent:
                 if time.time() - gone_since > 15:
                     if retries <= 0:
                         out.append('a game exited while starting, 2 retries used')
-                        return {'output': '\n'.join(out)}
+                        return False
                     retries -= 1
                     out.append(f'the game exited while starting; starting another ({2 - retries} of 2)')
                     out.append('launching: ' + self.launch())
                     seen, gone_since = False, None
                     deadline = time.time() + timeout
         out.append(f'not all started instances reached the main menu in {timeout} s')
-        return {'output': '\n'.join(out)}
+        return False
 
     def op_stop(self, q):
         pids = [p for p, _ in self.game_pids()]
@@ -426,6 +545,17 @@ class Agent:
     def op_server(self, q):
         raise RuntimeError('no Weyvelength server on SteamOS: run it on the main PC or the VPS')
 
+    def op_reload(self, q):
+        # This script again, once the answer is out: an agent a deploy wrote
+        # takes over without a trip to the Deck. The listening socket closes
+        # on exec (Python's are not inherited).
+        def again():
+            time.sleep(1)
+            say('reloading')
+            os.execv(sys.executable, [sys.executable, os.path.realpath(__file__)] + sys.argv[1:])
+        threading.Thread(target=again, daemon=True).start()
+        return {'output': 'reloading the agent'}
+
     def handle(self, q):
         if not hmac.compare_digest(str(q.get('token', '')), self.token):
             raise PermissionError('bad token')
@@ -467,6 +597,19 @@ def serve(agent, port):
         conn.close()
 
 
+def steam_libraries():
+    # Steam's own folders, then every library its libraryfolders.vdf lists.
+    home = os.path.expanduser('~')
+    libraries = [os.path.join(home, '.local/share/Steam'), os.path.join(home, '.steam/steam')]
+    for vdf in libraries[:]:
+        try:
+            with open(os.path.join(vdf, 'steamapps', 'libraryfolders.vdf'), encoding='utf-8', errors='replace') as f:
+                libraries += re.findall(r'"path"\s+"([^"]+)"', f.read())
+        except OSError:
+            pass
+    return libraries
+
+
 def find_game(here):
     # The game's Binaries/Win64 (the folder with StreetFighterV.exe): first
     # near this script (each folder above it, and a StreetFighterV folder in
@@ -488,15 +631,7 @@ def find_game(here):
         if parent == folder:
             break
         folder = parent
-    home = os.path.expanduser('~')
-    libraries = [os.path.join(home, '.local/share/Steam'), os.path.join(home, '.steam/steam')]
-    for vdf in libraries[:]:
-        try:
-            with open(os.path.join(vdf, 'steamapps', 'libraryfolders.vdf'), encoding='utf-8', errors='replace') as f:
-                libraries += re.findall(r'"path"\s+"([^"]+)"', f.read())
-        except OSError:
-            pass
-    for lib in libraries:
+    for lib in steam_libraries():
         candidate = os.path.join(lib, 'steamapps', 'common', 'StreetFighterV', 'StreetFighterV')
         tried.append(candidate)
         found = win64(candidate)
