@@ -65,6 +65,10 @@ find_package(OpenSSL 3 REQUIRED)
 add_executable(polarity-keeper
   ${POLARITY_ROOT}/src/keeper/main.cpp
   ${POLARITY_ROOT}/src/keeper/keeper.cpp
+  ${POLARITY_ROOT}/src/keeper/keeper_listing.cpp
+  ${POLARITY_ROOT}/src/keeper/keeper_relay.cpp
+  ${POLARITY_ROOT}/src/keeper/keeper_rooms.cpp
+  ${POLARITY_ROOT}/src/keeper/keeper_tables.cpp
   ${POLARITY_ROOT}/src/keeper/sign.cpp
   ${POLARITY_ROOT}/src/core/keeper_protocol.cpp
   ${POLARITY_ROOT}/src/core/lobby.cpp

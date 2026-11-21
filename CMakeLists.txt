@@ -196,7 +196,7 @@ if(SFV_BUILD_MOD AND WIN32)
   # polarity-keeper (src/keeper/keeper.h): hosts the lobby channel and the custom
   # rooms. Built here for local tests; the server builds it on Linux
   # (scripts/keeper-bundle.ps1 copies its sources into polarity-server).
-  add_executable(polarity_keeper src/keeper/main.cpp src/keeper/keeper.cpp)
+  add_executable(polarity_keeper src/keeper/main.cpp src/keeper/keeper.cpp src/keeper/keeper_listing.cpp src/keeper/keeper_relay.cpp src/keeper/keeper_rooms.cpp src/keeper/keeper_tables.cpp)
   set_target_properties(polarity_keeper PROPERTIES OUTPUT_NAME polarity-keeper)
   target_link_libraries(polarity_keeper PRIVATE sfvcore weyvelength_client bcrypt ws2_32)
   # polarity-bot: a headless rooms player for tests (src/tools/polarity_bot.cpp).

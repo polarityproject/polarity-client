@@ -4,6 +4,7 @@
 | --- | --- |
 | [testing.md](testing.md) | unit tests, two game instances on one PC, two PCs, the test scripts and commands |
 | [desync-replays.md](desync-replays.md) | match recordings (`.sfvr`), desync reports, the `polarity` tool, replaying a recording in the game |
+| [keeper.md](keeper.md) | polarity-keeper: rooms, the public list, tables, spectator relays |
 | [replays.md](replays.md) | the replay driver: run modes, checks, the Battle Log's viewer, Replay Takeover |
 | [replay-versioning.md](replay-versioning.md) | which recordings play in the Battle Log, and the replay regression check |
 | [rollback-presentation.md](rollback-presentation.md) | the round's stages and cinematic cameras under rollback, online and in the Battle Log |
