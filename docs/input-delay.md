@@ -171,7 +171,7 @@ cap leaves to rollback.
 
 ## Tests
 
-The unit test `input delay suggestion` in `tests/tests.cpp` covers the bands,
+The unit test `input delay suggestion` in `tests/test_recording.cpp` covers the bands,
 the jitter cap, the median and the spike guard. Two games on one PC through
 simulated links gave the suggestions the bands predict:
 

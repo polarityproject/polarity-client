@@ -11,9 +11,10 @@ build.cmd
 build\Release\sfvtests.exe
 ```
 
-`tests/tests.cpp` covers the core library: recordings and their tools, the
-update info and its signature, compression, input delay, rules and the
-keeper protocol. It also plays full netplay matches between two `MockGame`s
+The unit tests (`tests/`, one file per area, built as `sfvtests`) cover
+the core library: recordings and their tools, the update info and its
+signature, compression, input delay, rules and the keeper protocol. They
+also play full netplay matches between two `MockGame`s
 (`src/testbed/`), a deterministic stand-in fighter, over a lossy, jittery
 loopback network. Each injected bug must be caught by the desync tooling.
 

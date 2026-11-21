@@ -188,7 +188,7 @@ target_link_libraries(polarity_cli PRIVATE sfvcore sfvtestbed)
 
 enable_testing()
 # src/mod/migrate.cpp: the move from SFVR's file names, tested on temporary folders.
-add_executable(sfvtests tests/tests.cpp $<$<BOOL:${WIN32}>:src/mod/migrate.cpp>)
+add_executable(sfvtests tests/tests.cpp tests/test_assets.cpp tests/test_files.cpp tests/test_keeper.cpp tests/test_netplay.cpp tests/test_recording.cpp $<$<BOOL:${WIN32}>:src/mod/migrate.cpp>)
 target_link_libraries(sfvtests PRIVATE sfvcore sfvtestbed bcrypt)
 add_test(NAME sfvtests COMMAND sfvtests WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 

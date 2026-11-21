@@ -243,7 +243,7 @@ and `watch` around the moment shows what moved.
 
 ## Tested failure classes
 
-`tests/tests.cpp` runs full netplay matches between two `MockGame`s over a
+`tests/test_netplay.cpp` runs full netplay matches between two `MockGame`s over a
 lossy, jittery loopback network (≈670 rollbacks per 50-second match) and checks
 that the tooling identifies each injected bug:
 
