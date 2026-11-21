@@ -2,9 +2,7 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdio>
 #include <cstring>
-#include <set>
 
 #include <xmmintrin.h>
 
@@ -251,119 +249,6 @@ uint32_t FoldChecksum(const uint64_t* regionHashes, size_t count)
     std::sort(sorted.begin(), sorted.end());
     const uint64_t h = Hash64(sorted.data(), count * sizeof(uint64_t));
     return static_cast<uint32_t>(h ^ (h >> 32));
-}
-
-namespace {
-
-// A value that may be an address in this process or the other's. Copying one
-// across processes would leave a pointer into memory this side never mapped.
-bool PointerLike(uint64_t v) { return v >= 0x10000000000ull && v < 0x800000000000ull; }
-
-} // namespace
-
-TakenState TakeOtherState(const std::vector<StateRegion>& regions, const std::vector<uint64_t>& hashes,
-                          const std::vector<uint64_t>& otherHashes, const std::vector<OtherRegion>& other)
-{
-    TakenState out;
-    // Regions with an equal on the other side are settled, both ways.
-    std::multiset<uint64_t> otherLeft(otherHashes.begin(), otherHashes.end());
-    std::vector<bool> taken(regions.size(), false);
-    for (size_t i = 0; i < regions.size() && i < hashes.size(); i++) {
-        auto it = otherLeft.find(hashes[i]);
-        if (it == otherLeft.end()) continue;
-        otherLeft.erase(it);
-        taken[i] = true;
-    }
-    std::multiset<uint64_t> mine(hashes.begin(), hashes.end());
-    std::vector<bool> settled(otherHashes.size(), false);
-    for (size_t j = 0; j < otherHashes.size(); j++) {
-        auto it = mine.find(otherHashes[j]);
-        if (it == mine.end()) continue;
-        mine.erase(it);
-        settled[j] = true;
-    }
-    for (const OtherRegion& o : other) {
-        if (o.index < settled.size() && settled[o.index]) continue;
-        size_t best = SIZE_MAX, bestDiff = SIZE_MAX;
-        for (size_t i = 0; i < regions.size(); i++) {
-            if (taken[i] || regions[i].size != o.size) continue;
-            size_t diff = 0;
-            for (size_t w = 0; w + 8 <= o.size; w += 8) diff += std::memcmp(regions[i].ptr + w, o.bytes + w, 8) != 0;
-            if (diff < bestDiff) {
-                best = i;
-                bestDiff = diff;
-            }
-        }
-        if (best == SIZE_MAX) {
-            out.unpaired.push_back(o);
-            continue;
-        }
-        taken[best] = true;
-        const StateRegion& r = regions[best];
-        TakenState::Region pair{best, o.index, 0};
-        for (size_t w = 0; w + 8 <= o.size; w += 8) {
-            if (IsIgnored(r.ignore, w)) continue;
-            const uint64_t here = Read64(r.ptr + w), there = Read64(o.bytes + w);
-            if (here == there) continue;
-            const bool copy = !PointerLike(here) && !PointerLike(there);
-            out.differences.push_back({best, w, here, there, copy});
-            if (!copy) {
-                out.pointersKept++;
-                continue;
-            }
-            std::memcpy(r.ptr + w, &there, 8);
-            pair.copied++;
-        }
-        out.wordsCopied += pair.copied;
-        if (pair.copied) out.regionsChanged++;
-        out.regions.push_back(pair);
-    }
-    for (size_t i = 0; i < regions.size(); i++) {
-        if (!taken[i]) out.unmatched.push_back(i);
-    }
-    return out;
-}
-
-std::vector<std::string> DescribeTakenState(const std::vector<StateRegion>& regions, const TakenState& taken, const char* who)
-{
-    constexpr size_t maxWords = 64;
-    std::vector<std::string> lines;
-    char buf[320];
-    for (const TakenState::Region& p : taken.regions) {
-        if (!p.copied) continue;
-        const StateRegion& r = regions[p.here];
-        std::snprintf(buf, sizeof(buf), "  %s (%zu bytes): %zu words from %s", r.name.c_str(), r.size, p.copied, who);
-        lines.push_back(buf);
-    }
-    for (const OtherRegion& o : taken.unpaired) {
-        std::snprintf(buf, sizeof(buf), "no region here pairs with %s's region %u (%zu bytes)", who, o.index, o.size);
-        lines.push_back(buf);
-    }
-    for (size_t i = 0; i < taken.differences.size() && i < maxWords; i++) {
-        const WordDifference& d = taken.differences[i];
-        const StateRegion& r = regions[d.region];
-        std::snprintf(buf, sizeof(buf), "  frame 0 word: %s (%zu bytes) +0x%zx: here %016llx, %s %016llx, %s", r.name.c_str(),
-                      r.size, d.offset, static_cast<unsigned long long>(d.here), who, static_cast<unsigned long long>(d.there),
-                      d.copied ? "copied" : "kept");
-        lines.push_back(buf);
-    }
-    if (taken.differences.size() > maxWords) {
-        std::snprintf(buf, sizeof(buf), "  frame 0 words: %zu more differ", taken.differences.size() - maxWords);
-        lines.push_back(buf);
-    }
-    // Regions that found nothing to pair with usually mean the two battles
-    // were built with different objects, not that a few words differ.
-    constexpr size_t maxRegions = 32;
-    for (size_t i = 0; i < taken.unmatched.size() && i < maxRegions; i++) {
-        const StateRegion& r = regions[taken.unmatched[i]];
-        std::snprintf(buf, sizeof(buf), "  frame 0 region unmatched: %s (%zu bytes)", r.name.c_str(), r.size);
-        lines.push_back(buf);
-    }
-    if (taken.unmatched.size() > maxRegions) {
-        std::snprintf(buf, sizeof(buf), "  frame 0 regions unmatched: %zu more", taken.unmatched.size() - maxRegions);
-        lines.push_back(buf);
-    }
-    return lines;
 }
 
 } // namespace sfv

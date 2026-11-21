@@ -284,42 +284,6 @@ void TestIgnoreMask()
     CHECK(same);
 }
 
-// Taking another side's frame 0: equal regions stay, a differing region takes
-// the other's plain words but keeps masked words and pointer-like values, and
-// regions with nothing to pair with are reported on both sides.
-void TestTakeOtherState()
-{
-    auto word = [](uint8_t* p, size_t at, uint64_t v) { std::memcpy(p + at, &v, 8); };
-    uint8_t same[16] = {}, differs[32] = {}, alone[8] = {};
-    word(differs, 0, 1);
-    word(differs, 8, 2);                      // masked below
-    word(differs, 16, 0x00007FF600001000ull); // pointer-like here
-    std::vector<StateRegion> regions{{"same", same, sizeof(same), {}}, {"differs", differs, sizeof(differs), {0x02}},
-                                     {"alone", alone, sizeof(alone), {}}};
-    std::vector<uint64_t> hashes(regions.size());
-    HashRegions(regions, hashes.data());
-
-    uint8_t theirs[32] = {}, extra[24] = {};
-    word(theirs, 0, 7);  // copied
-    word(theirs, 8, 9);  // masked: kept
-    word(theirs, 16, 5); // here is pointer-like: kept
-    word(theirs, 24, 3); // copied
-    const std::vector<uint64_t> otherHashes{hashes[0], Hash64(theirs, sizeof(theirs)), Hash64(extra, sizeof(extra))};
-    const TakenState t = TakeOtherState(regions, hashes, otherHashes,
-                                        {{0, same, sizeof(same)}, {1, theirs, sizeof(theirs)}, {2, extra, sizeof(extra)}});
-
-    uint64_t v[4];
-    std::memcpy(v, differs, sizeof(v));
-    CHECK(v[0] == 7 && v[1] == 2 && v[2] == 0x00007FF600001000ull && v[3] == 3);
-    CHECK(t.wordsCopied == 2 && t.pointersKept == 1 && t.regionsChanged == 1);
-    CHECK(t.differences.size() == 3); // the masked word is not a difference
-    CHECK(t.regions.size() == 1 && t.regions[0].here == 1 && t.regions[0].there == 1);
-    CHECK(t.unpaired.size() == 1 && t.unpaired[0].index == 2); // 24 bytes: no region that size here
-    CHECK(t.unmatched.size() == 1 && t.unmatched[0] == 2);     // "alone" kept its bytes
-    const auto lines = DescribeTakenState(regions, t, "the host");
-    CHECK(std::count_if(lines.begin(), lines.end(), [](const std::string& l) { return l.find("frame 0 word:") != std::string::npos; }) == 3);
-}
-
 // A delay that covers the latency: most saves can never be loaded and skip
 // their copy. The match stays in sync and every load (jitter still causes
 // some) restores its saved state; with skipping off nothing is skipped.
@@ -969,7 +933,7 @@ void TestLobbyMessages()
     list.sliceAt = 24;
     list.sliceOf = 36;
     bytes = lobby::Encode(list);
-    CHECK(bytes.size() < lobby::kStateChunk + 64);
+    CHECK(bytes.size() + 1 <= 1024); // with the mux's channel byte
     back = lobby::Decode(bytes.data(), bytes.size());
     CHECK(back && back->type == lobby::Type::Matches && back->matches == list.matches);
     CHECK(back && back->sliceAt == 24 && back->sliceOf == 36);
@@ -1057,40 +1021,14 @@ void TestLobbyMessages()
     loaded.type = lobby::Type::Loaded;
     loaded.matchId = 99;
     loaded.stateChecksum = 0xABCD1234;
-    loaded.reconciled = true;
     auto lb = lobby::Encode(loaded);
     back = lobby::Decode(lb.data(), lb.size());
-    CHECK(back && back->stateChecksum == 0xABCD1234 && back->reconciled);
-
-    // The frozen-state reconciliation messages.
-    lobby::Message hashes;
-    hashes.type = lobby::Type::StateHashes;
-    hashes.matchId = 99;
-    hashes.first = 100;
-    hashes.total = 536;
-    hashes.hashes = {1, 2, 0xFFFFFFFFFFFFFFFFull};
-    auto hb = lobby::Encode(hashes);
-    back = lobby::Decode(hb.data(), hb.size());
-    CHECK(back && back->type == lobby::Type::StateHashes && back->first == 100 && back->total == 536 &&
-          back->hashes == hashes.hashes);
-
-    lobby::Message request;
-    request.type = lobby::Type::StateRequest;
-    request.regions = {3, 400};
-    auto rb = lobby::Encode(request);
-    back = lobby::Decode(rb.data(), rb.size());
-    CHECK(back && back->regions == request.regions);
-
-    lobby::Message data;
-    data.type = lobby::Type::StateData;
-    data.region = 400;
-    data.offset = 1024;
-    data.bytes.assign(lobby::kStateChunk, 0x5A);
-    auto db = lobby::Encode(data);
-    CHECK(db.size() + 1 <= 1024); // with the mux's channel byte
-    back = lobby::Decode(db.data(), db.size());
-    CHECK(back && back->region == 400 && back->offset == 1024 && back->bytes == data.bytes);
-    CHECK(!lobby::Decode(db.data(), db.size() - 1)); // truncated
+    CHECK(back && back->stateChecksum == 0xABCD1234);
+    // Types 6 to 8 (the frozen-state copy before protocol 17) are refused.
+    for (uint8_t gone = 6; gone <= 8; gone++) {
+        lb[6] = gone; // after the magic and the protocol
+        CHECK(!lobby::Decode(lb.data(), lb.size()));
+    }
 
     bytes[0] ^= 1;
     CHECK(!lobby::Decode(bytes.data(), bytes.size()));
@@ -1597,8 +1535,8 @@ void TestMatchTicket()
 }
 
 // The keeper's relay (core/spectate_relay.h) between a scripted host and
-// viewers: Hello, the hashes for each game, the stream, region requests on
-// demand and at the set's end, the Bye once a viewer has seen the set.
+// viewers: Hello, the host's Loaded for each game, the stream, and the Bye
+// once a viewer has seen the set. No game state passes through it.
 void TestSpectateRelay()
 {
     {
@@ -1664,24 +1602,17 @@ void TestSpectateRelay()
     relay.FromHost(welcome, now);
     up.clear();
     step(20);
-    // A Loaded that cannot match: the host answers with its hashes.
+    // A Loaded for the game, until the host's comes back; then the stream.
     auto loads = upOf(Type::Loaded);
-    CHECK(loads.size() == 1 && loads[0].matchId == kGame1 && loads[0].stateChecksum == 0 && !loads[0].reconciled);
+    CHECK(loads.size() == 1 && loads[0].matchId == kGame1);
     Message hostLoaded;
     hostLoaded.type = Type::Loaded;
     hostLoaded.matchId = kGame1;
     hostLoaded.stateChecksum = 0x1234;
     relay.FromHost(hostLoaded, now);
-    Message hashes;
-    hashes.type = Type::StateHashes;
-    hashes.matchId = kGame1;
-    hashes.total = 3;
-    hashes.hashes = {11, 22, 33};
-    relay.FromHost(hashes, now);
     up.clear();
     step(120);
-    loads = upOf(Type::Loaded);
-    CHECK(loads.size() == 1 && loads[0].reconciled && loads[0].stateChecksum == 0x1234);
+    CHECK(upOf(Type::Loaded).empty());
     CHECK(!upOf(Type::InputsAck).empty() && upOf(Type::InputsAck)[0].matchId == kGame1 && upOf(Type::InputsAck)[0].first == 0);
     Message inputs;
     inputs.type = Type::Inputs;
@@ -1717,8 +1648,11 @@ void TestSpectateRelay()
     vLoaded.stateChecksum = 0x1234;
     relay.FromViewer(50, vLoaded, now);
     CHECK(!downOf(50, Type::Loaded).empty() && downOf(50, Type::Loaded)[0].stateChecksum == 0x1234);
-    vLoaded.stateChecksum = 0x5555; // B's state differs
+    // B's state differs: it gets only the host's checksum (its own driver
+    // ends its session), never the host's state.
+    vLoaded.stateChecksum = 0x5555;
     relay.FromViewer(51, vLoaded, now);
+    CHECK(!downOf(51, Type::Loaded).empty() && downOf(51, Type::Loaded)[0].stateChecksum == 0x1234);
     Message ack;
     ack.type = Type::InputsAck;
     ack.matchId = kGame1;
@@ -1733,34 +1667,7 @@ void TestSpectateRelay()
         streamed += m.frames.size();
     }
     CHECK(streamed == 120 && inOrder);
-    CHECK(!downOf(51, Type::StateHashes).empty() && downOf(51, Type::StateHashes)[0].hashes.size() == 3);
-    CHECK(downOf(50, Type::StateHashes).empty());
     CHECK(!downOf(51, Type::SessionState).empty() && downOf(51, Type::SessionState)[0].spectators == 2);
-
-    // B lacks region 1: asked of the host once, then served from the relay.
-    Message req;
-    req.type = Type::StateRequest;
-    req.matchId = kGame1;
-    req.regions = {1};
-    relay.FromViewer(51, req, now);
-    up.clear();
-    step(100);
-    auto asks = upOf(Type::StateRequest);
-    CHECK(asks.size() == 1 && asks[0].regions == std::vector<uint32_t>{1});
-    up.clear();
-    step(500);
-    CHECK(upOf(Type::StateRequest).empty()); // not again so soon
-    Message data;
-    data.type = Type::StateData;
-    data.matchId = kGame1;
-    data.region = 1;
-    data.total = 4;
-    data.bytes = {1, 2, 3, 4};
-    relay.FromHost(data, now);
-    down.clear();
-    relay.FromViewer(51, req, now);
-    auto got = downOf(51, Type::StateData);
-    CHECK(got.size() == 1 && got[0].bytes == data.bytes && got[0].total == 4);
 
     // A fourth viewer: the relay is full (3). C, the third, gets the set's
     // games with its Accept, and the live game's Welcome only after them.
@@ -1804,8 +1711,6 @@ void TestSpectateRelay()
     CHECK(!loads.empty() && loads.back().matchId == kGame2);
     hostLoaded.matchId = kGame2;
     relay.FromHost(hostLoaded, now);
-    hashes.matchId = kGame2;
-    relay.FromHost(hashes, now);
     step(120);
     inputs.matchId = kGame2;
     inputs.first = 0;
@@ -1859,16 +1764,11 @@ void TestSpectateRelay()
         // Back to where the test was: A watching game 2 from frame 0.
         vLoaded.matchId = kGame1;
     }
-    // P1 wins game 2: the set (first to 2) is decided. C has not loaded
-    // anything: behind both games, so the relay takes their whole states
-    // (regions 0 and 2 of game 1; region 1 is in hand).
+    // P1 wins game 2: the set (first to 2) is decided.
     state.seats[0].wins = 2;
     state.matchId = kGame2;
     relay.FromHost(state, now);
-    up.clear();
     step(300);
-    asks = upOf(Type::StateRequest);
-    CHECK(!asks.empty() && asks[0].matchId == kGame1 && asks[0].regions == (std::vector<uint32_t>{0, 2}));
     CHECK(relay.Stats().decided);
     // The same two play on (keeper again): the score starts over and the
     // set end is to come again; then back to where the test was.
@@ -2698,7 +2598,6 @@ int main()
         {"loader choice", TestLoaderChoice},
         {"ping tiers", TestPingTiers},
         {"ignore mask", TestIgnoreMask},
-        {"take other state", TestTakeOtherState},
         {"skipped saves", TestSkippedSaves},
         {"replay file round trip", TestReplayRoundTrip},
         {"xpress huffman decoder", TestXpressHuffmanDecoder},

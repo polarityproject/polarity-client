@@ -19,8 +19,7 @@
 //   chara <code> (the character others see beside the name, member data "ch")
 //   watch <table>   unwatch   (a headless viewer: each set of the table through
 //   the keeper's relay room, from its first game, played at 60 frames a
-//   second; logs each game and the set. --diff: claims a differing starting
-//   state each game, so the relay sends hashes and a region.)
+//   second; logs each game and the set.)
 // Logs one line per happening on stdout ("bot Bot1: ...").
 
 #include "core/keeper_protocol.h"
@@ -62,7 +61,6 @@ std::string Str(const char* p, uint32_t len) { return p ? std::string(p, len) : 
 // relay, and the stream played at 60 frames a second.
 struct Viewer {
     std::string name, code;
-    bool diff = false;
     WeyveClient* c = nullptr;
     uint32_t host = 0;
     uint64_t build = 0;
@@ -71,13 +69,8 @@ struct Viewer {
     std::vector<lobby::MatchEntry> slices, list;
     uint64_t match = 0;
     int gameIndex = -1;
-    bool hostLoaded = false, reconciled = false;
+    bool hostLoaded = false; // the host's Loaded is in hand: the game can be watched
     uint32_t hostChecksum = 0;
-    std::vector<uint64_t> hashes;
-    uint32_t hashTotal = 0;
-    bool regionAsked = false, regionGot = false;
-    int64_t regionAskedMs = 0;
-    uint32_t regionWanted = 0;
     bool gameDone = false; // this game watched through (counted once)
     std::vector<lobby::FrameRecord> frames;
     std::map<uint32_t, lobby::FrameRecord> ahead;
@@ -126,7 +119,7 @@ struct Viewer {
             const lobby::MatchEntry& e = list[gameIndex];
             return ("game " + std::to_string(gameIndex + 1) + " of " + std::to_string(list.size()) + ": played " +
                 std::to_string(static_cast<int>(played)) + ", in hand " + std::to_string(frames.size()) + ", the list says " +
-                std::to_string(e.frames) + (e.finished ? " finished" : " not finished") + (reconciled ? "" : ", not reconciled") +
+                std::to_string(e.frames) + (e.finished ? " finished" : " not finished") + (hostLoaded ? "" : ", not loaded") +
                 (gameDone ? ", done" : ""));
         }
         return "no game yet (" + std::to_string(list.size()) + " listed)";
@@ -150,9 +143,7 @@ struct Viewer {
     {
         gameIndex = index;
         match = list[index].id;
-        hostLoaded = reconciled = regionAsked = regionGot = gameDone = false;
-        hashes.clear();
-        hashTotal = 0;
+        hostLoaded = gameDone = false;
         frames.clear();
         ahead.clear();
         played = 0;
@@ -167,8 +158,7 @@ struct Viewer {
         lobby::Message l;
         l.type = lobby::Type::Loaded;
         l.matchId = match;
-        l.stateChecksum = diff && !regionGot ? 0xB0B : hostChecksum;
-        l.reconciled = !diff || regionGot;
+        l.stateChecksum = hostChecksum;
         Send(l);
     }
 
@@ -202,27 +192,6 @@ struct Viewer {
                 hostLoaded = true;
                 hostChecksum = m.stateChecksum;
                 log("game " + std::to_string(gameIndex + 1) + ": the host's Loaded");
-                if (!diff) {
-                    reconciled = true;
-                    SendLoaded();
-                }
-            }
-            break;
-        case lobby::Type::StateHashes:
-            if (m.matchId != match || !diff) break;
-            hashTotal = m.total;
-            if (!regionAsked && m.total > 0) {
-                // One region, as a differing state usually lacks (asked
-                // again until it comes, as the driver does).
-                regionWanted = m.total / 2;
-                regionAsked = true;
-                regionAskedMs = 0;
-            }
-            break;
-        case lobby::Type::StateData:
-            if (m.matchId == match && diff && !regionGot && m.offset + m.bytes.size() >= m.total) {
-                regionGot = true;
-                reconciled = true;
                 SendLoaded();
             }
             break;
@@ -295,7 +264,7 @@ struct Viewer {
             if (done) return;
         }
         // Play at 60 a second, from the frames in hand.
-        if (gameIndex >= 0 && reconciled) {
+        if (gameIndex >= 0 && hostLoaded) {
             // As the driver's table viewer: 120 frames in hand before
             // playing, and again after running dry (kRelayWatchDelayFrames).
             const lobby::MatchEntry& entry = list[gameIndex];
@@ -332,20 +301,12 @@ struct Viewer {
             beatMs = now;
             lobby::Message ack;
             ack.type = lobby::Type::InputsAck;
-            ack.matchId = reconciled ? match : 0;
+            ack.matchId = hostLoaded ? match : 0;
             ack.first = static_cast<uint32_t>(frames.size());
             ack.playedTo = static_cast<uint32_t>(played);
             ack.decided = gameDone;
             Send(ack);
-            if (gameIndex >= 0 && !reconciled) SendLoaded();
-            if (regionAsked && !regionGot && now - regionAskedMs >= 500) {
-                regionAskedMs = now;
-                lobby::Message r;
-                r.type = lobby::Type::StateRequest;
-                r.matchId = match;
-                r.regions = {regionWanted};
-                Send(r);
-            }
+            if (gameIndex >= 0 && !hostLoaded) SendLoaded();
         }
     }
 };
@@ -358,7 +319,6 @@ struct Bot {
     bool autoPlay = false;
     int64_t setMs = 3000;
     std::string wins = "random";
-    bool diff = false; // --diff: the viewer's starting state differs each game
     int watchTable = -1;
     std::string watchedCode;
     std::unique_ptr<Viewer> viewer;
@@ -811,7 +771,6 @@ struct Bot {
         watchedCode = st.watch;
         viewer = std::make_unique<Viewer>();
         viewer->name = name;
-        viewer->diff = diff;
         viewer->log = [this](const std::string& line) { Log("viewer: " + line); };
         Log("watches table " + std::to_string(watchTable) + "'s set in relay room " + st.watch);
         if (!viewer->Start(host, port, st.watch)) {
@@ -881,13 +840,12 @@ int main(int argc, char** argv)
         else if (a == "--auto") bot.autoPlay = true;
         else if (a == "--hub") bot.mode = Bot::Mode::Hub;
         else if (a == "--browse") bot.mode = Bot::Mode::Browse;
-        else if (a == "--diff") bot.diff = true;
         else if (a == "--set-ms" && v) bot.setMs = std::atoll(argv[++i]);
         else if (a == "--version" && v) bot.version = argv[++i];
         else if (a == "--wins" && v) bot.wins = argv[++i];
         else if (a == "--script" && v) Split(argv[++i], &bot.script);
         else {
-            std::fprintf(stderr, "usage: polarity-bot --name N [--server host:port] [--auto] [--set-ms ms] [--wins p1|p2|random] [--version v] [--diff] [--hub | --browse] [--script \"...\"]\n");
+            std::fprintf(stderr, "usage: polarity-bot --name N [--server host:port] [--auto] [--set-ms ms] [--wins p1|p2|random] [--version v] [--hub | --browse] [--script \"...\"]\n");
             return 2;
         }
     }

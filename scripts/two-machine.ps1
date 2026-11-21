@@ -19,7 +19,7 @@
 # -SpectateAfter S: the spectator joins S seconds into the first match
 # instead of before it, as a late watcher does (no preload in the lobby).
 # -Settings: more polarity.ini values for the agents, 'section.key=value'
-# ('netplay.reconcile_start=0'), put back with the rest at the end.
+# ('netplay.full_recordings=1'), put back with the rest at the end.
 # -SideCommands: more of them for one role, after -Commands
 # (@{ joiner = 'warmupsleep 80'; spectator = 'warmupsleep 150' }).
 # -Pairs: one match per entry, 'P1/P2' or 'P1/P2@STAGE' character codes, each

@@ -96,7 +96,6 @@ struct NetplayOptions {
     bool hashOnConfirm = true;             // frames on predicted inputs hashed once confirmed (NetplayConfig)
     bool menuAfterMatch = true;            // back to the main menu when a session ends or on leave
     bool hotkeys = false;                  // F7 hosts, F8 joins (testing; capture tools bind F8)
-    bool reconcileStart = true;            // joiner takes the host's values where the frozen states differ (lobby.h)
     bool allowSpectators = true;           // host: others may watch
     bool uploadReports = true;             // desync reports go to the Polarity server (report_upload.h)
     bool autoReady = false;                // ready as soon as the lobby is reached (commands, tests)

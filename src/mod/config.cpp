@@ -329,7 +329,6 @@ Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const st
     n.roundEndRollback = ReadInt(path, L"netplay", L"round_end_rollback", 1) != 0;
     n.menuAfterMatch = ReadInt(path, L"netplay", L"menu_after_match", 1) != 0;
     n.hotkeys = ReadInt(path, L"netplay", L"hotkeys", 0) != 0;
-    n.reconcileStart = ReadInt(path, L"netplay", L"reconcile_start", 1) != 0;
     n.fullRecordings = ReadInt(path, L"netplay", L"full_recordings", 0) != 0;
     n.skipSaves = ReadInt(path, L"netplay", L"skip_saves", 1) != 0;
     n.skipLoadCallbacks = ReadInt(path, L"netplay", L"skip_load_callbacks", 1) != 0;

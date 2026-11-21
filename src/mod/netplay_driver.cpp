@@ -67,10 +67,11 @@ constexpr int kSettleFrames = 90;
 // seen from stage select).
 constexpr int kDirectJumpSeconds = 60;
 constexpr int kMenuAfterMatchFrames = 60 * 3;
+// Frozen starts that differ: the session ends this long after, its Loaded
+// going out meanwhile, so the other side (and the spectators) find it too.
+constexpr auto kDifferentStartGrace = std::chrono::seconds(2);
 constexpr uint8_t kPredictionWindow = 8;
 constexpr int kMaxInputDelay = 10;
-// Waiting for the frozen states to be reconciled before starting anyway.
-constexpr int kReconcileSeconds = 15;
 // The heartbeat (PlayerState / SessionState) and the resends.
 constexpr auto kBeat = std::chrono::milliseconds(250);
 constexpr auto kMinBeat = std::chrono::milliseconds(33); // select screen changes go out at once, this often at most
@@ -85,9 +86,6 @@ constexpr auto kPreloadWait = std::chrono::seconds(90);
 // A table's set (AfterMatch::Set) won: back to the room this long after the
 // last game is decided, the side panels saying what follows meanwhile.
 constexpr auto kSetNextGameAfter = std::chrono::seconds(6);
-// How much longer a won set's host stays for the keeper's relay to take the
-// starting states of games its viewers have not reached.
-constexpr auto kKeeperStatesFor = std::chrono::seconds(25);
 // P1 asked the keeper for the next set (again): back to the room without its word.
 constexpr auto kAgainAnswerWait = std::chrono::seconds(5);
 // ... and its vote after each game: no choice by then counts as a rematch,
@@ -247,13 +245,11 @@ struct Watcher {
     uint64_t match = 0;                // the match it is loading or watching
     bool loaded = false;               // ... frozen at frame 0 (its Loaded)
     uint32_t checksum = 0;
-    bool reconciled = false;
     bool streaming = false;            // playing; acks frames
     int wanted = 0;                    // next frame it needs
     int sentThrough = -1;
     Clock::time_point progressAt;      // when `wanted` last moved
     bool keeper = false;               // the keeper's relay (a table set's only spectator)
-    Clock::time_point statesAskedAt;   // its last StateRequest
 };
 
 // After a session left during its jump (its driver gone, so not
@@ -1129,8 +1125,6 @@ private:
                 if (w.match == matchId_ && !w.streaming) SendTo(id, loaded);
             }
         }
-        if (s == State::Loading || s == State::Running) SendReconcile(watchers);
-        ReconcileWatchers(watchers);
         // The kept matches, once a second, for spectators to pick from.
         if (!watchers.empty() && Clock::now() - matchListSentAt_ > std::chrono::seconds(1)) {
             matchListSentAt_ = Clock::now();
@@ -1188,7 +1182,6 @@ private:
         }
         // Loaded is repeated until the host has started too (it may be lost).
         if ((s == State::Loading && selfLoaded_) || (s == State::Running && sessionSyncing_)) Send(LoadedMessage());
-        if (s == State::Loading) SendReconcile({});
     }
 
     lobby::Message WelcomeMessage()
@@ -1209,7 +1202,6 @@ private:
         loaded.matchId = matchId_;
         loaded.setup = loadedSetup_;
         loaded.stateChecksum = frozenChecksum_;
-        loaded.reconciled = reconciled_;
         return loaded;
     }
 
@@ -1339,7 +1331,6 @@ private:
                     peerLoadedSetup_ = m.setup;
                     peerChecksum_ = m.stateChecksum;
                 }
-                peerReconciled_ = m.reconciled;
                 peerLoaded_ = true;
             }
             else if (w && (m.matchId == matchId_ || KeptLoaded(m.matchId))) {
@@ -1356,17 +1347,6 @@ private:
                 w->match = m.matchId;
                 w->loaded = true;
                 w->checksum = m.stateChecksum;
-                w->reconciled = m.reconciled;
-            }
-            break;
-        case lobby::Type::StateRequest:
-            if (from == peer_ && m.matchId == matchId_) OnStateRequest(from, m);
-            else if (w) {
-                {
-                    std::lock_guard l(mutex_);
-                    w->statesAskedAt = Clock::now();
-                }
-                OnKeptStateRequest(from, m);
             }
             break;
         case lobby::Type::InputsAck:
@@ -1502,12 +1482,6 @@ private:
                 peerLoaded_ = true;
             }
             break;
-        case lobby::Type::StateHashes:
-            if (m.matchId == matchId_) OnStateHashes(m);
-            break;
-        case lobby::Type::StateData:
-            if (m.matchId == matchId_) OnStateData(m);
-            break;
         case lobby::Type::Matches:
             if (role_ == Role::Spectator) {
                 uint64_t first = 0;
@@ -1571,24 +1545,6 @@ private:
             if (member.id != from) continue;
             const auto p = member.data.find(keeper::kProof);
             return p != member.data.end() && RoomsIsKeeper(v.room, member.id, p->second);
-        }
-        return false;
-    }
-
-    // The set is won: the keeper's relay is taking the starting states of the
-    // games a viewer has not reached (it serves them after this side has
-    // gone). The results screen waits for it, kKeeperStatesFor at most.
-    bool KeeperTakingStates()
-    {
-        const auto now = Clock::now();
-        if (now - decidedAt_ > kSetNextGameAfter + kKeeperStatesFor) return false;
-        std::lock_guard lock(mutex_);
-        for (const auto& [id, w] : watchers_) {
-            if (w.keeper && now - w.statesAskedAt < std::chrono::milliseconds(1500)) {
-                if (!loggedKeeperStates_) Log("netplay: the keeper's relay takes the set's starting states; leaving once it has them");
-                loggedKeeperStates_ = true;
-                return true;
-            }
         }
         return false;
     }
@@ -1668,7 +1624,7 @@ private:
                     ResolveAgain(mine, theirs);
                     return;
                 }
-                if (Clock::now() - decidedAt_ >= kSetNextGameAfter && !KeeperTakingStates()) EndSession(over);
+                if (Clock::now() - decidedAt_ >= kSetNextGameAfter) EndSession(over);
                 return;
             }
             const bool late = Clock::now() - decidedAt_ >= kSetVote;
@@ -1770,7 +1726,6 @@ private:
         }
         g_forfeitSeat = -1;
         again_ = Again::None;
-        loggedKeeperStates_ = false;
         Log("netplay: the next set: %s", FormatRules(rules).c_str());
         if (againSelect_) {
             std::lock_guard lock(mutex_);
@@ -2202,21 +2157,12 @@ private:
         frozenFrames_ = 0;
         selfLoaded_ = false;
         peerLoaded_ = false;
-        peerReconciled_ = false;
-        reconciled_ = false;
-        hostDataComplete_ = false;
-        bothLoadedAt_ = {};
+        startsDifferAt_ = {};
         myChoice_ = Choice::None;
         specWanted_ = 0;
         specPlayed_ = 0;
         {
             std::lock_guard lock(mutex_);
-            requested_ = false;
-            layoutNote_.clear();
-            hostHashes_.clear();
-            hostHashParts_.clear();
-            hostRegions_.clear();
-            hostRegionChunks_.clear();
             inbound_.clear();
             for (auto& seat : seats_) seat.choice = Choice::None;
             live_ = NetView{};
@@ -2284,7 +2230,7 @@ private:
             std::vector<uint64_t> hashes(game.Regions().size());
             HashRegions(game.Regions(), hashes.data());
             frozenChecksum_ = FoldChecksum(hashes.data(), hashes.size());
-            KeepFrozenState(game.Regions(), hashes);
+            KeepFrozenState();
             ReadMatchSetup(&loadedSetup_);
             Log("netplay: battle objects ready after %d neutral ticks (%zu regions, checksum %08X); frozen",
                 game.ObjectsAt(), hashes.size(), frozenChecksum_);
@@ -2327,9 +2273,15 @@ private:
                 EndSession("battles differ: " + mismatch);
                 return true;
             }
-            if (!ReadyToStart(game, peerChecksum)) return true;
-            Log("netplay: frozen state checksums %08X here, %08X there%s", frozenChecksum_, peerChecksum,
-                frozenChecksum_ == peerChecksum ? "" : " (differ)");
+            if (frozenChecksum_ != peerChecksum) {
+                if (startsDifferAt_ == Clock::time_point{}) {
+                    startsDifferAt_ = Clock::now();
+                    SaveDifferentStart(game, peerChecksum);
+                }
+                if (Clock::now() - startsDifferAt_ >= kDifferentStartGrace) EndSession("battles differ: starting state");
+                return true;
+            }
+            Log("netplay: frozen state checksums %08X here and there", frozenChecksum_);
             if (role_ == Role::Spectator) StartWatching(game);
             else StartSession(game);
         }
@@ -3092,13 +3044,11 @@ private:
         std::string names[kNumPlayers];
         std::string server;
         NetView::Path path;
-        std::string layout;
         {
             std::lock_guard lock(mutex_);
             for (int i = 0; i < kNumPlayers; i++) names[i] = seats_[i].name;
             server = options_.udp ? "direct UDP" : options_.server;
             path = linkPath_;
-            layout = layoutNote_;
         }
         const std::string logPath = recording.substr(0, recording.rfind('.')) + ".log";
         if (!ReportUploadsOn()) KeepReportLocal(reportDir_, logPath.substr(logPath.find_last_of('\\') + 1));
@@ -3129,7 +3079,6 @@ private:
         std::fprintf(f, "mods: %s\n", ScanModPaks().Text().c_str());
         std::fprintf(f, "battle data: %s\n", LastDataCheck().Text().c_str());
         std::fprintf(f, "character versions: %s\n", CharaVersionsText().c_str());
-        if (!layout.empty()) std::fprintf(f, "state layout: %s\n", layout.c_str());
         const int peerReports = peerReports_;
         std::fprintf(f, "desync reports: %s from this side, %s from the other side\n", ReportUploadsOn() ? "sent" : "not sent",
                      peerReports > 0 ? "sent" : peerReports == 0 ? "not sent" : "not known if sent");
@@ -3211,7 +3160,6 @@ private:
     uint8_t selectScreen_ = 0, selectRow_ = 0; // SetSelectState, under mutex_
     uint32_t selectHover_ = 0;
     std::atomic<bool> beatNow_{false};
-    bool loggedKeeperStates_ = false;
     std::atomic<bool> againOffered_{false};  // the keeper's again mark on this player's table (rooms_client)
     std::atomic<Again> again_{Again::None};
     Clock::time_point againAskedAt_{};
@@ -3279,6 +3227,7 @@ private:
     int forfeitSeat_ = -1;      // the seat that left the set, -1 none (mutex_)
     std::atomic<bool> selfLoaded_{false};
     std::atomic<bool> peerLoaded_{false};
+    Clock::time_point startsDifferAt_{}; // game thread: when the frozen starts were found to differ
     std::atomic<bool> peerLeft_{false};
     std::atomic<bool> peerLeftRoom_{false}; // the server said so while the link held (the match went on)
     bool endAfterJump_ = false;     // Next::End came mid-jump: the menu waits for that battle (EndAfterJumpTick)
@@ -3312,13 +3261,10 @@ private:
     std::map<uint64_t, std::vector<lobby::FrameRecord>> streams_; // per match; guarded by mutex_
     std::vector<uint64_t> streamOrder_;                          // oldest first, at most lobby::kKeptMatches
     // Host: per kept match besides its stream, what a spectator needs to watch
-    // it from its start at any time: the setup, the frozen starting state it
-    // reconciles with (as the players do), and how the match ended.
+    // it from its start at any time: the setup, the starting checksum its own
+    // frozen state must equal (as the players' do), and how the match ended.
     struct KeptMatch {
         MatchSetup setup;
-        std::vector<uint8_t> state;
-        std::vector<size_t> offsets, sizes;
-        std::vector<uint64_t> hashes;
         uint32_t checksum = 0;
         bool finished = false;
         int8_t winner = -1;
@@ -3342,294 +3288,54 @@ private:
     std::atomic<int> specPlayed_{0}; // the next frame its playback shows (InputsAck.played)
     std::atomic<uint64_t> watchingMatch_{0};
 
-    // ----- frozen state reconciliation (lobby.h) ------------------------------
-    // Written on the game thread at the freeze, before selfLoaded_; read by the
-    // control thread after.
-    std::vector<uint8_t> frozenState_;
-    std::vector<size_t> frozenOffsets_, frozenSizes_;
-    std::vector<uint64_t> frozenHashes_;
-    std::atomic<bool> peerReconciled_{false}; // host: the joiner says it is done
-    std::atomic<bool> reconciled_{false};     // joiner: done
-    Clock::time_point bothLoadedAt_{};
-    // Joiner, guarded by mutex_: the host's hashes, then the regions to fetch.
-    std::vector<uint64_t> hostHashes_;
-    std::string layoutNote_; // joiner: the host's region count differs from this side's (under mutex_)
-    std::vector<bool> hostHashParts_;
-    bool requested_ = false;
-    std::map<uint32_t, std::vector<uint8_t>> hostRegions_;      // region -> bytes
-    std::map<uint32_t, std::vector<bool>> hostRegionChunks_;    // region -> chunks received
-    std::atomic<bool> hostDataComplete_{false};
+    // ----- the frozen start -----------------------------------------------------
 
-    void KeepFrozenState(const std::vector<StateRegion>& regions, const std::vector<uint64_t>& hashes)
+    // Host: a kept match's setup and starting checksum, for a spectator
+    // loading it later.
+    void KeepFrozenState()
     {
-        frozenState_.resize(StateSize(regions));
-        SaveRegions(regions, frozenState_.data());
-        frozenOffsets_.clear();
-        frozenSizes_.clear();
-        size_t at = 0;
-        for (const StateRegion& r : regions) {
-            frozenOffsets_.push_back(at);
-            frozenSizes_.push_back(r.size);
-            at += r.size;
-        }
-        frozenHashes_ = hashes;
-        {
-            // What the keeper's relay takes of it at a set's end (a game a
-            // viewer has not reached): its size and its regions'.
-            std::vector<size_t> sizes = frozenSizes_;
-            std::sort(sizes.begin(), sizes.end());
-            Log("netplay: frozen state %zu bytes in %zu regions (median %zu, 90%% %zu, largest %zu)", frozenState_.size(),
-                sizes.size(), sizes.empty() ? 0 : sizes[sizes.size() / 2], sizes.empty() ? 0 : sizes[sizes.size() * 9 / 10],
-                sizes.empty() ? 0 : sizes.back());
-        }
-        if (host_) {
-            std::lock_guard lock(mutex_);
-            KeepMatchLocked(matchId_);
-            KeptMatch& k = kept_[matchId_];
-            k.setup = setup_;
-            k.state = frozenState_;
-            k.offsets = frozenOffsets_;
-            k.sizes = frozenSizes_;
-            k.hashes = hashes;
-            k.checksum = frozenChecksum_;
-        }
-    }
-
-    // Net thread, every 250 ms while loading.
-    void SendReconcile(const std::map<uint64_t, Watcher>& watchers)
-    {
-        if (!options_.reconcileStart || !selfLoaded_) return;
-        if (host_) {
-            // Until each is done: the hashes, so it can tell what differs.
-            std::vector<uint64_t> to;
-            uint32_t peerChecksum;
-            {
-                std::lock_guard lock(mutex_);
-                peerChecksum = peerChecksum_;
-            }
-            if (peerLoaded_ && peerChecksum != frozenChecksum_ && !peerReconciled_) to.push_back(peer_);
-            (void)watchers; // spectators: ReconcileWatchers
-            for (uint64_t id : to) {
-                for (size_t first = 0; first < frozenHashes_.size(); first += lobby::kHashesPerMessage) {
-                    lobby::Message m;
-                    m.type = lobby::Type::StateHashes;
-                    m.matchId = matchId_;
-                    m.first = static_cast<uint32_t>(first);
-                    m.total = static_cast<uint32_t>(frozenHashes_.size());
-                    const size_t n = std::min(lobby::kHashesPerMessage, frozenHashes_.size() - first);
-                    m.hashes.assign(frozenHashes_.begin() + first, frozenHashes_.begin() + first + n);
-                    SendTo(id, m);
-                }
-            }
-            return;
-        }
-        // Joiner: ask for the regions still missing.
-        lobby::Message m;
-        m.type = lobby::Type::StateRequest;
-        m.matchId = matchId_;
-        {
-            std::lock_guard lock(mutex_);
-            if (!requested_ || hostDataComplete_) return;
-            for (const auto& [region, chunks] : hostRegionChunks_) {
-                const bool complete = !chunks.empty() && std::all_of(chunks.begin(), chunks.end(), [](bool c) { return c; });
-                if (!complete && m.regions.size() < lobby::kRegionsPerRequest) m.regions.push_back(region);
-            }
-        }
-        if (!m.regions.empty()) Send(m);
-    }
-
-    // Joiner: the host's hashes; once all are in, request every host region
-    // this side has no equal of (by hash, any order).
-    void OnStateHashes(const lobby::Message& m)
-    {
+        if (!host_) return;
         std::lock_guard lock(mutex_);
-        if (requested_ || !selfLoaded_ || m.total == 0 || m.total > 100000) return;
-        if (hostHashes_.size() != m.total) {
-            hostHashes_.assign(m.total, 0);
-            hostHashParts_.assign((m.total + lobby::kHashesPerMessage - 1) / lobby::kHashesPerMessage, false);
-        }
-        if (m.first % lobby::kHashesPerMessage || m.first + m.hashes.size() > m.total) return;
-        std::copy(m.hashes.begin(), m.hashes.end(), hostHashes_.begin() + m.first);
-        hostHashParts_[m.first / lobby::kHashesPerMessage] = true;
-        if (!std::all_of(hostHashParts_.begin(), hostHashParts_.end(), [](bool b) { return b; })) return;
-        std::multiset<uint64_t> mine(frozenHashes_.begin(), frozenHashes_.end());
-        for (uint32_t i = 0; i < hostHashes_.size(); i++) {
-            auto it = mine.find(hostHashes_[i]);
-            if (it != mine.end()) {
-                mine.erase(it);
-                continue;
-            }
-            hostRegionChunks_[i]; // to fetch
-        }
-        requested_ = true;
-        Log("netplay: frozen states differ in %zu of %zu regions; taking the host's", hostRegionChunks_.size(),
-            hostHashes_.size());
-        // Taking the host's values can't mend a battle built with other
-        // objects: a different count desyncs from frame 0 (0.4.2: 369 vs 549).
-        if (hostHashes_.size() != frozenHashes_.size()) {
-            layoutNote_ = "the host's battle has " + std::to_string(hostHashes_.size()) + " state regions, this side's " +
-                          std::to_string(frozenHashes_.size()) + ": the two games built the battle differently";
-            Log("netplay: %s", layoutNote_.c_str());
-        }
-        if (hostRegionChunks_.empty()) hostDataComplete_ = true;
+        KeepMatchLocked(matchId_);
+        KeptMatch& k = kept_[matchId_];
+        k.setup = setup_;
+        k.checksum = frozenChecksum_;
     }
 
-    // Host: the bytes of the requested regions, in chunks.
-    // Host: a spectator's request, served from the kept match it names.
-    void OnKeptStateRequest(uint64_t to, const lobby::Message& m)
+    // Each side builds frame 0 itself, and a match starts only from equal
+    // frozen states: no other machine's bytes are written into this game.
+    // States that differ end the session (kDifferentStartGrace later). This
+    // side saves a desync report of its start, the other side saves its own,
+    // and the server pairs them by match id (their region hashes show where
+    // the two starts differ).
+    void SaveDifferentStart(SfvGame& game, uint32_t peerChecksum)
     {
-        std::vector<lobby::Message> out;
-        {
-            std::lock_guard lock(mutex_);
-            const auto k = kept_.find(m.matchId);
-            if (k == kept_.end()) return;
-            for (uint32_t region : m.regions) {
-                if (region >= k->second.sizes.size()) continue;
-                const size_t size = k->second.sizes[region];
-                for (size_t at = 0; at < size; at += lobby::kStateChunk) {
-                    lobby::Message d;
-                    d.type = lobby::Type::StateData;
-                    d.matchId = m.matchId;
-                    d.region = region;
-                    d.total = static_cast<uint32_t>(size);
-                    d.offset = static_cast<uint32_t>(at);
-                    const size_t n = std::min(lobby::kStateChunk, size - at);
-                    const uint8_t* src = k->second.state.data() + k->second.offsets[region] + at;
-                    d.bytes.assign(src, src + n);
-                    out.push_back(std::move(d));
-                }
-            }
-        }
-        for (const auto& d : out) SendTo(to, d);
-    }
-
-    // Host: each spectator loaded with a starting state that differs from the
-    // kept match's gets that match's region hashes, until it has reconciled
-    // (any match, whatever this side is doing).
-    void ReconcileWatchers(const std::map<uint64_t, Watcher>& watchers)
-    {
-        if (!options_.reconcileStart) return;
-        std::vector<lobby::Message> out;
-        std::vector<uint64_t> to;
-        {
-            std::lock_guard lock(mutex_);
-            for (const auto& [id, w] : watchers) {
-                const auto k = kept_.find(w.match);
-                if (k == kept_.end() || !w.loaded || w.checksum == k->second.checksum || w.reconciled || w.streaming) continue;
-                const auto& hashes = k->second.hashes;
-                for (size_t first = 0; first < hashes.size(); first += lobby::kHashesPerMessage) {
-                    lobby::Message h;
-                    h.type = lobby::Type::StateHashes;
-                    h.matchId = w.match;
-                    h.first = static_cast<uint32_t>(first);
-                    h.total = static_cast<uint32_t>(hashes.size());
-                    const size_t n = std::min(lobby::kHashesPerMessage, hashes.size() - first);
-                    h.hashes.assign(hashes.begin() + first, hashes.begin() + first + n);
-                    out.push_back(std::move(h));
-                    to.push_back(id);
-                }
-            }
-        }
-        for (size_t i = 0; i < out.size(); i++) SendTo(to[i], out[i]);
-    }
-
-    void OnStateRequest(uint64_t to, const lobby::Message& m)
-    {
-        for (uint32_t region : m.regions) {
-            if (region >= frozenSizes_.size()) continue;
-            const size_t size = frozenSizes_[region];
-            for (size_t at = 0; at < size; at += lobby::kStateChunk) {
-                lobby::Message d;
-                d.type = lobby::Type::StateData;
-                d.matchId = matchId_;
-                d.region = region;
-                d.total = static_cast<uint32_t>(size);
-                d.offset = static_cast<uint32_t>(at);
-                const size_t n = std::min(lobby::kStateChunk, size - at);
-                const uint8_t* src = frozenState_.data() + frozenOffsets_[region] + at;
-                d.bytes.assign(src, src + n);
-                SendTo(to, d);
-            }
-        }
-    }
-
-    // Joiner: a chunk of a host region.
-    void OnStateData(const lobby::Message& m)
-    {
-        std::lock_guard lock(mutex_);
-        auto it = hostRegionChunks_.find(m.region);
-        if (it == hostRegionChunks_.end() || m.total == 0 || m.total > (1u << 24)) return;
-        auto& bytes = hostRegions_[m.region];
-        if (bytes.size() != m.total) {
-            bytes.assign(m.total, 0);
-            it->second.assign((m.total + lobby::kStateChunk - 1) / lobby::kStateChunk, false);
-        }
-        if (m.offset % lobby::kStateChunk || m.offset + m.bytes.size() > m.total) return;
-        std::copy(m.bytes.begin(), m.bytes.end(), bytes.begin() + m.offset);
-        it->second[m.offset / lobby::kStateChunk] = true;
-        for (const auto& [region, chunks] : hostRegionChunks_) {
-            if (chunks.empty() || !std::all_of(chunks.begin(), chunks.end(), [](bool c) { return c; })) return;
-        }
-        hostDataComplete_ = true;
-    }
-
-    // Joiner, game thread: copies the host's values into this side's regions.
-    // Each host region pairs with the most similar region of the same size
-    // that has no equal on the host (same-size regions are ordered by
-    // content, which can differ). Masked words and pointer-like values stay.
-    void ApplyHostState(SfvGame& game)
-    {
+        Log("netplay: frozen state checksums %08X here, %08X there: the starts differ; not starting", frozenChecksum_,
+            peerChecksum);
         const auto& regions = game.Regions();
-        std::map<uint32_t, std::vector<uint8_t>> host;
-        std::vector<uint64_t> hostHashes;
-        {
-            std::lock_guard lock(mutex_);
-            host = hostRegions_;
-            hostHashes = hostHashes_;
-        }
-        std::vector<OtherRegion> sent;
-        size_t fetched = 0;
-        for (const auto& [index, bytes] : host) {
-            sent.push_back({index, bytes.data(), bytes.size()});
-            fetched += bytes.size();
-        }
-        const TakenState taken = TakeOtherState(regions, frozenHashes_, hostHashes, sent);
-        for (const std::string& line : DescribeTakenState(regions, taken, "the host")) {
-            Log("netplay: %s", line.c_str());
-        }
-        std::vector<uint64_t> hashes(regions.size());
-        HashRegions(regions, hashes.data());
-        frozenChecksum_ = FoldChecksum(hashes.data(), hashes.size());
-        frozenHashes_ = hashes;
-        Log("netplay: took the host's values: %zu words in %zu regions (%zu pointer-like words kept, %zu bytes fetched); checksum now %08X",
-            taken.wordsCopied, taken.regionsChanged, taken.pointersKept, fetched, frozenChecksum_);
-    }
-
-    // Both loaded: start when the frozen states agree, when the joiner has
-    // taken the host's values, or after kReconcileSeconds.
-    bool ReadyToStart(SfvGame& game, uint32_t peerChecksum)
-    {
-        if (bothLoadedAt_ == Clock::time_point{}) bothLoadedAt_ = Clock::now();
-        const bool late = Clock::now() - bothLoadedAt_ > std::chrono::seconds(kReconcileSeconds);
-        if (frozenChecksum_ == peerChecksum && (host_ || !requested_ || reconciled_)) return true;
-        if (!options_.reconcileStart) return true;
-        if (host_) {
-            if (peerReconciled_) return true;
-        }
-        else if (hostDataComplete_ && !reconciled_) {
-            ApplyHostState(game);
-            reconciled_ = true;
-            return true;
-        }
-        else if (reconciled_) {
-            return true;
-        }
-        if (late) {
-            Log("netplay: the frozen states could not be reconciled in %d s; starting anyway", kReconcileSeconds);
-            reconciled_ = true;
-            return true;
-        }
-        return false;
+        ReplayFile rf;
+        rf.modVersion = modVersion_;
+        rf.gameBuild = game.BuildId();
+        rf.matchId = liveMatch_;
+        rf.localPlayer = role_ == Role::Spectator ? -1 : host_ ? 0 : 1;
+        rf.createdUnix = static_cast<uint64_t>(std::time(nullptr));
+        rf.inputDelay = options_.inputDelay;
+        rf.predictionWindow = options_.predictionWindow;
+        rf.setup = setup_;
+        rf.regions = DescribeRegions(regions);
+        rf.initialHashes.resize(regions.size());
+        HashRegions(regions, rf.initialHashes.data());
+        StateDump& initial = rf.dumps.emplace_back();
+        initial.frame = -1;
+        initial.label = "initial";
+        initial.bytes.resize(StateSize(regions));
+        SaveRegions(regions, initial.bytes.data());
+        SaveReport(rf, "desync");
+        const std::string path = SaveReport(rf, "match");
+        char summary[160];
+        std::snprintf(summary, sizeof(summary), "not started: frozen state checksum %08X here, %08X there (%zu regions)",
+                      frozenChecksum_, peerChecksum, regions.size());
+        WriteMatchLog(path, rf, summary);
     }
 };
 
