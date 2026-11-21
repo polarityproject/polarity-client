@@ -10,8 +10,7 @@
 
 namespace sfv::mod {
 
-inline void LogStack(const char* label, uintptr_t imageBase)
-{
+inline void LogStack(const char* label, uintptr_t imageBase) {
     void* frames[40];
     const USHORT n = RtlCaptureStackBackTrace(1, 40, frames, nullptr);
     std::string line;

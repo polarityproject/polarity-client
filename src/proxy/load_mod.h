@@ -30,8 +30,7 @@ inline wchar_t g_dir[MAX_PATH];
 inline int g_instance = 0;
 inline decltype(&CreateMutexW) g_realCreateMutexW = nullptr;
 
-inline HANDLE WINAPI CreateMutexWHook(LPSECURITY_ATTRIBUTES attributes, BOOL owner, LPCWSTR name)
-{
+inline HANDLE WINAPI CreateMutexWHook(LPSECURITY_ATTRIBUTES attributes, BOOL owner, LPCWSTR name) {
     if (name && lstrcmpW(name, L"StreetFighterV") == 0) {
         wchar_t unique[64];
         wsprintfW(unique, L"StreetFighterV-%lu", GetCurrentProcessId());
@@ -41,8 +40,7 @@ inline HANDLE WINAPI CreateMutexWHook(LPSECURITY_ATTRIBUTES attributes, BOOL own
 }
 
 // Points the exe's CreateMutexW import at the hook above.
-inline void AllowMultipleInstances()
-{
+inline void AllowMultipleInstances() {
     auto* base = reinterpret_cast<BYTE*>(GetModuleHandleW(nullptr));
     auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
     auto* nt = reinterpret_cast<IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
@@ -71,8 +69,7 @@ inline bool Exists(const wchar_t* path) { return GetFileAttributesW(path) != INV
 // SFVR's loader made sfv_rollback.live.<instance>.<n>.dll copies; any a crash
 // of the last SFVR run left behind are deleted here (one still loaded by
 // another game stays: Windows refuses to delete it).
-inline void DeleteOldLiveCopies()
-{
+inline void DeleteOldLiveCopies() {
     wchar_t pattern[MAX_PATH], path[MAX_PATH];
     wsprintfW(pattern, L"%ssfv_rollback.live.*.dll", g_dir);
     WIN32_FIND_DATAW fd;
@@ -86,8 +83,7 @@ inline void DeleteOldLiveCopies()
     FindClose(h);
 }
 
-inline DWORD WINAPI LoadMod(LPVOID)
-{
+inline DWORD WINAPI LoadMod(LPVOID) {
     wchar_t source[MAX_PATH], trigger[MAX_PATH], live[MAX_PATH];
     DeleteOldLiveCopies();
     wsprintfW(source, L"%spolarity.dll", g_dir);
@@ -122,8 +118,7 @@ inline DWORD WINAPI LoadMod(LPVOID)
 // to the old game's process (SFVR_WAIT_PID from SFVR's updater, which
 // installs the first Polarity build): wait here (before the game's
 // single-instance check) until it has closed, at most a minute.
-inline void WaitForRestartedGame()
-{
+inline void WaitForRestartedGame() {
     wchar_t text[32];
     DWORD n = GetEnvironmentVariableW(L"POLARITY_WAIT_PID", text, 32);
     if (!n || n >= 32) n = GetEnvironmentVariableW(L"SFVR_WAIT_PID", text, 32);
@@ -140,8 +135,7 @@ inline void WaitForRestartedGame()
     SetEnvironmentVariableW(L"POLARITY_RESTARTED", L"1");
 }
 
-inline void Start(HMODULE self)
-{
+inline void Start(HMODULE self) {
     DWORD n = GetModuleFileNameW(self, g_dir, MAX_PATH);
     while (n > 0 && g_dir[n - 1] != L'\\' && g_dir[n - 1] != L'/') n--;
     g_dir[n] = 0;
@@ -176,8 +170,7 @@ inline void Start(HMODULE self)
 
 } // namespace sfv::proxy
 
-BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
-{
+BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(module);
         sfv::proxy::Start(module);

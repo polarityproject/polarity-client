@@ -32,8 +32,7 @@ int g_slow = 0;
 int64_t g_slowExtraMicros = 0; // time over 1/60 s, summed
 Frame g_slowest;
 
-std::string Describe(const Frame& f)
-{
+std::string Describe(const Frame& f) {
     auto ms = [&](Part p) { return f.parts[static_cast<int>(p)] / 1000.0; };
     const double game = ms(Part::NetFrame) + ms(Part::BattleFrame) + ms(Part::Pacing);
     const double render = ms(Part::Overlay) + ms(Part::Present);
@@ -52,13 +51,11 @@ std::string Describe(const Frame& f)
 
 } // namespace
 
-void Add(Part part, int64_t micros)
-{
+void Add(Part part, int64_t micros) {
     g_parts[static_cast<int>(part)].fetch_add(micros, std::memory_order_relaxed);
 }
 
-void AddTick(bool replayed)
-{
+void AddTick(bool replayed) {
     g_ticks.fetch_add(1, std::memory_order_relaxed);
     if (replayed) g_replayed.fetch_add(1, std::memory_order_relaxed);
 }
@@ -67,23 +64,20 @@ std::atomic<bool> g_capturing{false};
 std::mutex g_captureMutex;
 std::vector<CapturedFrame> g_captured;
 
-void BeginCapture()
-{
+void BeginCapture() {
     std::lock_guard lock(g_captureMutex);
     g_captured.clear();
     g_captured.reserve(4096);
     g_capturing = true;
 }
 
-std::vector<CapturedFrame> EndCapture()
-{
+std::vector<CapturedFrame> EndCapture() {
     g_capturing = false;
     std::lock_guard lock(g_captureMutex);
     return std::move(g_captured);
 }
 
-void FramePresented(int64_t frameMicros, const char* where)
-{
+void FramePresented(int64_t frameMicros, const char* where) {
     Frame f;
     f.micros = frameMicros;
     for (int i = 0; i < kParts; i++) f.parts[i] = g_parts[i].exchange(0, std::memory_order_relaxed);

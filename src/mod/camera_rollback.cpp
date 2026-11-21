@@ -19,8 +19,7 @@ namespace {
 
 // APlayerCameraManager::SetViewTarget(this, NewTarget, const FViewTargetTransitionParams*).
 constexpr game::CodeSite kSetViewTarget{
-    "camera manager SetViewTarget", 0x1BC1E90,
-    {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x4C}};
+    "camera manager SetViewTarget", 0x1BC1E90, {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x4C}};
 // The camera manager's fields (UE4 APlayerCameraManager, as the setter and
 // the update at rva 0x1BACE12 use them): ViewTarget.Target, PendingViewTarget.Target,
 // BlendTimeToGo (counted down by the frame's time in the update; at 0 the
@@ -37,10 +36,10 @@ struct Transition {
     float exponent;
     uint32_t bits;
 };
+
 static_assert(sizeof(Transition) == 16);
 
-bool SameTransition(const Transition& a, const Transition& b)
-{
+bool SameTransition(const Transition& a, const Transition& b) {
     return a.blendTime == b.blendTime && a.function == b.function && a.exponent == b.exponent && (a.bits & 1) == (b.bits & 1);
 }
 
@@ -57,39 +56,39 @@ SetViewTargetFn g_origSetViewTarget = nullptr;
 
 std::atomic<bool> g_on{true};
 std::atomic<bool> g_log{false};
-bool g_inTick = false;     // game thread
+bool g_inTick = false;          // game thread
 std::vector<Request> g_journal; // the current timeline's requests
 std::vector<Request> g_aside;   // requests after a loaded tick, not made again yet
+
 struct LateStart {
     uint8_t* manager;
     void* target;
     uint32_t tick;
 };
+
 std::vector<LateStart> g_late; // blends started in a resimulated tick this frame
 int g_logs = 0;
 
-template <typename T> T& At(uint8_t* p, size_t off) { return *reinterpret_cast<T*>(p + off); }
+template <typename T>
+T& At(uint8_t* p, size_t off) { return *reinterpret_cast<T*>(p + off); }
 
 // The target a request names (none: the manager's owner, as the setter takes it).
 void* TargetOf(uint8_t* manager, void* target) { return target ? target : At<void*>(manager, 0x300); }
 
 // Whether the view is as the request leaves it: blending to its target, or
 // on it with no blend left.
-bool InEffect(const Request& r)
-{
+bool InEffect(const Request& r) {
     void* target = TargetOf(r.manager, r.target);
     void* view = At<void*>(r.manager, kViewTarget);
     void* pending = At<void*>(r.manager, kPendingTarget);
     return pending == target || (view == target && !pending);
 }
 
-std::string Name(const void* object)
-{
+std::string Name(const void* object) {
     return object && IsReadable(object, 0x30) ? ue4::Describe(object) : "none";
 }
 
-void LogRequest(const char* what, const Request& r)
-{
+void LogRequest(const char* what, const Request& r) {
     if (!g_log || g_logs++ > 2000) return;
     Log("camera: %s: tick %u%s%s phase %d, %s -> %s, blend %.3f (function %u), now view %s pending %s, to go %.3f", what, r.tick,
         r.inTick ? "" : " (outside a tick)", InReplayedTick() ? " replayed" : "", SchedulerPhaseNow(), Name(r.manager).c_str(),
@@ -97,8 +96,7 @@ void LogRequest(const char* what, const Request& r)
         Name(At<void*>(r.manager, kPendingTarget)).c_str(), At<float>(r.manager, kBlendTimeToGo));
 }
 
-void SetViewTargetDetour(uint8_t* manager, void* target, const Transition* transition)
-{
+void SetViewTargetDetour(uint8_t* manager, void* target, const Transition* transition) {
     if (!g_on || !transition || !CurrentFrameDriver() || !IsReadable(manager, kManagerSize)) {
         g_origSetViewTarget(manager, target, transition);
         return;
@@ -129,8 +127,7 @@ void SetViewTargetDetour(uint8_t* manager, void* target, const Transition* trans
 
 } // namespace
 
-bool InstallCameraRollback(const GameImage& image)
-{
+bool InstallCameraRollback(const GameImage& image) {
     void* target = image.At<void*>(kSetViewTarget.rva);
     if (std::memcmp(target, kSetViewTarget.bytes, sizeof(kSetViewTarget.bytes)) != 0) {
         Log("camera rollback: signature mismatch at %s: camera views reset on loads as the game does", kSetViewTarget.name);
@@ -146,26 +143,24 @@ bool InstallCameraRollback(const GameImage& image)
     return true;
 }
 
-void SetCameraRollback(bool on)
-{
+void SetCameraRollback(bool on) {
     g_on = on && g_origSetViewTarget;
     Log("camrollback: %s", g_on ? "camera views follow rollbacks" : "the game's own reset of camera views on loads");
 }
 
 bool CameraRollbackOn() { return g_on; }
 
-void SetCameraRollbackLog(bool on)
-{
+void SetCameraRollbackLog(bool on) {
     g_log = on;
     g_logs = 0;
     Log("camlog: %s", on ? "every view request logged" : "off");
 }
 
 void CameraTickBegin() { g_inTick = true; }
+
 void CameraTickEnd() { g_inTick = false; }
 
-void CameraLoaded(uint32_t tick)
-{
+void CameraLoaded(uint32_t tick) {
     if (!g_on) return;
     // The ticks after `tick` run again: their requests are set aside until
     // made again (or, at the frame's end, forgotten).
@@ -173,8 +168,7 @@ void CameraLoaded(uint32_t tick)
         if (g_journal[i].inTick && g_journal[i].tick > tick) {
             g_aside.push_back(g_journal[i]);
             g_journal.erase(g_journal.begin() + static_cast<std::ptrdiff_t>(i));
-        }
-        else {
+        } else {
             i++;
         }
     }
@@ -184,8 +178,7 @@ void CameraLoaded(uint32_t tick)
     }
 }
 
-void CameraFrameEnd()
-{
+void CameraFrameEnd() {
     if (!g_on) return;
     const uint32_t now = DrivenTicks();
     // Requests the new timeline did not make again are forgotten: the game's
@@ -214,8 +207,7 @@ void CameraFrameEnd()
     }
 }
 
-void CameraJournalReset()
-{
+void CameraJournalReset() {
     g_journal.clear();
     g_aside.clear();
     g_late.clear();

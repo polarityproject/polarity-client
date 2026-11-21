@@ -17,11 +17,11 @@ namespace sfv {
 
 enum class TexFormat : uint8_t {
     Unknown,
-    Bgra8,      // PF_B8G8R8A8
-    Bc1,        // PF_DXT1
-    Bc3,        // PF_DXT5
-    Bc5,        // PF_BC5
-    Rgb10A2,    // PF_A2B10G10R10 (R. Mika's art): DXGI R10G10B10A2, red in the low bits
+    Bgra8,   // PF_B8G8R8A8
+    Bc1,     // PF_DXT1
+    Bc3,     // PF_DXT5
+    Bc5,     // PF_BC5
+    Rgb10A2, // PF_A2B10G10R10 (R. Mika's art): DXGI R10G10B10A2, red in the low bits
 };
 
 const char* TexFormatName(TexFormat f);
@@ -35,9 +35,9 @@ struct TexMip {
 
 struct TexPackage {
     TexFormat format = TexFormat::Unknown;
-    std::string formatName;      // as the package names it
+    std::string formatName; // as the package names it
     uint32_t width = 0, height = 0;
-    std::vector<TexMip> mips;    // the ones with bytes in the package, largest first
+    std::vector<TexMip> mips; // the ones with bytes in the package, largest first
 };
 
 // False (and why) for a package this does not understand: no platform data,
@@ -63,6 +63,7 @@ struct TexLook {
     float saturate = 1;  // CSS saturate(): 1 as it is
     bool shadow = false; // black, keeping only the alpha: a shadow with the image's own outline
     uint32_t pad = 0;    // clear pixels added on every side (room for a shadow's blur)
+
     bool Any() const { return blur > 0 || saturate != 1 || shadow || pad > 0; }
 };
 

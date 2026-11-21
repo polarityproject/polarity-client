@@ -20,14 +20,14 @@
 namespace sfv::mod {
 
 struct RoomsScreenInput {
-    bool back = false;          // to the hub
-    bool create = false;        // ask the keeper for a room with `settings`
+    bool back = false;   // to the hub
+    bool create = false; // ask the keeper for a room with `settings`
     keeper::RoomSettings settings;
     std::vector<std::string> tableRules; // with `create`: each table's rules (FormatRules), from Customize Tables
-    std::string join;           // join this room code
-    bool clearNotice = false;   // "Try again" after a failed join
-    std::string focusedRoom;    // the public room in focus (its detail is asked for: RoomsPeek)
-    bool settings_ = false;     // open Polarity settings (wrong build, no server)
+    std::string join;                    // join this room code
+    bool clearNotice = false;            // "Try again" after a failed join
+    std::string focusedRoom;             // the public room in focus (its detail is asked for: RoomsPeek)
+    bool settings_ = false;              // open Polarity settings (wrong build, no server)
 };
 
 void OpenRoomsScreen();

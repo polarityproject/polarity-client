@@ -48,14 +48,15 @@ std::atomic<bool> g_stop{false}; // `replay stop`: end the running replay at the
 // the driver takes them at its next frame.
 std::mutex g_viewMutex;
 std::vector<std::pair<ReplayControl, int>> g_viewCommands;
-ReplayView g_view;                 // as the driver last published it
+ReplayView g_view; // as the driver last published it
 // The recording frame the tick being run plays (-1: none), and whether the
 // state it starts from (after the frame before) is in a round's fight.
 std::atomic<int> g_tickFrame{-1};
 std::atomic<bool> g_tickFight{false};
-std::atomic<int> g_tickRound{0}; // round calls up to the tick's starting frame (ReplayTickRound)
+std::atomic<int> g_tickRound{0};   // round calls up to the tick's starting frame (ReplayTickRound)
 uint32_t g_viewTaken = 0;          // commands the driver took from g_viewCommands (published later as g_view.handled)
 std::function<void()> g_viewLeave; // what leaving a viewed replay does after the battle
+
 // A viewer restarting (a jump back across a round's end): what the next
 // driver takes on (its target, paused, fast forward).
 struct RestartPending {
@@ -66,6 +67,7 @@ struct RestartPending {
     // rounds' action frames: the counter and the jumps keep them).
     std::vector<int> starts, ends, calls;
 };
+
 RestartPending g_restartPending;
 // Round jumps back load the keyframe taken just before a round's call, also
 // across round ends until the match is decided (on; `rview callkeys 0` for
@@ -77,7 +79,7 @@ std::atomic<bool> g_callKeys{true}, g_crossRounds{false}, g_anyKeys{false}, g_ke
 // would play a different battle than the recording's. `rview intro 1` shows it.
 std::atomic<bool> g_skipIntro{true};
 std::atomic<int> g_callPace{0}, g_callAfter{90}; // research: a run's pace through a round's call (ViewerFrame)
-std::atomic<int> g_latch{-1};    // `latch tick|game`: the pad latch the next replay uses (-1: by recording)
+std::atomic<int> g_latch{-1};                    // `latch tick|game`: the pad latch the next replay uses (-1: by recording)
 // `forcerollback <frame>...` (research): in a mispredict replay, the frames
 // whose input's arrival loads the state before them and runs them again even
 // when the guess was right (a load into the window between a KO and the
@@ -85,8 +87,8 @@ std::atomic<int> g_latch{-1};    // `latch tick|game`: the pad latch the next re
 std::mutex g_forcedMutex;
 std::vector<int> g_forcedRollbacks;
 std::atomic<uint32_t> g_forcedGuessXor{0}; // the forced frames first run on the remote input XOR this (a wrong guess)
-bool ForcedRollback(int frame)
-{
+
+bool ForcedRollback(int frame) {
     std::lock_guard lock(g_forcedMutex);
     return std::find(g_forcedRollbacks.begin(), g_forcedRollbacks.end(), frame) != g_forcedRollbacks.end();
 }
@@ -94,13 +96,13 @@ bool ForcedRollback(int frame)
 class NoTransport : public ITransport {
 public:
     void Send(uint64_t, const uint8_t*, size_t) override {}
+
     bool Receive(Packet&) override { return false; }
 };
 
 // Where a bare file name is looked for: Polarity\matches (files.h), then the
 // reports folder earlier builds wrote to (next to the exe).
-std::string FindRecording(const std::string& name)
-{
+std::string FindRecording(const std::string& name) {
     const std::string inMatches = Utf8Path(MatchesDir()) + "\\" + name;
     if (FILE* f = OpenFile(inMatches, "rb")) {
         std::fclose(f);
@@ -117,22 +119,21 @@ class ReplayDriver : public IFrameDriver {
 public:
     ReplayDriver(ReplayFile rf, std::string name, int stress, int watchFrom, int watchTo, std::string watchRegion)
         : rf_(std::move(rf)), name_(std::move(name)), stress_(stress), creationsAtJump_(BattleCreationCount()),
-          watchFrom_(watchFrom), watchTo_(watchTo), watchRegion_(std::move(watchRegion))
-    {
+          watchFrom_(watchFrom), watchTo_(watchTo), watchRegion_(std::move(watchRegion)) {
         last_ = rf_.finalThrough >= 0 ? std::min(rf_.finalThrough, rf_.FrameCount() - 1) : rf_.FrameCount() - 1;
     }
 
     // The Battle Log's playback: played as it was, with pause, frame steps
     // both ways, round jumps and fast forward (ReplayControl).
-    void SetViewer(std::string title, std::string path)
-    {
+    void SetViewer(std::string title, std::string path) {
         viewer_ = true;
         title_ = std::move(title);
         path_ = std::move(path);
     }
+
     void SetBenchmark() { bench_ = true; }
-    void StartAt(const RestartPending& r)
-    {
+
+    void StartAt(const RestartPending& r) {
         startAt_ = r.target;
         paused_ = r.paused;
         fast_ = r.fast;
@@ -141,16 +142,14 @@ public:
         roundCalls_ = r.calls;
     }
 
-    void Keep(int from, int to)
-    {
+    void Keep(int from, int to) {
         keepFrom_ = from;
         keepTo_ = to;
     }
 
     // `hold <frame> <seconds>`: the replay stands still after that frame for
     // a while (the game keeps drawing it), for a screenshot.
-    void Hold(int frame, int seconds)
-    {
+    void Hold(int frame, int seconds) {
         if (frame >= 0 && seconds > 0) holds_.push_back({frame, seconds * 1000ull});
     }
 
@@ -163,18 +162,18 @@ public:
         long long offset; // may be negative: the owner's memory before the region
         int bytes;
     };
+
     void AddTrap(Trap t) { traps_.push_back(std::move(t)); }
 
     // `mispredict <delay> [remote 1|2]`: player `remote`'s inputs arrive
     // `delay` frames late (MispredictFrame).
-    void Mispredict(int delay, int remote)
-    {
+    void Mispredict(int delay, int remote) {
         delay_ = delay;
-        remote_ = remote >= 0 ? remote & 1 : rf_.localPlayer == 1 ? 0 : 1;
+        remote_ = remote >= 0 ? remote & 1 : rf_.localPlayer == 1 ? 0
+                                                                  : 1;
     }
 
-    bool OnFrame(SfvGame& game) override
-    {
+    bool OnFrame(SfvGame& game) override {
         if (g_stop.exchange(false)) {
             Log("replay: stopped");
             Finish(game);
@@ -211,6 +210,7 @@ private:
     // rollback runs them (lean, muted), and the last one as it played, so the
     // picture is that frame's. A jump forward runs on from where the replay is.
     static constexpr int kKeyEvery = 60;
+
     struct Keyframe {
         int frame = 0;      // the state before this frame
         bool fight = false; // taken in a round's fight (after FIGHT, before its end)
@@ -232,8 +232,7 @@ private:
     // round's call (after the round's reset) loads too, within its round:
     // LB to the round's start is a load, the music and ambience untouched
     // (a restart starts the battle's music over), 0 frames differing.
-    int LoadableKey(int target) const
-    {
+    int LoadableKey(int target) const {
         auto it = std::upper_bound(keys_.begin(), keys_.end(), target - 1, [](int f, const Keyframe& k) { return f < k.frame; });
         if (it == keys_.begin()) return -1;
         const int k = static_cast<int>(it - keys_.begin()) - 1;
@@ -270,8 +269,7 @@ private:
 
     // The key a jump back to `target` would load if the state now were in a
     // fight: a round call's (else -1).
-    int CallKeyFor(int target) const
-    {
+    int CallKeyFor(int target) const {
         auto it = std::upper_bound(keys_.begin(), keys_.end(), target - 1, [](int f, const Keyframe& k) { return f < k.frame; });
         if (it == keys_.begin() || !g_callKeys) return -1;
         return std::prev(it)->call ? static_cast<int>(it - keys_.begin()) - 1 : -1;
@@ -279,8 +277,7 @@ private:
 
     // A round's fight still to come (as known: the file's rounds, or those
     // seen; not known yet: unless the match is decided).
-    bool FightAhead() const
-    {
+    bool FightAhead() const {
         if (MatchDecided()) return false;
         const int shown = frame_ - 1;
         for (const ActionRange& r : ActionRanges()) {
@@ -296,8 +293,8 @@ private:
     struct ActionRange {
         int first = -1, last = -1;
     };
-    std::vector<ActionRange> ActionRanges() const
-    {
+
+    std::vector<ActionRange> ActionRanges() const {
         std::vector<ActionRange> out;
         for (const RoundResult& r : rf_.summary.rounds) {
             if (r.fightFrame >= 0) out.push_back({r.fightFrame, r.endFrame});
@@ -308,16 +305,14 @@ private:
             const int last = end != roundEnds_.end() && (i + 1 == roundStarts_.size() || *end <= roundStarts_[i + 1]) ? *end : -1;
             if (i < out.size()) {
                 if (out[i].last < 0) out[i].last = last;
-            }
-            else out.push_back({first, last});
+            } else out.push_back({first, last});
         }
         return out;
     }
 
     // The earliest frame on screen a step back reaches (Publish): the first
     // loadable keyframe's frame, or the frame on screen when there is none.
-    int BackLimit() const
-    {
+    int BackLimit() const {
         for (const Keyframe& k : keys_) {
             // Steps stay in the action, and in this round (a step back never crosses a KO).
             const bool thisRound = std::none_of(roundEnds_.begin(), roundEnds_.end(), [&](int e) { return e >= k.frame && e < frame_ - 1; });
@@ -326,8 +321,7 @@ private:
         return std::max(0, frame_ - 1);
     }
 
-    bool ViewerFrame(SfvGame& game)
-    {
+    bool ViewerFrame(SfvGame& game) {
         if (!Valid(game)) return false;
         hudTicks_ = 0;
         if (frame_ == 0 && keys_.empty()) {
@@ -338,8 +332,7 @@ private:
                 MuteGameSounds(true);
                 target_ = startAt_;
                 startAt_ = -1;
-            }
-            else if (g_skipIntro) {
+            } else if (g_skipIntro) {
                 // On to round 1's call (findRound_'s run, as RB's), its banner
                 // and "FIGHT!" then played as they were.
                 Log("replay: on to round 1's call, past the intro");
@@ -413,8 +406,7 @@ private:
                 target_ = -1;
                 warm_ = 0;
             }
-        }
-        else if (runToFight_ >= 0) {
+        } else if (runToFight_ >= 0) {
             // A jump back from between fights (Seek): on to the next fight
             // (waiting out a KO screen on the way), then the load.
             const ULONGLONG until = GetTickCount64() + 40;
@@ -428,8 +420,7 @@ private:
                     return false;
                 }
             }
-        }
-        else if (findRound_) {
+        } else if (findRound_) {
             // The next round's call, not reached yet: on until it is.
             const ULONGLONG until = GetTickCount64() + 40;
             while (findRound_ && frame_ <= last_ && GetTickCount64() < until && koScreenOver() && !holdUntil_) {
@@ -446,8 +437,7 @@ private:
                     if (roundCalls_.back() + 1 == frame_) {
                         KeepCapturedFrom(soundMark);
                         MuteGameSounds(false);
-                    }
-                    else Seek(game, roundCalls_.back() + 1);
+                    } else Seek(game, roundCalls_.back() + 1);
                     if (restarting_) {
                         Finish(game);
                         return false;
@@ -458,8 +448,7 @@ private:
                 findRound_ = false;
                 MuteGameSounds(false);
             }
-        }
-        else if (!paused_ && frame_ <= last_) {
+        } else if (!paused_ && frame_ <= last_) {
             // Fast forward only through action frames: the presentation
             // (intro, round call, KO, win poses) plays at normal speed.
             for (int k = 0; k < std::max(1, fast_) && frame_ <= last_ && (k == 0 || wasFight_); k++) Simulate(game, false);
@@ -485,7 +474,12 @@ private:
     // After the fight: the KO screen played (KoScreen), the picture faded to
     // black (FadeOut), on to the next fight behind it if needed (ToFight),
     // then the start point loaded and the picture back (the stripe's fade).
-    enum class TakeoverPhase { None, Countdown, Live, KoScreen, FadeOut, ToFight };
+    enum class TakeoverPhase { None,
+                               Countdown,
+                               Live,
+                               KoScreen,
+                               FadeOut,
+                               ToFight };
     static constexpr ULONGLONG kTakeoverCountdownMs = 3000;
     static constexpr ULONGLONG kTakeoverKoScreenMs = 2500; // the KO's slow motion and screen, as the game plays them
     static constexpr ULONGLONG kTakeoverFadeMs = 350;      // the stripe's fade to black (kFadeOut) and a little
@@ -495,6 +489,7 @@ private:
     // from (flow.cpp kPhaseRing, 64): past them a load back diverged (997
     // frames after a run on to the next round, 2026-11-09).
     static constexpr int kTakeoverKoTicks = 56;
+
     struct Takeover {
         TakeoverPhase phase = TakeoverPhase::None;
         int side = 0;
@@ -507,14 +502,12 @@ private:
         std::vector<uint8_t> ko; // the state on the KO's frame (TakeoverRewind)
     };
 
-    void TakeoverControl(SfvGame& game, ReplayControl c, int arg)
-    {
+    void TakeoverControl(SfvGame& game, ReplayControl c, int arg) {
         if (c == ReplayControl::TakeoverStop) {
             if (tk_.phase == TakeoverPhase::Countdown) {
                 Log("replay: takeover called off in its countdown");
                 tk_ = Takeover{};
-            }
-            else if (tk_.phase == TakeoverPhase::Live || tk_.phase == TakeoverPhase::KoScreen) {
+            } else if (tk_.phase == TakeoverPhase::Live || tk_.phase == TakeoverPhase::KoScreen) {
                 Log("replay: takeover stopped at frame %d", frame_ - 1);
                 TakeoverFadeOut(); // the fade, then back as after a KO
             }
@@ -543,78 +536,76 @@ private:
         Log("replay: takeover of P%d from frame %d", tk_.side + 1, frame_ - 1);
     }
 
-    void TakeoverFrame(SfvGame& game)
-    {
+    void TakeoverFrame(SfvGame& game) {
         const ULONGLONG now = GetTickCount64();
         switch (tk_.phase) {
-        case TakeoverPhase::Countdown:
-            if (now >= tk_.until) {
-                tk_.phase = TakeoverPhase::Live;
-                BeginSoundCapture(); // the takeover's sounds, stopped at the rewind
-                Log("replay: takeover of P%d playing", tk_.side + 1);
+            case TakeoverPhase::Countdown:
+                if (now >= tk_.until) {
+                    tk_.phase = TakeoverPhase::Live;
+                    BeginSoundCapture(); // the takeover's sounds, stopped at the rewind
+                    Log("replay: takeover of P%d playing", tk_.side + 1);
+                }
+                break;
+            case TakeoverPhase::Live: {
+                FrameInputs in = frame_ <= last_ ? rf_.inputs[frame_] : FrameInputs{};
+                in.p[tk_.side] = MappedLocalInput(0) & ~static_cast<PackedInput>(kStart);
+                if (in.p[tk_.side] != tk_.lastInput && tk_.inputLogs++ < 12) {
+                    Log("replay: takeover input %08X at frame %d", static_cast<unsigned>(in.p[tk_.side]), frame_);
+                }
+                tk_.lastInput = in.p[tk_.side];
+                g_tickFrame = frame_;
+                g_tickFight = wasFight_;
+                g_tickRound = CallsThrough(frame_ - 1);
+                game.Advance(in, false);
+                frame_++;
+                wasFight_ = RoundInFight();
+                if (!wasFight_) {
+                    // The KO's state kept, as netplay saves before a tick: back to
+                    // it after the KO screen as a rollback goes (the round's end
+                    // undone from the per-tick copies), then the start from there.
+                    tk_.koFrame = frame_;
+                    tk_.ko.resize(StateSize(game.Regions()));
+                    SaveRegions(game.Regions(), tk_.ko.data());
+                    tk_.phase = TakeoverPhase::KoScreen;
+                    tk_.until = now + kTakeoverKoScreenMs;
+                    tk_.ticks = 0;
+                    Log("replay: takeover's fight over at frame %d", frame_ - 1);
+                }
+                break;
             }
-            break;
-        case TakeoverPhase::Live: {
-            FrameInputs in = frame_ <= last_ ? rf_.inputs[frame_] : FrameInputs{};
-            in.p[tk_.side] = MappedLocalInput(0) & ~static_cast<PackedInput>(kStart);
-            if (in.p[tk_.side] != tk_.lastInput && tk_.inputLogs++ < 12) {
-                Log("replay: takeover input %08X at frame %d", static_cast<unsigned>(in.p[tk_.side]), frame_);
+            case TakeoverPhase::KoScreen:
+                // The round's end as the game plays it (the KO's slow motion, its
+                // screen, the voice), with no one's input, then the fade: as long
+                // as a rollback can still undo it (kTakeoverKoTicks).
+                if (now >= tk_.until || tk_.ticks >= kTakeoverKoTicks) TakeoverFadeOut();
+                else TakeoverTick(game);
+                break;
+            case TakeoverPhase::FadeOut:
+                if (now >= tk_.until) TakeoverRewind(game);
+                break;
+            case TakeoverPhase::ToFight: {
+                // Behind the black, on to the next fight (no keyframe loads the
+                // same from between fights), then the load; with no fight to
+                // come (the takeover decided the match), the battle again.
+                const ULONGLONG until = now + 40;
+                while (!wasFight_ && !MatchDecided() && tk_.ticks < kTakeoverRunMax && GetTickCount64() < until) TakeoverTick(game);
+                if (wasFight_) TakeoverLoad(game);
+                else if (MatchDecided() || tk_.ticks >= kTakeoverRunMax) {
+                    const int start = tk_.start.frame;
+                    Log("replay: no fight after the takeover's round (%s): the battle again to frame %d", MatchDecided() ? "the match decided" : "none came", start - 1);
+                    tk_ = Takeover{};
+                    paused_ = true;
+                    RestartAt(game, start);
+                }
+                break;
             }
-            tk_.lastInput = in.p[tk_.side];
-            g_tickFrame = frame_;
-            g_tickFight = wasFight_;
-            g_tickRound = CallsThrough(frame_ - 1);
-            game.Advance(in, false);
-            frame_++;
-            wasFight_ = RoundInFight();
-            if (!wasFight_) {
-                // The KO's state kept, as netplay saves before a tick: back to
-                // it after the KO screen as a rollback goes (the round's end
-                // undone from the per-tick copies), then the start from there.
-                tk_.koFrame = frame_;
-                tk_.ko.resize(StateSize(game.Regions()));
-                SaveRegions(game.Regions(), tk_.ko.data());
-                tk_.phase = TakeoverPhase::KoScreen;
-                tk_.until = now + kTakeoverKoScreenMs;
-                tk_.ticks = 0;
-                Log("replay: takeover's fight over at frame %d", frame_ - 1);
-            }
-            break;
-        }
-        case TakeoverPhase::KoScreen:
-            // The round's end as the game plays it (the KO's slow motion, its
-            // screen, the voice), with no one's input, then the fade: as long
-            // as a rollback can still undo it (kTakeoverKoTicks).
-            if (now >= tk_.until || tk_.ticks >= kTakeoverKoTicks) TakeoverFadeOut();
-            else TakeoverTick(game);
-            break;
-        case TakeoverPhase::FadeOut:
-            if (now >= tk_.until) TakeoverRewind(game);
-            break;
-        case TakeoverPhase::ToFight: {
-            // Behind the black, on to the next fight (no keyframe loads the
-            // same from between fights), then the load; with no fight to
-            // come (the takeover decided the match), the battle again.
-            const ULONGLONG until = now + 40;
-            while (!wasFight_ && !MatchDecided() && tk_.ticks < kTakeoverRunMax && GetTickCount64() < until) TakeoverTick(game);
-            if (wasFight_) TakeoverLoad(game);
-            else if (MatchDecided() || tk_.ticks >= kTakeoverRunMax) {
-                const int start = tk_.start.frame;
-                Log("replay: no fight after the takeover's round (%s): the battle again to frame %d", MatchDecided() ? "the match decided" : "none came", start - 1);
-                tk_ = Takeover{};
-                paused_ = true;
-                RestartAt(game, start);
-            }
-            break;
-        }
-        default: break;
+            default: break;
         }
     }
 
     // A tick past the takeover's fight: nobody's input (a recorded Start
     // there would skip the game's screens), not checked, not kept.
-    void TakeoverTick(SfvGame& game)
-    {
+    void TakeoverTick(SfvGame& game) {
         g_tickFrame = frame_;
         g_tickFight = wasFight_;
         g_tickRound = CallsThrough(frame_ - 1);
@@ -624,16 +615,14 @@ private:
         wasFight_ = RoundInFight();
     }
 
-    void TakeoverFadeOut()
-    {
+    void TakeoverFadeOut() {
         tk_.phase = TakeoverPhase::FadeOut;
         tk_.until = GetTickCount64() + kTakeoverFadeMs;
     }
 
     // Behind the black: the takeover's sounds stopped, the game's muted for
     // what runs now; then the start point (TakeoverLoad), from a fight.
-    void TakeoverRewind(SfvGame& game)
-    {
+    void TakeoverRewind(SfvGame& game) {
         const int stopped = StopCapturedSounds();
         MuteGameSounds(true);
         Log("replay: rewinding the takeover from frame %d (%d of its sounds stopped)", frame_ - 1, stopped);
@@ -658,8 +647,7 @@ private:
     // it played there), the last as played. The load is from a fight, also
     // across the takeover's round end. Without such a keyframe: the kept
     // state itself.
-    void TakeoverLoad(SfvGame& game)
-    {
+    void TakeoverLoad(SfvGame& game) {
         const int start = tk_.start.frame;
         crossFight_ = true;
         const int k = LoadableKey(start);
@@ -668,8 +656,7 @@ private:
             paused_ = true;
             warm_ = kTakeoverWarm;
             Seek(game, start); // muted on the way; the last frame as played
-        }
-        else {
+        } else {
             const Keyframe& kept = tk_.start;
             LoadRegions(game.Regions(), kept.regions.data());
             RestoreOutsideState(kept.outside);
@@ -686,8 +673,7 @@ private:
     }
 
     // One frame of the recording, a keyframe first where one is due.
-    void Simulate(SfvGame& game, bool lean)
-    {
+    void Simulate(SfvGame& game, bool lean) {
         // A run's second and later ticks this rendered frame: the HUD's movies
         // (banners, timer) first get the tick before's time, as if it had had
         // its frame (hud_step.h); the frame's own advance covers the last.
@@ -777,8 +763,7 @@ private:
     // Shows the state after frame target - 1 (target 0: before frame 0).
     // `quiet` (a step back): the target frame plays muted too, and the game's
     // sounds stay muted until the replay plays or moves on (EndQuiet).
-    void Seek(SfvGame& game, int target, bool quiet = false)
-    {
+    void Seek(SfvGame& game, int target, bool quiet = false) {
         target = std::clamp(target, 1, last_ + 1);
         if (target == frame_ || keys_.empty()) return;
         MuteGameSounds(true);
@@ -805,8 +790,7 @@ private:
                 if (FightAhead()) {
                     Log("replay: on to the next fight before going back to frame %d (the HUD is away)", target - 1);
                     runToFight_ = target;
-                }
-                else RestartAt(game, target);
+                } else RestartAt(game, target);
                 return;
             }
             // The keyframe at or before the frame before the target, where
@@ -833,7 +817,8 @@ private:
             wasFight_ = RoundInFight();
             seeks_++;
             logged_ = 0; // each load logs its own first differing frames
-            Log("replay: loaded the keyframe of frame %d (%s, %s)", key.frame, key.fight ? "fight" : key.call ? "round call" : "between fights",
+            Log("replay: loaded the keyframe of frame %d (%s, %s)", key.frame, key.fight ? "fight" : key.call ? "round call"
+                                                                                                              : "between fights",
                 RoundEndState().c_str());
             postLoadLogs_ = 4;
         }
@@ -843,8 +828,8 @@ private:
             target_ = -1;
         }
     }
-    void EndQuiet()
-    {
+
+    void EndQuiet() {
         if (!quiet_) return;
         quiet_ = false;
         MuteGameSounds(false);
@@ -852,82 +837,81 @@ private:
 
     // The battle again from the recording's start, then on to `target`
     // (muted), paused or not as now: a new driver, the same view.
-    void RestartAt(SfvGame& game, int target)
-    {
+    void RestartAt(SfvGame& game, int target) {
         Log("replay: restarting the battle to reach frame %d (from %d)", target - 1, frame_ - 1);
         startAt_ = target;
         restarting_ = true; // ViewerFrame finishes this driver once its frame's work is done
         (void)game;
     }
 
-    void Control(SfvGame& game, ReplayControl c, int arg)
-    {
+    void Control(SfvGame& game, ReplayControl c, int arg) {
         const int shown = frame_ - 1; // the frame on screen
         switch (c) {
-        case ReplayControl::Pause: paused_ = true; break;
-        case ReplayControl::Play:
-            paused_ = false;
-            EndQuiet();
-            if (frame_ > last_) Seek(game, StartFrame()); // from the end: again from the start
-            break;
-        case ReplayControl::Toggle: Control(game, paused_ ? ReplayControl::Play : ReplayControl::Pause, 0); break;
-        case ReplayControl::Step:
-            paused_ = true;
-            if (arg < 0) {
-                // Back: silent, and only as far as a keyframe of this round
-                // loads (a restart is for round jumps, not steps).
-                if (target_ >= 0 || findRound_ || runToFight_ >= 0) break;
-                const int to = std::max(frame_ + arg, BackLimit() + 1);
-                if (to < frame_) Seek(game, to, true);
-                break;
-            }
-            // Forward: only through a round's action frames, never past its
-            // KO (the KO's own frame is the last): the round's end, its win
-            // pose and the next round's call play as they did, or a round
-            // jump skips them.
-            if (target_ >= 0 || findRound_ || runToFight_ >= 0 || !CanStepForward()) break;
-            {
-                int to = frame_ + std::max(1, arg);
-                for (const ActionRange& r : ActionRanges()) {
-                    if (r.first <= shown + 1 && r.last >= shown + 1) to = std::min(to, r.last + 1);
-                }
+            case ReplayControl::Pause: paused_ = true; break;
+            case ReplayControl::Play:
+                paused_ = false;
                 EndQuiet();
-                Seek(game, to);
-            }
-            break;
-        case ReplayControl::Seek: EndQuiet(); Seek(game, arg); break;
-        case ReplayControl::Round:
-            EndQuiet();
-            Log("replay: round jump %+d from frame %d", arg, shown);
-            // A round starts at its call ("ROUND 2"), which then plays as it
-            // did: a seek run through the call in a frame or two left its
-            // banner (then "FIGHT!") over the fight (UI checks, 2026-11-09).
-            // Next: the first round call after the frame on screen, none in the
-            // last round (it ran to the recording's end, which stops inside the
-            // final KO); previous: PreviousRoundTarget.
-            if (arg > 0 && !CanRoundForward()) Log("replay: no round after this one");
-            else if (arg > 0) {
-                auto next = std::upper_bound(roundCalls_.begin(), roundCalls_.end(), shown);
-                if (next != roundCalls_.end()) Seek(game, *next + 1);
-                else if (frame_ <= last_) {
-                    findRound_ = true;
-                    MuteGameSounds(true);
+                if (frame_ > last_) Seek(game, StartFrame()); // from the end: again from the start
+                break;
+            case ReplayControl::Toggle: Control(game, paused_ ? ReplayControl::Play : ReplayControl::Pause, 0); break;
+            case ReplayControl::Step:
+                paused_ = true;
+                if (arg < 0) {
+                    // Back: silent, and only as far as a keyframe of this round
+                    // loads (a restart is for round jumps, not steps).
+                    if (target_ >= 0 || findRound_ || runToFight_ >= 0) break;
+                    const int to = std::max(frame_ + arg, BackLimit() + 1);
+                    if (to < frame_) Seek(game, to, true);
+                    break;
                 }
-            }
-            else Seek(game, PreviousRoundTarget());
-            break;
-        case ReplayControl::Fast: fast_ = std::clamp(arg, 0, 4); break;
-        case ReplayControl::HoldAt: Hold(arg, 5); break;
-        case ReplayControl::OutOfSync:
-            if (firstMismatch_ < 0) firstMismatch_ = std::max(0, frame_ - 1);
-            mismatchFrames_++;
-            break;
-        default: break;
+                // Forward: only through a round's action frames, never past its
+                // KO (the KO's own frame is the last): the round's end, its win
+                // pose and the next round's call play as they did, or a round
+                // jump skips them.
+                if (target_ >= 0 || findRound_ || runToFight_ >= 0 || !CanStepForward()) break;
+                {
+                    int to = frame_ + std::max(1, arg);
+                    for (const ActionRange& r : ActionRanges()) {
+                        if (r.first <= shown + 1 && r.last >= shown + 1) to = std::min(to, r.last + 1);
+                    }
+                    EndQuiet();
+                    Seek(game, to);
+                }
+                break;
+            case ReplayControl::Seek:
+                EndQuiet();
+                Seek(game, arg);
+                break;
+            case ReplayControl::Round:
+                EndQuiet();
+                Log("replay: round jump %+d from frame %d", arg, shown);
+                // A round starts at its call ("ROUND 2"), which then plays as it
+                // did: a seek run through the call in a frame or two left its
+                // banner (then "FIGHT!") over the fight (UI checks, 2026-11-09).
+                // Next: the first round call after the frame on screen, none in the
+                // last round (it ran to the recording's end, which stops inside the
+                // final KO); previous: PreviousRoundTarget.
+                if (arg > 0 && !CanRoundForward()) Log("replay: no round after this one");
+                else if (arg > 0) {
+                    auto next = std::upper_bound(roundCalls_.begin(), roundCalls_.end(), shown);
+                    if (next != roundCalls_.end()) Seek(game, *next + 1);
+                    else if (frame_ <= last_) {
+                        findRound_ = true;
+                        MuteGameSounds(true);
+                    }
+                } else Seek(game, PreviousRoundTarget());
+                break;
+            case ReplayControl::Fast: fast_ = std::clamp(arg, 0, 4); break;
+            case ReplayControl::HoldAt: Hold(arg, 5); break;
+            case ReplayControl::OutOfSync:
+                if (firstMismatch_ < 0) firstMismatch_ = std::max(0, frame_ - 1);
+                mismatchFrames_++;
+                break;
+            default: break;
         }
     }
 
-    void Publish()
-    {
+    void Publish() {
         std::lock_guard lock(g_viewMutex);
         g_view.active = true;
         g_view.title = title_;
@@ -970,8 +954,7 @@ private:
                 g_view.roundFrames = frames;
                 const int span = frames > 1 ? frames - 1 : std::max(1, int(rf_.setup.timerSeconds) * 60);
                 g_view.roundProgress = std::clamp(static_cast<float>(g_view.roundFrame) / static_cast<float>(span), 0.0f, 1.0f);
-            }
-            else {
+            } else {
                 const bool nextCall = std::any_of(roundCalls_.begin(), roundCalls_.end(), [&](int c) { return c > r.last && c <= shown; });
                 g_view.roundProgress = nextCall ? 0.0f : 1.0f;
             }
@@ -986,17 +969,16 @@ private:
     // The replay's start for Play at the end and LB in round 1: round 1's call
     // (g_skipIntro), as a round jump lands on it, or the recording's first frame.
     int StartFrame() const { return g_skipIntro && !roundCalls_.empty() ? roundCalls_.front() + 1 : 0; }
+
     // Running to round 1's call from before it (the intro behind black).
-    bool InOpeningRun() const
-    {
+    bool InOpeningRun() const {
         if (!g_skipIntro || (target_ < 0 && !findRound_)) return false;
         return roundCalls_.empty() ? findRound_ : frame_ <= roundCalls_.front() && (findRound_ || target_ == roundCalls_.front() + 1);
     }
 
     // RB has a round to go to: the round on screen (counted by calls, 0 in the
     // intro) is not the file's last. A file without its rounds: until the end.
-    bool CanRoundForward() const
-    {
+    bool CanRoundForward() const {
         const int shown = frame_ - 1;
         const auto next = std::upper_bound(roundCalls_.begin(), roundCalls_.end(), shown);
         if (next != roundCalls_.end()) return true; // seen already
@@ -1009,11 +991,10 @@ private:
     // LB: the previous round's call while this round's has just begun (its
     // call, or the first second of its fight), else this round's call; before
     // round 2 the replay's start.
-    int PreviousRoundTarget() const
-    {
+    int PreviousRoundTarget() const {
         const int shown = frame_ - 1;
         auto it = std::upper_bound(roundCalls_.begin(), roundCalls_.end(), shown); // past this round's call
-        if (it == roundCalls_.begin()) return StartFrame();                       // before any call
+        if (it == roundCalls_.begin()) return StartFrame();                        // before any call
         const int call = *std::prev(it);
         auto fight = std::upper_bound(roundStarts_.begin(), roundStarts_.end(), call - 1);
         const bool justBegun = fight == roundStarts_.end() || *fight >= shown || shown - *fight <= kKeyEvery;
@@ -1035,28 +1016,28 @@ private:
     std::vector<int> roundStarts_; // frames whose tick began a round's fight
     std::vector<int> roundCalls_;  // frames whose tick began a round's call (Round jumps land there)
     bool wasCall_ = false;
-    Keyframe scratch_{-1};       // the state before the last tick outside a fight (a call key in waiting)
+    Keyframe scratch_{-1}; // the state before the last tick outside a fight (a call key in waiting)
     bool wasFight_ = false;
     bool paused_ = false;
     bool findRound_ = false;
-    bool quiet_ = false; // a step back's mute, kept while paused there (Seek)
-    int runToFight_ = -1; // a jump back waiting for a fight to load from (Seek)
-    Takeover tk_;         // Replay Takeover (TakeoverControl)
-    bool crossFight_ = false; // LoadableKey: a takeover's rewind (fight keys across its round end)
-    int warm_ = 0;            // a seek's last frames run in full (Seek's run, TakeoverLoad)
-    int handledNow_ = 0; // controls taken since the last Publish (ReplayView::handled)
-    int hudTicks_ = 0;   // ticks simulated this rendered frame (Simulate: the HUD's step)
+    bool quiet_ = false;                        // a step back's mute, kept while paused there (Seek)
+    int runToFight_ = -1;                       // a jump back waiting for a fight to load from (Seek)
+    Takeover tk_;                               // Replay Takeover (TakeoverControl)
+    bool crossFight_ = false;                   // LoadableKey: a takeover's rewind (fight keys across its round end)
+    int warm_ = 0;                              // a seek's last frames run in full (Seek's run, TakeoverLoad)
+    int handledNow_ = 0;                        // controls taken since the last Publish (ReplayView::handled)
+    int hudTicks_ = 0;                          // ticks simulated this rendered frame (Simulate: the HUD's step)
     static constexpr int kHudFightFrames = 120; // "FIGHT!" plays out within them (90 measured clean)
     // A jump's run waits for the KO screen (Simulate): it plays in real time
     // from the KO, about this long (UI checks, 2026-11-09).
     static constexpr ULONGLONG kKoScreenMs = 1500;
-    ULONGLONG koMs_ = 0;          // when the last KO was simulated
-    ULONGLONG koHoldUntil_ = 0;   // a run waits until then
-    uint32_t roundEndsSeen_ = 0;  // RoundEndEvents as of the last tick
-    int target_ = -1; // seeking: the frame to simulate next once there
-    int fast_ = 0;    // frames a rendered frame while playing (0, 1: as played)
+    ULONGLONG koMs_ = 0;         // when the last KO was simulated
+    ULONGLONG koHoldUntil_ = 0;  // a run waits until then
+    uint32_t roundEndsSeen_ = 0; // RoundEndEvents as of the last tick
+    int target_ = -1;            // seeking: the frame to simulate next once there
+    int fast_ = 0;               // frames a rendered frame while playing (0, 1: as played)
     int keyWarnings_ = 0;
-    int seeks_ = 0;   // loads of a keyframe (testing)
+    int seeks_ = 0;              // loads of a keyframe (testing)
     std::vector<int> roundEnds_; // frames whose tick ended a round's fight
     std::string path_;           // the file, for a restart
     int startAt_ = -1;           // a restart's target (RestartAt)
@@ -1064,8 +1045,7 @@ private:
 
     // Neutral ticks until the battle's objects exist, then frozen at frame 0
     // as a netplay session is (SfvGame::WarmupStep).
-    bool Warmup(SfvGame& game)
-    {
+    bool Warmup(SfvGame& game) {
         if (game.WarmupStep()) {
             if (game.WarmupTicks() % 300 == 0) Log("replay: still no battle objects after %d ticks", game.WarmupTicks());
             return true;
@@ -1164,8 +1144,7 @@ private:
         return true;
     }
 
-    bool StraightFrame(SfvGame& game)
-    {
+    bool StraightFrame(SfvGame& game) {
         if (!Valid(game)) return false;
         if (frame_ > last_) {
             Finish(game);
@@ -1190,8 +1169,7 @@ private:
         return true;
     }
 
-    bool StressFrame(SfvGame& game)
-    {
+    bool StressFrame(SfvGame& game) {
         if (!Valid(game)) return false;
         if (bench_) {
             // B stops it; the fight (FIGHT to the end) is measured.
@@ -1252,8 +1230,7 @@ private:
     // the frames since are resimulated with what is known now. A frame is
     // compared with the recording once its input has arrived: live after a
     // rollback, else by the checksum it got when it ran on the right input.
-    bool MispredictFrame(SfvGame& game)
-    {
+    bool MispredictFrame(SfvGame& game) {
         if (!Valid(game)) return false;
         const int f = frame_;
         if (f > last_ + delay_) {
@@ -1273,8 +1250,7 @@ private:
             if (forced) Log("replay: rollback forced at frame %d (to the state before it)", arrived);
             if (forced || used_[arrived].p[remote_] != rf_.inputs[arrived].p[remote_]) {
                 Resimulate(game, arrived, std::min(f, last_ + 1));
-            }
-            else {
+            } else {
                 ConfirmBySum(arrived);
             }
         }
@@ -1285,14 +1261,12 @@ private:
         return true;
     }
 
-    PackedInput Guess(int k, int known) const
-    {
+    PackedInput Guess(int k, int known) const {
         if (k <= known) return rf_.inputs[k].p[remote_];
         return known >= 0 ? rf_.inputs[known].p[remote_] : PackedInput{};
     }
 
-    void RunPredicted(SfvGame& game, int k, int known, bool rollingBack)
-    {
+    void RunPredicted(SfvGame& game, int k, int known, bool rollingBack) {
         SaveRegions(game.Regions(), ring_[k % ring_.size()].data());
         FrameInputs in = rf_.inputs[k];
         in.p[remote_] = Guess(k, known);
@@ -1304,8 +1278,7 @@ private:
         sums_[k] = FoldChecksum(hashes.data(), hashes.size());
     }
 
-    void Resimulate(SfvGame& game, int from, int to)
-    {
+    void Resimulate(SfvGame& game, int from, int to) {
         LoadRegions(game.Regions(), ring_[from % ring_.size()].data());
         game.OnStateLoaded(from - 1);
         rollbacks_++;
@@ -1316,8 +1289,7 @@ private:
         }
     }
 
-    void ConfirmBySum(int k)
-    {
+    void ConfirmBySum(int k) {
         if (k >= rf_.FrameCount() || rf_.hashes.empty()) return;
         framesChecked_++;
         if (sums_[k] == rf_.FrameChecksum(k)) return;
@@ -1326,8 +1298,7 @@ private:
         if (logged_++ < 12) Log("replay: frame %d's checksum differs from the recording (ran on the right input)", k);
     }
 
-    void MaybeHold(int f)
-    {
+    void MaybeHold(int f) {
         for (size_t i = 0; i < holds_.size(); i++) {
             if (holds_[i].first != f) continue;
             holdUntil_ = GetTickCount64() + holds_[i].second;
@@ -1339,8 +1310,7 @@ private:
 
     // ArmWatch sets every thread's debug registers but the caller's, and the
     // ticks run on this (the game) thread: arm from another and wait.
-    static void ArmFromHelper(int slot, const void* address, int length, uintptr_t base)
-    {
+    static void ArmFromHelper(int slot, const void* address, int length, uintptr_t base) {
         std::thread([=] {
             ThreadGuard running;
             ArmWatch(slot, address, length, base);
@@ -1349,8 +1319,7 @@ private:
 
     // `watch <from> <to> [region]`: per frame, the region's first 16 bytes
     // (by name) and the round's end state.
-    void WatchFrame(SfvGame& game, int f)
-    {
+    void WatchFrame(SfvGame& game, int f) {
         for (const Trap& t : traps_) {
             if (f != t.frame - 1) continue;
             if (t.region == "director") {
@@ -1422,8 +1391,7 @@ private:
     static constexpr size_t kTrailBytes = 0x200, kManagerBytes = 0xB00;
     std::map<const uint8_t*, std::vector<uint64_t>> trailSeen_;
 
-    void LogTrails(SfvGame& game, int f)
-    {
+    void LogTrails(SfvGame& game, int f) {
         const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
         std::vector<const uint8_t*> objects;
         for (const StateRegion& r : game.Regions()) {
@@ -1482,8 +1450,7 @@ private:
     // The battle camera as last drawn: KWBattleCameraManager's CameraCache.POV
     // (+0x368 + 0x8): location, rotation (pitch, yaw, roll), FOV. Outside the
     // snapshot; compared between straight and stress replays by hand.
-    std::string CameraText()
-    {
+    std::string CameraText() {
         constexpr size_t kPov = 0x370;
         // The one drawn: the PlayerCameraManager (+0x390) of the player
         // controller that has a local player (Player, +0x360); the other
@@ -1508,8 +1475,7 @@ private:
         return b;
     }
 
-    bool Valid(SfvGame& game)
-    {
+    bool Valid(SfvGame& game) {
         game.RefreshRegions();
         if (game.LayoutVersion() == layout_ && !game.Regions().empty()) return true;
         Log("replay: the battle ended or changed under the replay at frame %d", stress_ > 0 ? session_->NextFrame() : frame_);
@@ -1523,8 +1489,7 @@ private:
     // the same). A region takes the mask the recording has for its size
     // when there is one; with several, the one at its place when the two
     // tables have the same sizes in the same order.
-    const std::vector<StateRegion>& CheckRegions(SfvGame& game)
-    {
+    const std::vector<StateRegion>& CheckRegions(SfvGame& game) {
         const std::vector<StateRegion>& live = game.Regions();
         if (game.LayoutVersion() == checkLayout_ && live.size() == checkCount_) return checkRegions_.empty() ? live : checkRegions_;
         checkLayout_ = game.LayoutVersion();
@@ -1558,7 +1523,8 @@ private:
         if (masksOf(rf_.gameBuild) != masksOf(game.BuildId())) {
             for (size_t i = 0; i < checkRegions_.size(); i++) {
                 const auto& masks = bySize[checkRegions_[i].size];
-                const std::vector<uint8_t>* mask = masks.size() == 1 ? masks[0] : sameOrder ? &rf_.regions[i].ignore : nullptr;
+                const std::vector<uint8_t>* mask = masks.size() == 1 ? masks[0] : sameOrder ? &rf_.regions[i].ignore
+                                                                                            : nullptr;
                 if (mask && *mask != checkRegions_[i].ignore) {
                     checkRegions_[i].ignore = *mask;
                     changed++;
@@ -1572,8 +1538,7 @@ private:
         return checkRegions_.empty() ? live : checkRegions_;
     }
 
-    void CheckFrame(SfvGame& game, int f)
-    {
+    void CheckFrame(SfvGame& game, int f) {
         const int before = firstMismatch_;
         CheckFrameAgainstRecording(game, f);
         // The benchmark: the first frame that came out different, kept as a
@@ -1584,8 +1549,7 @@ private:
 
     // The state now, as the benchmark's dump (its region table with it: the
     // layout may change later).
-    void TakeFailDump(SfvGame& game, int f, const char* label)
-    {
+    void TakeFailDump(SfvGame& game, int f, const char* label) {
         failDumpFrame_ = f;
         failDumpLabel_ = label;
         failDump_.resize(StateSize(game.Regions()));
@@ -1596,8 +1560,7 @@ private:
         Log("replay: benchmark state of frame %d kept (%s)", f, label);
     }
 
-    void CheckFrameAgainstRecording(SfvGame& game, int f)
-    {
+    void CheckFrameAgainstRecording(SfvGame& game, int f) {
         if (f >= rf_.FrameCount() || rf_.hashes.empty()) return;
         std::vector<uint64_t> hashes(CheckRegions(game).size());
         HashRegions(CheckRegions(game), hashes.data());
@@ -1621,13 +1584,13 @@ private:
     // The state against the recording's dump of the same frame: each region
     // here pairs with the same-size dump region it differs least from
     // (masked words left out); the differing words are logged.
-    void CompareDump(SfvGame& game, const StateDump& dump, int f)
-    {
+    void CompareDump(SfvGame& game, const StateDump& dump, int f) {
         struct Recorded {
             const uint8_t* bytes;
             size_t size;
             bool taken;
         };
+
         std::vector<Recorded> recorded;
         size_t at = 0;
         for (const auto& r : rf_.regions) {
@@ -1686,8 +1649,7 @@ private:
     // among the recording's regions of its size. (Names do not pair them: the
     // canonical order numbers same-size regions by content, and the battle
     // can bring a region more or less, which shifts every name after it.)
-    int Compare(SfvGame& game, const uint64_t* ours, const uint64_t* recorded, int f)
-    {
+    int Compare(SfvGame& game, const uint64_t* ours, const uint64_t* recorded, int f) {
         if (!recorded) return 0;
         std::map<uint64_t, std::multiset<uint64_t>> bySize;
         for (size_t j = 0; j < rf_.regions.size(); j++) bySize[rf_.regions[j].size].insert(recorded[j]);
@@ -1725,8 +1687,7 @@ private:
         return differ;
     }
 
-    void Finish(SfvGame& game)
-    {
+    void Finish(SfvGame& game) {
         ForgetHudMovies();
         if (trapSlots_) {
             WatchReport();
@@ -1754,7 +1715,8 @@ private:
                 run.draw.push_back(c.draw);
             }
             run.matched = firstMismatch_ < 0 && stressFrames_.empty();
-            run.firstDiffer = firstMismatch_ >= 0 ? firstMismatch_ : stressFrames_.empty() ? -1 : *stressFrames_.begin();
+            run.firstDiffer = firstMismatch_ >= 0 ? firstMismatch_ : stressFrames_.empty() ? -1
+                                                                                           : *stressFrames_.begin();
             run.straightFirst = firstMismatch_;
             run.resimFirst = stressFrames_.empty() ? -1 : *stressFrames_.begin();
             run.straightFrames = mismatchFrames_;
@@ -1781,8 +1743,7 @@ private:
                     run.dump = name;
                     PruneOldest(LogsDir(), L"benchmark_*.sfvr", 6);
                     Log("replay: benchmark state dump %s", name.c_str());
-                }
-                else Log("replay: cannot save the benchmark state dump: %s", error.c_str());
+                } else Log("replay: cannot save the benchmark state dump: %s", error.c_str());
                 failDump_.clear();
             }
             run.stopped = benchStopped_;
@@ -1802,8 +1763,7 @@ private:
             g_viewCommands.clear();
             g_viewTaken = 0;
             leave = std::move(g_viewLeave);
-        }
-        else if (viewer_) {
+        } else if (viewer_) {
             // Started again (a jump back): everything this battle still has
             // playing (its loops, its ambience: never ended by the game here)
             // is stopped before it goes, or it plays on over the new one.
@@ -1823,13 +1783,14 @@ private:
         // Stress: frames whose resimulation differed outside the presentation clocks.
         const int stressDesyncs = static_cast<int>(stressFrames_.size());
         const bool pass = ready_ && firstMismatch_ < 0 && stressDesyncs == 0 && framesChecked_ > last_;
-        const std::string mode = stress_ > 0 ? ", stress distance " + std::to_string(stress_)
+        const std::string mode = stress_ > 0  ? ", stress distance " + std::to_string(stress_)
                                  : delay_ > 0 ? ", P" + std::to_string(remote_ + 1) + " " + std::to_string(delay_) +
                                                     " frames late (" + std::to_string(rollbacks_) + " rollbacks, " +
                                                     std::to_string(resimulated_) + " frames resimulated)"
                                               : "";
         Log("replay: %s %s, %d of %d frames checked%s, %d frames differ from the recording (first %d), "
-            "%d presentation clock differences%s", name_.c_str(),
+            "%d presentation clock differences%s",
+            name_.c_str(),
             pass ? "PASS" : "FAIL", framesChecked_, last_ + 1, mode.c_str(),
             mismatchFrames_, firstMismatch_, presentationFrames_,
             stress_ > 0 ? (", " + std::to_string(stressDesyncs) + " frames resimulated differently").c_str() : "");
@@ -1858,8 +1819,7 @@ private:
         if (restart) {
             g_restartPending = restartWith;
             RequestReplay(restartPath, 0, -1, -1, "", -1, -1, false, "", -1, 0, 0, -1, restartTitle, true);
-        }
-        else if (viewer) {
+        } else if (viewer) {
             // Straight to the menus (this is the game thread; the queue a
             // later return goes through does not run mid-fight).
             ChangeScene("MainMenuState");
@@ -1895,7 +1855,7 @@ private:
     bool jumped_ = false;
     bool ready_ = false;
     int layout_ = 0;
-    int postLoadLogs_ = 0; // research: the round's state on the ticks after a keyframe load
+    int postLoadLogs_ = 0;                  // research: the round's state on the ticks after a keyframe load
     std::vector<StateRegion> checkRegions_; // CheckRegions
     int checkLayout_ = -1;
     size_t checkCount_ = 0;
@@ -1905,17 +1865,17 @@ private:
     int framesChecked_ = 0;
     int firstMismatch_ = -1;
     int mismatchFrames_ = 0;
-    int presentationFrames_ = 0; // camera / pawn clock differences (not a failure)
+    int presentationFrames_ = 0;              // camera / pawn clock differences (not a failure)
     std::map<std::string, int> regionFrames_; // frames each region differed on
-    std::set<int> stressFrames_;                    // frames resimulated differently (not the clocks)
-    int resimFirst_ = -1;                           // the first of them reported
-    std::vector<std::string> resimRegions_;         // its differing regions (at most 4)
-    std::vector<uint8_t> failDump_;                 // the benchmark's first differing frame's state (TakeFailDump)
+    std::set<int> stressFrames_;              // frames resimulated differently (not the clocks)
+    int resimFirst_ = -1;                     // the first of them reported
+    std::vector<std::string> resimRegions_;   // its differing regions (at most 4)
+    std::vector<uint8_t> failDump_;           // the benchmark's first differing frame's state (TakeFailDump)
     int failDumpFrame_ = -1;
     std::string failDumpLabel_;
     std::vector<RegionInfo> failRegions_;
     std::vector<uint64_t> failHashes_;
-    std::string benchSession_;                      // SessionActivityText() as the benchmark began
+    std::string benchSession_; // SessionActivityText() as the benchmark began
     std::map<std::string, int> stressRegionFrames_;
     int stressLogged_ = 0;
     int logged_ = 0;
@@ -1927,8 +1887,7 @@ private:
 
 void SetReplayLatch(int latch) { g_latch = latch; }
 
-void SetForcedRollbacks(std::vector<int> frames, uint32_t guessXor)
-{
+void SetForcedRollbacks(std::vector<int> frames, uint32_t guessXor) {
     g_forcedGuessXor = guessXor;
     std::lock_guard lock(g_forcedMutex);
     g_forcedRollbacks = std::move(frames);
@@ -1938,8 +1897,7 @@ void SetForcedRollbacks(std::vector<int> frames, uint32_t guessXor)
         guessXor);
 }
 
-void RequestReplayView(const std::string& path, const std::string& title, std::function<void()> onLeave, int holdAt, int holdSeconds)
-{
+void RequestReplayView(const std::string& path, const std::string& title, std::function<void()> onLeave, int holdAt, int holdSeconds) {
     {
         std::lock_guard lock(g_viewMutex);
         g_viewCommands.clear();
@@ -1949,8 +1907,7 @@ void RequestReplayView(const std::string& path, const std::string& title, std::f
     RequestReplay(path, 0, -1, -1, "", -1, -1, true, "", holdAt, holdSeconds, 0, -1, title.empty() ? path : title);
 }
 
-bool RequestBenchmark(const std::string& path)
-{
+bool RequestBenchmark(const std::string& path) {
     if (CurrentFrameDriver()) {
         Log("benchmark: another driver is active");
         return false;
@@ -1974,26 +1931,23 @@ bool RequestBenchmark(const std::string& path)
     return false;
 }
 
-void SetReplayExperimentValue(const std::string& what, int value)
-{
+void SetReplayExperimentValue(const std::string& what, int value) {
     if (what == "callpace") g_callPace = value;
     else if (what == "callafter") g_callAfter = value;
     Log("rview: %s %d", what.c_str(), value);
 }
 
-void SetReplayExperiment(const std::string& what, bool on)
-{
+void SetReplayExperiment(const std::string& what, bool on) {
     if (what == "callkeys") g_callKeys = on;
     else if (what == "crossrounds") g_crossRounds = on;
     else if (what == "anykeys") g_anyKeys = on;
     else if (what == "keysanywhere") g_keysAnywhere = on; // off: the old rule (fight keys within a round, call keys)
-    else if (what == "intro") g_skipIntro = !on;            // on: the viewer plays the intro
+    else if (what == "intro") g_skipIntro = !on;          // on: the viewer plays the intro
     else return Log("rview: no experiment %s", what.c_str());
     Log("rview: %s %s", what.c_str(), on ? "on" : "off");
 }
 
-uint32_t ControlReplay(ReplayControl c, int arg)
-{
+uint32_t ControlReplay(ReplayControl c, int arg) {
     std::lock_guard lock(g_viewMutex);
     if (!g_view.active && c != ReplayControl::Leave) return 0;
     g_viewCommands.push_back({c, arg});
@@ -2003,19 +1957,19 @@ uint32_t ControlReplay(ReplayControl c, int arg)
 }
 
 int ReplayTickFrame() { return g_tickFrame; }
+
 bool ReplayTickInFight() { return g_tickFight; }
+
 int ReplayTickRound() { return g_tickRound; }
 
-ReplayView ReplayViewNow()
-{
+ReplayView ReplayViewNow() {
     std::lock_guard lock(g_viewMutex);
     return g_view;
 }
 
 void RequestReplay(const std::string& path, int stressDistance, int watchFrom, int watchTo, const std::string& watchRegion,
                    int keepFrom, int keepTo, bool preload, const std::string& traps, int holdAt, int holdSeconds,
-                   int mispredictDelay, int remote, const std::string& viewTitle, bool jumpNow, bool benchmark)
-{
+                   int mispredictDelay, int remote, const std::string& viewTitle, bool jumpNow, bool benchmark) {
     if (path == "stop") {
         g_stop = CurrentFrameDriver() != nullptr;
         return;

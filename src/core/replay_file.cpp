@@ -19,8 +19,7 @@ namespace sfv {
 
 namespace {
 
-constexpr uint32_t Tag(const char (&s)[5])
-{
+constexpr uint32_t Tag(const char (&s)[5]) {
     return uint32_t(uint8_t(s[0])) | uint32_t(uint8_t(s[1])) << 8 | uint32_t(uint8_t(s[2])) << 16 |
            uint32_t(uint8_t(s[3])) << 24;
 }
@@ -44,30 +43,33 @@ class Writer {
 public:
     std::vector<uint8_t> buf;
 
-    void Raw(const void* p, size_t n)
-    {
+    void Raw(const void* p, size_t n) {
         const uint8_t* b = static_cast<const uint8_t*>(p);
         buf.insert(buf.end(), b, b + n);
     }
+
     void U8(uint8_t v) { Raw(&v, 1); }
+
     void U16(uint16_t v) { Raw(&v, 2); }
+
     void U32(uint32_t v) { Raw(&v, 4); }
+
     void I32(int32_t v) { Raw(&v, 4); }
+
     void U64(uint64_t v) { Raw(&v, 8); }
-    void Str(const std::string& s)
-    {
+
+    void Str(const std::string& s) {
         U32(static_cast<uint32_t>(s.size()));
         Raw(s.data(), s.size());
     }
 
-    size_t BeginChunk(uint32_t tag)
-    {
+    size_t BeginChunk(uint32_t tag) {
         U32(tag);
         U32(0);
         return buf.size();
     }
-    void EndChunk(size_t start)
-    {
+
+    void EndChunk(size_t start) {
         const uint32_t size = static_cast<uint32_t>(buf.size() - start);
         std::memcpy(&buf[start - 4], &size, 4);
     }
@@ -78,24 +80,26 @@ public:
     Reader(const uint8_t* p, size_t n) : p_(p), end_(p + n) {}
 
     bool ok() const { return ok_; }
+
     size_t left() const { return static_cast<size_t>(end_ - p_); }
+
     const uint8_t* pos() const { return p_; }
 
-    bool Raw(void* out, size_t n)
-    {
+    bool Raw(void* out, size_t n) {
         if (!ok_ || left() < n) return ok_ = false;
         std::memcpy(out, p_, n);
         p_ += n;
         return true;
     }
-    template <typename T> T Get()
-    {
+
+    template <typename T>
+    T Get() {
         T v{};
         Raw(&v, sizeof(T));
         return v;
     }
-    std::string Str()
-    {
+
+    std::string Str() {
         const uint32_t n = Get<uint32_t>();
         if (!ok_ || left() < n) {
             ok_ = false;
@@ -105,8 +109,8 @@ public:
         p_ += n;
         return s;
     }
-    bool Skip(size_t n)
-    {
+
+    bool Skip(size_t n) {
         if (left() < n) return ok_ = false;
         p_ += n;
         return true;
@@ -118,8 +122,7 @@ private:
     bool ok_ = true;
 };
 
-void WriteSetup(Writer& w, const MatchSetup& s)
-{
+void WriteSetup(Writer& w, const MatchSetup& s) {
     for (const auto& p : s.players) {
         w.U32(p.character);
         w.U16(p.costume);
@@ -140,8 +143,7 @@ void WriteSetup(Writer& w, const MatchSetup& s)
     for (const auto& p : s.players) w.U16(static_cast<uint16_t>(p.version));
 }
 
-void ReadSetup(Reader& r, MatchSetup& s)
-{
+void ReadSetup(Reader& r, MatchSetup& s) {
     for (auto& p : s.players) {
         p.character = r.Get<uint32_t>();
         p.costume = r.Get<uint16_t>();
@@ -170,8 +172,7 @@ void ReadSetup(Reader& r, MatchSetup& s)
 // Most regions do not change every frame, so each frame stores a bitmap of the
 // regions whose hash differs from the previous frame and only those hashes.
 // `prev` holds the row before `first` and ends as the row of the last frame.
-void WriteHashRows(Writer& w, const ReplayFile& rf, int first, int count, std::vector<uint64_t>& prev)
-{
+void WriteHashRows(Writer& w, const ReplayFile& rf, int first, int count, std::vector<uint64_t>& prev) {
     const size_t regions = rf.RegionCount();
     std::vector<uint8_t> bitmap((regions + 7) / 8);
     for (int f = first; f < first + count; f++) {
@@ -190,8 +191,7 @@ void WriteHashRows(Writer& w, const ReplayFile& rf, int first, int count, std::v
     }
 }
 
-bool ReadHashRows(Reader& r, ReplayFile& rf, int first, int count, std::vector<uint64_t>& prev)
-{
+bool ReadHashRows(Reader& r, ReplayFile& rf, int first, int count, std::vector<uint64_t>& prev) {
     const size_t regions = rf.RegionCount();
     std::vector<uint8_t> bitmap((regions + 7) / 8);
     for (int f = first; f < first + count && r.ok(); f++) {
@@ -205,8 +205,7 @@ bool ReadHashRows(Reader& r, ReplayFile& rf, int first, int count, std::vector<u
 }
 
 // Version 2: every frame's region hashes, from the state before frame 0 on.
-bool ReadHashes(Reader& r, ReplayFile& rf, std::string* error)
-{
+bool ReadHashes(Reader& r, ReplayFile& rf, std::string* error) {
     const uint32_t frames = r.Get<uint32_t>();
     const uint32_t regions = r.Get<uint32_t>();
     if (regions != rf.RegionCount() || frames != static_cast<uint32_t>(rf.FrameCount())) {
@@ -220,8 +219,7 @@ bool ReadHashes(Reader& r, ReplayFile& rf, std::string* error)
 }
 
 // The frames a file keeps region hashes for (see ReplayDetail).
-std::vector<uint8_t> KeptFrames(const ReplayFile& rf, ReplayDetail detail)
-{
+std::vector<uint8_t> KeptFrames(const ReplayFile& rf, ReplayDetail detail) {
     const int frames = rf.FrameCount();
     std::vector<uint8_t> keep(size_t(frames), 0);
     auto mark = [&](int from, int to) {
@@ -238,8 +236,7 @@ std::vector<uint8_t> KeptFrames(const ReplayFile& rf, ReplayDetail detail)
 
 // Version 3: runs of consecutive kept frames, each starting from a zero row
 // (its first frame stores every region).
-void WriteHashWindows(Writer& w, const ReplayFile& rf, const std::vector<uint8_t>& keep)
-{
+void WriteHashWindows(Writer& w, const ReplayFile& rf, const std::vector<uint8_t>& keep) {
     const int frames = rf.FrameCount();
     std::vector<std::pair<int, int>> windows;
     for (int f = 0; f < frames; f++) {
@@ -258,8 +255,7 @@ void WriteHashWindows(Writer& w, const ReplayFile& rf, const std::vector<uint8_t
     }
 }
 
-bool ReadHashWindows(Reader& r, ReplayFile& rf, std::string* error)
-{
+bool ReadHashWindows(Reader& r, ReplayFile& rf, std::string* error) {
     const uint32_t frames = r.Get<uint32_t>();
     const uint32_t regions = r.Get<uint32_t>();
     const uint32_t windows = r.Get<uint32_t>();
@@ -283,8 +279,7 @@ bool ReadHashWindows(Reader& r, ReplayFile& rf, std::string* error)
     return r.ok();
 }
 
-bool ReadSummary(Reader& c, MatchSummary& s)
-{
+bool ReadSummary(Reader& c, MatchSummary& s) {
     const uint32_t version = c.Get<uint32_t>();
     if (version < 1) return false;
     for (auto& n : s.names) n = c.Str();
@@ -312,8 +307,7 @@ bool ReadSummary(Reader& c, MatchSummary& s)
 
 // A chunk written from `body`, compressed (in a PACK chunk: the tag, the
 // size before compression, the compressed bytes) when that saves a tenth.
-void PutChunk(Writer& out, uint32_t tag, const Writer& body)
-{
+void PutChunk(Writer& out, uint32_t tag, const Writer& body) {
     std::vector<uint8_t> packed;
     if (body.buf.size() >= 512 && Compress(body.buf.data(), body.buf.size(), &packed) &&
         packed.size() + 8 < body.buf.size() - body.buf.size() / 10) {
@@ -331,8 +325,7 @@ void PutChunk(Writer& out, uint32_t tag, const Writer& body)
 
 } // namespace
 
-std::vector<RoundResult> RoundsFromFrameFlags(const std::vector<uint8_t>& flags)
-{
+std::vector<RoundResult> RoundsFromFrameFlags(const std::vector<uint8_t>& flags) {
     // A fight runs from the frame after the one whose tick turned it on to
     // the one whose tick turned it off (the KO).
     std::vector<RoundResult> rounds;
@@ -350,27 +343,23 @@ std::vector<RoundResult> RoundsFromFrameFlags(const std::vector<uint8_t>& flags)
     return rounds;
 }
 
-bool ReplayFile::HasRegionHashes(int frame) const
-{
+bool ReplayFile::HasRegionHashes(int frame) const {
     if (frame < 0) return true;
     if (frame >= FrameCount()) return false;
     return hashesKept.empty() || hashesKept[frame];
 }
 
-const uint64_t* ReplayFile::FrameHashes(int frame) const
-{
+const uint64_t* ReplayFile::FrameHashes(int frame) const {
     if (frame < 0) return initialHashes.data();
     return &hashes[size_t(frame) * RegionCount()];
 }
 
-uint32_t ReplayFile::FrameChecksum(int frame) const
-{
+uint32_t ReplayFile::FrameChecksum(int frame) const {
     if (HasRegionHashes(frame)) return FoldChecksum(FrameHashes(frame), RegionCount());
     return size_t(frame) < checksums.size() ? checksums[frame] : 0;
 }
 
-void ReplayFile::SetFrame(int frame, const FrameInputs& in, const uint64_t* regionHashes)
-{
+void ReplayFile::SetFrame(int frame, const FrameInputs& in, const uint64_t* regionHashes) {
     if (frame < 0) return;
     const size_t regionCount = RegionCount();
     if (frame >= FrameCount()) {
@@ -386,16 +375,14 @@ void ReplayFile::SetFrame(int frame, const FrameInputs& in, const uint64_t* regi
     if (!hashesKept.empty()) hashesKept[frame] = 1;
 }
 
-const StateDump* ReplayFile::FindDump(int frame) const
-{
+const StateDump* ReplayFile::FindDump(int frame) const {
     for (const auto& d : dumps) {
         if (d.frame == frame) return &d;
     }
     return nullptr;
 }
 
-std::vector<uint8_t> SerializeReplay(const ReplayFile& rf, ReplayDetail detail)
-{
+std::vector<uint8_t> SerializeReplay(const ReplayFile& rf, ReplayDetail detail) {
     Writer w;
     w.U32(kMagic);
     w.U32(kReplayFormatVersion);
@@ -498,8 +485,7 @@ std::vector<uint8_t> SerializeReplay(const ReplayFile& rf, ReplayDetail detail)
     return std::move(w.buf);
 }
 
-bool DeserializeReplay(const uint8_t* data, size_t len, ReplayFile* out, std::string* error)
-{
+bool DeserializeReplay(const uint8_t* data, size_t len, ReplayFile* out, std::string* error) {
     auto fail = [&](const char* msg) {
         if (error) *error = msg;
         return false;
@@ -516,93 +502,93 @@ bool DeserializeReplay(const uint8_t* data, size_t len, ReplayFile* out, std::st
     // One chunk's payload; a PACK chunk's comes here once uncompressed.
     auto handle = [&](uint32_t tag, Reader& c) {
         switch (tag) {
-        case kMeta:
-            rf.modVersion = c.Str();
-            rf.gameBuild = c.Str();
-            rf.matchId = c.Get<uint64_t>();
-            rf.localPlayer = c.Get<int32_t>();
-            rf.createdUnix = c.Get<uint64_t>();
-            rf.inputDelay = c.Get<uint32_t>();
-            rf.predictionWindow = c.Get<uint32_t>();
-            rf.finalThrough = c.Get<int32_t>();
-            break;
-        case kSetup:
-            ReadSetup(c, rf.setup);
-            break;
-        case kInfo:
-            if (!ReadSummary(c, rf.summary)) return fail("bad summary");
-            break;
-        case kRegions: {
-            const uint32_t n = c.Get<uint32_t>();
-            for (uint32_t i = 0; i < n && c.ok(); i++) {
-                RegionInfo info;
-                info.name = c.Str();
-                info.size = c.Get<uint64_t>();
-                const uint32_t maskLen = c.Get<uint32_t>();
-                if (maskLen > c.left()) return fail("bad region mask");
-                info.ignore.resize(maskLen);
-                c.Raw(info.ignore.data(), maskLen);
-                rf.regions.push_back(std::move(info));
+            case kMeta:
+                rf.modVersion = c.Str();
+                rf.gameBuild = c.Str();
+                rf.matchId = c.Get<uint64_t>();
+                rf.localPlayer = c.Get<int32_t>();
+                rf.createdUnix = c.Get<uint64_t>();
+                rf.inputDelay = c.Get<uint32_t>();
+                rf.predictionWindow = c.Get<uint32_t>();
+                rf.finalThrough = c.Get<int32_t>();
+                break;
+            case kSetup:
+                ReadSetup(c, rf.setup);
+                break;
+            case kInfo:
+                if (!ReadSummary(c, rf.summary)) return fail("bad summary");
+                break;
+            case kRegions: {
+                const uint32_t n = c.Get<uint32_t>();
+                for (uint32_t i = 0; i < n && c.ok(); i++) {
+                    RegionInfo info;
+                    info.name = c.Str();
+                    info.size = c.Get<uint64_t>();
+                    const uint32_t maskLen = c.Get<uint32_t>();
+                    if (maskLen > c.left()) return fail("bad region mask");
+                    info.ignore.resize(maskLen);
+                    c.Raw(info.ignore.data(), maskLen);
+                    rf.regions.push_back(std::move(info));
+                }
+                break;
             }
-            break;
-        }
-        case kInitial: {
-            const uint32_t n = c.Get<uint32_t>();
-            if (n > c.left() / 8) return fail("bad initial hash count");
-            rf.initialHashes.resize(n);
-            c.Raw(rf.initialHashes.data(), n * sizeof(uint64_t));
-            break;
-        }
-        case kInputs: {
-            const uint32_t n = c.Get<uint32_t>();
-            if (n > c.left() / (sizeof(PackedInput) * kNumPlayers)) return fail("bad input count");
-            rf.inputs.resize(n);
-            for (auto& in : rf.inputs) {
-                for (auto& p : in.p) p = c.Get<uint32_t>();
+            case kInitial: {
+                const uint32_t n = c.Get<uint32_t>();
+                if (n > c.left() / 8) return fail("bad initial hash count");
+                rf.initialHashes.resize(n);
+                c.Raw(rf.initialHashes.data(), n * sizeof(uint64_t));
+                break;
             }
-            sawInputs = true;
-            break;
-        }
-        case kChecksums: {
-            const uint32_t n = c.Get<uint32_t>();
-            if (n > c.left() / 4) return fail("bad checksum count");
-            rf.checksums.resize(n);
-            c.Raw(rf.checksums.data(), n * sizeof(uint32_t));
-            break;
-        }
-        case kHashes:
-        case kHashWindows:
-            // Need the region table and the inputs, which are written first.
-            if (!sawInputs) return fail("hash chunk before input chunk");
-            if (!(tag == kHashes ? ReadHashes(c, rf, error) : ReadHashWindows(c, rf, error))) return false;
-            sawHashes = true;
-            break;
-        case kEvents: {
-            const uint32_t n = c.Get<uint32_t>();
-            for (uint32_t i = 0; i < n && c.ok(); i++) {
-                ReplayEvent e;
-                e.frame = c.Get<int32_t>();
-                e.type = static_cast<ReplayEventType>(c.Get<uint16_t>());
-                c.Get<uint16_t>();
-                e.a = c.Get<uint32_t>();
-                e.b = c.Get<uint32_t>();
-                rf.events.push_back(e);
+            case kInputs: {
+                const uint32_t n = c.Get<uint32_t>();
+                if (n > c.left() / (sizeof(PackedInput) * kNumPlayers)) return fail("bad input count");
+                rf.inputs.resize(n);
+                for (auto& in : rf.inputs) {
+                    for (auto& p : in.p) p = c.Get<uint32_t>();
+                }
+                sawInputs = true;
+                break;
             }
-            break;
-        }
-        case kDump: {
-            StateDump d;
-            d.frame = c.Get<int32_t>();
-            d.label = c.Str();
-            const uint32_t n = c.Get<uint32_t>();
-            if (n > c.left()) return fail("bad dump size");
-            d.bytes.resize(n);
-            c.Raw(d.bytes.data(), n);
-            rf.dumps.push_back(std::move(d));
-            break;
-        }
-        default:
-            break; // newer chunk type
+            case kChecksums: {
+                const uint32_t n = c.Get<uint32_t>();
+                if (n > c.left() / 4) return fail("bad checksum count");
+                rf.checksums.resize(n);
+                c.Raw(rf.checksums.data(), n * sizeof(uint32_t));
+                break;
+            }
+            case kHashes:
+            case kHashWindows:
+                // Need the region table and the inputs, which are written first.
+                if (!sawInputs) return fail("hash chunk before input chunk");
+                if (!(tag == kHashes ? ReadHashes(c, rf, error) : ReadHashWindows(c, rf, error))) return false;
+                sawHashes = true;
+                break;
+            case kEvents: {
+                const uint32_t n = c.Get<uint32_t>();
+                for (uint32_t i = 0; i < n && c.ok(); i++) {
+                    ReplayEvent e;
+                    e.frame = c.Get<int32_t>();
+                    e.type = static_cast<ReplayEventType>(c.Get<uint16_t>());
+                    c.Get<uint16_t>();
+                    e.a = c.Get<uint32_t>();
+                    e.b = c.Get<uint32_t>();
+                    rf.events.push_back(e);
+                }
+                break;
+            }
+            case kDump: {
+                StateDump d;
+                d.frame = c.Get<int32_t>();
+                d.label = c.Str();
+                const uint32_t n = c.Get<uint32_t>();
+                if (n > c.left()) return fail("bad dump size");
+                d.bytes.resize(n);
+                c.Raw(d.bytes.data(), n);
+                rf.dumps.push_back(std::move(d));
+                break;
+            }
+            default:
+                break; // newer chunk type
         }
         if (!c.ok()) return fail("malformed chunk");
         return true;
@@ -630,8 +616,7 @@ bool DeserializeReplay(const uint8_t* data, size_t len, ReplayFile* out, std::st
             }
             Reader rc(raw.data(), raw.size());
             if (!handle(inner, rc)) return false;
-        }
-        else if (!handle(tag, c)) {
+        } else if (!handle(tag, c)) {
             return false;
         }
     }
@@ -644,8 +629,7 @@ bool DeserializeReplay(const uint8_t* data, size_t len, ReplayFile* out, std::st
             // A full file: like a live recording.
             rf.hashesKept.clear();
             rf.checksums.clear();
-        }
-        else if (rf.checksums.size() != size_t(rf.FrameCount())) {
+        } else if (rf.checksums.size() != size_t(rf.FrameCount())) {
             return fail("missing checksums for the frames without region hashes");
         }
     }
@@ -654,8 +638,7 @@ bool DeserializeReplay(const uint8_t* data, size_t len, ReplayFile* out, std::st
     return true;
 }
 
-bool SaveReplay(const ReplayFile& replay, const std::string& path, std::string* error, ReplayDetail detail)
-{
+bool SaveReplay(const ReplayFile& replay, const std::string& path, std::string* error, ReplayDetail detail) {
     const std::vector<uint8_t> bytes = SerializeReplay(replay, detail);
     // Write to a temp name and rename so a crash never leaves half a report.
     const std::string tmp = path + ".tmp";
@@ -673,8 +656,7 @@ bool SaveReplay(const ReplayFile& replay, const std::string& path, std::string* 
     return true;
 }
 
-bool DeserializeReplayHeader(const uint8_t* data, size_t len, ReplayFile* out, std::string* error)
-{
+bool DeserializeReplayHeader(const uint8_t* data, size_t len, ReplayFile* out, std::string* error) {
     auto fail = [&](const char* msg) {
         if (error) *error = msg;
         return false;
@@ -703,14 +685,11 @@ bool DeserializeReplayHeader(const uint8_t* data, size_t len, ReplayFile* out, s
             rf.predictionWindow = c.Get<uint32_t>();
             rf.finalThrough = c.Get<int32_t>();
             meta = c.ok();
-        }
-        else if (tag == kSetup) {
+        } else if (tag == kSetup) {
             ReadSetup(c, rf.setup);
-        }
-        else if (tag == kInfo) {
+        } else if (tag == kInfo) {
             ReadSummary(c, rf.summary);
-        }
-        else {
+        } else {
             break;
         }
     }
@@ -719,8 +698,7 @@ bool DeserializeReplayHeader(const uint8_t* data, size_t len, ReplayFile* out, s
     return true;
 }
 
-bool LoadReplayHeader(const std::string& path, ReplayFile* out, std::string* error)
-{
+bool LoadReplayHeader(const std::string& path, ReplayFile* out, std::string* error) {
     FILE* f = OpenFile(path, "rb");
     if (!f) {
         if (error) *error = "cannot open " + path;
@@ -732,8 +710,7 @@ bool LoadReplayHeader(const std::string& path, ReplayFile* out, std::string* err
     return DeserializeReplayHeader(bytes.data(), bytes.size(), out, error);
 }
 
-bool LoadReplay(const std::string& path, ReplayFile* out, std::string* error)
-{
+bool LoadReplay(const std::string& path, ReplayFile* out, std::string* error) {
     FILE* f = OpenFile(path, "rb");
     if (!f) {
         if (error) *error = "cannot open " + path;

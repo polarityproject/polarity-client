@@ -22,12 +22,16 @@ namespace sfv::mod {
 class SyncTest {
 public:
     void Start(int frames, uint64_t seed);
+
     bool Active() const { return phase_ != Phase::Idle; }
+
     // At the start of every battle tick, on the game thread, before the tick.
     void OnTick(SfvGame& game);
 
 private:
-    enum class Phase { Idle, Record, Replay };
+    enum class Phase { Idle,
+                       Record,
+                       Replay };
 
     uint16_t Buttons(int frame, int player, uint8_t* rightTrigger) const;
     void DrivePads(int frame);
@@ -40,7 +44,7 @@ private:
     uint64_t seed_ = 0;
     int k_ = 0;
     std::vector<uint8_t> saved_;
-    std::vector<uint64_t> recorded_;            // (frames + 1) x regions
+    std::vector<uint64_t> recorded_;           // (frames + 1) x regions
     std::vector<std::vector<uint8_t>> states_; // pass 1 states, when small enough
     int firstMismatch_ = -1;
     int mismatchedFrames_ = 0;

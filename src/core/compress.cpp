@@ -27,8 +27,7 @@ struct Codec {
     bool canCompress = false, canDecompress = false;
 };
 
-const Codec& Cabinet()
-{
+const Codec& Cabinet() {
     static const Codec codec = [] {
         Codec c;
         HMODULE m = LoadLibraryW(L"cabinet.dll");
@@ -49,8 +48,7 @@ const Codec& Cabinet()
 
 } // namespace
 
-bool DecompressXpressHuffman(const uint8_t* data, size_t size, size_t rawSize, std::vector<uint8_t>* out)
-{
+bool DecompressXpressHuffman(const uint8_t* data, size_t size, size_t rawSize, std::vector<uint8_t>* out) {
     // [MS-XCA] 2.2.4: blocks of 65536 output bytes, each after a table of
     // 512 4-bit code lengths (256 bytes, the low nibble the even symbol);
     // then a bit stream read 16 bits (little endian) at a time, most
@@ -141,8 +139,7 @@ bool DecompressXpressHuffman(const uint8_t* data, size_t size, size_t rawSize, s
     return true;
 }
 
-bool Compress(const uint8_t* data, size_t size, std::vector<uint8_t>* out)
-{
+bool Compress(const uint8_t* data, size_t size, std::vector<uint8_t>* out) {
     const Codec& api = Cabinet();
     COMPRESSOR_HANDLE c = nullptr;
     if (!api.canCompress || !api.createCompressor(kAlgorithm, nullptr, &c) || !c) return false;
@@ -157,8 +154,7 @@ bool Compress(const uint8_t* data, size_t size, std::vector<uint8_t>* out)
     return true;
 }
 
-bool Decompress(const uint8_t* data, size_t size, size_t rawSize, std::vector<uint8_t>* out)
-{
+bool Decompress(const uint8_t* data, size_t size, size_t rawSize, std::vector<uint8_t>* out) {
     // Windows' own codec where it has one; else (Proton's cabinet.dll) the
     // decoder here: recordings made on Windows, and the benchmark's round,
     // read on a Steam Deck too.

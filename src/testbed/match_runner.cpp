@@ -6,25 +6,25 @@
 
 namespace sfv {
 
-PackedInput MasherInput(uint64_t seed, int poll, int player)
-{
+PackedInput MasherInput(uint64_t seed, int poll, int player) {
     const uint64_t key[3] = {seed, static_cast<uint64_t>(player), static_cast<uint64_t>(poll / 4)};
     const uint64_t h = Hash64(key, sizeof(key));
 
     PackedInput in = 0;
     switch (h % 8) {
-    case 0: case 1: in |= kRight; break;
-    case 2: case 3: in |= kLeft; break;
-    case 4: in |= kDown; break;
-    case 5: in |= kUp; break;
-    default: break;
+        case 0:
+        case 1: in |= kRight; break;
+        case 2:
+        case 3: in |= kLeft; break;
+        case 4: in |= kDown; break;
+        case 5: in |= kUp; break;
+        default: break;
     }
     if ((h >> 8) % 3 == 0) in |= static_cast<PackedInput>(kLP << ((h >> 16) % 6));
     return in;
 }
 
-MockMatchResult RunMockMatch(const MockMatchOptions& options)
-{
+MockMatchResult RunMockMatch(const MockMatchOptions& options) {
     MockMatchResult result;
     LoopbackNetwork net(options.seed, options.link);
     const uint64_t ids[kNumPlayers] = {0x1100001000000001ull, 0x1100001000000002ull};

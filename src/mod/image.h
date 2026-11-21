@@ -12,7 +12,8 @@ struct GameImage {
     uintptr_t base = 0;
     uint32_t timestamp = 0;
 
-    template <typename T> T At(uint32_t rva) const { return reinterpret_cast<T>(base + rva); }
+    template <typename T>
+    T At(uint32_t rva) const { return reinterpret_cast<T>(base + rva); }
 };
 
 // Finds the game exe in this process and checks its timestamp and every code

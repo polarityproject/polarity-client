@@ -40,6 +40,7 @@ struct StateMap {
         uint64_t size = 0;
         std::vector<uint8_t> ignore;
     };
+
     std::vector<Region> regions;
 
     bool Load(const std::wstring& path);
@@ -90,24 +91,27 @@ public:
     void OnRollbackUnitTick(uint8_t* unit);
 
     uint8_t* Unit() const { return unit_; }
+
     uint8_t* Manager() const;
 
     // Re-reads the region table. True when the layout changed (new match).
     bool RefreshRegions();
     // KiwiGameSingleton's battle tick counter (outside the game's snapshot).
     uint8_t* SingletonTicks() const;
+
     // Increments whenever the layout changes; a driver bound to one battle
     // compares it to notice that battle ending.
     int LayoutVersion() const { return layoutVersion_; }
+
     // Sorts the regions again by their current contents. The order is fixed
     // when a battle's regions first appear, mid-setup; peers that sort again
     // at the same frame list them identically (for comparing dumps).
-    void Recanonicalize()
-    {
+    void Recanonicalize() {
         FindPresentationState();
         rawLayout_.clear();
         RefreshRegions();
     }
+
     // Battle state the game keeps outside its snapshot that the battle ticks
     // advance (outside_probe.h): the pawns' and the camera's animation clocks.
     // Rolled back with the rest, else a rollback during the intro or the round
@@ -119,10 +123,10 @@ public:
     // counters are added to the snapshot as extra regions (they are missing
     // from the game's own list) when includeSyncCounters is set.
     void OnInputUnit(uint8_t* inputUnit);
+
     // A different BattleFrame object means a new battle: the unit pointers
     // seen so far belong to the old one and are dropped until seen again.
-    void OnBattleFrame(uint8_t* battleFrame)
-    {
+    void OnBattleFrame(uint8_t* battleFrame) {
         lastFrameMs_ = GetTickCount64();
         if (battleFrame != battleFrame_) {
             battleFrame_ = battleFrame;
@@ -131,6 +135,7 @@ public:
             battleFrameVersion_++;
         }
     }
+
     int BattleFrameVersion() const { return battleFrameVersion_; }
 
     // A new battle's warm-up (netplay and replays), once per frame after
@@ -144,8 +149,7 @@ public:
     // its jump had found the loader's stage request empty, so no stage was
     // loaded before the switch and the battle loaded it in its own setup
     // (fixed in flow.cpp's jump, 2026-11-05; `emptystage` reproduces it).
-    void BeginWarmup()
-    {
+    void BeginWarmup() {
         warmupTicks_ = 0;
         objectsAt_ = -1;
         cameraWait_ = 0;
@@ -154,32 +158,44 @@ public:
         settleCalls_ = 0;
         settleLogs_ = 0;
     }
+
     bool WarmupStep();
+
     int WarmupTicks() const { return warmupTicks_; }
+
     int ObjectsAt() const { return objectsAt_; } // the neutral tick the objects showed up at, -1 before
+
     // A new battle that reuses the old BattleFrame object: forget the units.
-    void ForgetBattleObjects()
-    {
+    void ForgetBattleObjects() {
         presentation_.clear();
         unit_ = nullptr;
         inputUnit_ = nullptr;
     }
+
     // A battle frame ran within the last half second.
     bool BattleRunning() const { return battleFrame_ && GetTickCount64() - lastFrameMs_ < 500; }
+
     // The battle simulation itself ticked (its InputUnit recorded a frame)
     // within the last half second; false while the pause menu is open.
     bool BattleTicking() const { return inputUnit_ && GetTickCount64() - lastInputMs_ < 500; }
+
     // When the last battle tick started (GetTickCount64): none run while the game pauses.
     uint64_t LastTickMs() const { return lastInputMs_; }
+
     uint8_t* InputUnit() const { return inputUnit_; }
+
     uint8_t* BattleFrameObject() const { return battleFrame_; }
+
     bool includeSyncCounters = true;
 
     // Runs exactly one battle tick with these inputs (through the original
     // BattleFrame::Update), on the game thread, between frames.
     using BattleFrameFn = void (*)(uint8_t*);
+
     void SetBattleFrameFunction(BattleFrameFn fn) { runFrame_ = fn; }
+
     bool CanRunTicks() const { return runFrame_ && battleFrame_; }
+
     // Physical pad slot whose input is "the local player" (pad 0 = P1 slot).
     int localPadSlot = 0;
     std::atomic<int> inputLog{0}; // research: ticks to log the game's per-pad values for
@@ -225,6 +241,7 @@ public:
     // Research (`watchcamera`): at the freeze, write watches on the camera's
     // +0x94 and +0xE4 (what sets it up; watchreport tells who wrote them).
     void WatchCameraIfAsked();
+
     int CameraWaitTicks() const { return cameraWait_; } // ticks run after the objects (warmupextra)
 
     // Words that differ between the first simulation of a frame and its
@@ -237,8 +254,8 @@ public:
     uint64_t NoiseHash() const;
     bool SaveNoise(const std::wstring& path) const;
     bool AddNoise(size_t regionSize, size_t offset); // true if new
-    size_t NoiseWords() const
-    {
+
+    size_t NoiseWords() const {
         size_t n = 0;
         for (const auto& [size, offsets] : noise_) n += offsets.size();
         return n;
@@ -256,6 +273,7 @@ public:
         game::FrameId currentId{-1, -1};
         size_t postRestoreCallbacks = 0;
     };
+
     Inventory Inspect() const;
     // Logs every region, group and callback (once per match).
     void LogLayout() const;
@@ -271,7 +289,9 @@ public:
     // IGame
     std::string BuildId() const override;
     bool BeginMatch(const MatchSetup& setup) override;
+
     const std::vector<StateRegion>& Regions() override { return regions_; }
+
     PackedInput ReadLocalInput(int player) override;
     void Advance(const FrameInputs& inputs, bool rollingBack) override;
     void OnStateLoaded(int frame) override;
@@ -287,20 +307,24 @@ private:
     void LatchInputs(); // InputUnit::LatchFrame, after a tick or a load
     // One battle tick: a whole BattleFrame::Update, or for a replayed tick its parts (SetLeanResim).
     void RunBattleTick(bool replayed);
+
     struct ProbeCapture {
         std::string when;
         std::vector<std::pair<std::string, std::vector<uint8_t>>> objects; // name, bytes
     };
+
     std::mutex probeMutex_;
     std::vector<ProbeCapture> probe_;
-    int probeTicks_ = 0;     // driven ticks after the freeze still to capture
+    int probeTicks_ = 0; // driven ticks after the freeze still to capture
     bool probeLogged_ = false;
+
     // Time after loads (performance counter ticks), per game callback (by rva)
     // and for the round state the mod puts back (OnStateLoaded logs them).
     struct CallbackCost {
         int64_t ticks = 0;
         int calls = 0;
     };
+
     std::map<uintptr_t, CallbackCost> callbackCosts_;
     int64_t ownLoadTicks_ = 0;
     int loadsTimed_ = 0;
@@ -309,11 +333,13 @@ private:
     GameImage image_;
     uint8_t* unit_ = nullptr;
     uint8_t* inputUnit_ = nullptr;
+
     struct ExtraRegion {
         std::string name;
         uint8_t* ptr;
         size_t size;
     };
+
     std::vector<ExtraRegion> presentation_;
     uint64_t lastInputMs_ = 0;
     uint8_t* battleFrame_ = nullptr;

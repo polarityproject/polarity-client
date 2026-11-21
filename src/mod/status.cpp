@@ -13,8 +13,7 @@ std::mutex g_mutex;
 int g_instance = 0;
 std::string g_text;
 
-BOOL CALLBACK Apply(HWND w, LPARAM)
-{
+BOOL CALLBACK Apply(HWND w, LPARAM) {
     DWORD pid = 0;
     GetWindowThreadProcessId(w, &pid);
     if (pid != GetCurrentProcessId() || !IsWindowVisible(w) || GetWindow(w, GW_OWNER)) return TRUE;
@@ -27,7 +26,7 @@ BOOL CALLBACK Apply(HWND w, LPARAM)
     // From UTF-8 (names in any script), not byte by byte.
     std::wstring wide(title.size(), L'\0');
     wide.resize(static_cast<size_t>(std::max(0, MultiByteToWideChar(CP_UTF8, 0, title.data(), static_cast<int>(title.size()),
-                                                                     wide.data(), static_cast<int>(wide.size())))));
+                                                                    wide.data(), static_cast<int>(wide.size())))));
     // InternalGetWindowText: GetWindowText would send WM_GETTEXT to the game
     // thread, which may be waiting for g_mutex (SetStatus): a deadlock.
     wchar_t current[256] = {};
@@ -40,33 +39,28 @@ BOOL CALLBACK Apply(HWND w, LPARAM)
 
 } // namespace
 
-void SetStatusInstance(int instance)
-{
+void SetStatusInstance(int instance) {
     std::lock_guard lock(g_mutex);
     g_instance = instance;
     EnumWindows(Apply, 0);
 }
 
-std::string StatusText()
-{
+std::string StatusText() {
     std::lock_guard lock(g_mutex);
     return g_text;
 }
 
-int StatusInstance()
-{
+int StatusInstance() {
     std::lock_guard lock(g_mutex);
     return g_instance;
 }
 
-void RefreshStatus()
-{
+void RefreshStatus() {
     std::lock_guard lock(g_mutex);
     EnumWindows(Apply, 0);
 }
 
-void SetStatus(const std::string& text)
-{
+void SetStatus(const std::string& text) {
     std::lock_guard lock(g_mutex);
     if (text == g_text) return;
     g_text = text;

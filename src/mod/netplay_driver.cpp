@@ -110,33 +110,32 @@ const char* const kRandomCharacters[] = {"RYU", "KEN", "CNL", "CMY", "NSH", "VEG
 using State = NetView::Phase;
 
 // What follows the current match, once the game thread has let go of it.
-enum class Next { None, Jump, Lobby, End };
+enum class Next { None,
+                  Jump,
+                  Lobby,
+                  End };
 
 // How the last session ended, or the last failure (for the overlay).
 std::mutex g_resultMutex;
 std::string g_lastResult;
 
-void SetResult(const std::string& text)
-{
+void SetResult(const std::string& text) {
     std::lock_guard lock(g_resultMutex);
     g_lastResult = text;
 }
 
-std::string LastResult()
-{
+std::string LastResult() {
     std::lock_guard lock(g_resultMutex);
     return g_lastResult;
 }
 
-std::string Hex64(uint64_t v)
-{
+std::string Hex64(uint64_t v) {
     char buf[20];
     std::snprintf(buf, sizeof(buf), "%016llx", static_cast<unsigned long long>(v));
     return buf;
 }
 
-void CopyToClipboard(const std::string& text)
-{
+void CopyToClipboard(const std::string& text) {
     if (!OpenClipboard(nullptr)) return;
     EmptyClipboard();
     if (HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE, text.size() + 1)) {
@@ -149,8 +148,7 @@ void CopyToClipboard(const std::string& text)
 
 // The Steam persona name, through the game's steam_api64.dll (ISteamFriends,
 // whose first method is GetPersonaName); "" when Steam is not up.
-std::string SteamPersonaName()
-{
+std::string SteamPersonaName() {
     HMODULE steam = GetModuleHandleW(L"steam_api64.dll");
     if (!steam) return "";
     using Getter = void* (*)();
@@ -162,8 +160,7 @@ std::string SteamPersonaName()
     return name ? name : "";
 }
 
-void PressPad(int pad, uint16_t buttons, int holdMs = 90, int gapMs = 600)
-{
+void PressPad(int pad, uint16_t buttons, int holdMs = 90, int gapMs = 600) {
     SetScriptedPad(pad, true, buttons);
     Sleep(holdMs);
     SetScriptedPad(pad, true, 0);
@@ -173,8 +170,7 @@ void PressPad(int pad, uint16_t buttons, int holdMs = 90, int gapMs = 600)
 // From a running battle to stage select through the pause menu (it always
 // opens at the top; its third entry leads to stage select). False if the
 // battle would not pause.
-bool LeaveBattleForStageSelect(SfvGame& game, const std::atomic<bool>& stop)
-{
+bool LeaveBattleForStageSelect(SfvGame& game, const std::atomic<bool>& stop) {
     // Pause is ignored during round intros and KOs: retry until the battle
     // stops ticking. A battle that keeps ticking through that long is over
     // and showing its results menu, where both players have to pick
@@ -204,8 +200,7 @@ bool LeaveBattleForStageSelect(SfvGame& game, const std::atomic<bool>& stop)
 }
 
 // What differs between the battles the two sides loaded, or "".
-std::string SetupMismatch(const MatchSetup& a, const MatchSetup& b)
-{
+std::string SetupMismatch(const MatchSetup& a, const MatchSetup& b) {
     std::string out;
     auto add = [&](const std::string& what) { out += (out.empty() ? "" : ", ") + what; };
     // Not the stage: the id in the battle data is not always written by the
@@ -225,15 +220,14 @@ std::string SetupMismatch(const MatchSetup& a, const MatchSetup& b)
     return out;
 }
 
-const char* RejectText(lobby::RejectReason r)
-{
+const char* RejectText(lobby::RejectReason r) {
     switch (r) {
-    case lobby::RejectReason::WrongCode: return "wrong code";
-    case lobby::RejectReason::BuildMismatch: return "different mod build";
-    case lobby::RejectReason::Busy: return "the session is full";
-    case lobby::RejectReason::ProtocolMismatch: return "different protocol";
-    case lobby::RejectReason::NoSpectators: return "the host does not allow spectators";
-    case lobby::RejectReason::ViaKeeper: return "table sets are watched from the room";
+        case lobby::RejectReason::WrongCode: return "wrong code";
+        case lobby::RejectReason::BuildMismatch: return "different mod build";
+        case lobby::RejectReason::Busy: return "the session is full";
+        case lobby::RejectReason::ProtocolMismatch: return "different protocol";
+        case lobby::RejectReason::NoSpectators: return "the host does not allow spectators";
+        case lobby::RejectReason::ViaKeeper: return "table sets are watched from the room";
     }
     return "?";
 }
@@ -242,24 +236,23 @@ const char* RejectText(lobby::RejectReason r)
 struct Watcher {
     std::string name;
     Clock::time_point heard;
-    uint32_t heardTime = 0;            // its last heartbeat timestamp, and when
+    uint32_t heardTime = 0; // its last heartbeat timestamp, and when
     Clock::time_point heardTimeAt;
-    uint64_t match = 0;                // the match it is loading or watching
-    bool loaded = false;               // ... frozen at frame 0 (its Loaded)
+    uint64_t match = 0;  // the match it is loading or watching
+    bool loaded = false; // ... frozen at frame 0 (its Loaded)
     uint32_t checksum = 0;
-    bool streaming = false;            // playing; acks frames
-    int wanted = 0;                    // next frame it needs
+    bool streaming = false; // playing; acks frames
+    int wanted = 0;         // next frame it needs
     int sentThrough = -1;
-    Clock::time_point progressAt;      // when `wanted` last moved
-    bool keeper = false;               // the keeper's relay (a table set's only spectator)
+    Clock::time_point progressAt; // when `wanted` last moved
+    bool keeper = false;          // the keeper's relay (a table set's only spectator)
 };
 
 // After a session left during its jump (its driver gone, so not
 // EndAfterJumpTick): back to the main menu once the battle it asked for runs
 // (up to 30 s), unless another jump or driver took over meanwhile. The
 // switch can come after the leave, so it counts from the jump's start.
-void ReturnToMenuOnceBattleRuns(SfvGame& game, uint64_t switchesAtJump, int framesLeft = 1800)
-{
+void ReturnToMenuOnceBattleRuns(SfvGame& game, uint64_t switchesAtJump, int framesLeft = 1800) {
     RunOnGameThreadAfter(10, [&game, switchesAtJump, framesLeft] {
         if (BattleSceneSwitches() > switchesAtJump + 1 || CurrentFrameDriver()) return;
         if (BattleSceneSwitches() != switchesAtJump && game.BattleRunning()) {
@@ -277,14 +270,12 @@ class NetplayDriver : public IFrameDriver {
 public:
     NetplayDriver(SfvGame& game, std::wstring reportDir, std::string modVersion)
         : game_(game), reportDir_(std::move(reportDir)), modVersion_(std::move(modVersion)), rng_(GetTickCount64()),
-          epoch_(Clock::now())
-    {
+          epoch_(Clock::now()) {
     }
 
     ~NetplayDriver() override { Stop(); }
 
-    bool Open(const NetplayOptions& o, const MatchTicket& ticket, std::string* error)
-    {
+    bool Open(const NetplayOptions& o, const MatchTicket& ticket, std::string* error) {
         options_ = o;
         // Only the input delay is the players' to change; the window stays 8.
         options_.predictionWindow = kPredictionWindow;
@@ -302,9 +293,9 @@ public:
             if (!t) return false;
             localId_ = UdpAddress(ParseIpv4(o.udpHost), t->Port());
             base_ = std::move(t);
-        }
-        else {
-            const uint16_t alsoPort = o.serverAlsoPort ? o.serverAlsoPort : o.server == kDefaultServer ? kDefaultServerAlsoPort : 0;
+        } else {
+            const uint16_t alsoPort = o.serverAlsoPort ? o.serverAlsoPort : o.server == kDefaultServer ? kDefaultServerAlsoPort
+                                                                                                       : 0;
             auto w = WeyveService::Start(o.server, name_, alsoPort);
             weyve_ = w.get();
             base_ = std::move(w);
@@ -322,16 +313,14 @@ public:
         return true;
     }
 
-    void StartHost()
-    {
+    void StartHost() {
         LogCaptureStart();
         connectingSince_ = Clock::now();
         if (weyve_) {
             weyve_->CreateRoom();
             SetState(State::Connecting);
             Log("netplay: hosting as %s; creating a room on %s", name_.c_str(), options_.server.c_str());
-        }
-        else {
+        } else {
             nonce_ = static_cast<uint16_t>(rng_() | 1);
             MatchCode mc;
             mc.kind = MatchCode::Kind::Udp;
@@ -342,8 +331,7 @@ public:
         StartThread();
     }
 
-    bool StartJoin(const std::string& code)
-    {
+    bool StartJoin(const std::string& code) {
         MatchCode mc;
         if (!DecodeMatchCode(code, &mc)) return false;
         if ((mc.kind == MatchCode::Kind::Udp) != options_.udp) {
@@ -358,8 +346,7 @@ public:
             SetState(State::Connecting);
             Log("netplay: joining room %s on %s as %s%s", code_.c_str(), options_.server.c_str(), name_.c_str(),
                 role_ == Role::Spectator ? " (spectator)" : "");
-        }
-        else {
+        } else {
             peer_ = mc.address;
             nonce_ = mc.nonce;
             BeginHello();
@@ -368,8 +355,7 @@ public:
         return true;
     }
 
-    void SetConditions(const NetConditions& c)
-    {
+    void SetConditions(const NetConditions& c) {
         if (conditioned_) conditioned_->SetConditions(c);
         Log("netplay: simulating %d ms latency, %d ms jitter, %.1f%% loss", c.latencyMs, c.jitterMs, c.loss * 100.0);
     }
@@ -378,8 +364,7 @@ public:
     // not ready, which they can until both are ready: from then on the match
     // is locked in (both games load the characters, the host starts it), and
     // backing out would leave both sides waiting.
-    void SetReady(bool ready)
-    {
+    void SetReady(bool ready) {
         std::lock_guard lock(mutex_);
         if (!ready && ready_ && BothReadyLocked()) {
             Log("netplay: both are ready: locked in until the match starts");
@@ -392,8 +377,7 @@ public:
 
     // Where this player is on the select screen (lobby::Seat::screen): sent
     // at once when it changes, so the other screens follow it live.
-    void SetSelectState(uint8_t screen, uint8_t row, uint32_t hover)
-    {
+    void SetSelectState(uint8_t screen, uint8_t row, uint32_t hover) {
         std::lock_guard lock(mutex_);
         if (selectScreen_ == screen && selectRow_ == row && selectHover_ == hover) return;
         selectScreen_ = screen;
@@ -402,8 +386,7 @@ public:
         beatNow_ = true;
     }
 
-    void SetPick(bool hasPick, const PlayerSetup& pick)
-    {
+    void SetPick(bool hasPick, const PlayerSetup& pick) {
         std::lock_guard lock(mutex_);
         if (options_.hasPick == hasPick && options_.pick == pick) return;
         if (lockedIn_ && state_ != State::Ended) {
@@ -420,8 +403,7 @@ public:
 
     // Between matches (lobby, post-match): this player's input delay for the
     // next match.
-    void SetDelay(uint8_t frames)
-    {
+    void SetDelay(uint8_t frames) {
         nextDelay_ = std::min<int>(frames, kMaxInputDelay);
         Log("netplay: input delay %d from the next match", nextDelay_.load());
     }
@@ -430,16 +412,14 @@ public:
     // matches: a stage code, "random" or "" (as prepared).
     // Testing (`matchchat`): chat into the match room, as a modified client
     // would (the host bans the sender).
-    void TestChat(const std::string& text)
-    {
+    void TestChat(const std::string& text) {
         if (weyve_) weyve_->SendChat(text);
         Log("netplay: sent chat into the match room (test): %s", text.c_str());
     }
 
     // Spectator, from the panel: this match (0: the newest) from its start,
     // ending the one being watched.
-    void ChooseMatch(uint64_t id)
-    {
+    void ChooseMatch(uint64_t id) {
         if (role_ != Role::Spectator) return;
         const State s = GetState();
         if (s == State::Jumping || s == State::Loading) {
@@ -468,45 +448,43 @@ public:
         WatchMatch(e);
     }
 
-    void SetStage(const std::string& code)
-    {
+    void SetStage(const std::string& code) {
         if (lockedIn_) {
             Log("netplay: the stage is locked in (ready)");
             return;
         }
         const int index = code.empty() || code == "random" ? -1 : StageIndex(code);
-        hostStageRule_ = code == "random" ? lobby::kRandomStage : index >= 0 ? index : lobby::kAnyStage;
+        hostStageRule_ = code == "random" ? lobby::kRandomStage : index >= 0 ? index
+                                                                             : lobby::kAnyStage;
         Log("netplay: stage %s", code.empty() ? "as prepared" : code.c_str());
     }
 
-    void SetStageLocked(bool locked)
-    {
+    void SetStageLocked(bool locked) {
         if (!host_) return;
         if (stageLocked_.exchange(locked) != locked) Log("netplay: stage %s", locked ? "confirmed" : "open again");
     }
 
-    void Choose(Choice c)
-    {
+    void Choose(Choice c) {
         // Only while the vote is on: a choice that lands after the other
         // player's has already taken both to the select screen stayed in this
         // side's heartbeats there, and the host, taking a player with a
         // choice as not ready yet, never started the next game (2026-11-05).
         if (GetState() != State::PostMatch) {
-            Log("netplay: no vote now; %s not taken", c == Choice::Rematch ? "rematch" : c == Choice::CharacterSelect ? "character select" : "the choice");
+            Log("netplay: no vote now; %s not taken", c == Choice::Rematch ? "rematch" : c == Choice::CharacterSelect ? "character select"
+                                                                                                                      : "the choice");
             return;
         }
         myChoice_ = c;
-        Log("netplay: after the match: %s", c == Choice::Rematch ? "rematch" : c == Choice::CharacterSelect ? "character select" : "none");
+        Log("netplay: after the match: %s", c == Choice::Rematch ? "rematch" : c == Choice::CharacterSelect ? "character select"
+                                                                                                            : "none");
     }
 
-    std::string Status()
-    {
+    std::string Status() {
         std::lock_guard lock(mutex_);
         return status_;
     }
 
-    NetView View()
-    {
+    NetView View() {
         std::lock_guard lock(mutex_);
         NetView v = live_;
         v.phase = state_;
@@ -533,7 +511,8 @@ public:
             own.link = link_;
         }
         v.desyncReport = desyncReport_;
-        v.you = role_ == Role::Spectator ? -1 : host_ ? 0 : 1;
+        v.you = role_ == Role::Spectator ? -1 : host_ ? 0
+                                                      : 1;
         v.setPlay = ticket_.after == AfterMatch::Set;
         v.build = Hex64(build_);
         v.againVote = v.setPlay && role_ == Role::Player && state_ == State::PostMatch && SetWinnerLocked() >= 0 &&
@@ -563,8 +542,7 @@ public:
         return v;
     }
 
-    void Stop()
-    {
+    void Stop() {
         ReleaseResults();
         stop_ = true;
         if (thread_.joinable()) thread_.join();
@@ -619,8 +597,7 @@ public:
                 Log("netplay: left during the jump: the battle keeps this session's setup, then back to the menu");
                 ReturnToMenuOnceBattleRuns(game_, switchesAtJump_);
             }
-        }
-        else {
+        } else {
             ClearPendingSetup();
         }
         // The room goes with the service (it leaves on the way out).
@@ -632,8 +609,7 @@ public:
     }
 
     // Game thread, once per rendered battle frame.
-    bool OnFrame(SfvGame& game) override
-    {
+    bool OnFrame(SfvGame& game) override {
         // The lobby over the last match's results screen: the battle holds
         // still there, as during the vote (run on, it opens the game's own
         // Results Menu).
@@ -660,14 +636,12 @@ public:
     // session's lobby only once both players are ready, the match locked in
     // (loading each pick or costume a player tried out stalled both games;
     // a player alone ready can still say not ready).
-    std::vector<PreloadPick> PreloadPicks()
-    {
+    std::vector<PreloadPick> PreloadPicks() {
         std::lock_guard lock(mutex_);
         return PreloadPicksLocked();
     }
 
-    std::vector<PreloadPick> PreloadPicksLocked() const
-    {
+    std::vector<PreloadPick> PreloadPicksLocked() const {
         std::vector<PreloadPick> picks;
         if (state_ != State::Lobby && state_ != State::Hosting && state_ != State::Ended) return picks;
         if (options_.randomSetup) return picks;
@@ -684,8 +658,7 @@ public:
     }
 
     // Both players ready, as this game knows it (its own seat's from here).
-    bool BothReadyLocked() const
-    {
+    bool BothReadyLocked() const {
         for (int i = 0; i < kNumPlayers; i++) {
             const bool own = role_ == Role::Player && i == (host_ ? 0 : 1);
             if (own ? !ready_ : !(seats_[i].present && seats_[i].ready)) return false;
@@ -694,15 +667,13 @@ public:
     }
 
 private:
-    uint32_t Now() const
-    {
+    uint32_t Now() const {
         return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - epoch_).count());
     }
 
     // ----- control channel (net thread) --------------------------------------
 
-    void StartThread()
-    {
+    void StartThread() {
         stop_ = false;
         thread_ = std::thread([this] {
             ThreadGuard running;
@@ -713,8 +684,7 @@ private:
         });
     }
 
-    void SendTo(uint64_t to, lobby::Message m)
-    {
+    void SendTo(uint64_t to, lobby::Message m) {
         m.protocol = lobby::kProtocol;
         const auto bytes = lobby::Encode(m);
         control_->Send(to, bytes.data(), bytes.size());
@@ -724,8 +694,7 @@ private:
 
     // Every member of the session but this side: the other player (as seen
     // from here) and, from the host, the spectators.
-    std::vector<uint64_t> Members()
-    {
+    std::vector<uint64_t> Members() {
         std::vector<uint64_t> out;
         if (peer_) out.push_back(peer_);
         std::lock_guard lock(mutex_);
@@ -733,8 +702,7 @@ private:
         return out;
     }
 
-    void SendBye()
-    {
+    void SendBye() {
         lobby::Message bye;
         bye.type = lobby::Type::Bye;
         {
@@ -745,8 +713,7 @@ private:
         for (uint64_t to : Members()) SendTo(to, bye);
     }
 
-    void HostReady(const std::string& code)
-    {
+    void HostReady(const std::string& code) {
         {
             std::lock_guard lock(mutex_);
             code_ = code;
@@ -759,15 +726,13 @@ private:
         Log(forTable ? "netplay: hosting, code %s" : "netplay: hosting, code %s (copied to the clipboard)", code.c_str());
     }
 
-    void BeginHello()
-    {
+    void BeginHello() {
         helloSince_ = Clock::now();
         SetState(State::Joining);
         Log("netplay: joining %s", code_.c_str());
     }
 
-    void ControlTick()
-    {
+    void ControlTick() {
         if (weyve_) RoomEvents();
         Packet p;
         while (control_->Receive(p)) {
@@ -823,83 +788,80 @@ private:
 
     // ----- Weyvelength room events --------------------------------------------
 
-    void RoomEvents()
-    {
+    void RoomEvents() {
         WeyveEvent e;
         while (weyve_->NextEvent(e)) {
             switch (e.type) {
-            case WeyveEvent::Type::RoomJoined:
-                if (host_) {
-                    weyve_->SetRoomData("build", Hex64(build_));
-                    // For the joiner's message when builds differ: which part.
-                    weyve_->SetRoomData("version", modVersion_);
-                    weyve_->SetRoomData("game", game_.BuildId());
-                    weyve_->SetRoomData("protocol", std::to_string(lobby::kProtocol));
-                    MatchCode mc;
-                    mc.kind = MatchCode::Kind::Room;
-                    mc.room = e.text;
-                    HostReady(EncodeMatchCode(mc));
-                }
-                else {
-                    joinedRoom_ = true;
-                }
-                break;
-            case WeyveEvent::Type::RoomError:
-                if (GetState() == State::Connecting) EndSession(host_ ? "cannot create a room: " + e.text : "cannot join: " + e.text);
-                break;
-            case WeyveEvent::Type::PeerLeft:
-                if (e.peer == peer_) {
-                    // The server drops a member whose connection to it broke
-                    // (a network that cuts idle connections); while the P2P
-                    // link holds, a match goes on over it, and ends when the
-                    // link does (the other side's ServerLost, below).
+                case WeyveEvent::Type::RoomJoined:
+                    if (host_) {
+                        weyve_->SetRoomData("build", Hex64(build_));
+                        // For the joiner's message when builds differ: which part.
+                        weyve_->SetRoomData("version", modVersion_);
+                        weyve_->SetRoomData("game", game_.BuildId());
+                        weyve_->SetRoomData("protocol", std::to_string(lobby::kProtocol));
+                        MatchCode mc;
+                        mc.kind = MatchCode::Kind::Room;
+                        mc.room = e.text;
+                        HostReady(EncodeMatchCode(mc));
+                    } else {
+                        joinedRoom_ = true;
+                    }
+                    break;
+                case WeyveEvent::Type::RoomError:
+                    if (GetState() == State::Connecting) EndSession(host_ ? "cannot create a room: " + e.text : "cannot join: " + e.text);
+                    break;
+                case WeyveEvent::Type::PeerLeft:
+                    if (e.peer == peer_) {
+                        // The server drops a member whose connection to it broke
+                        // (a network that cuts idle connections); while the P2P
+                        // link holds, a match goes on over it, and ends when the
+                        // link does (the other side's ServerLost, below).
+                        const State s = GetState();
+                        if ((s == State::Running || s == State::PostMatch || s == State::Loading || s == State::Jumping) &&
+                            weyve_->PeerLinked(e.peer)) {
+                            Log("netplay: the server says the other side left the room; the link is up, so the match goes on");
+                            peerLeftRoom_ = true;
+                            break;
+                        }
+                        if (s != State::Ended) {
+                            Log("netplay: the other %s left the room", host_ || role_ == Role::Player ? "player" : "side");
+                            peerLeft_ = true;
+                            EndSession(host_ || role_ == Role::Player ? "the other player left" : "the host left");
+                        }
+                    } else {
+                        std::lock_guard lock(mutex_);
+                        if (watchers_.erase(e.peer)) Log("netplay: spectator %u left", static_cast<unsigned>(e.peer));
+                    }
+                    break;
+                case WeyveEvent::Type::Removed:
+                case WeyveEvent::Type::ServerLost: {
                     const State s = GetState();
-                    if ((s == State::Running || s == State::PostMatch || s == State::Loading || s == State::Jumping) &&
-                        weyve_->PeerLinked(e.peer)) {
-                        Log("netplay: the server says the other side left the room; the link is up, so the match goes on");
-                        peerLeftRoom_ = true;
+                    if (s == State::Ended) break;
+                    // A match in progress runs on the P2P link; let it play out
+                    // while the link holds (third_party/weyvelength.patch keeps
+                    // the links when the server connection goes).
+                    if (s == State::Running || s == State::PostMatch || s == State::Loading || s == State::Jumping) {
+                        Log("netplay: %s; the match goes on as long as the link holds", e.text.c_str());
+                        serverLost_ = true;
                         break;
                     }
-                    if (s != State::Ended) {
-                        Log("netplay: the other %s left the room", host_ || role_ == Role::Player ? "player" : "side");
-                        peerLeft_ = true;
-                        EndSession(host_ || role_ == Role::Player ? "the other player left" : "the host left");
-                    }
-                }
-                else {
-                    std::lock_guard lock(mutex_);
-                    if (watchers_.erase(e.peer)) Log("netplay: spectator %u left", static_cast<unsigned>(e.peer));
-                }
-                break;
-            case WeyveEvent::Type::Removed:
-            case WeyveEvent::Type::ServerLost: {
-                const State s = GetState();
-                if (s == State::Ended) break;
-                // A match in progress runs on the P2P link; let it play out
-                // while the link holds (third_party/weyvelength.patch keeps
-                // the links when the server connection goes).
-                if (s == State::Running || s == State::PostMatch || s == State::Loading || s == State::Jumping) {
-                    Log("netplay: %s; the match goes on as long as the link holds", e.text.c_str());
-                    serverLost_ = true;
+                    EndSession(e.text);
                     break;
                 }
-                EndSession(e.text);
-                break;
-            }
-            case WeyveEvent::Type::Chat:
-                // No Polarity build chats in a match room: a member who does runs
-                // a modified client (a flood costs every member, the host
-                // most). The host bans it (custom-rooms-plan.md M6; the plan
-                // had the keeper do it, which is not in match rooms).
-                if (host_ && e.peer && weyve_) {
-                    Log("netplay: member %u chatted in the match room (no Polarity build does): banned", e.peer);
-                    weyve_->Ban(e.peer);
-                }
-                break;
-            case WeyveEvent::Type::PeerJoined:
-            case WeyveEvent::Type::HostChanged:
-            case WeyveEvent::Type::RoomList:
-                break;
+                case WeyveEvent::Type::Chat:
+                    // No Polarity build chats in a match room: a member who does runs
+                    // a modified client (a flood costs every member, the host
+                    // most). The host bans it (custom-rooms-plan.md M6; the plan
+                    // had the keeper do it, which is not in match rooms).
+                    if (host_ && e.peer && weyve_) {
+                        Log("netplay: member %u chatted in the match room (no Polarity build does): banned", e.peer);
+                        weyve_->Ban(e.peer);
+                    }
+                    break;
+                case WeyveEvent::Type::PeerJoined:
+                case WeyveEvent::Type::HostChanged:
+                case WeyveEvent::Type::RoomList:
+                    break;
             }
         }
         // Joiner: in the room; check its build before saying hello.
@@ -918,11 +880,9 @@ private:
                     if (theirs.empty() || CompareVersions(theirs, modVersion_) < 0) {
                         why = "the host runs an older Polarity" + (theirs.empty() ? std::string() : " (" + theirs + ")") +
                               "; they need to update";
-                    }
-                    else if (CompareVersions(theirs, modVersion_) > 0) {
+                    } else if (CompareVersions(theirs, modVersion_) > 0) {
                         why = "the host runs Polarity " + theirs + "; update from Polarity settings, Updates";
-                    }
-                    else {
+                    } else {
                         // Same version: the game, or the noise mask (a 0.1.0 install
                         // missing sfv_noise.txt). Rooms of 0.1.0 do not say.
                         const auto game = v.data.find("game");
@@ -935,11 +895,9 @@ private:
                         if (!theirGame.empty()) Log("netplay: the room's game build is %s, this one %s", theirGame.c_str(), mine.c_str());
                         if (!theirGame.empty() && part(theirGame, "sfv-") != part(mine, "sfv-")) {
                             why = "the host's Street Fighter V is another version (check for a game update in Steam)";
-                        }
-                        else if (!theirGame.empty() && part(theirGame, "noise-") != part(mine, "noise-")) {
+                        } else if (!theirGame.empty() && part(theirGame, "noise-") != part(mine, "noise-")) {
                             why = "the host's Polarity " + theirs + " checks the game state differently; one of you should reinstall it";
-                        }
-                        else {
+                        } else {
                             why = "the host runs another build of Polarity " + theirs + "; one of you should reinstall it";
                         }
                     }
@@ -956,15 +914,14 @@ private:
 
     // Peer to peer or through a TURN relay, for the panel and HUD; logged
     // when it changes (ICE can move a link to a better pair).
-    void UpdateLinkPath()
-    {
+    void UpdateLinkPath() {
         if (!weyve_ || !peer_) return;
         NetView::Path path = NetView::Path::Unknown;
         const auto askedAt = Clock::now();
         switch (weyve_->PeerPath(static_cast<uint32_t>(peer_))) {
-        case WeyveService::LinkPath::Direct: path = NetView::Path::Direct; break;
-        case WeyveService::LinkPath::Relayed: path = NetView::Path::Relayed; break;
-        default: break;
+            case WeyveService::LinkPath::Direct: path = NetView::Path::Direct; break;
+            case WeyveService::LinkPath::Relayed: path = NetView::Path::Relayed; break;
+            default: break;
         }
         const std::string relay = weyve_->TurnHost();
         // It holds the client's lock, which the game thread's sends wait on.
@@ -980,8 +937,7 @@ private:
 
     // Ends the session (or drops a spectator) when nothing was heard for a
     // while. True if the session ended.
-    bool CheckSilence(Clock::time_point now)
-    {
+    bool CheckSilence(Clock::time_point now) {
         const State s = GetState();
         const bool waiting = s == State::Connecting || s == State::Hosting || s == State::Joining;
         if (!waiting && peer_ && now - heard_ > kSilence) {
@@ -999,8 +955,7 @@ private:
                 if (now - it->second.heard > kSilence) {
                     Log("netplay: spectator %s silent; dropped", it->second.name.c_str());
                     it = watchers_.erase(it);
-                }
-                else {
+                } else {
                     ++it;
                 }
             }
@@ -1008,23 +963,20 @@ private:
         return false;
     }
 
-    void Heard(uint32_t time)
-    {
+    void Heard(uint32_t time) {
         heard_ = Clock::now();
         heardTime_ = time;
         heardTimeAt_ = heard_;
     }
 
-    void Echo(lobby::Message& m, uint32_t heardTime, Clock::time_point heardAt)
-    {
+    void Echo(lobby::Message& m, uint32_t heardTime, Clock::time_point heardAt) {
         m.time = Now();
         m.echo = heardTime;
         const auto age = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - heardAt).count();
         m.echoAge = static_cast<uint16_t>(std::clamp<long long>(age, 0, 65535));
     }
 
-    void TakeEcho(const lobby::Message& m)
-    {
+    void TakeEcho(const lobby::Message& m) {
         if (!m.echo) return;
         const int64_t rtt = int64_t(Now()) - int64_t(m.echo) - m.echoAge;
         if (rtt < 0 || rtt >= 10000) return;
@@ -1034,8 +986,7 @@ private:
         if (linkRtts_.size() > core::kLinkSamples) linkRtts_.erase(linkRtts_.begin());
     }
 
-    lobby::Seat OwnSeat()
-    {
+    lobby::Seat OwnSeat() {
         lobby::Seat seat;
         std::lock_guard lock(mutex_);
         seat.present = true;
@@ -1066,8 +1017,7 @@ private:
         return seat;
     }
 
-    uint16_t StageRule()
-    {
+    uint16_t StageRule() {
         if (hostStageRule_ >= 0) return static_cast<uint16_t>(hostStageRule_.load());
         if (options_.stageCode == "random") return lobby::kRandomStage;
         if (!options_.stageCode.empty()) {
@@ -1077,8 +1027,7 @@ private:
         return options_.stage; // a table index, or kKeepStage (= kAnyStage)
     }
 
-    void HostBeat(State s)
-    {
+    void HostBeat(State s) {
         lobby::Message st;
         st.type = lobby::Type::SessionState;
         {
@@ -1092,7 +1041,7 @@ private:
             st.played = static_cast<uint16_t>(played_);
             st.spectators = static_cast<uint8_t>(watchers_.size());
         }
-        st.phase = s == State::PostMatch ? SessionPhase::PostMatch
+        st.phase = s == State::PostMatch                        ? SessionPhase::PostMatch
                    : s >= State::Jumping && s <= State::Running ? SessionPhase::Match
                                                                 : SessionPhase::Lobby;
         st.matchId = matchId_;
@@ -1152,8 +1101,7 @@ private:
         if (s == State::PostMatch) MaybeResolve();
     }
 
-    void GuestBeat(State s)
-    {
+    void GuestBeat(State s) {
         // A table's set won: the host ends the session (MaybeResolve), and
         // so does this side a moment later, from the host's score: the host's
         // Bye can miss it (the host leaves the room first).
@@ -1170,8 +1118,7 @@ private:
             ps.seat = OwnSeat();
             Echo(ps, heardTime_, heardTimeAt_);
             Send(ps);
-        }
-        else {
+        } else {
             // A spectator's heartbeat: what it needs of the stream.
             lobby::Message ack;
             ack.type = lobby::Type::InputsAck;
@@ -1186,8 +1133,7 @@ private:
         if ((s == State::Loading && selfLoaded_) || (s == State::Running && sessionSyncing_)) Send(LoadedMessage());
     }
 
-    lobby::Message WelcomeMessage()
-    {
+    lobby::Message WelcomeMessage() {
         lobby::Message w;
         w.type = lobby::Type::Welcome;
         w.matchId = matchId_;
@@ -1197,8 +1143,7 @@ private:
         return w;
     }
 
-    lobby::Message LoadedMessage()
-    {
+    lobby::Message LoadedMessage() {
         lobby::Message loaded;
         loaded.type = lobby::Type::Loaded;
         loaded.matchId = matchId_;
@@ -1209,8 +1154,7 @@ private:
 
     // ----- messages ------------------------------------------------------------
 
-    void OnMessage(uint64_t from, const lobby::Message& m)
-    {
+    void OnMessage(uint64_t from, const lobby::Message& m) {
         const State s = GetState();
         if (m.protocol != lobby::kProtocol) {
             if (host_ && m.type == lobby::Type::Hello) Reject(from, lobby::RejectReason::ProtocolMismatch);
@@ -1221,8 +1165,7 @@ private:
         else OnGuestMessage(from, m, s);
     }
 
-    void OnHostMessage(uint64_t from, const lobby::Message& m, State s)
-    {
+    void OnHostMessage(uint64_t from, const lobby::Message& m, State s) {
         Watcher* w = nullptr;
         std::unique_lock lock(mutex_);
         if (auto it = watchers_.find(from); it != watchers_.end()) {
@@ -1231,316 +1174,314 @@ private:
         }
         lock.unlock();
         switch (m.type) {
-        case lobby::Type::Hello: {
-            if (options_.udp && m.nonce != nonce_) {
-                Reject(from, lobby::RejectReason::WrongCode);
-                break;
-            }
-            if (m.build != build_) {
-                Reject(from, lobby::RejectReason::BuildMismatch);
-                break;
-            }
-            lobby::Message accept;
-            accept.type = lobby::Type::Accept;
-            accept.name = name_;
-            accept.reports = ReportUploadsOn();
-            if (from == peer_) {
-                NotePeerReports(m.reports);
-                accept.role = Role::Player;
-                SendTo(from, accept);
-                break;
-            }
-            if (w) {
+            case lobby::Type::Hello: {
+                if (options_.udp && m.nonce != nonce_) {
+                    Reject(from, lobby::RejectReason::WrongCode);
+                    break;
+                }
+                if (m.build != build_) {
+                    Reject(from, lobby::RejectReason::BuildMismatch);
+                    break;
+                }
+                lobby::Message accept;
+                accept.type = lobby::Type::Accept;
+                accept.name = name_;
+                accept.reports = ReportUploadsOn();
+                if (from == peer_) {
+                    NotePeerReports(m.reports);
+                    accept.role = Role::Player;
+                    SendTo(from, accept);
+                    break;
+                }
+                if (w) {
+                    accept.role = Role::Spectator;
+                    SendTo(from, accept);
+                    break;
+                }
+                // The P2 seat: the ticket's token decides (0: the first player
+                // to join, as Direct Match); anyone else watches.
+                const bool seatHolder = !ticket_.seatToken || m.seatToken == ticket_.seatToken;
+                if (m.role == Role::Player && !seatHolder) Log("netplay: %s has no seat token for P2: watches", m.name.c_str());
+                if (m.role == Role::Player && seatHolder && !peer_ && s != State::Ended) {
+                    peer_ = from;
+                    heard_ = Clock::now();
+                    {
+                        std::lock_guard l(mutex_);
+                        seats_[1] = {};
+                        seats_[1].present = true;
+                        seats_[1].name = m.name;
+                    }
+                    Log("netplay: %s joined from %s", m.name.c_str(), Hex64(from).c_str());
+                    peerReports_ = -1; // a new player
+                    NotePeerReports(m.reports);
+                    if (s == State::Hosting) SetState(State::Lobby);
+                    accept.role = Role::Player;
+                    SendTo(from, accept);
+                    break;
+                }
+                // A table set streams to the keeper alone: its relay serves the
+                // viewers (custom-rooms-plan.md M5), so neither player's upload
+                // grows with them. Anyone else is sent to the room.
+                const bool tableSet = ticket_.after == AfterMatch::Set && weyve_;
+                const bool isKeeper = tableSet && IsKeeperMember(from);
+                if (tableSet && !isKeeper) {
+                    Log("netplay: %s asked to watch; table sets are watched through the keeper's relay", m.name.c_str());
+                    Reject(from, lobby::RejectReason::ViaKeeper);
+                    break;
+                }
+                std::lock_guard l(mutex_);
+                if (!options_.allowSpectators || (!isKeeper && watchers_.size() >= kMaxSpectators)) {
+                    Reject(from, options_.allowSpectators ? lobby::RejectReason::Busy : lobby::RejectReason::NoSpectators);
+                    break;
+                }
+                Watcher& nw = watchers_[from];
+                nw.name = m.name;
+                nw.heard = Clock::now();
+                nw.keeper = isKeeper;
+                Log("netplay: %s watches (from %s)%s", m.name.c_str(), Hex64(from).c_str(), isKeeper ? ": the keeper's relay" : "");
                 accept.role = Role::Spectator;
                 SendTo(from, accept);
                 break;
             }
-            // The P2 seat: the ticket's token decides (0: the first player
-            // to join, as Direct Match); anyone else watches.
-            const bool seatHolder = !ticket_.seatToken || m.seatToken == ticket_.seatToken;
-            if (m.role == Role::Player && !seatHolder) Log("netplay: %s has no seat token for P2: watches", m.name.c_str());
-            if (m.role == Role::Player && seatHolder && !peer_ && s != State::Ended) {
-                peer_ = from;
-                heard_ = Clock::now();
+            case lobby::Type::PlayerState:
+                if (from != peer_) break;
+                Heard(m.time);
+                TakeEcho(m);
                 {
                     std::lock_guard l(mutex_);
-                    seats_[1] = {};
-                    seats_[1].present = true;
-                    seats_[1].name = m.name;
+                    lobby::Seat& seat = seats_[1];
+                    seat.hasPick = m.seat.hasPick;
+                    seat.pick = m.seat.pick;
+                    // A joiner still in the post-match screen (its choice made) is
+                    // not ready for the next match: its last heartbeats before it
+                    // takes the lobby carry the ready flag of the match before,
+                    // and started the next match at once.
+                    seat.ready = m.seat.ready && m.seat.choice == Choice::None;
+                    seat.preloaded = m.seat.preloaded;
+                    seat.choice = m.seat.choice;
+                    seat.inputDelay = m.seat.inputDelay;
+                    seat.fps = m.seat.fps;
+                    seat.link = m.seat.link;
+                    // Spectators follow the joiner's select screen live too.
+                    if (seat.screen != m.seat.screen || seat.row != m.seat.row || seat.hover != m.seat.hover) beatNow_ = true;
+                    seat.screen = m.seat.screen;
+                    seat.row = m.seat.row;
+                    seat.hover = m.seat.hover;
                 }
-                Log("netplay: %s joined from %s", m.name.c_str(), Hex64(from).c_str());
-                peerReports_ = -1; // a new player
-                NotePeerReports(m.reports);
-                if (s == State::Hosting) SetState(State::Lobby);
-                accept.role = Role::Player;
-                SendTo(from, accept);
                 break;
-            }
-            // A table set streams to the keeper alone: its relay serves the
-            // viewers (custom-rooms-plan.md M5), so neither player's upload
-            // grows with them. Anyone else is sent to the room.
-            const bool tableSet = ticket_.after == AfterMatch::Set && weyve_;
-            const bool isKeeper = tableSet && IsKeeperMember(from);
-            if (tableSet && !isKeeper) {
-                Log("netplay: %s asked to watch; table sets are watched through the keeper's relay", m.name.c_str());
-                Reject(from, lobby::RejectReason::ViaKeeper);
-                break;
-            }
-            std::lock_guard l(mutex_);
-            if (!options_.allowSpectators || (!isKeeper && watchers_.size() >= kMaxSpectators)) {
-                Reject(from, options_.allowSpectators ? lobby::RejectReason::Busy : lobby::RejectReason::NoSpectators);
-                break;
-            }
-            Watcher& nw = watchers_[from];
-            nw.name = m.name;
-            nw.heard = Clock::now();
-            nw.keeper = isKeeper;
-            Log("netplay: %s watches (from %s)%s", m.name.c_str(), Hex64(from).c_str(), isKeeper ? ": the keeper's relay" : "");
-            accept.role = Role::Spectator;
-            SendTo(from, accept);
-            break;
-        }
-        case lobby::Type::PlayerState:
-            if (from != peer_) break;
-            Heard(m.time);
-            TakeEcho(m);
-            {
-                std::lock_guard l(mutex_);
-                lobby::Seat& seat = seats_[1];
-                seat.hasPick = m.seat.hasPick;
-                seat.pick = m.seat.pick;
-                // A joiner still in the post-match screen (its choice made) is
-                // not ready for the next match: its last heartbeats before it
-                // takes the lobby carry the ready flag of the match before,
-                // and started the next match at once.
-                seat.ready = m.seat.ready && m.seat.choice == Choice::None;
-                seat.preloaded = m.seat.preloaded;
-                seat.choice = m.seat.choice;
-                seat.inputDelay = m.seat.inputDelay;
-                seat.fps = m.seat.fps;
-                seat.link = m.seat.link;
-                // Spectators follow the joiner's select screen live too.
-                if (seat.screen != m.seat.screen || seat.row != m.seat.row || seat.hover != m.seat.hover) beatNow_ = true;
-                seat.screen = m.seat.screen;
-                seat.row = m.seat.row;
-                seat.hover = m.seat.hover;
-            }
-            break;
-        case lobby::Type::Loaded:
-            if (from == peer_ && m.matchId == matchId_) {
-                {
+            case lobby::Type::Loaded:
+                if (from == peer_ && m.matchId == matchId_) {
+                    {
+                        std::lock_guard l(mutex_);
+                        peerLoadedSetup_ = m.setup;
+                        peerChecksum_ = m.stateChecksum;
+                    }
+                    peerLoaded_ = true;
+                } else if (w && (m.matchId == matchId_ || KeptLoaded(m.matchId))) {
+                    // An earlier match: its Loaded back (the players are past it).
+                    if (m.matchId != matchId_) {
+                        if (const auto loaded = KeptLoaded(m.matchId)) SendTo(from, *loaded);
+                    }
                     std::lock_guard l(mutex_);
-                    peerLoadedSetup_ = m.setup;
-                    peerChecksum_ = m.stateChecksum;
-                }
-                peerLoaded_ = true;
-            }
-            else if (w && (m.matchId == matchId_ || KeptLoaded(m.matchId))) {
-                // An earlier match: its Loaded back (the players are past it).
-                if (m.matchId != matchId_) {
-                    if (const auto loaded = KeptLoaded(m.matchId)) SendTo(from, *loaded);
-                }
-                std::lock_guard l(mutex_);
-                if (w->match != m.matchId) {
-                    w->streaming = false;
-                    w->wanted = 0;
-                    w->sentThrough = -1;
-                }
-                w->match = m.matchId;
-                w->loaded = true;
-                w->checksum = m.stateChecksum;
-            }
-            break;
-        case lobby::Type::InputsAck:
-            if (w) {
-                std::lock_guard l(mutex_);
-                w->heardTime = m.time;
-                w->heardTimeAt = Clock::now();
-                if (!m.matchId) {
-                    // Done watching (or not yet watching anything).
-                    if (w->streaming) Log("netplay: spectator %s finished watching", w->name.c_str());
-                    w->streaming = false;
-                }
-                else if (streams_.count(m.matchId)) {
-                    if (!w->streaming || w->match != m.matchId) {
-                        w->streaming = true;
-                        w->match = m.matchId;
-                        w->sentThrough = static_cast<int>(m.first) - 1;
-                        w->progressAt = Clock::now();
-                        Log("netplay: spectator %s is watching from frame %u", w->name.c_str(), m.first);
+                    if (w->match != m.matchId) {
+                        w->streaming = false;
+                        w->wanted = 0;
+                        w->sentThrough = -1;
                     }
-                    if (static_cast<int>(m.first) > w->wanted) {
-                        w->wanted = static_cast<int>(m.first);
-                        w->progressAt = Clock::now();
+                    w->match = m.matchId;
+                    w->loaded = true;
+                    w->checksum = m.stateChecksum;
+                }
+                break;
+            case lobby::Type::InputsAck:
+                if (w) {
+                    std::lock_guard l(mutex_);
+                    w->heardTime = m.time;
+                    w->heardTimeAt = Clock::now();
+                    if (!m.matchId) {
+                        // Done watching (or not yet watching anything).
+                        if (w->streaming) Log("netplay: spectator %s finished watching", w->name.c_str());
+                        w->streaming = false;
+                    } else if (streams_.count(m.matchId)) {
+                        if (!w->streaming || w->match != m.matchId) {
+                            w->streaming = true;
+                            w->match = m.matchId;
+                            w->sentThrough = static_cast<int>(m.first) - 1;
+                            w->progressAt = Clock::now();
+                            Log("netplay: spectator %s is watching from frame %u", w->name.c_str(), m.first);
+                        }
+                        if (static_cast<int>(m.first) > w->wanted) {
+                            w->wanted = static_cast<int>(m.first);
+                            w->progressAt = Clock::now();
+                        }
                     }
                 }
-            }
-            break;
-        case lobby::Type::Bye:
-            if (from == peer_ && s != State::Ended && s != State::Idle) {
-                Log("netplay: the other player left%s%s%s", m.text.empty() ? "" : ": ", m.text.c_str(), m.forfeit ? " (a forfeit)" : "");
-                peerLeft_ = true;
-                if (m.forfeit && TookForfeit(1)) break;
-                const std::string over = SetOverText();
-                EndSession(!over.empty() ? over : m.text.empty() ? "the other player left" : m.text);
-            }
-            else if (w) {
-                std::lock_guard l(mutex_);
-                Log("netplay: spectator %s left", w->name.c_str());
-                watchers_.erase(from);
-            }
-            break;
-        default:
-            break;
+                break;
+            case lobby::Type::Bye:
+                if (from == peer_ && s != State::Ended && s != State::Idle) {
+                    Log("netplay: the other player left%s%s%s", m.text.empty() ? "" : ": ", m.text.c_str(), m.forfeit ? " (a forfeit)" : "");
+                    peerLeft_ = true;
+                    if (m.forfeit && TookForfeit(1)) break;
+                    const std::string over = SetOverText();
+                    EndSession(!over.empty() ? over : m.text.empty() ? "the other player left"
+                                                                     : m.text);
+                } else if (w) {
+                    std::lock_guard l(mutex_);
+                    Log("netplay: spectator %s left", w->name.c_str());
+                    watchers_.erase(from);
+                }
+                break;
+            default:
+                break;
         }
     }
 
-    void OnGuestMessage(uint64_t from, const lobby::Message& m, State s)
-    {
+    void OnGuestMessage(uint64_t from, const lobby::Message& m, State s) {
         if (from != peer_) return;
         switch (m.type) {
-        case lobby::Type::Accept:
-            if (s != State::Joining) break;
-            heard_ = Clock::now();
-            role_ = m.role;
-            {
-                std::lock_guard l(mutex_);
-                seats_[0].name = m.name;
-            }
-            Log("netplay: in %s's session as %s", m.name.c_str(), role_ == Role::Player ? "P2" : "a spectator");
-            NotePeerReports(m.reports);
-            if (role_ == Role::Spectator && options_.mashSeed) options_.mashSeed = 0;
-            SetState(State::Lobby);
-            break;
-        case lobby::Type::Reject:
-            if (s == State::Joining) {
-                Log("netplay: rejected: %s", RejectText(m.reason));
-                EndSession(std::string("rejected: ") + RejectText(m.reason));
-            }
-            break;
-        case lobby::Type::SessionState: {
-            Heard(m.time);
-            TakeEcho(m);
-            {
-                std::lock_guard l(mutex_);
-                for (int i = 0; i < kNumPlayers; i++) seats_[i] = m.seats[i];
-                played_ = m.played;
-                spectators_ = m.spectators;
-                stageRule_ = m.stage;
-            }
-            stageLocked_ = m.stageLocked;
-            // The host went back to the lobby (character select).
-            if (m.phase == SessionPhase::Lobby && s >= State::Jumping && s <= State::PostMatch && next_ == Next::None) {
-                Log("netplay: back to the lobby");
-                next_ = Next::Lobby;
-            }
-            break;
-        }
-        case lobby::Type::Welcome: {
-            if (m.matchId == matchId_ || s == State::Joining || s == State::Connecting || s == State::Ended) break;
-            if (role_ == Role::Spectator) {
+            case lobby::Type::Accept:
+                if (s != State::Joining) break;
+                heard_ = Clock::now();
+                role_ = m.role;
                 {
                     std::lock_guard l(mutex_);
-                    if (std::none_of(matchList_.begin(), matchList_.end(), [&](const lobby::MatchEntry& e) { return e.id == m.matchId; })) {
-                        lobby::MatchEntry e;
-                        e.id = m.matchId;
-                        e.setup = m.setup;
-                        matchList_.push_back(e);
-                    }
+                    seats_[0].name = m.name;
                 }
-                // Busy with a match (behind the players, or one picked in the
-                // panel): this one waits its turn (WatchNext as that one ends).
-                if (s == State::Jumping || s == State::Loading || s == State::Running || switchNow_) break;
-                if (WatchNext()) break;
-            }
-            if (role_ == Role::Player) {
-                std::string here, there;
-                if (LacksVersion(m.setup, &here, &there)) {
-                    EndSessionFor(here, there);
-                    break;
+                Log("netplay: in %s's session as %s", m.name.c_str(), role_ == Role::Player ? "P2" : "a spectator");
+                NotePeerReports(m.reports);
+                if (role_ == Role::Spectator && options_.mashSeed) options_.mashSeed = 0;
+                SetState(State::Lobby);
+                break;
+            case lobby::Type::Reject:
+                if (s == State::Joining) {
+                    Log("netplay: rejected: %s", RejectText(m.reason));
+                    EndSession(std::string("rejected: ") + RejectText(m.reason));
                 }
-            }
-            // A new match: from the lobby straight away, from a match once the
-            // game thread has let go of it.
-            {
-                std::lock_guard l(mutex_);
-                setup_ = m.setup;
-            }
-            matchId_ = m.matchId;
-            // Each player keeps its own input delay; the prediction window is fixed.
-            options_.predictionWindow = kPredictionWindow;
-            Log("netplay: match %s; %s", Hex64(matchId_).c_str(), DescribeSetup(setup_).c_str());
-            next_ = Next::Jump;
-            break;
-        }
-        case lobby::Type::Loaded:
-            // Repeated, and the host's checksum is final.
-            if (m.matchId == matchId_) {
+                break;
+            case lobby::Type::SessionState: {
+                Heard(m.time);
+                TakeEcho(m);
                 {
                     std::lock_guard l(mutex_);
-                    peerLoadedSetup_ = m.setup;
-                    peerChecksum_ = m.stateChecksum;
+                    for (int i = 0; i < kNumPlayers; i++) seats_[i] = m.seats[i];
+                    played_ = m.played;
+                    spectators_ = m.spectators;
+                    stageRule_ = m.stage;
                 }
-                peerLoaded_ = true;
+                stageLocked_ = m.stageLocked;
+                // The host went back to the lobby (character select).
+                if (m.phase == SessionPhase::Lobby && s >= State::Jumping && s <= State::PostMatch && next_ == Next::None) {
+                    Log("netplay: back to the lobby");
+                    next_ = Next::Lobby;
+                }
+                break;
             }
-            break;
-        case lobby::Type::Matches:
-            if (role_ == Role::Spectator) {
-                uint64_t first = 0;
+            case lobby::Type::Welcome: {
+                if (m.matchId == matchId_ || s == State::Joining || s == State::Connecting || s == State::Ended) break;
+                if (role_ == Role::Spectator) {
+                    {
+                        std::lock_guard l(mutex_);
+                        if (std::none_of(matchList_.begin(), matchList_.end(), [&](const lobby::MatchEntry& e) { return e.id == m.matchId; })) {
+                            lobby::MatchEntry e;
+                            e.id = m.matchId;
+                            e.setup = m.setup;
+                            matchList_.push_back(e);
+                        }
+                    }
+                    // Busy with a match (behind the players, or one picked in the
+                    // panel): this one waits its turn (WatchNext as that one ends).
+                    if (s == State::Jumping || s == State::Loading || s == State::Running || switchNow_) break;
+                    if (WatchNext()) break;
+                }
+                if (role_ == Role::Player) {
+                    std::string here, there;
+                    if (LacksVersion(m.setup, &here, &there)) {
+                        EndSessionFor(here, there);
+                        break;
+                    }
+                }
+                // A new match: from the lobby straight away, from a match once the
+                // game thread has let go of it.
                 {
                     std::lock_guard l(mutex_);
-                    // The host's list in slices: this one's entries at their
-                    // places; the list is the host's size (a match the host
-                    // no longer keeps drops off the front).
-                    std::vector<lobby::MatchEntry>& list = sliceList_;
-                    if (list.size() != m.sliceOf) {
-                        // A new size: start over from the host's newest view,
-                        // the entries already known kept where they still are.
-                        std::vector<lobby::MatchEntry> fresh(m.sliceOf);
-                        list = std::move(fresh);
+                    setup_ = m.setup;
+                }
+                matchId_ = m.matchId;
+                // Each player keeps its own input delay; the prediction window is fixed.
+                options_.predictionWindow = kPredictionWindow;
+                Log("netplay: match %s; %s", Hex64(matchId_).c_str(), DescribeSetup(setup_).c_str());
+                next_ = Next::Jump;
+                break;
+            }
+            case lobby::Type::Loaded:
+                // Repeated, and the host's checksum is final.
+                if (m.matchId == matchId_) {
+                    {
+                        std::lock_guard l(mutex_);
+                        peerLoadedSetup_ = m.setup;
+                        peerChecksum_ = m.stateChecksum;
                     }
-                    for (size_t i = 0; i < m.matches.size() && m.sliceAt + i < list.size(); i++) list[m.sliceAt + i] = m.matches[i];
-                    // Complete (every place filled): the list to pick from.
-                    if (std::all_of(list.begin(), list.end(), [](const lobby::MatchEntry& e) { return e.id != 0; })) {
-                        matchList_ = list;
-                        if (ticket_.watchFromFirst && !watchedFirst_ && !matchList_.empty()) first = matchList_.front().id;
+                    peerLoaded_ = true;
+                }
+                break;
+            case lobby::Type::Matches:
+                if (role_ == Role::Spectator) {
+                    uint64_t first = 0;
+                    {
+                        std::lock_guard l(mutex_);
+                        // The host's list in slices: this one's entries at their
+                        // places; the list is the host's size (a match the host
+                        // no longer keeps drops off the front).
+                        std::vector<lobby::MatchEntry>& list = sliceList_;
+                        if (list.size() != m.sliceOf) {
+                            // A new size: start over from the host's newest view,
+                            // the entries already known kept where they still are.
+                            std::vector<lobby::MatchEntry> fresh(m.sliceOf);
+                            list = std::move(fresh);
+                        }
+                        for (size_t i = 0; i < m.matches.size() && m.sliceAt + i < list.size(); i++) list[m.sliceAt + i] = m.matches[i];
+                        // Complete (every place filled): the list to pick from.
+                        if (std::all_of(list.begin(), list.end(), [](const lobby::MatchEntry& e) { return e.id != 0; })) {
+                            matchList_ = list;
+                            if (ticket_.watchFromFirst && !watchedFirst_ && !matchList_.empty()) first = matchList_.front().id;
+                        }
+                    }
+                    // Once the spectator can switch (ChooseMatch drops a pick
+                    // made while joining).
+                    const State st = GetState();
+                    if (first && (st == State::Lobby || st == State::Running || st == State::PostMatch || st == State::Jumping || st == State::Loading)) {
+                        watchedFirst_ = true;
+                        if (first != watchingMatch_) {
+                            Log("netplay: watching the table from its set's first game (%s)", Hex64(first).c_str());
+                            ChooseMatch(first);
+                        }
                     }
                 }
-                // Once the spectator can switch (ChooseMatch drops a pick
-                // made while joining).
-                const State st = GetState();
-                if (first && (st == State::Lobby || st == State::Running || st == State::PostMatch || st == State::Jumping || st == State::Loading)) {
-                    watchedFirst_ = true;
-                    if (first != watchingMatch_) {
-                        Log("netplay: watching the table from its set's first game (%s)", Hex64(first).c_str());
-                        ChooseMatch(first);
-                    }
+                break;
+            case lobby::Type::Inputs:
+                if (role_ == Role::Spectator && m.matchId && m.matchId == watchingMatch_) {
+                    std::lock_guard l(mutex_);
+                    inbound_.push_back(m);
                 }
-            }
-            break;
-        case lobby::Type::Inputs:
-            if (role_ == Role::Spectator && m.matchId && m.matchId == watchingMatch_) {
-                std::lock_guard l(mutex_);
-                inbound_.push_back(m);
-            }
-            break;
-        case lobby::Type::Bye:
-            if (s != State::Ended && s != State::Idle) {
-                Log("netplay: the host left%s%s%s", m.text.empty() ? "" : ": ", m.text.c_str(), m.forfeit ? " (a forfeit)" : "");
-                peerLeft_ = true;
-                if (m.forfeit && TookForfeit(0)) break;
-                const std::string over = SetOverText();
-                EndSession(!over.empty() ? over : !m.text.empty() ? m.text : role_ == Role::Player ? "the other player left" : "the host left");
-            }
-            break;
-        default:
-            break;
+                break;
+            case lobby::Type::Bye:
+                if (s != State::Ended && s != State::Idle) {
+                    Log("netplay: the host left%s%s%s", m.text.empty() ? "" : ": ", m.text.c_str(), m.forfeit ? " (a forfeit)" : "");
+                    peerLeft_ = true;
+                    if (m.forfeit && TookForfeit(0)) break;
+                    const std::string over = SetOverText();
+                    EndSession(!over.empty() ? over : !m.text.empty()     ? m.text
+                                                  : role_ == Role::Player ? "the other player left"
+                                                                          : "the host left");
+                }
+                break;
+            default:
+                break;
         }
     }
 
     // A member of this match room the keeper proves itself in (its relay).
-    bool IsKeeperMember(uint64_t from)
-    {
+    bool IsKeeperMember(uint64_t from) {
         if (!weyve_) return false;
         const WeyveRoomView v = weyve_->View();
         for (const WeyveMember& member : v.members) {
@@ -1551,8 +1492,7 @@ private:
         return false;
     }
 
-    void Reject(uint64_t to, lobby::RejectReason reason)
-    {
+    void Reject(uint64_t to, lobby::RejectReason reason) {
         lobby::Message m;
         m.type = lobby::Type::Reject;
         m.reason = reason;
@@ -1563,8 +1503,7 @@ private:
 
     // Host, in the lobby: both seats ready (and their characters loaded, or
     // waited for long enough).
-    void MaybeStartMatch()
-    {
+    void MaybeStartMatch() {
         lobby::Seat a, b;
         {
             std::lock_guard lock(mutex_);
@@ -1583,8 +1522,7 @@ private:
         StartMatch();
     }
 
-    void StartMatch(bool rematch = false)
-    {
+    void StartMatch(bool rematch = false) {
         MatchSetup setup = ChooseSetup(rematch);
         std::string here, there;
         if (LacksVersion(setup, &here, &there)) {
@@ -1606,8 +1544,7 @@ private:
     }
 
     // Host, after a match: both chose.
-    void MaybeResolve()
-    {
+    void MaybeResolve() {
         if (next_ != Next::None) return;
         Choice theirs;
         {
@@ -1660,12 +1597,14 @@ private:
 
     // ----- playing on: the next set with the same two (keeper again) -------
 
-    enum class Again { None, Ask, Granted, Refused };
+    enum class Again { None,
+                       Ask,
+                       Granted,
+                       Refused };
 
     // The set's end may be a vote for the next set: the keeper marks the
     // table (nobody else waits), or it was asked already.
-    bool AgainOn() const
-    {
+    bool AgainOn() const {
         const Again a = again_;
         if (a == Again::Refused) return false;
         return a != Again::None || againOffered_;
@@ -1673,8 +1612,7 @@ private:
 
     // Host, the set won and nobody waiting: the vote; both on asks the
     // keeper (rooms_client, NetView::againAsk), whose yes starts the next set.
-    void ResolveAgain(Choice mine, Choice theirs)
-    {
+    void ResolveAgain(Choice mine, Choice theirs) {
         const auto now = Clock::now();
         const Again a = again_;
         if (a == Again::Granted) {
@@ -1715,8 +1653,7 @@ private:
     // and the streaks start over too: the player bars' "(wins/played)", the
     // results screen's Wins, Win Streak and Win Ratio are the set's, as the
     // table shows it (the joiner and spectators take them from the host).
-    void ContinueSet()
-    {
+    void ContinueSet() {
         Rules rules = againRules_;
         {
             std::lock_guard lock(mutex_);
@@ -1732,8 +1669,7 @@ private:
         if (againSelect_) {
             std::lock_guard lock(mutex_);
             next_ = Next::Lobby;
-        }
-        else {
+        } else {
             StartMatch(true);
         }
     }
@@ -1741,8 +1677,7 @@ private:
 public:
     void SetAgainOffered(bool offered) { againOffered_ = offered; }
 
-    void AgainAnswer(bool ok, const std::string& text)
-    {
+    void AgainAnswer(bool ok, const std::string& text) {
         Rules rules;
         if (ok && !ParseRules(text, &rules)) ok = false;
         if (host_) {
@@ -1762,8 +1697,7 @@ public:
 
 private:
     // Acts on next_ once the game thread has let go of the match.
-    void Transitions()
-    {
+    void Transitions() {
         const Next next = next_;
         if (next == Next::None) return;
         if (matchLive_) {
@@ -1788,76 +1722,74 @@ private:
         }
         next_ = Next::None;
         switch (next) {
-        case Next::Jump:
-            BeginJump();
-            break;
-        case Next::Lobby:
-            myChoice_ = Choice::None;
-            // Within a table's set (character select): the players ready by
-            // hand on the select screen, the set's stage kept.
-            ready_ = options_.autoReady && ticket_.after != AfterMatch::Set;
-            lockedIn_ = false;
-            {
-                std::lock_guard lock(mutex_);
-                selectScreen_ = 0;
-                selectHover_ = 0;
-                for (auto& seat : seats_) {
-                    seat.choice = Choice::None;
-                    seat.ready = false;
+            case Next::Jump:
+                BeginJump();
+                break;
+            case Next::Lobby:
+                myChoice_ = Choice::None;
+                // Within a table's set (character select): the players ready by
+                // hand on the select screen, the set's stage kept.
+                ready_ = options_.autoReady && ticket_.after != AfterMatch::Set;
+                lockedIn_ = false;
+                {
+                    std::lock_guard lock(mutex_);
+                    selectScreen_ = 0;
+                    selectHover_ = 0;
+                    for (auto& seat : seats_) {
+                        seat.choice = Choice::None;
+                        seat.ready = false;
+                    }
                 }
+                SetState(State::Lobby);
+                // A table's set too starts this select screen at stage select:
+                // the host may take another stage (a quieter one, say) before
+                // the characters (user, 2026-11-05). The set's first game still
+                // has no select screen (SetState keeps its stage confirmed).
+                if (host_ && ticket_.after == AfterMatch::Set) SetStageLocked(false);
+                // Character select after a match: the picks change over the
+                // results screen (held), and the next match jumps from there as a
+                // rematch does, without a load of the menus in between.
+                if (game_.BattleRunning()) {
+                    SetHoldResults(true);
+                    holdOverResults_ = true;
+                    SetFrameDriver(this);
+                    // Nothing the players press reaches the game meanwhile: a
+                    // press on the results screen opens its own Results Menu.
+                    SetPadIsolation(true);
+                    SetBlockPause(true);
+                }
+                break;
+            case Next::End: {
+                const State before = GetState();
+                ReleaseResults();
+                SetState(State::Ended);
+                // Staying in the battle: let its results screen open.
+                if (!options_.menuAfterMatch) SetHoldResults(false);
+                if (options_.menuAfterMatch && (before == State::Jumping || before == State::Loading)) {
+                    // A jump under way (a spectator off to the next kept match
+                    // as the host left after the set, 2026-11-05): the menu now
+                    // reset its battle loader, which was made again without the
+                    // setup (used up) and crashed on the defaults (rva 0x2FF130,
+                    // flow.cpp JumpToBattle). Back to the menu once that battle
+                    // is up instead (EndAfterJumpTick).
+                    endAfterJump_ = true;
+                    endAfterJumpAt_ = Clock::now();
+                    Log("netplay: the session ended during a jump: back to the menu once its battle is up");
+                } else if (options_.menuAfterMatch && game_.BattleRunning()) {
+                    ReturnToMainMenu(kMenuAfterMatchFrames);
+                }
+                if (weyve_) weyve_->LeaveRoom();
+                break;
             }
-            SetState(State::Lobby);
-            // A table's set too starts this select screen at stage select:
-            // the host may take another stage (a quieter one, say) before
-            // the characters (user, 2026-11-05). The set's first game still
-            // has no select screen (SetState keeps its stage confirmed).
-            if (host_ && ticket_.after == AfterMatch::Set) SetStageLocked(false);
-            // Character select after a match: the picks change over the
-            // results screen (held), and the next match jumps from there as a
-            // rematch does, without a load of the menus in between.
-            if (game_.BattleRunning()) {
-                SetHoldResults(true);
-                holdOverResults_ = true;
-                SetFrameDriver(this);
-                // Nothing the players press reaches the game meanwhile: a
-                // press on the results screen opens its own Results Menu.
-                SetPadIsolation(true);
-                SetBlockPause(true);
-            }
-            break;
-        case Next::End: {
-            const State before = GetState();
-            ReleaseResults();
-            SetState(State::Ended);
-            // Staying in the battle: let its results screen open.
-            if (!options_.menuAfterMatch) SetHoldResults(false);
-            if (options_.menuAfterMatch && (before == State::Jumping || before == State::Loading)) {
-                // A jump under way (a spectator off to the next kept match
-                // as the host left after the set, 2026-11-05): the menu now
-                // reset its battle loader, which was made again without the
-                // setup (used up) and crashed on the defaults (rva 0x2FF130,
-                // flow.cpp JumpToBattle). Back to the menu once that battle
-                // is up instead (EndAfterJumpTick).
-                endAfterJump_ = true;
-                endAfterJumpAt_ = Clock::now();
-                Log("netplay: the session ended during a jump: back to the menu once its battle is up");
-            }
-            else if (options_.menuAfterMatch && game_.BattleRunning()) {
-                ReturnToMainMenu(kMenuAfterMatchFrames);
-            }
-            if (weyve_) weyve_->LeaveRoom();
-            break;
-        }
-        case Next::None:
-            break;
+            case Next::None:
+                break;
         }
     }
 
     // After a session that ended mid-jump (Next::End): the battle it was
     // jumping to is up (the scene switched and a battle runs), or it never
     // came: back to the main menu.
-    void EndAfterJumpTick()
-    {
+    void EndAfterJumpTick() {
         if (!endAfterJump_) return;
         // The switch can come before the end (a rematch switches at once),
         // so it counts from the jump's start. A battle that never comes (its
@@ -1874,8 +1806,7 @@ private:
     // EndSession, with the reason the other side is told in a Bye sent at
     // once: the end leaves the room straight away, and the room's leave
     // notice would reach the other side first ("the other player left").
-    void EndSessionFor(const std::string& why, const std::string& theirs)
-    {
+    void EndSessionFor(const std::string& why, const std::string& theirs) {
         {
             std::lock_guard lock(mutex_);
             byeText_ = theirs;
@@ -1888,8 +1819,7 @@ private:
     // version lists end earlier than the final game's (two testers' games
     // played Season 4 versions as their latest). `here` says so to this
     // player, `there` to the other.
-    static bool LacksVersion(const MatchSetup& s, std::string* here, std::string* there)
-    {
+    static bool LacksVersion(const MatchSetup& s, std::string* here, std::string* there) {
         for (const PlayerSetup& p : s.players) {
             const std::string code = UnpackCode(p.character);
             if (p.version < 0 || HasCharaVersion(code, p.version)) continue;
@@ -1908,16 +1838,14 @@ private:
 
     // A set's score ("P1 2 - 1 P2, first to 3"), and once a player has won
     // it, what ends the session ("P1 won the set 3 - 1"); "" otherwise.
-    std::string SetScoreText()
-    {
+    std::string SetScoreText() {
         std::lock_guard lock(mutex_);
         return "P1 " + std::to_string(seats_[0].wins) + " - " + std::to_string(seats_[1].wins) + " P2, first to " +
                std::to_string(ticket_.rules.firstTo);
     }
 
     // The set's winner seat (-1 while it goes on), mutex_ held.
-    int SetWinnerLocked()
-    {
+    int SetWinnerLocked() {
         if (ticket_.after != AfterMatch::Set) return -1;
         uint16_t wins[kNumPlayers];
         for (int i = 0; i < kNumPlayers; i++) wins[i] = seats_[i].wins;
@@ -1926,8 +1854,7 @@ private:
 
     // Leaving now gives up a table set: a player, the set begun (a game
     // played or on), not won, the session not over.
-    bool LeavingMidSet()
-    {
+    bool LeavingMidSet() {
         if (ticket_.after != AfterMatch::Set || role_ != Role::Player) return false;
         std::lock_guard lock(mutex_);
         const bool begun = played_ > 0 || state_ == State::Jumping || state_ == State::Loading || state_ == State::Running ||
@@ -1937,8 +1864,7 @@ private:
 
     // The other player's Bye gave up the set (`seat` theirs): the set is
     // this player's. False when there was no set to give up.
-    bool TookForfeit(int seat)
-    {
+    bool TookForfeit(int seat) {
         if (ticket_.after != AfterMatch::Set || role_ != Role::Player) return false;
         {
             std::lock_guard lock(mutex_);
@@ -1950,8 +1876,7 @@ private:
         return true;
     }
 
-    std::string SetOverText()
-    {
+    std::string SetOverText() {
         if (ticket_.after != AfterMatch::Set) return "";
         uint16_t wins[kNumPlayers];
         {
@@ -1963,8 +1888,7 @@ private:
         return "P" + std::to_string(winner + 1) + " won the set " + std::to_string(wins[winner]) + " - " + std::to_string(wins[1 - winner]);
     }
 
-    void EndSession(const std::string& why)
-    {
+    void EndSession(const std::string& why) {
         // Once: the room's leave notice and the peer's Bye usually both arrive.
         if (GetState() == State::Ended || next_ == Next::End) return;
         Log("netplay: session over: %s", why.c_str());
@@ -1982,8 +1906,7 @@ private:
 
     // Eleven again: another fighter than `before` in silver, V-Skill and
     // V-Trigger at random (as each pick of Eleven rolls).
-    PlayerSetup RollEleven(const PlayerSetup& before)
-    {
+    PlayerSetup RollEleven(const PlayerSetup& before) {
         std::string code;
         int costume = 0;
         for (int tries = 0; tries < 8; tries++) {
@@ -1998,8 +1921,7 @@ private:
         return p;
     }
 
-    MatchSetup ChooseSetup(bool rematch)
-    {
+    MatchSetup ChooseSetup(bool rematch) {
         MatchSetup s;
         if (options_.randomSetup) {
             for (auto& p : s.players) {
@@ -2012,8 +1934,7 @@ private:
             }
             const int stage = RandomStage(rng_(), false);
             s.stage = stage < 0 ? kKeepStage : static_cast<uint16_t>(stage);
-        }
-        else {
+        } else {
             MatchSetup current;
             ReadMatchSetup(&current);
             lobby::Seat joiner;
@@ -2056,8 +1977,7 @@ private:
 
     // ----- spectators' stream (host, net thread) ----------------------------
 
-    void StreamToWatchers()
-    {
+    void StreamToWatchers() {
         const auto now = Clock::now();
         std::vector<std::pair<uint64_t, lobby::Message>> out;
         {
@@ -2095,8 +2015,7 @@ private:
 
     // The lobby's hold on the results screen ends (a match starts from there,
     // or the session ends).
-    void ReleaseResults()
-    {
+    void ReleaseResults() {
         if (!holdOverResults_.exchange(false)) return;
         SetPadIsolation(false);
         SetBlockPause(false);
@@ -2107,8 +2026,7 @@ private:
     // spectator the host's (P1), as replays and reports show it.
     int ViewerSide() const { return role_ == Role::Spectator || host_ ? 0 : 1; }
 
-    void BeginJump()
-    {
+    void BeginJump() {
         // The Battle Log's set (core/replay_file.h MatchSummary): its key is
         // its first match's id, the same on both sides. A table's set starts
         // with its first game (no game played in it yet: the host's count,
@@ -2182,8 +2100,7 @@ private:
         });
     }
 
-    void RunJump()
-    {
+    void RunJump() {
         // Straight into the battle scene with the setup (flow.h), from the
         // menus, a running battle or its results.
         SetPendingStage(setup_.stage == kKeepStage ? "" : StageCode(setup_.stage));
@@ -2200,8 +2117,7 @@ private:
         EndSession("could not start the battle (see the log)");
     }
 
-    bool FrameWhileLoading(SfvGame& game)
-    {
+    bool FrameWhileLoading(SfvGame& game) {
         // Still the battle we left: let it run.
         if (BattleCreationCount() == creationsAtJump_) return false;
 
@@ -2259,7 +2175,8 @@ private:
             selfLoaded_ = true;
             Log("netplay: loaded; waiting for the %s", role_ == Role::Spectator ? "host" : "other player");
         }
-        SetStatus(peerLoaded_ ? "starting" : selfLoaded_ ? "waiting for the other player" : "loading");
+        SetStatus(peerLoaded_ ? "starting" : selfLoaded_ ? "waiting for the other player"
+                                                         : "loading");
         if (selfLoaded_ && peerLoaded_ && !session_ && !spectate_) {
             MatchSetup peer;
             uint32_t peerChecksum;
@@ -2294,8 +2211,7 @@ private:
         return true;
     }
 
-    void StartSession(SfvGame& game)
-    {
+    void StartSession(SfvGame& game) {
         NetplayConfig nc;
         nc.localPlayer = host_ ? 0 : 1;
         nc.remotePeer = peer_;
@@ -2371,8 +2287,7 @@ private:
             nc.predictionWindow);
     }
 
-    void StartWatching(SfvGame& game)
-    {
+    void StartWatching(SfvGame& game) {
         SpectateConfig sc;
         sc.matchId = matchId_;
         sc.setup = setup_;
@@ -2412,8 +2327,7 @@ private:
 
     // ----- the match (game thread) -------------------------------------------
 
-    bool FrameWhileRunning(SfvGame& game)
-    {
+    bool FrameWhileRunning(SfvGame& game) {
         const State s = GetState();
         game.RefreshRegions();
         if (game.LayoutVersion() != layoutAtStart_ || game.Regions().empty()) {
@@ -2467,7 +2381,9 @@ private:
             // won. The host keeps the score (seat 0 is P1).
             uint32_t now[2] = {};
             const bool counted = winsKnown_ && game_.MatchWins(now[0], now[1]);
-            const int winner = !counted ? -1 : now[0] > winsAtStart_[0] ? 0 : now[1] > winsAtStart_[1] ? 1 : -1;
+            const int winner = !counted ? -1 : now[0] > winsAtStart_[0] ? 0
+                                           : now[1] > winsAtStart_[1]   ? 1
+                                                                        : -1;
             {
                 std::lock_guard lock(mutex_);
                 if (host_) {
@@ -2507,8 +2423,7 @@ private:
     }
 
     // Host: confirmed frames into the spectators' stream.
-    void Stream()
-    {
+    void Stream() {
         // Kept whether anyone watches or not: a spectator can join mid-match
         // and starts from frame 0.
         // A spectator behind watches a match to its end even after the
@@ -2527,8 +2442,7 @@ private:
 
     // Host, under mutex_: the match among the kept ones (the oldest dropped,
     // its stream and state with it).
-    void KeepMatchLocked(uint64_t id)
-    {
+    void KeepMatchLocked(uint64_t id) {
         if (std::find(streamOrder_.begin(), streamOrder_.end(), id) != streamOrder_.end()) return;
         streamOrder_.push_back(id);
         while (streamOrder_.size() > lobby::kKeptMatches) {
@@ -2539,8 +2453,7 @@ private:
     }
 
     // Host, under mutex_: the kept matches as spectators see them.
-    lobby::Message MatchListLocked() const
-    {
+    lobby::Message MatchListLocked() const {
         lobby::Message m;
         m.type = lobby::Type::Matches;
         for (uint64_t id : streamOrder_) {
@@ -2560,8 +2473,7 @@ private:
 
     // Host: a kept match's Loaded (its starting state's checksum), for a
     // spectator loading it after the players have moved on.
-    std::optional<lobby::Message> KeptLoaded(uint64_t id)
-    {
+    std::optional<lobby::Message> KeptLoaded(uint64_t id) {
         std::lock_guard lock(mutex_);
         const auto k = kept_.find(id);
         if (k == kept_.end()) return std::nullopt;
@@ -2574,8 +2486,7 @@ private:
     }
 
     // Spectator: watch this match next (from its start).
-    void WatchMatch(const lobby::MatchEntry& e)
-    {
+    void WatchMatch(const lobby::MatchEntry& e) {
         {
             std::lock_guard lock(mutex_);
             setup_ = e.setup;
@@ -2589,8 +2500,7 @@ private:
     // Spectator: the match after the last one watched (the newest when none
     // was, or when it is no longer kept) as the next to watch; false when
     // there is none yet.
-    bool WatchNext()
-    {
+    bool WatchNext() {
         lobby::MatchEntry next;
         {
             std::lock_guard lock(mutex_);
@@ -2600,8 +2510,7 @@ private:
             if (last && it != matchList_.end()) {
                 if (it + 1 == matchList_.end()) return false;
                 next = *(it + 1);
-            }
-            else {
+            } else {
                 next = matchList_.back();
             }
         }
@@ -2609,8 +2518,7 @@ private:
         return true;
     }
 
-    void Publish(float ahead)
-    {
+    void Publish(float ahead) {
         // For the overlay: every frame for the counters, the network figures
         // every 10 frames.
         std::string status;
@@ -2650,8 +2558,7 @@ private:
         if (!status.empty()) SetStatus(status);
     }
 
-    bool FrameWhileWatching(SfvGame& game)
-    {
+    bool FrameWhileWatching(SfvGame& game) {
         game.RefreshRegions();
         if (game.LayoutVersion() != layoutAtStart_ || game.Regions().empty()) {
             FinishMatch(game);
@@ -2691,8 +2598,7 @@ private:
             if ((next_ == Next::None || next_ == Next::Lobby) && peerLeftRoom_) {
                 const std::string over = SetOverText();
                 EndSession(!over.empty() ? over : "the host left");
-            }
-            else if (next_ == Next::None || next_ == Next::Lobby) WatchNext();
+            } else if (next_ == Next::None || next_ == Next::Lobby) WatchNext();
         }
         {
             std::lock_guard lock(mutex_);
@@ -2728,8 +2634,7 @@ private:
     bool sawFight_ = false; // this match's fight has run (from then on every stage outside the fight is a round transition)
     static constexpr int kEarlyMargin = 2;
 
-    void UpdatePredictionWindow()
-    {
+    void UpdatePredictionWindow() {
         // The fight's start and end as the session sees them (tests read
         // these, with or without the presentation's lockstep).
         if (const bool inFight = RoundInFight(); inFight != loggedInFight_) {
@@ -2755,8 +2660,7 @@ private:
         // kRoundCallFrames right).
         if (RoundCallRunning()) {
             if (roundCallFrame_ < 0) roundCallFrame_ = frame;
-        }
-        else if (roundCallFrame_ >= 0) {
+        } else if (roundCallFrame_ >= 0) {
             if (fight) Log("netplay: the round call took %d frames", frame - roundCallFrame_);
             roundCallFrame_ = -1;
             loweredEarly_ = false;
@@ -2782,7 +2686,8 @@ private:
         if (window == predictionWindow_) return;
         session_->SetPredictionWindow(window);
         Log("netplay: prediction window %u from frame %d (%s)", window, session_->NextFrame(),
-            window ? "fight" : transition ? "round transition" : "presentation");
+            window ? "fight" : transition ? "round transition"
+                                          : "presentation");
         predictionWindow_ = window;
     }
 
@@ -2790,8 +2695,7 @@ private:
     // many of the rendered ones time sync spent waiting, how many the game's
     // window had the focus in (a game in the background renders slower when
     // the PC is busy with other things), and the network.
-    void LogPace(float ahead, bool wait)
-    {
+    void LogPace(float ahead, bool wait) {
         pace_.waits += wait;
         pace_.aheadSum += ahead;
         // Asks Windows only, no message to any window (safe on the game thread);
@@ -2821,8 +2725,7 @@ private:
 
     // Frames that cover a one-way trip and its jitter, plus one, within the
     // player's own delay and kMaxLockstepDelay.
-    uint8_t LockstepDelay()
-    {
+    uint8_t LockstepDelay() {
         constexpr int kMaxLockstepDelay = 12;
         const GekkoNetworkStats net = session_->NetworkStats();
         const float rttMs = std::max(net.avg_ping, static_cast<float>(linkPingMs_.load()));
@@ -2830,8 +2733,7 @@ private:
         return static_cast<uint8_t>(std::clamp(frames, static_cast<int>(options_.inputDelay), kMaxLockstepDelay));
     }
 
-    void PlayInputLoop(int frame)
-    {
+    void PlayInputLoop(int frame) {
         int period = 0;
         for (const auto& [b, n] : options_.inputLoop) period += n;
         if (period <= 0) return;
@@ -2853,19 +2755,21 @@ private:
         }
         SetScriptedPad(0, true, buttons, 0);
     }
+
     int loopsLogged_ = 0, loopLoggedAt_ = -1;
 
-    void Mash(int frame)
-    {
+    void Mash(int frame) {
         const uint64_t key[2] = {options_.mashSeed, static_cast<uint64_t>(frame / 5)};
         const uint64_t h = Hash64(key, sizeof(key));
         uint16_t b = 0;
         switch (h % 8) {
-        case 0: case 1: b |= XINPUT_GAMEPAD_DPAD_RIGHT; break;
-        case 2: case 3: b |= XINPUT_GAMEPAD_DPAD_LEFT; break;
-        case 4: b |= XINPUT_GAMEPAD_DPAD_DOWN; break;
-        case 5: b |= XINPUT_GAMEPAD_DPAD_UP; break;
-        default: break;
+            case 0:
+            case 1: b |= XINPUT_GAMEPAD_DPAD_RIGHT; break;
+            case 2:
+            case 3: b |= XINPUT_GAMEPAD_DPAD_LEFT; break;
+            case 4: b |= XINPUT_GAMEPAD_DPAD_DOWN; break;
+            case 5: b |= XINPUT_GAMEPAD_DPAD_UP; break;
+            default: break;
         }
         static const uint16_t kAttack[] = {XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y, XINPUT_GAMEPAD_RIGHT_SHOULDER,
                                            XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B};
@@ -2874,9 +2778,12 @@ private:
         // mashing match also runs those moves (noise mask coverage).
         uint8_t rt = 0;
         switch ((h >> 24) % 16) {
-        case 0: b = XINPUT_GAMEPAD_Y | XINPUT_GAMEPAD_B; break;
-        case 1: b = XINPUT_GAMEPAD_RIGHT_SHOULDER; rt = 255; break;
-        default: break;
+            case 0: b = XINPUT_GAMEPAD_Y | XINPUT_GAMEPAD_B; break;
+            case 1:
+                b = XINPUT_GAMEPAD_RIGHT_SHOULDER;
+                rt = 255;
+                break;
+            default: break;
         }
         if (frame < options_.mashFrom) b = 0, rt = 0;
         SetScriptedPad(0, true, b, rt);
@@ -2884,8 +2791,7 @@ private:
 
     // Lets go of the match: its recording saved, the game's own input back.
     // Game thread (or, while jumping without a battle, the net thread).
-    void FinishMatch(SfvGame& game, bool keepSetup = false)
-    {
+    void FinishMatch(SfvGame& game, bool keepSetup = false) {
         SetBlockPause(false);
         SetPadIsolation(false);
         game.localInput = nullptr;
@@ -2923,8 +2829,7 @@ private:
 
     // The Battle Log's summary of the match: names, its result and rounds,
     // the set (BeginJump). leftEarly: the session ended before the match did.
-    ReplayFile WithSummary(ReplayFile rf, bool leftEarly)
-    {
+    ReplayFile WithSummary(ReplayFile rf, bool leftEarly) {
         // Left after the match was decided (its win screens): played out.
         if (matchWinner_ >= 0) leftEarly = false;
         MatchSummary& s = rf.summary;
@@ -2959,8 +2864,7 @@ private:
     // A player's matches also go to Polarity\replays (the Battle Log), named
     //   <date>_<time>_<P1 name>-<P1 character>_vs_<P2 name>-<P2 character>_<match id>.sfvr
     // compact, kept for good (the player removes them).
-    void SaveToBattleLog(const ReplayFile& rf)
-    {
+    void SaveToBattleLog(const ReplayFile& rf) {
         if (role_ == Role::Spectator || rf.FrameCount() < 60) return;
         const std::wstring dir = ReplaysDir();
         EnsureDirectory(dir);
@@ -2990,8 +2894,7 @@ private:
     // the same name with .log.
     // background: written on a worker (a desync report mid-match: compressing
     // and writing it on the game thread cost a frame of 100 ms and more).
-    std::string SaveReport(const ReplayFile& rf, const char* kind, bool background = false)
-    {
+    std::string SaveReport(const ReplayFile& rf, const char* kind, bool background = false) {
         EnsureDirectory(reportDir_);
         std::string names[kNumPlayers];
         {
@@ -3010,7 +2913,8 @@ private:
             const std::string character = FileSafe(UnpackCode(rf.setup.players[i].character), 8, "unknown");
             name += (i == 0 ? "_" : "_vs_") + player + "-" + character;
         }
-        name += "_" + Hex64(liveMatch_).substr(0, 8) + (role_ == Role::Spectator ? "_spec" : host_ ? "_p1" : "_p2");
+        name += "_" + Hex64(liveMatch_).substr(0, 8) + (role_ == Role::Spectator ? "_spec" : host_ ? "_p1"
+                                                                                                   : "_p2");
         if (std::strstr(kind, "desync")) name += "_desync";
         // UTF-8, every character kept: a game folder outside ASCII (Chinese,
         // Cyrillic) used to become a path that does not exist.
@@ -3028,8 +2932,7 @@ private:
                 ThreadGuard running;
                 save(file);
             }).detach();
-        }
-        else {
+        } else {
             save(rf);
         }
         return path;
@@ -3037,16 +2940,14 @@ private:
 
     // Whether the other side sends desync reports (its Hello or Accept): in
     // the log once, and in every match log (a report with one half missing).
-    void NotePeerReports(bool reports)
-    {
+    void NotePeerReports(bool reports) {
         if (peerReports_.exchange(reports ? 1 : 0) == (reports ? 1 : 0)) return;
         Log("netplay: the other side %s desync reports", reports ? "sends" : "does not send");
     }
 
     // The match's own log next to its recording: a summary, then every line
     // logged since the session began or the last match ended (LogCaptureStart).
-    void WriteMatchLog(const std::string& recording, const ReplayFile& rf, const std::string& summary)
-    {
+    void WriteMatchLog(const std::string& recording, const ReplayFile& rf, const std::string& summary) {
         std::string names[kNumPlayers];
         std::string server;
         NetView::Path path;
@@ -3076,9 +2977,11 @@ private:
                          names[i].empty() ? "(no name)" : names[i].c_str(), UnpackCode(p.character).c_str(), p.costume,
                          p.color + 1, p.vskill + 1, p.vtrigger + 1);
         }
-        std::fprintf(f, "this side: %s\n", role_ == Role::Spectator ? "spectator" : host_ ? "P1 (host)" : "P2");
+        std::fprintf(f, "this side: %s\n", role_ == Role::Spectator ? "spectator" : host_ ? "P1 (host)"
+                                                                                          : "P2");
         std::fprintf(f, "server %s, link %s, input delay %u\n", server.c_str(),
-                     path == NetView::Path::Relayed ? "relayed (TURN)" : path == NetView::Path::Direct ? "direct" : "unknown",
+                     path == NetView::Path::Relayed ? "relayed (TURN)" : path == NetView::Path::Direct ? "direct"
+                                                                                                       : "unknown",
                      options_.inputDelay);
         std::fprintf(f, "%s\n", summary.c_str());
         std::fprintf(f, "game files: %s\n", GameFilesText().c_str());
@@ -3087,7 +2990,8 @@ private:
         std::fprintf(f, "character versions: %s\n", CharaVersionsText().c_str());
         const int peerReports = peerReports_;
         std::fprintf(f, "desync reports: %s from this side, %s from the other side\n", ReportUploadsOn() ? "sent" : "not sent",
-                     peerReports > 0 ? "sent" : peerReports == 0 ? "not sent" : "not known if sent");
+                     peerReports > 0 ? "sent" : peerReports == 0 ? "not sent"
+                                                                 : "not known if sent");
         std::fprintf(f, "recording %s\n\n", recording.substr(recording.find_last_of('\\') + 1).c_str());
         for (const std::string& line : lines) std::fprintf(f, "%s\n", line.c_str());
         std::fclose(f);
@@ -3097,14 +3001,12 @@ private:
 
     // ----- state -------------------------------------------------------------
 
-    State GetState()
-    {
+    State GetState() {
         std::lock_guard lock(mutex_);
         return state_;
     }
 
-    void SetState(State s)
-    {
+    void SetState(State s) {
         {
             std::lock_guard lock(mutex_);
             state_ = s;
@@ -3121,8 +3023,7 @@ private:
         else if (s == State::PostMatch) SetStatus("match over: rematch or character select?");
     }
 
-    void SetStatus(const std::string& text)
-    {
+    void SetStatus(const std::string& text) {
         {
             std::lock_guard lock(mutex_);
             status_ = text;
@@ -3157,23 +3058,23 @@ private:
     std::atomic<uint64_t> peer_{0}; // the host, or (host) the other player
     uint16_t nonce_ = 0;
     std::atomic<uint64_t> matchId_{0};
-    MatchSetup setup_;                     // guarded by mutex_ where both threads touch it
-    lobby::Seat seats_[kNumPlayers];       // guarded by mutex_
-    int played_ = 0;                       // guarded by mutex_
+    MatchSetup setup_;                         // guarded by mutex_ where both threads touch it
+    lobby::Seat seats_[kNumPlayers];           // guarded by mutex_
+    int played_ = 0;                           // guarded by mutex_
     std::atomic<bool> holdOverResults_{false}; // the lobby holds the last match's results screen (OnFrame)
-    std::atomic<int> nextDelay_{-1};       // the input delay for the next match (-1: unchanged)
-    std::atomic<bool> lockedIn_{false};    // the player said ready: their pick (and the host's stage) hold
+    std::atomic<int> nextDelay_{-1};           // the input delay for the next match (-1: unchanged)
+    std::atomic<bool> lockedIn_{false};        // the player said ready: their pick (and the host's stage) hold
     uint8_t selectScreen_ = 0, selectRow_ = 0; // SetSelectState, under mutex_
     uint32_t selectHover_ = 0;
     std::atomic<bool> beatNow_{false};
-    std::atomic<bool> againOffered_{false};  // the keeper's again mark on this player's table (rooms_client)
+    std::atomic<bool> againOffered_{false}; // the keeper's again mark on this player's table (rooms_client)
     std::atomic<Again> again_{Again::None};
     Clock::time_point againAskedAt_{};
     Rules againRules_;
-    bool againSelect_ = false; // the vote said character select     // the next ControlTick beats at once (a select screen change)
-    std::atomic<int> hostStageRule_{-1};   // host: the stage rule set in the lobby (-1: from the options)
-    uint16_t streaks_[kNumPlayers] = {};   // host: each player's current win streak this set (session)
-    uint32_t winsAtStart_[2] = {};         // the game's match win counts as the match started
+    bool againSelect_ = false;           // the vote said character select     // the next ControlTick beats at once (a select screen change)
+    std::atomic<int> hostStageRule_{-1}; // host: the stage rule set in the lobby (-1: from the options)
+    uint16_t streaks_[kNumPlayers] = {}; // host: each player's current win streak this set (session)
+    uint32_t winsAtStart_[2] = {};       // the game's match win counts as the match started
     // The Battle Log's set and this match's result (BeginJump, WithSummary).
     uint64_t setKey_ = 0;
     uint16_t setGame_ = 0;
@@ -3183,16 +3084,16 @@ private:
     std::vector<RoundResult> matchRounds_;
     uint8_t matchRoundWins_[2] = {};
     bool winsKnown_ = false;
-    int spectators_ = 0;                   // guest: as the host says
+    int spectators_ = 0; // guest: as the host says
     uint16_t stageRule_ = lobby::kAnyStage;
     std::atomic<bool> stageLocked_{false}; // the host's stage confirmed (the host's own, or as last heard)
     std::map<uint64_t, Watcher> watchers_; // host; guarded by mutex_
     std::atomic<bool> ready_{false};
     std::atomic<Choice> myChoice_{Choice::None};
     std::atomic<Next> next_{Next::None};
-    std::atomic<bool> matchLive_{false};   // the game thread drives a match (frame driver set)
-    std::atomic<int> peerReports_{-1};     // the other side sends desync reports: 1 yes, 0 no, -1 not heard
-    std::atomic<uint64_t> liveMatch_{0};   // ... this one (matchId_ moves on to the next before it is let go)
+    std::atomic<bool> matchLive_{false}; // the game thread drives a match (frame driver set)
+    std::atomic<int> peerReports_{-1};   // the other side sends desync reports: 1 yes, 0 no, -1 not heard
+    std::atomic<uint64_t> liveMatch_{0}; // ... this one (matchId_ moves on to the next before it is let go)
     bool joinedRoom_ = false;
     std::atomic<bool> serverLost_{false};
     Clock::time_point bothReadyAt_{};
@@ -3204,11 +3105,11 @@ private:
     uint32_t heardTime_ = 0;
     Clock::time_point heardTimeAt_{};
     std::atomic<unsigned> linkPingMs_{0};
-    std::vector<uint16_t> linkRtts_; // under mutex_: the last core::kLinkSamples round trips, oldest first
+    std::vector<uint16_t> linkRtts_;                  // under mutex_: the last core::kLinkSamples round trips, oldest first
     NetView::Path linkPath_ = NetView::Path::Unknown; // under mutex_
-    int roundCallFrame_ = -1;   // game thread: the session frame the round call began, -1 outside it
-    bool loweredEarly_ = false; // ... and the delay is already back to the player's
-    std::string relayHost_;                            // under mutex_
+    int roundCallFrame_ = -1;                         // game thread: the session frame the round call began, -1 outside it
+    bool loweredEarly_ = false;                       // ... and the delay is already back to the player's
+    std::string relayHost_;                           // under mutex_
 
     std::thread thread_;
     std::thread jump_;
@@ -3219,16 +3120,16 @@ private:
     bool warmedUp_ = false;
     int frozenFrames_ = 0;
     bool objectsReady_ = false;
-    MatchSetup loadedSetup_;           // what this side's game loaded
+    MatchSetup loadedSetup_; // what this side's game loaded
     // A desync this early logs the start probe (SfvGame::ArmStartProbe).
     static constexpr int kStartProbeFrames = 3;
-    MatchTicket ticket_;               // what brought this player here (core/match_ticket.h)
-    Clock::time_point decidedAt_{};    // when the last match was decided
+    MatchTicket ticket_;            // what brought this player here (core/match_ticket.h)
+    Clock::time_point decidedAt_{}; // when the last match was decided
     uint32_t frozenChecksum_ = 0;
-    MatchSetup peerLoadedSetup_;       // guarded by mutex_
+    MatchSetup peerLoadedSetup_; // guarded by mutex_
     uint32_t peerChecksum_ = 0;
     std::atomic<bool> byePending_{false};
-    std::string byeText_; // the Bye's reason, for the other side (mutex_)
+    std::string byeText_;       // the Bye's reason, for the other side (mutex_)
     bool forfeitOnBye_ = false; // the Bye gives up the table set (mutex_)
     int forfeitSeat_ = -1;      // the seat that left the set, -1 none (mutex_)
     std::atomic<bool> selfLoaded_{false};
@@ -3236,9 +3137,9 @@ private:
     Clock::time_point startsDifferAt_{}; // game thread: when the frozen starts were found to differ
     std::atomic<bool> peerLeft_{false};
     std::atomic<bool> peerLeftRoom_{false}; // the server said so while the link held (the match went on)
-    bool endAfterJump_ = false;     // Next::End came mid-jump: the menu waits for that battle (EndAfterJumpTick)
+    bool endAfterJump_ = false;             // Next::End came mid-jump: the menu waits for that battle (EndAfterJumpTick)
     uint64_t switchesAtJump_ = 0;
-    bool leftMidJump_ = false;      // Stop found the jump under way and set up the menu return
+    bool leftMidJump_ = false; // Stop found the jump under way and set up the menu return
     Clock::time_point endAfterJumpAt_{};
     std::atomic<bool> sessionSyncing_{false};
 
@@ -3250,9 +3151,10 @@ private:
     int desyncFrame_ = -1;
     std::array<uint8_t, 60> recentRollbacks_{}; // frames rolled back in each of the last 60 frames
     unsigned rollbacksSeen_ = 0;                // the session's rollback count at the last frame
-    std::string desyncReport_; // guarded by mutex_
+    std::string desyncReport_;                  // guarded by mutex_
     uint8_t predictionWindow_ = 0;
     uint8_t inputDelay_ = 0; // the local delay now (UpdatePredictionWindow)
+
     struct Pace {
         std::chrono::steady_clock::time_point since{};
         int frame = 0;
@@ -3261,11 +3163,13 @@ private:
         int focused = 0; // rendered frames with the game's window in front
         float aheadSum = 0;
     } pace_;
+
     NetView live_; // match figures for View(), guarded by mutex_
 
     // Spectating: the stream (host), and what came in (spectator).
     std::map<uint64_t, std::vector<lobby::FrameRecord>> streams_; // per match; guarded by mutex_
-    std::vector<uint64_t> streamOrder_;                          // oldest first, at most lobby::kKeptMatches
+    std::vector<uint64_t> streamOrder_;                           // oldest first, at most lobby::kKeptMatches
+
     // Host: per kept match besides its stream, what a spectator needs to watch
     // it from its start at any time: the setup, the starting checksum its own
     // frozen state must equal (as the players' do), and how the match ended.
@@ -3275,7 +3179,8 @@ private:
         bool finished = false;
         int8_t winner = -1;
     };
-    std::map<uint64_t, KeptMatch> kept_;      // guarded by mutex_
+
+    std::map<uint64_t, KeptMatch> kept_; // guarded by mutex_
     Clock::time_point matchListSentAt_{};
     // Spectator: the host's matches as last heard, the one last watched, and
     // a switch asked for in the panel (Previous, Next, Live).
@@ -3287,9 +3192,9 @@ private:
     // A pick made mid-switch (ChooseMatch), for once the switch is done.
     std::atomic<uint64_t> pickedMatch_{0};
     std::atomic<bool> pickWaits_{false};
-    int streamed_ = 0;                       // game thread
+    int streamed_ = 0; // game thread
     std::unique_ptr<SpectatorPlayback> spectate_;
-    std::vector<lobby::Message> inbound_;    // guarded by mutex_
+    std::vector<lobby::Message> inbound_; // guarded by mutex_
     std::atomic<int> specWanted_{0};
     std::atomic<int> specPlayed_{0}; // the next frame its playback shows (InputsAck.played)
     std::atomic<uint64_t> watchingMatch_{0};
@@ -3298,8 +3203,7 @@ private:
 
     // Host: a kept match's setup and starting checksum, for a spectator
     // loading it later.
-    void KeepFrozenState()
-    {
+    void KeepFrozenState() {
         if (!host_) return;
         std::lock_guard lock(mutex_);
         KeepMatchLocked(matchId_);
@@ -3314,8 +3218,7 @@ private:
     // side saves a desync report of its start, the other side saves its own,
     // and the server pairs them by match id (their region hashes show where
     // the two starts differ).
-    void SaveDifferentStart(SfvGame& game, uint32_t peerChecksum)
-    {
+    void SaveDifferentStart(SfvGame& game, uint32_t peerChecksum) {
         Log("netplay: frozen state checksums %08X here, %08X there: the starts differ; not starting", frozenChecksum_,
             peerChecksum);
         const auto& regions = game.Regions();
@@ -3323,7 +3226,8 @@ private:
         rf.modVersion = modVersion_;
         rf.gameBuild = game.BuildId();
         rf.matchId = liveMatch_;
-        rf.localPlayer = role_ == Role::Spectator ? -1 : host_ ? 0 : 1;
+        rf.localPlayer = role_ == Role::Spectator ? -1 : host_ ? 0
+                                                               : 1;
         rf.createdUnix = static_cast<uint64_t>(std::time(nullptr));
         rf.inputDelay = options_.inputDelay;
         rf.predictionWindow = options_.predictionWindow;
@@ -3353,8 +3257,7 @@ std::string g_modVersion;
 std::unique_ptr<NetplayDriver> g_driver;
 std::mutex g_driverMutex;
 
-void Replace(std::unique_ptr<NetplayDriver> next)
-{
+void Replace(std::unique_ptr<NetplayDriver> next) {
     std::lock_guard lock(g_driverMutex);
     if (g_driver) {
         // Detach: a match the game thread is letting go of (FinishMatch, as
@@ -3370,8 +3273,7 @@ void Replace(std::unique_ptr<NetplayDriver> next)
 // Ends the session before a new host or join. A battle it ran goes back to
 // the main menu, as on leave: left running, the game played it on as a local
 // match with this player's pad on both fighters (a join mid-match, 0.2.2).
-void EndForNewSession()
-{
+void EndForNewSession() {
     bool had = false;
     {
         std::lock_guard lock(g_driverMutex);
@@ -3384,8 +3286,7 @@ void EndForNewSession()
 } // namespace
 
 void InstallNetplay(SfvGame* game, const std::wstring& reportDir, const std::string& modVersion,
-                    const NetplayOptions& defaults)
-{
+                    const NetplayOptions& defaults) {
     g_options = defaults;
     g_game = game;
     g_reportDir = reportDir;
@@ -3407,8 +3308,7 @@ void InstallNetplay(SfvGame* game, const std::wstring& reportDir, const std::str
     });
 }
 
-void NetPlayTicket(const MatchTicket& ticket, const NetplayOptions& options)
-{
+void NetPlayTicket(const MatchTicket& ticket, const NetplayOptions& options) {
     if (!g_game) return;
     // The previous session (also one that ended) still holds its socket.
     EndForNewSession();
@@ -3438,106 +3338,90 @@ void NetPlayTicket(const MatchTicket& ticket, const NetplayOptions& options)
 
 void NetHost(const NetplayOptions& options) { NetPlayTicket(DirectMatchHost(), options); }
 
-void NetJoin(const std::string& code, const NetplayOptions& options, bool spectate)
-{
+void NetJoin(const std::string& code, const NetplayOptions& options, bool spectate) {
     NetPlayTicket(DirectMatchJoin(code, spectate), options);
 }
 
-void NetLeave()
-{
+void NetLeave() {
     Replace(nullptr);
     if (g_options.menuAfterMatch && g_game && g_game->BattleRunning()) ReturnToMainMenu(1);
     SetStatus("");
     Log("netplay: left");
 }
 
-void NetSetReady(bool ready)
-{
+void NetSetReady(bool ready) {
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->SetReady(ready);
 }
 
-void NetSetPick(bool hasPick, const PlayerSetup& pick)
-{
+void NetSetPick(bool hasPick, const PlayerSetup& pick) {
     g_options.hasPick = hasPick;
     g_options.pick = pick;
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->SetPick(hasPick, pick);
 }
 
-int PreferredDelay(const NetView& v)
-{
+int PreferredDelay(const NetView& v) {
     const int fixed = g_options.delaySetting;
     return fixed >= 0 && fixed <= kMaxDelaySetting ? fixed : v.SuggestedDelay();
 }
 
-int PreferredDelay(unsigned pingMs)
-{
+int PreferredDelay(unsigned pingMs) {
     const int fixed = g_options.delaySetting;
     if (fixed >= 0 && fixed <= kMaxDelaySetting) return fixed;
     return pingMs ? core::SuggestedDelay(pingMs, core::kTypicalJitterMs) : 1;
 }
 
-void NetSetDelay(uint8_t frames)
-{
+void NetSetDelay(uint8_t frames) {
     g_options.inputDelay = frames;
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->SetDelay(frames);
 }
 
-void NetTestMatchChat(const std::string& text)
-{
+void NetTestMatchChat(const std::string& text) {
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->TestChat(text);
 }
 
-void NetWatchMatch(uint64_t id)
-{
+void NetWatchMatch(uint64_t id) {
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->ChooseMatch(id);
 }
 
-void NetSetStage(const std::string& code)
-{
+void NetSetStage(const std::string& code) {
     g_options.stageCode = code;
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->SetStage(code);
 }
 
-void NetSetStageLocked(bool locked)
-{
+void NetSetStageLocked(bool locked) {
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->SetStageLocked(locked);
 }
 
-void NetSetSelectState(uint8_t screen, uint8_t row, uint32_t hover)
-{
+void NetSetSelectState(uint8_t screen, uint8_t row, uint32_t hover) {
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->SetSelectState(screen, row, hover);
 }
 
-void NetChoose(lobby::Choice choice)
-{
+void NetChoose(lobby::Choice choice) {
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->Choose(choice);
 }
 
-void NetSetAgainOffered(bool offered)
-{
+void NetSetAgainOffered(bool offered) {
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->SetAgainOffered(offered);
 }
 
-void NetAgainAnswer(bool ok, const std::string& rules)
-{
+void NetAgainAnswer(bool ok, const std::string& rules) {
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->AgainAnswer(ok, rules);
 }
 
 void NetSkewNextStartForTest() { g_skewStart = true; }
 
-void NetPark()
-{
+void NetPark() {
     if (!g_game || !g_game->BattleTicking()) {
         Log("park: no battle running");
         return;
@@ -3550,8 +3434,7 @@ void NetPark()
     }).detach();
 }
 
-void NetSetConditions(const NetConditions& conditions)
-{
+void NetSetConditions(const NetConditions& conditions) {
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->SetConditions(conditions);
 }
@@ -3560,8 +3443,7 @@ NetplayOptions& NetOptions() { return g_options; }
 
 std::string LocalPlayerName() { return g_options.name.empty() ? SteamPersonaName() : g_options.name; }
 
-std::string BattleInfo()
-{
+std::string BattleInfo() {
     if (!g_game) return "no game";
     std::string s = g_game->BattleRunning() ? "running" : "not running";
     s += g_game->BattleTicking() ? ", ticking" : ", not ticking";
@@ -3594,8 +3476,7 @@ std::string BattleInfo()
     return s;
 }
 
-void NetPollHotkeys()
-{
+void NetPollHotkeys() {
     // Off unless asked for: Medal clips on F8 by default, and with a match
     // code still on the clipboard each clip left the match to join it again.
     if (!g_options.hotkeys) return;
@@ -3631,16 +3512,14 @@ void NetPollHotkeys()
     }
 }
 
-std::string NetStatus()
-{
+std::string NetStatus() {
     std::lock_guard lock(g_driverMutex);
     return g_driver ? g_driver->Status() : "idle";
 }
 
 int NetTakeForfeit() { return g_forfeitSeat.exchange(-1); }
 
-NetView NetViewNow()
-{
+NetView NetViewNow() {
     static std::mutex lastMutex;
     static NetView last;
     std::unique_lock lock(g_driverMutex, std::try_to_lock);

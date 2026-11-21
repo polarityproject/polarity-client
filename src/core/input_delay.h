@@ -43,8 +43,7 @@ struct LinkStats {
 
 // The median round trip and the jitter (the mean absolute change between
 // consecutive samples, GekkoNet's measure) of round trips in arrival order.
-inline LinkStats MeasureLink(const std::vector<uint16_t>& rtts)
-{
+inline LinkStats MeasureLink(const std::vector<uint16_t>& rtts) {
     LinkStats s;
     s.samples = rtts.size();
     if (rtts.empty()) return s;
@@ -65,15 +64,13 @@ inline LinkStats MeasureLink(const std::vector<uint16_t>& rtts)
 
 // Frames after its own that the other player's input arrives: the one-way
 // trip plus the jitter counted, in 60 fps frames, rounded up.
-inline int FramesLate(unsigned pingMs, unsigned jitterMs)
-{
+inline int FramesLate(unsigned pingMs, unsigned jitterMs) {
     const unsigned jitter = std::min(jitterMs, kJitterCapMs);
     // (ping / 2 + jitter) * 60 / 1000 = 3 * (ping + 2 * jitter) / 100
     return static_cast<int>((3u * (pingMs + 2u * jitter) + 99u) / 100u);
 }
 
-inline int SuggestedDelay(unsigned pingMs, unsigned jitterMs)
-{
+inline int SuggestedDelay(unsigned pingMs, unsigned jitterMs) {
     return std::clamp(FramesLate(pingMs, jitterMs) - kRollbackFramesAimed, 0, kMaxSuggestedDelay);
 }
 
@@ -81,8 +78,8 @@ inline int SuggestedDelay(unsigned pingMs, unsigned jitterMs)
 // delay suggested for it (0 to 3), or 4 when even 3 frames leave more than
 // kRollbackFramesAimed frames to rollback (late above 5 frames).
 constexpr int kPingTierHeavy = 4;
-inline int PingTier(unsigned pingMs, unsigned jitterMs)
-{
+
+inline int PingTier(unsigned pingMs, unsigned jitterMs) {
     const int late = FramesLate(pingMs, jitterMs);
     const int delay = std::clamp(late - kRollbackFramesAimed, 0, kMaxSuggestedDelay);
     return late - delay > kRollbackFramesAimed ? kPingTierHeavy : delay;

@@ -24,24 +24,26 @@ void DrawLeaveModal(const HubFonts& f, bool set, bool takeInput, bool* leave, bo
 // ----- the vote after a game ----------------------------------------------------
 struct VoteSide {
     bool shown = false;
-    bool mine = false;     // this player's: the buttons (while `choosing`) and the delay
-    int slot = 0;          // 0 P1, 1 P2
+    bool mine = false; // this player's: the buttons (while `choosing`) and the delay
+    int slot = 0;      // 0 P1, 1 P2
     std::string name, country;
     int wins = 0;
-    int firstTo = 0;       // a set's; 0 a Direct Match (wins this session)
-    std::string status;    // "Wins the set", "Choosing...", "Rematch"
-    int statusKind = 0;    // 0 soft, 1 ok, 2 muted
+    int firstTo = 0;                // a set's; 0 a Direct Match (wins this session)
+    std::string status;             // "Wins the set", "Choosing...", "Rematch"
+    int statusKind = 0;             // 0 soft, 1 ok, 2 muted
     std::vector<std::string> lines; // what follows, under the status
-    bool choosing = false; // the buttons are up
-    int chosen = -1;       // 0 Rematch, 1 Character select: already chosen
-    int delay = 0;         // frames (this player's, chosen here; the other's, shown)
-    std::string suggestion; // under the delay: "Suggested delay 1 (ping 38 ms)"
-    std::string hint;      // the footer: the vote's timer, or the other's delay
+    bool choosing = false;          // the buttons are up
+    int chosen = -1;                // 0 Rematch, 1 Character select: already chosen
+    int delay = 0;                  // frames (this player's, chosen here; the other's, shown)
+    std::string suggestion;         // under the delay: "Suggested delay 1 (ping 38 ms)"
+    std::string hint;               // the footer: the vote's timer, or the other's delay
 };
+
 struct VoteInput {
     int choose = -1;   // 0 Rematch, 1 Character select, 2 Leave
     int delayStep = 0; // -1 or 1
 };
+
 void ResetVote(); // a new vote: the focus on Rematch
 // `armed`: presses count (a button held from the match does nothing).
 void DrawVote(const HubFonts& f, const VoteSide (&sides)[2], bool armed, bool takeInput, VoteInput* in);
@@ -51,9 +53,10 @@ struct Notice {
     std::string kicker; // in a fight: before the text, in its colour ("DESYNC AT FRAME 3412")
     std::string text;
     uint32_t color = 0xFFFFFFFF; // ImU32: the diamond (and the kicker)
-    float age = 0;   // seconds shown
-    float left = 99; // seconds to go
+    float age = 0;               // seconds shown
+    float left = 99;             // seconds to go
 };
+
 // Out of a fight: glass toasts from the top right, the newest on top,
 // sliding down as they come.
 // `overScreen`: over one of the mod's screens (glass over its stage), else

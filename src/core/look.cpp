@@ -4,8 +4,7 @@
 
 namespace sfv {
 
-MatchSetup ShownSetup(const MatchSetup& setup, int viewer, const LookRules& rules)
-{
+MatchSetup ShownSetup(const MatchSetup& setup, int viewer, const LookRules& rules) {
     MatchSetup shown = setup;
     const int other = viewer == 1 ? 0 : 1;
     const PlayerSetup& me = setup.players[1 - other];
@@ -22,8 +21,7 @@ MatchSetup ShownSetup(const MatchSetup& setup, int viewer, const LookRules& rule
     return shown;
 }
 
-MatchSetup RealPicks(const MatchSetup& loaded, const MatchSetup& setup, int viewer, const LookRules& rules)
-{
+MatchSetup RealPicks(const MatchSetup& loaded, const MatchSetup& setup, int viewer, const LookRules& rules) {
     MatchSetup real = loaded;
     const MatchSetup shown = ShownSetup(setup, viewer, rules);
     for (int p = 0; p < kNumPlayers; p++) {

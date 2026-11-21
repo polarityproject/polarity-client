@@ -43,22 +43,19 @@ constexpr int kOfflineWaitFrames = 60 * 60;
 uintptr_t g_base = 0;
 std::atomic<int> g_lastStatus{-2};
 
-std::string Narrow(const wchar_t* w)
-{
+std::string Narrow(const wchar_t* w) {
     std::string s;
     for (int i = 0; w && w[i] && i < 200; i++) s += w[i] < 128 ? static_cast<char>(w[i]) : '?';
     return s;
 }
 
-std::string Address(const sockaddr* a)
-{
+std::string Address(const sockaddr* a) {
     char buf[64] = "?";
     if (a && a->sa_family == AF_INET) {
         const auto* in = reinterpret_cast<const sockaddr_in*>(a);
         const auto* b = reinterpret_cast<const uint8_t*>(&in->sin_addr);
         std::snprintf(buf, sizeof(buf), "%u.%u.%u.%u:%u", b[0], b[1], b[2], b[3], ntohs(in->sin_port));
-    }
-    else if (a && a->sa_family == AF_INET6) {
+    } else if (a && a->sa_family == AF_INET6) {
         std::snprintf(buf, sizeof(buf), "[ipv6]:%u", ntohs(reinterpret_cast<const sockaddr_in6*>(a)->sin6_port));
     }
     return buf;
@@ -81,8 +78,7 @@ HttpSendRequestWFn g_origHttpSendRequestW = nullptr;
 WinHttpConnectFn g_origWinHttpConnect = nullptr;
 WinHttpSendRequestFn g_origWinHttpSendRequest = nullptr;
 
-INT WSAAPI GetAddrInfoWDetour(PCWSTR node, PCWSTR service, const ADDRINFOW* hints, PADDRINFOW* result)
-{
+INT WSAAPI GetAddrInfoWDetour(PCWSTR node, PCWSTR service, const ADDRINFOW* hints, PADDRINFOW* result) {
     HookGuard guard;
     const auto t0 = GetTickCount64();
     const INT r = g_origGetAddrInfoW(node, service, hints, result);
@@ -91,8 +87,7 @@ INT WSAAPI GetAddrInfoWDetour(PCWSTR node, PCWSTR service, const ADDRINFOW* hint
     return r;
 }
 
-INT WSAAPI GetAddrInfoDetour(PCSTR node, PCSTR service, const ADDRINFOA* hints, PADDRINFOA* result)
-{
+INT WSAAPI GetAddrInfoDetour(PCSTR node, PCSTR service, const ADDRINFOA* hints, PADDRINFOA* result) {
     HookGuard guard;
     const auto t0 = GetTickCount64();
     const INT r = g_origGetAddrInfo(node, service, hints, result);
@@ -101,8 +96,7 @@ INT WSAAPI GetAddrInfoDetour(PCSTR node, PCSTR service, const ADDRINFOA* hints, 
     return r;
 }
 
-int WSAAPI ConnectDetour(SOCKET s, const sockaddr* name, int len)
-{
+int WSAAPI ConnectDetour(SOCKET s, const sockaddr* name, int len) {
     HookGuard guard;
     const auto t0 = GetTickCount64();
     const int r = g_origConnect(s, name, len);
@@ -114,16 +108,14 @@ int WSAAPI ConnectDetour(SOCKET s, const sockaddr* name, int len)
 }
 
 void* WINAPI InternetConnectWDetour(void* session, LPCWSTR server, WORD port, LPCWSTR user, LPCWSTR password, DWORD service,
-                                    DWORD flags, DWORD_PTR context)
-{
+                                    DWORD flags, DWORD_PTR context) {
     HookGuard guard;
     void* r = g_origInternetConnectW(session, server, port, user, password, service, flags, context);
     Log("net: InternetConnectW %s:%u -> %p", Narrow(server).c_str(), port, r);
     return r;
 }
 
-BOOL WINAPI HttpSendRequestWDetour(void* request, LPCWSTR headers, DWORD headersLength, LPVOID optional, DWORD optionalLength)
-{
+BOOL WINAPI HttpSendRequestWDetour(void* request, LPCWSTR headers, DWORD headersLength, LPVOID optional, DWORD optionalLength) {
     HookGuard guard;
     const auto t0 = GetTickCount64();
     const BOOL r = g_origHttpSendRequestW(request, headers, headersLength, optional, optionalLength);
@@ -134,8 +126,7 @@ BOOL WINAPI HttpSendRequestWDetour(void* request, LPCWSTR headers, DWORD headers
     return r;
 }
 
-void* WINAPI WinHttpConnectDetour(void* session, LPCWSTR server, WORD port, DWORD reserved)
-{
+void* WINAPI WinHttpConnectDetour(void* session, LPCWSTR server, WORD port, DWORD reserved) {
     HookGuard guard;
     void* r = g_origWinHttpConnect(session, server, port, reserved);
     Log("net: WinHttpConnect %s:%u -> %p", Narrow(server).c_str(), port, r);
@@ -143,8 +134,7 @@ void* WINAPI WinHttpConnectDetour(void* session, LPCWSTR server, WORD port, DWOR
 }
 
 BOOL WINAPI WinHttpSendRequestDetour(void* request, LPCWSTR headers, DWORD headersLength, LPVOID optional,
-                                     DWORD optionalLength, DWORD totalLength, DWORD_PTR context)
-{
+                                     DWORD optionalLength, DWORD totalLength, DWORD_PTR context) {
     HookGuard guard;
     const auto t0 = GetTickCount64();
     const BOOL r = g_origWinHttpSendRequest(request, headers, headersLength, optional, optionalLength, totalLength, context);
@@ -155,8 +145,7 @@ BOOL WINAPI WinHttpSendRequestDetour(void* request, LPCWSTR headers, DWORD heade
     return r;
 }
 
-bool HookExport(const wchar_t* module, const char* name, void* detour, void** original)
-{
+bool HookExport(const wchar_t* module, const char* name, void* detour, void** original) {
     HMODULE m = LoadLibraryW(module);
     void* target = m ? reinterpret_cast<void*>(GetProcAddress(m, name)) : nullptr;
     const bool ok = target && MH_CreateHook(target, detour, original) == MH_OK && MH_EnableHook(target) == MH_OK;
@@ -164,8 +153,7 @@ bool HookExport(const wchar_t* module, const char* name, void* detour, void** or
     return ok;
 }
 
-void WatchStep()
-{
+void WatchStep() {
     const int status = LoginStatus();
     const int last = g_lastStatus.exchange(status);
     if (status != last) Log("boot: login status %d (was %d)", status, last);
@@ -174,8 +162,7 @@ void WatchStep()
 
 // Waits (once per frame) for InitialState to reach its login step, then
 // replaces that step with the offline route.
-void OfflineAtLoginStep(uint8_t* state, int frame)
-{
+void OfflineAtLoginStep(uint8_t* state, int frame) {
     if (Stopping()) return;
     if (!state) {
         if (!ue4::EnsureObjects(g_base)) return;
@@ -201,8 +188,7 @@ void OfflineAtLoginStep(uint8_t* state, int frame)
 
 } // namespace
 
-void GoOfflineFromTitle()
-{
+void GoOfflineFromTitle() {
     RunOnGameThreadAfter(1, [] { OfflineAtLoginStep(nullptr, 0); });
 }
 
@@ -210,11 +196,12 @@ using InFreePlayPeriodFn = bool (*)(void* info);
 InFreePlayPeriodFn g_origInFreePlayPeriod = nullptr;
 std::atomic<int> g_freePlayAnswer{-1}; // the game's own last answer, for the log
 // Research: `freeplay off` lets the game decide, `freeplay fail` says ended.
-enum class FreePlay { Guard, Game, Fail };
+enum class FreePlay { Guard,
+                      Game,
+                      Fail };
 std::atomic<FreePlay> g_freePlay{FreePlay::Guard};
 
-bool InFreePlayPeriodDetour(void* info)
-{
+bool InFreePlayPeriodDetour(void* info) {
     HookGuard guard;
     const int answer = g_origInFreePlayPeriod(info) ? 1 : 0;
     if (g_freePlay != FreePlay::Guard) {
@@ -229,14 +216,13 @@ bool InFreePlayPeriodDetour(void* info)
     return true;
 }
 
-void SetFreePlayGuard(const std::string& mode)
-{
-    g_freePlay = mode == "off" ? FreePlay::Game : mode == "fail" ? FreePlay::Fail : FreePlay::Guard;
+void SetFreePlayGuard(const std::string& mode) {
+    g_freePlay = mode == "off" ? FreePlay::Game : mode == "fail" ? FreePlay::Fail
+                                                                 : FreePlay::Guard;
     Log("boot: free play guard %s", mode.c_str());
 }
 
-bool InstallFreePlayGuard(const GameImage& image)
-{
+bool InstallFreePlayGuard(const GameImage& image) {
     const game::CodeSite& site = game::kInFreePlayPeriod;
     void* target = image.At<void*>(site.rva);
     if (std::memcmp(target, site.bytes, sizeof(site.bytes)) != 0) {
@@ -250,8 +236,7 @@ bool InstallFreePlayGuard(const GameImage& image)
     return ok;
 }
 
-bool InstallBootProbes(const GameImage& image, bool logNetwork)
-{
+bool InstallBootProbes(const GameImage& image, bool logNetwork) {
     g_base = image.base;
     if (!logNetwork) return true;
     bool ok = HookExport(L"ws2_32.dll", "GetAddrInfoW", reinterpret_cast<void*>(&GetAddrInfoWDetour),
@@ -271,8 +256,7 @@ bool InstallBootProbes(const GameImage& image, bool logNetwork)
     return ok;
 }
 
-int LoginStatus()
-{
+int LoginStatus() {
     using Fn = uint8_t (*)();
     // The getter takes the identity interface (rva 0x73BEC0) without a null
     // check (0x73BBCB): early in a start the online subsystem can have none
@@ -284,15 +268,13 @@ int LoginStatus()
         const int status = reinterpret_cast<Fn>(g_base + kGetLoginStatus)();
         CrashGuardLeave();
         return status;
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
         CrashGuardLeave();
         return -1;
     }
 }
 
-void WatchLoginStatus()
-{
+void WatchLoginStatus() {
     RunOnGameThread(WatchStep);
 }
 

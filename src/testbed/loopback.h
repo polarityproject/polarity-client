@@ -25,12 +25,15 @@ public:
 
     ITransport& Endpoint(uint64_t id);
     void Tick();
+
     void SetLink(LinkConditions link) { link_ = link; }
+
     // Drops everything sent to or from `id` from now on.
     void Cut(uint64_t id) { cut_ = id; }
 
 private:
     class Endpoint_;
+
     struct InFlight {
         uint64_t deliverAt;
         uint64_t seq;

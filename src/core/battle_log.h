@@ -32,10 +32,11 @@ int MySide(const Entry& e, const std::string& myName);
 std::vector<Entry> Merge(std::vector<Entry> entries, const std::string& myName);
 
 struct Filter {
-    uint32_t mine = 0;   // the player's character (packed code); 0 any
-    uint32_t theirs = 0; // the opponent's character; 0 any
+    uint32_t mine = 0;    // the player's character (packed code); 0 any
+    uint32_t theirs = 0;  // the opponent's character; 0 any
     std::string opponent; // the opponent's name as shown (exact, ignoring case); empty any
 };
+
 bool Passes(const Entry& e, const Filter& f, const std::string& myName);
 
 // A set: its games oldest first. A match with no set key is a set of its own.
@@ -46,6 +47,7 @@ struct Set {
     uint8_t wins[kNumPlayers]; // as the last game left it (by side of that game's file)
     int64_t newest = 0;        // created time of the last game
 };
+
 // Sets newest first, from entries newest first (Merge).
 std::vector<Set> GroupSets(const std::vector<const Entry*>& entries);
 

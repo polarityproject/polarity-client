@@ -34,11 +34,10 @@ using namespace ui;
 
 void DrawPrompts(ImDrawList* d, const SelectFonts& f, const std::vector<Prompt>& prompts) { ui::DrawPrompts(d, f.text, prompts); }
 
-
 // ----- data and the screen's own state ----------------------------------------
 
 std::mutex g_dataMutex;
-SelectData g_data; // the live screen's lists (SetSelectData)
+SelectData g_data;          // the live screen's lists (SetSelectData)
 bool g_myCharacter = false; // Render's live.myCharacter (DrawLoadout's banner)
 
 const char* const kRowLabels[kSelectRows] = {"Costume", "Color", "Variant", "V-Skill", "V-Trigger", "V-Comment", "Input delay"};
@@ -46,22 +45,22 @@ const char* const kRowLabels[kSelectRows] = {"Costume", "Color", "Variant", "V-S
 // What the player is doing on the screen (a session only knows their pick
 // and whether they are ready).
 struct Ui {
-    bool loadout = false;  // past the grid
-    int row = 0;           // the loadout row
+    bool loadout = false; // past the grid
+    int row = 0;          // the loadout row
     int cursorRow = 0, cursorX = 0;
     bool onRandom = false; // the cursor on the random tile
     int lastChara = -2;    // the pick the cursor last followed (it starts there, and moves when the pick changes)
     std::string lastStage; // the stage behind the screen (the last real one while random is chosen)
     bool wasLocked = false;
-    bool leaving = false;     // the leave dialog is up
-    bool leaveChosen = false; // ... on Leave (it opens on Stay)
+    bool leaving = false;       // the leave dialog is up
+    bool leaveChosen = false;   // ... on Leave (it opens on Stay)
     bool cameFromStage = false; // My character: back from its stage select (the grid or loadout as left)
     // My character's Random stages list (X on the random tile).
     bool randomList = false;
-    int listCursor = 0;       // its tile
-    int variantsOf = -1;      // the tile whose settings list is up; -1 none
-    int variantCursor = 0;    // ... its row
-    std::string listNote;     // a note in the footer for a while ("Keep at least one stage on")
+    int listCursor = 0;    // its tile
+    int variantsOf = -1;   // the tile whose settings list is up; -1 none
+    int variantCursor = 0; // ... its row
+    std::string listNote;  // a note in the footer for a while ("Keep at least one stage on")
     double listNoteUntil = 0;
 } g_ui;
 
@@ -72,9 +71,7 @@ const char* const kTopRight[] = {"KEN", "CMY", "BLR", "NCL", "GUL", "Z20", "Z25"
 const char* const kBottomLeft[] = {"ALX", "KRN", "ZGF", "LAR", "IBK", "JRI", "Z22", "Z26", "Z30", "Z34", "Z38", "Z42"};
 const char* const kBottomRight[] = {"VEG", "BRD", "DSM", "FAN", "BSN", "URN", "Z24", "Z27", "Z31", "Z35", "Z40", "ELV"};
 
-
-int CharaAt(const SelectData& data, const std::string& code)
-{
+int CharaAt(const SelectData& data, const std::string& code) {
     for (size_t i = 0; i < data.charas.size(); i++) {
         if (data.charas[i].code == code) return static_cast<int>(i);
     }
@@ -88,6 +85,7 @@ struct Slot {
     bool right = false; // leans the other way (the right half)
     ImVec2 q[4];        // corners in design coordinates: top left, top right, bottom right, bottom left
 };
+
 std::vector<Slot> g_rows[2]; // left to right
 const SelectData* g_gridFor = nullptr;
 
@@ -101,8 +99,7 @@ constexpr float kK = kSlant / kTH;
 constexpr ImVec2 kArtLeft[4] = {{6.45f, 2}, {68.45f, 2}, {95.55f, 142}, {33.55f, 142}};
 constexpr ImVec2 kArtRight[4] = {{47.55f, 2}, {109.55f, 2}, {82.45f, 142}, {20.45f, 142}};
 
-void BuildGrid(const SelectData& data)
-{
+void BuildGrid(const SelectData& data) {
     g_gridFor = &data;
     auto quad = [](Slot& t, float x, float y, bool right) {
         t.right = right;
@@ -111,8 +108,7 @@ void BuildGrid(const SelectData& data)
             t.q[1] = ImVec2(x + kSlant + kTopW, y);
             t.q[2] = ImVec2(x + kTopW, y + kTH);
             t.q[3] = ImVec2(x, y + kTH);
-        }
-        else {
+        } else {
             t.q[0] = ImVec2(x, y);
             t.q[1] = ImVec2(x + kTopW, y);
             t.q[2] = ImVec2(x + kTopW + kSlant, y + kTH);
@@ -150,8 +146,7 @@ void BuildGrid(const SelectData& data)
     half(g_rows[1], kBottomRight, std::size(kBottomRight), 1, true);
 }
 
-bool CursorTo(int chara)
-{
+bool CursorTo(int chara) {
     for (int r = 0; r < 2; r++) {
         for (int x = 0; x < static_cast<int>(g_rows[r].size()); x++) {
             if (g_rows[r][x].chara == chara && chara >= 0) {
@@ -164,21 +159,17 @@ bool CursorTo(int chara)
     return false;
 }
 
-
-
 // ----- the parts ----------------------------------------------------------------
 
 const SelectData* g_draw = nullptr; // the data of the screen being drawn
 
-const SelectChara* Chara(int i)
-{
+const SelectChara* Chara(int i) {
     if (!g_draw || i < 0 || i >= static_cast<int>(g_draw->charas.size())) return nullptr;
     return &g_draw->charas[i];
 }
 
 // Stage `stage` in setting `setting` (0: the stage itself); null for random.
-const SelectStage* Shown(int stage, int setting)
-{
+const SelectStage* Shown(int stage, int setting) {
     if (!g_draw || stage < 0 || stage >= static_cast<int>(g_draw->stages.size())) return nullptr;
     const SelectStage& s = g_draw->stages[stage];
     return setting > 0 && setting <= static_cast<int>(s.settings.size()) ? &s.settings[setting - 1] : &s;
@@ -188,8 +179,7 @@ const SelectStage* Shown(int stage, int setting)
 // blurred and darkened, the grain over it; the screen draws over it. A
 // stage just moved to shows once its blurred copy is made (a frame or
 // two): the last one stays till then.
-void DrawBackdrop(ImDrawList* d, int stage, int setting, ImU32 tint)
-{
+void DrawBackdrop(ImDrawList* d, int stage, int setting, ImU32 tint) {
     if (const SelectStage* s = Shown(stage, setting)) g_ui.lastStage = s->code;
     if (g_ui.lastStage.empty() && !g_draw->stages.empty()) g_ui.lastStage = g_draw->stages[0].code;
     if (g_ui.lastStage.empty()) return;
@@ -224,8 +214,7 @@ void DrawBackdrop(ImDrawList* d, int stage, int setting, ImU32 tint)
 }
 
 // `text` cut to `width` (ui units) at this size, with an ellipsis.
-std::string FitText(ImFont* font, float size, std::string text, float width)
-{
+std::string FitText(ImFont* font, float size, std::string text, float width) {
     if (TextW(font, size, text) <= width) return text;
     while (!text.empty() && TextW(font, size, text + "...") > width) {
         text.pop_back();
@@ -236,8 +225,7 @@ std::string FitText(ImFont* font, float size, std::string text, float width)
 
 // `highlight`: the row lit up (this player's, or the row the other is on), -1 none.
 void DrawLoadout(ImDrawList* d, const SelectFonts& f, bool right, const SelectSide& side, int highlight, bool interactive,
-                 SelectInput* in)
-{
+                 SelectInput* in) {
     const float x0 = right ? 980.0f : 0.0f, top = 108, rowH = 42, gap = 4, w = 620;
     // The medium weight (rows over the character's art read faintly in the
     // light one, on a Steam Deck especially), bold on the focused row.
@@ -284,8 +272,7 @@ void DrawLoadout(ImDrawList* d, const SelectFonts& f, bool right, const SelectSi
                 g_ui.row = r;
                 in->row = r;
                 in->delta = -1;
-            }
-            else if (Clicked() && MouseIn(g_v.P(x0 + w - 44, y), g_v.P(x0 + w, y + rowH))) {
+            } else if (Clicked() && MouseIn(g_v.P(x0 + w - 44, y), g_v.P(x0 + w, y + rowH))) {
                 g_ui.row = r;
                 in->row = r;
                 in->delta = 1;
@@ -302,8 +289,7 @@ void DrawLoadout(ImDrawList* d, const SelectFonts& f, bool right, const SelectSi
         const ImU32 g1 = Rgba(217, 166, 50), g2 = Rgba(150, 108, 28, 230);
         d->AddRectFilledMultiColor(a, b, right ? g2 : g1, right ? g1 : g2, right ? g1 : g2, right ? g2 : g1);
         Text(d, f.name, g_v.L(20), g_v.P(x0 + 44, y + 4), Rgba(26, 20, 5), g_myCharacter ? "SAVED" : "READY");
-    }
-    else if (!g_myCharacter) {
+    } else if (!g_myCharacter) {
         const std::string& hint = side.rows[interactive ? g_ui.row : 5].hint;
         if (!hint.empty()) {
             d->AddRectFilled(a, b, Rgba(8, 9, 11, 228));
@@ -312,8 +298,7 @@ void DrawLoadout(ImDrawList* d, const SelectFonts& f, bool right, const SelectSi
     }
 }
 
-void DrawTile(ImDrawList* d, const Slot& t, bool p1, bool p2, const SelectFonts& f)
-{
+void DrawTile(ImDrawList* d, const Slot& t, bool p1, bool p2, const SelectFonts& f) {
     ImVec2 q[4];
     for (int i = 0; i < 4; i++) q[i] = g_v.P(t.q[i].x, t.q[i].y);
     const bool on = p1 || p2;
@@ -334,8 +319,7 @@ void DrawTile(ImDrawList* d, const Slot& t, bool p1, bool p2, const SelectFonts&
         iq[1] = g_v.P(t.q[1].x - in - k * in, t.q[1].y + in);
         iq[2] = g_v.P(t.q[2].x - in + k * in, t.q[2].y - in);
         iq[3] = g_v.P(t.q[3].x + in + k * in, t.q[3].y - in);
-    }
-    else {
+    } else {
         iq[0] = g_v.P(t.q[0].x + in + k * in, t.q[0].y + in);
         iq[1] = g_v.P(t.q[1].x - in + k * in, t.q[1].y + in);
         iq[2] = g_v.P(t.q[2].x - in - k * in, t.q[2].y - in);
@@ -347,7 +331,8 @@ void DrawTile(ImDrawList* d, const Slot& t, bool p1, bool p2, const SelectFonts&
             // The portrait corner to corner: same angle as the frame, no gaps.
             const ImVec2* art = t.right ? kArtRight : kArtLeft;
             auto uv = [&](int i) { return ImVec2(art[i].x / 116.0f, art[i].y / 144.0f); };
-            const ImU32 tint = c->locked ? Rgba(70, 70, 70) : on ? IM_COL32_WHITE : Rgba(205, 205, 205);
+            const ImU32 tint = c->locked ? Rgba(70, 70, 70) : on ? IM_COL32_WHITE
+                                                                 : Rgba(205, 205, 205);
             d->AddImageQuad(Id(tex), iq[0], iq[1], iq[2], iq[3], uv(0), uv(1), uv(2), uv(3), FadeIn(tex, tint));
         }
     }
@@ -371,8 +356,7 @@ void DrawTile(ImDrawList* d, const Slot& t, bool p1, bool p2, const SelectFonts&
 // One side's line over its character name: the player, (you), and a pill
 // with their connection type; on the other player's, the link between the
 // two (path, ping) too. A spectator knows each player's connection only.
-void DrawPlayerLine(ImDrawList* d, const SelectFonts& f, const SelectLive& live, int i)
-{
+void DrawPlayerLine(ImDrawList* d, const SelectFonts& f, const SelectLive& live, int i) {
     const float y = 470;
     const ImU32 white = Rgba(244, 241, 232), dim = Rgba(168, 162, 147), icon = Rgba(217, 212, 198);
     const bool left = i == 0;
@@ -414,8 +398,7 @@ void DrawPlayerLine(ImDrawList* d, const SelectFonts& f, const SelectLive& live,
     if (ping[0]) Text(d, f.text, g_v.L(18), g_v.P(cx + 4, y + 3), PingColor(live.pingMs), ping);
 }
 
-void DrawRender(ImDrawList* d, int chara, bool right)
-{
+void DrawRender(ImDrawList* d, int chara, bool right) {
     const SelectChara* c = Chara(chara);
     if (!c) return;
     const TextureView* t = Texture(CharaTex(c->code, "PartCharacter"));
@@ -433,14 +416,14 @@ struct ListVariant {
     std::string code, name;
     bool locked = false; // not owned: random never draws it
 };
+
 struct ListStage {
     std::string name;
     std::vector<ListVariant> variants;
     bool locked = true; // no variant owned
 };
 
-std::vector<ListStage> RandomList()
-{
+std::vector<ListStage> RandomList() {
     std::vector<ListStage> list;
     if (!g_draw) return list;
     for (const SelectStage& s : g_draw->stages) {
@@ -460,8 +443,7 @@ std::vector<ListStage> RandomList()
 bool IsOff(const std::vector<std::string>& off, const std::string& code) { return std::find(off.begin(), off.end(), code) != off.end(); }
 
 // A tile's owned variants that are on, and all its owned ones.
-std::pair<int, int> VariantsOn(const ListStage& l, const std::vector<std::string>& off)
-{
+std::pair<int, int> VariantsOn(const ListStage& l, const std::vector<std::string>& off) {
     int on = 0, owned = 0;
     for (const ListVariant& v : l.variants) {
         if (v.locked) continue;
@@ -471,8 +453,7 @@ std::pair<int, int> VariantsOn(const ListStage& l, const std::vector<std::string
     return {on, owned};
 }
 
-std::pair<int, int> StagesOn(const std::vector<ListStage>& list, const std::vector<std::string>& off)
-{
+std::pair<int, int> StagesOn(const std::vector<ListStage>& list, const std::vector<std::string>& off) {
     int on = 0, owned = 0;
     for (const ListStage& l : list) {
         const auto [a, b] = VariantsOn(l, off);
@@ -482,8 +463,7 @@ std::pair<int, int> StagesOn(const std::vector<ListStage>& list, const std::vect
     return {on, owned};
 }
 
-std::vector<std::string> OwnedCodes(const ListStage& l)
-{
+std::vector<std::string> OwnedCodes(const ListStage& l) {
     std::vector<std::string> codes;
     for (const ListVariant& v : l.variants) {
         if (!v.locked) codes.push_back(v.code);
@@ -493,8 +473,7 @@ std::vector<std::string> OwnedCodes(const ListStage& l)
 
 // `codes` turned on or off in `off`; false, with nothing changed, when no
 // stage would be left on.
-bool SetVariants(const std::vector<ListStage>& list, std::vector<std::string>* off, const std::vector<std::string>& codes, bool on)
-{
+bool SetVariants(const std::vector<ListStage>& list, std::vector<std::string>* off, const std::vector<std::string>& codes, bool on) {
     std::vector<std::string> next = *off;
     for (const std::string& c : codes) {
         next.erase(std::remove(next.begin(), next.end(), c), next.end());
@@ -505,8 +484,7 @@ bool SetVariants(const std::vector<ListStage>& list, std::vector<std::string>* o
     return true;
 }
 
-void ListNote(std::string text)
-{
+void ListNote(std::string text) {
     g_ui.listNote = std::move(text);
     g_ui.listNoteUntil = ImGui::GetTime() + 3.5;
 }
@@ -515,8 +493,7 @@ constexpr const char* kKeepOne = "Keep at least one stage on.";
 
 // A tile's or row's box: gold with a check when all its variants are on,
 // gold with a bar when some are, an empty frame when none are.
-void CheckBox(ImDrawList* d, float x, float y, int on, int of)
-{
+void CheckBox(ImDrawList* d, float x, float y, int on, int of) {
     const ImVec2 a = g_v.P(x, y), b = g_v.P(x + 24, y + 24);
     if (on <= 0) {
         d->AddRectFilled(a, b, Rgba(0, 0, 0, 120));
@@ -534,8 +511,7 @@ void CheckBox(ImDrawList* d, float x, float y, int on, int of)
 }
 
 // A stage's picture (its stage select background, 4:1) cropped to a box.
-void StagePicture(ImDrawList* d, const std::string& code, float x0, float y0, float x1, float y1, bool dim)
-{
+void StagePicture(ImDrawList* d, const std::string& code, float x0, float y0, float x1, float y1, bool dim) {
     const TextureView* t = TextureSized(StageTex(code, "StageSelectBG"), g_v.L(x1 - x0));
     if (!t) {
         d->AddRectFilled(g_v.P(x0, y0), g_v.P(x1, y1), Rgba(20, 22, 26));
@@ -548,8 +524,7 @@ void StagePicture(ImDrawList* d, const std::string& code, float x0, float y0, fl
 
 // The list's grid moves: left and right along a row (around), up and down
 // a column (around).
-int MoveInGrid(int at, int n, int cols)
-{
+int MoveInGrid(int at, int n, int cols) {
     const int row = at / cols, col = at % cols, rowLen = std::min(cols, n - row * cols);
     if (Left()) return row * cols + (col + rowLen - 1) % rowLen;
     if (Right()) return row * cols + (col + 1) % rowLen;
@@ -567,8 +542,7 @@ int MoveInGrid(int at, int n, int cols)
 
 // A stage's settings, as the game's own random stage menu has them: each
 // on or off. Over the list, with the input.
-void DrawVariantList(ImDrawList* d, const SelectFonts& f, const std::vector<ListStage>& list, std::vector<std::string>* off, bool* changed)
-{
+void DrawVariantList(ImDrawList* d, const SelectFonts& f, const std::vector<ListStage>& list, std::vector<std::string>* off, bool* changed) {
     const ListStage& l = list[g_ui.variantsOf];
     const int n = static_cast<int>(l.variants.size());
     ImFont* bold = f.bold ? f.bold : f.text;
@@ -601,8 +575,7 @@ void DrawVariantList(ImDrawList* d, const SelectFonts& f, const std::vector<List
         if (v.locked) {
             d->AddRectFilled(g_v.P(x0, y), g_v.P(x1, y + kRowH), Rgba(0, 0, 0, 110));
             Text(d, f.text, g_v.L(15), g_v.P(x1 - 18, y + 27), look::kMuted, "Not owned", 1.0f);
-        }
-        else CheckBox(d, x1 - 40, y + (kRowH - 24) / 2, vOn ? 1 : 0, 1);
+        } else CheckBox(d, x1 - 40, y + (kRowH - 24) / 2, vOn ? 1 : 0, 1);
         if (k == g_ui.variantCursor) ui::Ring(d, x0, y, x1, y + kRowH);
         if (Clicked() && MouseIn(g_v.P(x0, y), g_v.P(x1, y + kRowH))) {
             g_ui.variantCursor = k;
@@ -627,8 +600,7 @@ void DrawVariantList(ImDrawList* d, const SelectFonts& f, const std::vector<List
 // My character's Random stages: a grid of the stages random can land on,
 // each on or off; a stage with settings opens their list (as the game's own
 // menu does). Every change goes to `in` at once; B closes it.
-void DrawRandomList(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectInput* in)
-{
+void DrawRandomList(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectInput* in) {
     const std::vector<ListStage> list = RandomList();
     const int n = static_cast<int>(list.size());
     if (n == 0) {
@@ -676,8 +648,7 @@ void DrawRandomList(ImDrawList* d, const SelectFonts& f, const SelectLive& live,
         if (l.locked) {
             d->AddRectFilled(g_v.P(x, y), g_v.P(x + kTileW, y + kTileH), Rgba(0, 0, 0, 110));
             Text(d, f.text, g_v.L(15), g_v.P(tx, y + 33), look::kMuted, "Not owned");
-        }
-        else {
+        } else {
             if (l.variants.size() > 1) {
                 Text(d, f.text, g_v.L(15), g_v.P(tx, y + 33), lit ? look::kGold : look::kMuted,
                      std::to_string(von) + " of " + std::to_string(vowned) + " settings");
@@ -699,16 +670,14 @@ void DrawRandomList(ImDrawList* d, const SelectFonts& f, const SelectLive& live,
             else if (at.variants.size() > 1) {
                 g_ui.variantsOf = g_ui.listCursor;
                 g_ui.variantCursor = 0;
-            }
-            else if (SetVariants(list, &off, OwnedCodes(at), von == 0)) changed = true;
+            } else if (SetVariants(list, &off, OwnedCodes(at), von == 0)) changed = true;
             else ListNote(kKeepOne);
         }
         if (NextSetting()) {
             if (on != owned) {
                 off.clear();
                 changed = true;
-            }
-            else {
+            } else {
                 // All off but the stage under the cursor (random needs one).
                 int keep = g_ui.listCursor;
                 for (int i = 0; list[keep].locked && i < n; i++) keep = i;
@@ -724,8 +693,7 @@ void DrawRandomList(ImDrawList* d, const SelectFonts& f, const SelectLive& live,
             }
         }
         if (Back()) g_ui.randomList = false;
-    }
-    else {
+    } else {
         g_inputOn = inputOn;
         DrawVariantList(d, f, list, &off, &changed);
     }
@@ -740,8 +708,7 @@ void DrawRandomList(ImDrawList* d, const SelectFonts& f, const SelectLive& live,
 // name, and the strip of stages. Only the host moves it; up, down and Y
 // change a stage's setting (The Grid: The Grid Alternative), shown in its
 // place.
-void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectInput* in)
-{
+void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectInput* in) {
     const int count = static_cast<int>(g_draw->stages.size());
     const bool picking = live.host && live.you >= 0;
     int stage = std::clamp(live.stage, 0, count);
@@ -766,7 +733,8 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
     setting = std::clamp(setting, 0, settings);
     if (picking && settings) {
         const bool up = Up(), down = Down(), next = NextSetting();
-        const int by = up ? -1 : (down || next) ? 1 : 0;
+        const int by = up ? -1 : (down || next) ? 1
+                                                : 0;
         for (int tries = 0; by && tries <= settings; tries++) {
             setting = (setting + by + settings + 1) % (settings + 1);
             if (!lockedAt(stage, setting)) break;
@@ -802,7 +770,8 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
         }
     }
     if (const TextureView* frame = Texture(MenuTex("StagePreviewWindow"))) Image(d, frame, g_v.P(bx, by), g_v.P(bx + bw, by + bh));
-    const std::string name = random ? "Random" : shown ? shown->name : "";
+    const std::string name = random ? "Random" : shown ? shown->name
+                                                       : "";
     Text(d, f.name, g_v.L(46), g_v.P(800, by + bh - 106), Rgba(255, 255, 255), name, 0.5f, true);
     if (random && live.myCharacter) {
         // My character's Random stages: how many it can land on.
@@ -830,7 +799,8 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
         const float lift = on ? 8.0f : 0.0f, grow = on ? 1.12f : 1.0f;
         const float cx = x + sw / 2, cy = sy + sh / 2 - lift;
         const ImVec2 a = g_v.P(cx - sw * grow / 2, cy - sh * grow / 2), b = g_v.P(cx + sw * grow / 2, cy + sh * grow / 2);
-        const std::string icon = on && shown ? shown->code : i < count ? g_draw->stages[i].code : "";
+        const std::string icon = on && shown ? shown->code : i < count ? g_draw->stages[i].code
+                                                                       : "";
         const TextureView* t = i < count ? Texture(StageTex(icon, "StageSelectIcon")) : Texture(MenuTex("StageSelect_Random"));
         if (t) Image(d, t, a, b);
         else d->AddRectFilled(a, b, Rgba(30, 32, 36));
@@ -845,8 +815,7 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
     if (picking && Confirm() && !lockedAt(stage, setting)) in->lockStage = true;
 }
 
-void MoveCursor(int dr, int dx)
-{
+void MoveCursor(int dr, int dx) {
     if (dx) {
         const int n = static_cast<int>(g_rows[g_ui.cursorRow].size());
         g_ui.cursorX = (g_ui.cursorX + dx + n) % n;
@@ -870,33 +839,29 @@ void MoveCursor(int dr, int dx)
     }
 }
 
-
 constexpr const char* kLoadingText = "Both ready. Loading...";
 
 // A line of status over the bottom strip.
-void StatusPill(ImDrawList* d, const SelectFonts& f, const char* text)
-{
+void StatusPill(ImDrawList* d, const SelectFonts& f, const char* text) {
     const float w = TextW(f.text, 19, text) + 44;
     Pill(d, g_v.P(800 - w / 2, 856), g_v.P(800 + w / 2, 892));
     Text(d, f.text, g_v.L(19), g_v.P(800, 862), Rgba(233, 196, 106), text, 0.5f);
 }
 
-
 // B with nothing to go back to: the leave dialog, on Stay.
-void OpenLeave()
-{
+void OpenLeave() {
     g_ui.leaving = true;
     g_ui.leaveChosen = false;
 }
 
 // The leave dialog over the screen: Leave or Stay, left and right to choose,
 // A (or a click) to take it, B stays.
-void DrawLeaveDialog(ImDrawList* d, const SelectFonts& f, const SelectLive& live, bool takeInput, SelectInput* in)
-{
+void DrawLeaveDialog(ImDrawList* d, const SelectFonts& f, const SelectLive& live, bool takeInput, SelectInput* in) {
     // The S modal (600 wide): its kicker, a title, what happens, Leave and
     // Stay; the prompts in its footer.
     const bool watching = live.you < 0;
-    const char* title = watching ? "Stop watching?" : live.set ? "Leave the set?" : "Leave the session?";
+    const char* title = watching ? "Stop watching?" : live.set ? "Leave the set?"
+                                                               : "Leave the session?";
     const char* detail = watching   ? "You'll return to the main menu."
                          : live.set ? "The set ends here for both players."
                                     : "The session ends for both players.";
@@ -930,8 +895,7 @@ void DrawLeaveDialog(ImDrawList* d, const SelectFonts& f, const SelectLive& live
 
 // The whole screen for a lobby's state; what the player does goes to `in`.
 // My character's CURRENT LOADOUT card, where the other player's side is.
-void DrawCard(ImDrawList* d, const SelectFonts& f, const SelectCard& c)
-{
+void DrawCard(ImDrawList* d, const SelectFonts& f, const SelectCard& c) {
     // Sized to its rows (the medium weight at 18, a row every 36).
     const float x0 = 980, y0 = 108, x1 = 1552, y1 = y0 + 48 + 66 + 20 + static_cast<float>(c.rows.size()) * 36 + 62;
     const ImU32 white = look::kCream, dim = look::kSoft, text = look::kCream, gold = look::kGold, green = Rgba(127, 216, 139);
@@ -981,8 +945,7 @@ void DrawCard(ImDrawList* d, const SelectFonts& f, const SelectCard& c)
     }
 }
 
-void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectInput* in)
-{
+void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectInput* in) {
     g_myCharacter = live.myCharacter;
     if (g_gridFor != g_draw) BuildGrid(*g_draw);
     const bool watching = live.you < 0;
@@ -1035,8 +998,7 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             if (live.myCharacter) in->closeStage = true;
             else OpenLeave();
         }
-    }
-    else {
+    } else {
         const bool ready = me && me->ready;
         const bool grid = me && !ready && !g_ui.loadout;
         const bool loadout = me && !ready && g_ui.loadout;
@@ -1063,12 +1025,16 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             const bool mine = live.you == i;
             onGrid[i] = mine ? grid : s.present && !s.ready && s.screen == 1;
             onRandom[i] = onGrid[i] && (mine ? g_ui.onRandom : s.hoverRandom);
-            shown[i] = !s.present ? -1 : onGrid[i] ? (onRandom[i] ? -1 : mine ? hover : s.hover) : s.chara;
+            shown[i] = !s.present ? -1 : onGrid[i] ? (onRandom[i] ? -1 : mine ? hover
+                                                                              : s.hover)
+                                                   : s.chara;
             showLoadout[i] = s.present && s.chara >= 0 &&
                              (mine ? !grid : s.ready || s.screen == 2 || (s.screen == 0 && (watching || !grid)));
-            lit[i] = mine ? (loadout ? g_ui.row : -1) : !s.ready && s.screen == 2 ? s.row : -1;
+            lit[i] = mine ? (loadout ? g_ui.row : -1) : !s.ready && s.screen == 2 ? s.row
+                                                                                  : -1;
         }
-        in->screen = grid ? 1 : me ? 2 : 0;
+        in->screen = grid ? 1 : me ? 2
+                                   : 0;
         in->hover = hover;
         in->hoverRandom = g_ui.onRandom;
         in->screenRow = g_ui.row;
@@ -1096,7 +1062,8 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             if (live.myCharacter && i == 1) continue;
             DrawPlayerLine(d, f, live, i);
             const SelectChara* c = Chara(shown[i]);
-            const std::string name = onRandom[i] ? "RANDOM" : c ? Upper(c->name) : "";
+            const std::string name = onRandom[i] ? "RANDOM" : c ? Upper(c->name)
+                                                                : "";
             Text(d, f.name, g_v.L(74), g_v.P(i ? 1482.0f : 118.0f, 496), Rgba(255, 255, 255), name, i ? 1.0f : 0.0f, true);
         }
         Text(d, f.name, g_v.L(42), g_v.P(800, 502), Rgba(255, 255, 255), live.myCharacter ? "MY CHARACTER" : "CHARACTER SELECT", 0.5f, true);
@@ -1104,8 +1071,7 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             DrawCard(d, f, live.card);
             const std::string& note = loadout ? me->rows[g_ui.row].hint : live.note;
             Text(d, f.text, g_v.L(19), g_v.P(48, 860), Rgba(236, 232, 220), note);
-        }
-        else Infinity(d, g_v.P(800, 578), g_v.L(56), Rgba(242, 201, 76));
+        } else Infinity(d, g_v.P(800, 578), g_v.L(56), Rgba(242, 201, 76));
         // The grid: each side's tag on what it shows; on the random tile while
         // that player's cursor is there.
         for (int r = 0; r < 2; r++) {
@@ -1129,20 +1095,16 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             prompts.push_back({"button_x", "Preferred stage", 2});
             prompts.push_back({"button_y", "Random", 3});
             prompts.push_back({"button_b", live.keepLabel.empty() ? "Back" : live.keepLabel, 1});
-        }
-        else if (grid) {
+        } else if (grid) {
             prompts.push_back({"button_a", "Select", 0});
             prompts.push_back({"button_b", live.host ? "Stage" : "Leave", 1});
-        }
-        else if (watching) {
+        } else if (watching) {
             prompts.push_back({"button_b", "Leave", 1});
-        }
-        else if (loadout && live.myCharacter) {
+        } else if (loadout && live.myCharacter) {
             prompts.push_back({"button_a", "Confirm", 0});
             prompts.push_back({"button_x", "Preferred stage", 2});
             prompts.push_back({"button_b", "Characters", 1});
-        }
-        else if (loadout) {
+        } else if (loadout) {
             prompts.push_back({"button_a", "Ready", 0});
             prompts.push_back({"button_b", "Back", 1});
         }
@@ -1153,15 +1115,13 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         if (ready && live.myCharacter) {
             prompts.push_back({"button_a", "Back to the room", 0});
             prompts.push_back({"button_b", "Change again", 1});
-        }
-        else if (ready) {
+        } else if (ready) {
             // B says not ready, until both are: then the match is locked in
             // (B leaves).
             if (live.bothReady) {
                 StatusPill(d, f, live.loading ? kLoadingText : "Both ready. Starting...");
                 prompts.push_back({"button_b", "Leave", 1});
-            }
-            else {
+            } else {
                 StatusPill(d, f, "Ready. Waiting for your opponent...");
                 prompts.push_back({"button_b", "Not ready", 1});
             }
@@ -1170,20 +1130,17 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         const bool a = Confirm();
         if (grid && a && under && under->locked) {
             // Not owned: stays on the grid (as the game's select does).
-        }
-        else if (grid && a) {
+        } else if (grid && a) {
             if (g_ui.onRandom) in->randomPick = true;
             else if (hover >= 0) in->chara = hover;
             g_ui.loadout = true;
             g_ui.onRandom = false;
             g_ui.lastChara = -2;
             g_ui.row = 0;
-        }
-        else if (loadout && a) {
+        } else if (loadout && a) {
             in->ready = true;
             PlayUi(UiSound::ReadyOn);
-        }
-        else if (ready && a && live.myCharacter) {
+        } else if (ready && a && live.myCharacter) {
             in->done = true;
         }
         if ((grid || loadout) && live.myCharacter && Pressed({ImGuiKey_GamepadFaceLeft}, false)) in->openStage = true;
@@ -1226,7 +1183,6 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
     else DrawPrompts(d, f, prompts);
 }
 
-
 // ----- the preview's mock players -----------------------------------------------
 
 std::atomic<bool> g_previewOpen{false};
@@ -1246,15 +1202,13 @@ struct Mock {
     uint32_t roll = 1;
 } g_mock;
 
-int MockPhase()
-{
+int MockPhase() {
     if (!g_mock.locked) return 0;
     if (g_mock.ready[0]) return 3;
     return g_ui.loadout ? 2 : 1;
 }
 
-void SetMockPhase(int phase)
-{
+void SetMockPhase(int phase) {
     g_mock.locked = phase > 0;
     g_ui.loadout = phase >= 2;
     g_ui.wasLocked = g_mock.locked;
@@ -1262,39 +1216,38 @@ void SetMockPhase(int phase)
     g_mock.ready[1] = !g_preview.spectator || phase == 3;
 }
 
-int MockCount(const SelectChara& c, int row, int costume)
-{
+int MockCount(const SelectChara& c, int row, int costume) {
     switch (row) {
-    case 0: return std::max<int>(1, static_cast<int>(c.costumes.size()));
-    case 1: {
-        const size_t k = std::min<size_t>(costume, c.swatches.empty() ? 0 : c.swatches.size() - 1);
-        return c.swatches.empty() || c.swatches[k].empty() ? 1 : static_cast<int>(c.swatches[k].size());
-    }
-    case 2: return 1;
-    case 3: return std::max<int>(2, static_cast<int>(c.vskills.size()));
-    case 4: return std::max<int>(2, static_cast<int>(c.vtriggers.size()));
-    case 5: return 1 + static_cast<int>(c.vcomments.size());
-    default: return 11;
+        case 0: return std::max<int>(1, static_cast<int>(c.costumes.size()));
+        case 1: {
+            const size_t k = std::min<size_t>(costume, c.swatches.empty() ? 0 : c.swatches.size() - 1);
+            return c.swatches.empty() || c.swatches[k].empty() ? 1 : static_cast<int>(c.swatches[k].size());
+        }
+        case 2: return 1;
+        case 3: return std::max<int>(2, static_cast<int>(c.vskills.size()));
+        case 4: return std::max<int>(2, static_cast<int>(c.vtriggers.size()));
+        case 5: return 1 + static_cast<int>(c.vcomments.size());
+        default: return 11;
     }
 }
 
-SelectSide MockSide(int i)
-{
+SelectSide MockSide(int i) {
     SelectSide s;
     s.present = true;
-    s.player = g_preview.spectator ? (i ? "Mock opponent" : "Mock host") : i ? "Mock opponent" : (g_preview.you.empty() ? "You" : g_preview.you);
+    s.player = g_preview.spectator ? (i ? "Mock opponent" : "Mock host") : i ? "Mock opponent"
+                                                                             : (g_preview.you.empty() ? "You" : g_preview.you);
     s.link = i ? 2 : 1;
     s.chara = g_mock.chara[i];
     s.ready = g_mock.ready[i];
     const SelectChara& c = g_preview.charas[std::clamp(s.chara, 0, static_cast<int>(g_preview.charas.size()) - 1)];
     const int* v = g_mock.values[i];
     const bool eleven = c.code == "ELV";
-    auto roman = [](int n) { return n == 1 ? std::string("I") : n == 2 ? std::string("II") : std::to_string(n); };
+    auto roman = [](int n) { return n == 1 ? std::string("I") : n == 2 ? std::string("II")
+                                                                       : std::to_string(n); };
     for (int r = 0; r < kSelectRows; r++) s.rows[r].fixed = eleven && r < 6;
     if (eleven) {
         for (int r = 0; r < 6; r++) s.rows[r].value = "Random";
-    }
-    else {
+    } else {
         s.rows[0].value = c.costumes.empty() ? "Default" : c.costumes[v[0] % c.costumes.size()];
         const size_t ci = std::min<size_t>(v[0], c.swatches.empty() ? 0 : c.swatches.size() - 1);
         const int colors = MockCount(c, 1, v[0]);
@@ -1318,15 +1271,14 @@ SelectSide MockSide(int i)
     s.rows[6].value = std::to_string(v[6]) + (v[6] == 1 ? " frame" : " frames");
     const char* hints[kSelectRows] = {"", "", "", "", "", "", "Suggested for a 38 ms ping: 2 frames. Lower feels sharper but rolls back more."};
     const int comment = v[5] % (1 + static_cast<int>(c.vcomments.size()));
-    const std::string commentLine = eleven ? "Plays a random character in silver, with a random V-Skill and V-Trigger."
+    const std::string commentLine = eleven         ? "Plays a random character in silver, with a random V-Skill and V-Trigger."
                                     : comment == 0 ? "Changes with your opponent's character."
                                                    : "\"" + c.vcomments[comment - 1] + "\"";
     for (int r = 0; r < kSelectRows; r++) s.rows[r].hint = r == 5 || eleven ? commentLine : hints[r];
     return s;
 }
 
-void MockTick(float dt)
-{
+void MockTick(float dt) {
     const int phase = MockPhase();
     if (g_mock.shown != phase) {
         g_mock.shown = phase;
@@ -1370,8 +1322,7 @@ void MockTick(float dt)
     g_mock.nextAct += 0.7f;
 }
 
-void PreviewReset()
-{
+void PreviewReset() {
     g_mock = Mock{};
     g_ui = Ui{};
     BuildGrid(g_preview);
@@ -1391,8 +1342,7 @@ void PreviewReset()
 }
 
 // The preview's own controls: which phase, and close.
-void DrawPreviewTabs(ImDrawList* d, const SelectFonts& f)
-{
+void DrawPreviewTabs(ImDrawList* d, const SelectFonts& f) {
     const char* const labels[] = {"Stage select", "Character", "Loadout", "Ready", "Close preview"};
     float x = 24;
     const int phase = MockPhase();
@@ -1413,28 +1363,27 @@ void DrawPreviewTabs(ImDrawList* d, const SelectFonts& f)
 
 } // namespace
 
-void SetSelectData(SelectData data)
-{
+void SetSelectData(SelectData data) {
     std::lock_guard lock(g_dataMutex);
     g_data = std::move(data);
     g_gridFor = nullptr;
 }
 
-void ResetSelectScreen()
-{
+void ResetSelectScreen() {
     std::lock_guard lock(g_dataMutex);
     g_ui = Ui{};
 }
 
-void WarmSelectTextures()
-{
+void WarmSelectTextures() {
     std::lock_guard lock(g_dataMutex);
     if (g_data.charas.empty()) return;
     if (g_gridFor != &g_data) BuildGrid(g_data);
     g_drawing = false;
+
     struct Restore {
         ~Restore() { g_drawing = true; }
     } restore;
+
     // The stage select: its frame, icons and prompts, then each stage's icon.
     for (const char* name : {"StagePreviewWindowShadow", "StagePreviewWindow", "StageSelectCursor", "StageSelect_Random"}) {
         Texture(MenuTex(name));
@@ -1460,8 +1409,7 @@ void WarmSelectTextures()
     for (const SelectChara& c : g_data.charas) Texture(CharaTex(c.code, "PartCharacter"));
 }
 
-void WarmBootTextures(const SelectData& data, const std::string& chara, const std::string& stage)
-{
+void WarmBootTextures(const SelectData& data, const std::string& chara, const std::string& stage) {
     std::vector<std::pair<std::string, uint32_t>> want;
     auto add = [&](std::string path) { want.emplace_back(std::move(path), 0); };
     for (const char* icon : {"button_a", "button_b", "button_x", "button_y", "button_start", "button_back", "button_lb", "button_rb"}) {
@@ -1483,8 +1431,7 @@ void WarmBootTextures(const SelectData& data, const std::string& chara, const st
         stage.empty() ? "-" : stage.c_str());
 }
 
-void DrawSelectLive(const SelectFonts& f, const SelectLive& live, float alpha, bool takeInput, SelectInput* input)
-{
+void DrawSelectLive(const SelectFonts& f, const SelectLive& live, float alpha, bool takeInput, SelectInput* input) {
     *input = SelectInput{};
     if (!f.title || !f.name || !f.text || alpha <= 0) return;
     std::lock_guard lock(g_dataMutex);
@@ -1504,8 +1451,7 @@ void DrawSelectLive(const SelectFonts& f, const SelectLive& live, float alpha, b
     FadeFrom(d, from, alpha);
 }
 
-void OpenSelectPreview(SelectData data, int phase)
-{
+void OpenSelectPreview(SelectData data, int phase) {
     {
         std::lock_guard lock(g_dataMutex);
         g_preview = std::move(data);
@@ -1519,8 +1465,7 @@ void OpenSelectPreview(SelectData data, int phase)
 
 bool SelectPreviewOpen() { return g_previewOpen; }
 
-void DrawSelectPreview(const SelectFonts& f)
-{
+void DrawSelectPreview(const SelectFonts& f) {
     if (!g_previewOpen || !f.title || !f.name || !f.text) return;
     std::lock_guard lock(g_dataMutex);
     if (g_preview.charas.empty()) {

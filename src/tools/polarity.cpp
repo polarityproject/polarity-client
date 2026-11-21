@@ -35,8 +35,7 @@ using namespace sfv;
 
 namespace {
 
-int Usage()
-{
+int Usage() {
     std::fprintf(stderr,
                  "usage:\n"
                  "  polarity info    <file> [-v]\n"
@@ -54,22 +53,23 @@ int Usage()
     return 2;
 }
 
-bool Load(const char* path, ReplayFile& rf)
-{
+bool Load(const char* path, ReplayFile& rf) {
     std::string error;
     if (LoadReplay(path, &rf, &error)) return true;
     std::fprintf(stderr, "%s: %s\n", path, error.c_str());
     return false;
 }
 
-std::string InputText(PackedInput in)
-{
+std::string InputText(PackedInput in) {
     // Numpad notation for the direction, from P1-left perspective.
     int dir = 5;
     const bool up = in & kUp, down = in & kDown, left = in & kLeft, right = in & kRight;
-    if (up) dir = left ? 7 : right ? 9 : 8;
-    else if (down) dir = left ? 1 : right ? 3 : 2;
-    else dir = left ? 4 : right ? 6 : 5;
+    if (up) dir = left ? 7 : right ? 9
+                                   : 8;
+    else if (down) dir = left ? 1 : right ? 3
+                                          : 2;
+    else dir = left ? 4 : right ? 6
+                                : 5;
 
     std::string s = std::to_string(dir);
     static const char* kButtons[] = {"LP", "MP", "HP", "LK", "MK", "HK"};
@@ -85,19 +85,17 @@ std::string InputText(PackedInput in)
     return s;
 }
 
-const char* EventName(ReplayEventType t)
-{
+const char* EventName(ReplayEventType t) {
     switch (t) {
-    case ReplayEventType::Rollback: return "rollback";
-    case ReplayEventType::Desync: return "desync";
-    case ReplayEventType::Disconnect: return "disconnect";
-    case ReplayEventType::Note: return "note";
+        case ReplayEventType::Rollback: return "rollback";
+        case ReplayEventType::Desync: return "desync";
+        case ReplayEventType::Disconnect: return "disconnect";
+        case ReplayEventType::Note: return "note";
     }
     return "?";
 }
 
-int CmdInfo(int argc, char** argv)
-{
+int CmdInfo(int argc, char** argv) {
     if (argc < 1) return Usage();
     ReplayFile rf;
     if (!Load(argv[0], rf)) return 1;
@@ -114,7 +112,8 @@ int CmdInfo(int argc, char** argv)
     std::printf("game build      %s\n", rf.gameBuild.c_str());
     std::printf("recorded        %s\n", when);
     std::printf("match id        %016" PRIx64 "\n", rf.matchId);
-    std::printf("local player    %s\n", rf.localPlayer < 0 ? "-" : rf.localPlayer == 0 ? "P1" : "P2");
+    std::printf("local player    %s\n", rf.localPlayer < 0 ? "-" : rf.localPlayer == 0 ? "P1"
+                                                                                       : "P2");
     std::printf("input delay     %u, prediction window %u\n", rf.inputDelay, rf.predictionWindow);
     for (int p = 0; p < kNumPlayers; p++) {
         const auto& ps = rf.setup.players[p];
@@ -129,11 +128,14 @@ int CmdInfo(int argc, char** argv)
         const MatchSummary& s = rf.summary;
         std::string rounds;
         for (const auto& r : s.rounds) {
-            rounds += r.winner == 0 ? " P1" : r.winner == 1 ? " P2" : s.ending ? " ?" : " draw";
+            rounds += r.winner == 0 ? " P1" : r.winner == 1 ? " P2"
+                                          : s.ending        ? " ?"
+                                                            : " draw";
             if (r.fightFrame >= 0) rounds += " [" + std::to_string(r.fightFrame) + "-" + (r.endFrame >= 0 ? std::to_string(r.endFrame) : "") + "]";
         }
         std::printf("summary         %s vs %s | rounds %u-%u (%s ) | winner %s%s | %u s\n", s.names[0].c_str(), s.names[1].c_str(),
-                    s.roundWins[0], s.roundWins[1], rounds.c_str(), s.winner == 0 ? "P1" : s.winner == 1 ? "P2" : "none",
+                    s.roundWins[0], s.roundWins[1], rounds.c_str(), s.winner == 0 ? "P1" : s.winner == 1 ? "P2"
+                                                                                                         : "none",
                     s.ending ? ", left early" : "", s.seconds);
         std::printf("set             %016" PRIx64 " game %u, %s, score %u-%u\n", s.setKey, s.setGame,
                     s.setRule.empty() ? "Direct Match" : s.setRule.c_str(), s.setWins[0], s.setWins[1]);
@@ -157,8 +159,7 @@ int CmdInfo(int argc, char** argv)
     for (const auto& e : rf.events) {
         if (e.type == ReplayEventType::Desync) {
             std::printf("  desync at frame %d: local %08x remote %08x\n", e.frame, e.a, e.b);
-        }
-        else if (e.type == ReplayEventType::Disconnect) {
+        } else if (e.type == ReplayEventType::Disconnect) {
             std::printf("  disconnect after frame %d\n", e.frame);
         }
     }
@@ -179,8 +180,7 @@ int CmdInfo(int argc, char** argv)
     return 0;
 }
 
-int CmdInputs(int argc, char** argv)
-{
+int CmdInputs(int argc, char** argv) {
     if (argc < 1) return Usage();
     ReplayFile rf;
     if (!Load(argv[0], rf)) return 1;
@@ -198,8 +198,7 @@ int CmdInputs(int argc, char** argv)
 // A player's button presses: the button bits (SFV: X..RT, 0x0FF0; directions
 // and start left out) each time they go from none to some, in hex, in order
 // (scripts\layout-test.ps1 compares them with each PC's layout).
-int CmdPresses(int argc, char** argv)
-{
+int CmdPresses(int argc, char** argv) {
     if (argc < 2) return Usage();
     ReplayFile rf;
     if (!Load(argv[0], rf)) return 1;
@@ -221,8 +220,7 @@ int CmdPresses(int argc, char** argv)
 
 // Rewrites a recording in the current format, keeping region hashes only
 // around its desyncs (what the mod saves for players).
-int CmdCompact(int argc, char** argv)
-{
+int CmdCompact(int argc, char** argv) {
     if (argc < 2) return Usage();
     ReplayFile rf;
     if (!Load(argv[0], rf)) return 1;
@@ -250,8 +248,7 @@ int CmdCompact(int argc, char** argv)
 // frame 0 and a state dump only every <every> frames (the replay regression
 // corpus, tests/replays: a replay starts from the first, and on a build
 // whose region table differs the dumps are what it is checked against).
-int CmdThin(int argc, char** argv)
-{
+int CmdThin(int argc, char** argv) {
     if (argc < 3) return Usage();
     ReplayFile rf;
     if (!Load(argv[0], rf)) return 1;
@@ -271,8 +268,7 @@ int CmdThin(int argc, char** argv)
 
 // cut <in> <out> <frames>: the first <frames> frames as a compact recording
 // (the benchmark's round, data/benchmark.sfvr).
-int CmdCut(int argc, char** argv)
-{
+int CmdCut(int argc, char** argv) {
     if (argc < 3) return Usage();
     ReplayFile rf;
     if (!Load(argv[0], rf)) return 1;
@@ -302,8 +298,7 @@ int CmdCut(int argc, char** argv)
     return 0;
 }
 
-int CmdDiff(int argc, char** argv)
-{
+int CmdDiff(int argc, char** argv) {
     if (argc < 2) return Usage();
     ReplayFile a, b;
     if (!Load(argv[0], a) || !Load(argv[1], b)) return 1;
@@ -339,8 +334,7 @@ int CmdDiff(int argc, char** argv)
 // changes is not touched by the simulation (an unused slot).
 // Merges word offsets into a noise mask file (sfv_noise.txt format), keeping
 // its comment lines.
-int WriteNoise(const char* out, const std::map<uint64_t, std::set<uint64_t>>& words)
-{
+int WriteNoise(const char* out, const std::map<uint64_t, std::set<uint64_t>>& words) {
     // Merge with what the file already holds.
     std::map<uint64_t, std::set<uint64_t>> merged = words;
     std::vector<std::string> header;
@@ -368,8 +362,7 @@ int WriteNoise(const char* out, const std::map<uint64_t, std::set<uint64_t>>& wo
     return 0;
 }
 
-int CmdChanges(int argc, char** argv)
-{
+int CmdChanges(int argc, char** argv) {
     if (argc < 2) return Usage();
     ReplayFile rf;
     if (!Load(argv[0], rf)) return 1;
@@ -394,8 +387,7 @@ int CmdChanges(int argc, char** argv)
     return 0;
 }
 
-int CmdLearnPeers(int argc, char** argv)
-{
+int CmdLearnPeers(int argc, char** argv) {
     if (argc < 2) return Usage();
     ReplayFile a, b;
     if (!Load(argv[0], a) || !Load(argv[1], b)) return 1;
@@ -577,8 +569,7 @@ int CmdLearnPeers(int argc, char** argv)
 
 // Where a value sits in a state dump: every int32 equal to `value` in the dump
 // of `frame`, by region and offset, with that word in the other dumps.
-int CmdFind(int argc, char** argv)
-{
+int CmdFind(int argc, char** argv) {
     if (argc < 3) return Usage();
     ReplayFile rf;
     if (!Load(argv[0], rf)) return 1;
@@ -615,8 +606,7 @@ int CmdFind(int argc, char** argv)
 // Words of a dump that point into a module ([base, base + size), for example
 // the game's image): equal between two processes on one PC (one load address
 // per boot), different between PCs. Per region size: offsets and how many.
-int CmdImagePointers(int argc, char** argv)
-{
+int CmdImagePointers(int argc, char** argv) {
     if (argc < 4) return Usage();
     ReplayFile rf;
     if (!Load(argv[0], rf)) return 1;
@@ -654,8 +644,7 @@ int CmdImagePointers(int argc, char** argv)
 }
 
 // One region of a dump, word by word (int32 pairs and the 64-bit value).
-int CmdRegion(int argc, char** argv)
-{
+int CmdRegion(int argc, char** argv) {
     if (argc < 3) return Usage();
     ReplayFile rf;
     if (!Load(argv[0], rf)) return 1;
@@ -683,8 +672,7 @@ int CmdRegion(int argc, char** argv)
 // Writes the region table (regions.txt: name, size, offset in the dump and
 // the words left out of its checksum as a hex bit mask, or "-") and
 // every state dump (frame_<n>.bin) for scripts that look for fields.
-int CmdExport(int argc, char** argv)
-{
+int CmdExport(int argc, char** argv) {
     if (argc < 2) return Usage();
     ReplayFile rf;
     if (!Load(argv[0], rf)) return 1;
@@ -718,8 +706,7 @@ int CmdExport(int argc, char** argv)
     return 0;
 }
 
-bool ParseBug(const char* s, MockBug& out)
-{
+bool ParseBug(const char* s, MockBug& out) {
     if (!std::strcmp(s, "none")) out = MockBug::None;
     else if (!std::strcmp(s, "outside-snapshot")) out = MockBug::StateOutsideSnapshot;
     else if (!std::strcmp(s, "machine-value")) out = MockBug::MachineSpecificValue;
@@ -728,8 +715,7 @@ bool ParseBug(const char* s, MockBug& out)
     return true;
 }
 
-int CmdVerify(int argc, char** argv)
-{
+int CmdVerify(int argc, char** argv) {
     if (argc < 1) return Usage();
     ReplayFile rf;
     if (!Load(argv[0], rf)) return 1;
@@ -745,8 +731,7 @@ int CmdVerify(int argc, char** argv)
         else if (!std::strcmp(argv[i], "--machine-value") && hasValue) go.machineValue = std::strtoul(argv[++i], nullptr, 0);
         else if (!std::strcmp(argv[i], "--mock-bug") && hasValue) {
             if (!ParseBug(argv[++i], go.bug)) return Usage();
-        }
-        else return Usage();
+        } else return Usage();
     }
 
     MockGame game(go);
@@ -790,8 +775,7 @@ int CmdVerify(int argc, char** argv)
     return v.status == VerifyResult::Status::Match ? 0 : 1;
 }
 
-int CmdDemo(int argc, char** argv)
-{
+int CmdDemo(int argc, char** argv) {
     if (argc < 1) return Usage();
     const std::filesystem::path dir = argv[0];
     std::filesystem::create_directories(dir);
@@ -801,6 +785,7 @@ int CmdDemo(int argc, char** argv)
         MockBug bug;
         uint32_t p2MachineValue;
     };
+
     const Scenario scenarios[] = {
         {"clean", MockBug::None, 0},
         {"machine-value", MockBug::MachineSpecificValue, 3},
@@ -832,8 +817,7 @@ int CmdDemo(int argc, char** argv)
 
 } // namespace
 
-int main(int argc, char** argv)
-{
+int main(int argc, char** argv) {
     if (argc < 2) return Usage();
     const std::string cmd = argv[1];
     if (cmd == "info") return CmdInfo(argc - 2, argv + 2);

@@ -12,8 +12,7 @@ namespace {
 
 #ifdef _WIN32
 // The UTF-8 text as UTF-16; false when it is not valid UTF-8.
-bool WideFromUtf8(const std::string& text, std::wstring* out)
-{
+bool WideFromUtf8(const std::string& text, std::wstring* out) {
     out->clear();
     if (text.empty()) return true;
     const int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), static_cast<int>(text.size()), nullptr, 0);
@@ -26,8 +25,7 @@ bool WideFromUtf8(const std::string& text, std::wstring* out)
 
 } // namespace
 
-FILE* OpenFile(const std::string& path, const char* mode)
-{
+FILE* OpenFile(const std::string& path, const char* mode) {
 #ifdef _WIN32
     std::wstring wide, wideMode;
     if (WideFromUtf8(path, &wide)) {
@@ -38,8 +36,7 @@ FILE* OpenFile(const std::string& path, const char* mode)
     return std::fopen(path.c_str(), mode);
 }
 
-bool RenameFile(const std::string& from, const std::string& to)
-{
+bool RenameFile(const std::string& from, const std::string& to) {
 #ifdef _WIN32
     std::wstring a, b;
     if (WideFromUtf8(from, &a) && WideFromUtf8(to, &b)) return MoveFileExW(a.c_str(), b.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;

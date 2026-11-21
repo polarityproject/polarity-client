@@ -12,8 +12,7 @@ namespace sfv {
 
 namespace {
 
-std::string Format(const char* fmt, ...)
-{
+std::string Format(const char* fmt, ...) {
     char buf[512];
     va_list args;
     va_start(args, fmt);
@@ -26,8 +25,7 @@ std::string Format(const char* fmt, ...)
 
 namespace {
 
-uint64_t Word(const std::vector<uint8_t>& s, size_t at)
-{
+uint64_t Word(const std::vector<uint8_t>& s, size_t at) {
     uint64_t v;
     std::memcpy(&v, &s[at], 8);
     return v;
@@ -37,18 +35,17 @@ uint64_t Word(const std::vector<uint8_t>& s, size_t at)
 // Windows puts heaps and images (above 1 TB; two packed int32 rarely get
 // there). Addresses on both sides compare equal.
 bool g_offlineAddresses = true;
+
 bool PlausibleAddress(uint64_t v) { return g_offlineAddresses && v >= 0x10000000000ull && v < 0x800000000000ull; }
 
-bool WordDiffers(const std::vector<uint8_t>& a, size_t ai, const std::vector<uint8_t>& b, size_t bi, size_t len)
-{
+bool WordDiffers(const std::vector<uint8_t>& a, size_t ai, const std::vector<uint8_t>& b, size_t bi, size_t len) {
     if (len < 8) return std::memcmp(&a[ai], &b[bi], len) != 0;
     const uint64_t va = Word(a, ai), vb = Word(b, bi);
     return va != vb && !(PlausibleAddress(va) && PlausibleAddress(vb));
 }
 
 size_t CountDiffering(const std::vector<uint8_t>& a, size_t ai, const std::vector<uint8_t>& b, size_t bi,
-                      size_t size, const std::vector<uint8_t>& ignore)
-{
+                      size_t size, const std::vector<uint8_t>& ignore) {
     size_t n = 0;
     for (size_t w = 0; w < size; w += 8) {
         if (!IsIgnored(ignore, w) && WordDiffers(a, ai + w, b, bi + w, std::min<size_t>(8, size - w))) n++;
@@ -61,8 +58,7 @@ size_t CountDiffering(const std::vector<uint8_t>& a, size_t ai, const std::vecto
 void SetDiffIgnoresAddresses(bool ignore) { g_offlineAddresses = ignore; }
 
 std::vector<size_t> MatchRegions(const std::vector<RegionInfo>& regions, const std::vector<uint8_t>& a,
-                                 const std::vector<uint8_t>& b)
-{
+                                 const std::vector<uint8_t>& b) {
     std::vector<size_t> offsets(regions.size());
     size_t base = 0;
     for (size_t r = 0; r < regions.size(); r++) {
@@ -79,9 +75,11 @@ std::vector<size_t> MatchRegions(const std::vector<RegionInfo>& regions, const s
         size_t last = first;
         while (last < regions.size() && regions[last].size == regions[first].size) last++;
         const size_t size = static_cast<size_t>(regions[first].size);
+
         struct Pair {
             size_t cost, i, j;
         };
+
         std::vector<Pair> pairs;
         for (size_t i = first; i < last; i++) {
             for (size_t j = first; j < last; j++) {
@@ -101,8 +99,7 @@ std::vector<size_t> MatchRegions(const std::vector<RegionInfo>& regions, const s
 }
 
 std::vector<ByteRange> DiffStates(const std::vector<RegionInfo>& regions, const std::vector<uint8_t>& a,
-                                  const std::vector<uint8_t>& b, size_t maxRanges)
-{
+                                  const std::vector<uint8_t>& b, size_t maxRanges) {
     std::vector<ByteRange> out;
     const std::vector<size_t> match = MatchRegions(regions, a, b);
     std::vector<size_t> offsets(regions.size());
@@ -144,8 +141,7 @@ std::vector<ByteRange> DiffStates(const std::vector<RegionInfo>& regions, const 
     return out;
 }
 
-DiffReport DiffReplays(const ReplayFile& a, const ReplayFile& b)
-{
+DiffReport DiffReplays(const ReplayFile& a, const ReplayFile& b) {
     DiffReport rep;
 
     if (a.gameBuild != b.gameBuild) {
@@ -248,8 +244,7 @@ DiffReport DiffReplays(const ReplayFile& a, const ReplayFile& b)
     return rep;
 }
 
-std::string FormatDiff(const DiffReport& rep, const ReplayFile& a)
-{
+std::string FormatDiff(const DiffReport& rep, const ReplayFile& a) {
     std::string s;
     for (const auto& n : rep.notes) s += "note: " + n + "\n";
     if (!rep.comparable) return s + "result: not comparable\n";
@@ -267,8 +262,7 @@ std::string FormatDiff(const DiffReport& rep, const ReplayFile& a)
     if (rep.initialStateDiffers) {
         if (rep.firstInputMismatch >= 0) {
             s += Format("inputs: confirmed inputs differ from frame %d -> netcode/transport bug\n", rep.firstInputMismatch);
-        }
-        else if (rep.inputsComparedThrough >= 0) {
+        } else if (rep.inputsComparedThrough >= 0) {
             s += Format("inputs: identical through frame %d\n", rep.inputsComparedThrough);
         }
         s += "result: the state before frame 0 differs -> match setup did not sync\n";
@@ -292,8 +286,7 @@ std::string FormatDiff(const DiffReport& rep, const ReplayFile& a)
     if (rep.firstInputMismatch < 0 || rep.firstInputMismatch > rep.firstStateMismatch) {
         s += Format("result: state diverges at frame %d with identical inputs -> nondeterminism\n",
                     rep.firstStateMismatch);
-    }
-    else {
+    } else {
         s += Format("state diverges at frame %d (after the input mismatch)\n", rep.firstStateMismatch);
     }
     for (size_t r : rep.regionsAtMismatch) s += "  region " + regionName(r) + "\n";
@@ -304,8 +297,7 @@ std::string FormatDiff(const DiffReport& rep, const ReplayFile& a)
             s += Format("  %-24s +0x%06zx  %zu byte(s)  %016" PRIx64 " vs %016" PRIx64 "\n",
                         pairName(br).c_str(), br.offset, br.length, br.wordA, br.wordB);
         }
-    }
-    else {
+    } else {
         s += "no state dumps of that frame in both files; run `polarity verify` on each file to find which side "
              "is reproducible\n";
     }

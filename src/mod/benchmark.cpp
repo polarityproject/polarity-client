@@ -30,8 +30,7 @@ std::string g_version;
 
 std::wstring ResultsPath() { return LogsDir() + L"\\benchmark.txt"; }
 
-std::string Line(const BenchmarkResult& r)
-{
+std::string Line(const BenchmarkResult& r) {
     char b[1400];
     std::snprintf(b, sizeof(b),
                   "when=%llu version=%s pass=%d matched=%d first_differ=%d frames=%d seconds=%.2f average_fps=%.2f low_fps=%.2f "
@@ -45,8 +44,7 @@ std::string Line(const BenchmarkResult& r)
     return b;
 }
 
-BenchmarkResult Parse(const std::string& line)
-{
+BenchmarkResult Parse(const std::string& line) {
     BenchmarkResult r;
     std::istringstream ss(line);
     std::string kv;
@@ -88,14 +86,12 @@ std::map<std::string, int> g_activity;
 std::atomic<int> g_dumpFrame{-1};
 } // namespace
 
-void NoteSessionActivity(const char* kind)
-{
+void NoteSessionActivity(const char* kind) {
     std::lock_guard lock(g_activityMutex);
     g_activity[kind ? kind : "?"]++;
 }
 
-std::string SessionActivityText()
-{
+std::string SessionActivityText() {
     // Minutes since the game started (its process's creation).
     FILETIME created{}, exited{}, kernel{}, user{};
     long long minutes = -1;
@@ -117,15 +113,14 @@ std::string SessionActivityText()
     return b;
 }
 
-void SetBenchmarkDumpFrame(int frame)
-{
+void SetBenchmarkDumpFrame(int frame) {
     g_dumpFrame = frame;
     Log("benchmark: %s", frame >= 0 ? ("runs save frame " + std::to_string(frame) + "'s state").c_str() : "runs save no reference state");
 }
+
 int BenchmarkDumpFrame() { return g_dumpFrame; }
 
-bool StartBenchmark(const std::string& modVersion)
-{
+bool StartBenchmark(const std::string& modVersion) {
     if (sizeof(kBenchmarkRound) < 64) {
         Log("benchmark: this build has no benchmark round");
         return false;
@@ -139,8 +134,7 @@ bool StartBenchmark(const std::string& modVersion)
     if (FILE* f = OpenFile(path, "wb")) {
         std::fwrite(kBenchmarkRound, 1, sizeof(kBenchmarkRound), f);
         std::fclose(f);
-    }
-    else {
+    } else {
         Log("benchmark: cannot write %s", path.c_str());
         return false;
     }
@@ -148,8 +142,7 @@ bool StartBenchmark(const std::string& modVersion)
     return RequestBenchmark(path);
 }
 
-bool BenchmarkRunning(int* frame, int* frames)
-{
+bool BenchmarkRunning(int* frame, int* frames) {
     const ReplayView v = ReplayViewNow();
     if (!v.active || !v.benchmark) return false;
     if (frame) *frame = v.frame;
@@ -157,8 +150,7 @@ bool BenchmarkRunning(int* frame, int* frames)
     return true;
 }
 
-void FinishBenchmark(const CapturedRun& run)
-{
+void FinishBenchmark(const CapturedRun& run) {
     if (run.stopped || run.micros.size() < 30) {
         Log("benchmark: %s (%zu frames measured): no result", run.stopped ? "stopped" : "too short", run.micros.size());
         return;
@@ -167,7 +159,9 @@ void FinishBenchmark(const CapturedRun& run)
     r.valid = true;
     r.matched = run.matched;
     r.firstDiffer = run.firstDiffer;
-    r.differ = run.straightFrames && run.resimFrames ? "both" : run.straightFrames ? "straight" : run.resimFrames ? "resim" : "";
+    r.differ = run.straightFrames && run.resimFrames ? "both" : run.straightFrames ? "straight"
+                                                            : run.resimFrames      ? "resim"
+                                                                                   : "";
     r.straightFrames = run.straightFrames;
     r.resimFrames = run.resimFrames;
     r.regions = run.regions;
@@ -179,12 +173,12 @@ void FinishBenchmark(const CapturedRun& run)
     r.mods = ScanModPaks().Short();
     const DataCheck check = LastDataCheck();
     r.data = !check.done || !check.table ? "unknown"
-           : check.changed.empty()       ? "stock"
+             : check.changed.empty()     ? "stock"
                                          : "changed:" + [&] {
-                                               std::string c = check.Characters();
-                                               c.erase(std::remove(c.begin(), c.end(), ' '), c.end());
-                                               return c;
-                                           }();
+                                           std::string c = check.Characters();
+                                           c.erase(std::remove(c.begin(), c.end(), ' '), c.end());
+                                           return c;
+                                       }();
     {
         std::lock_guard lock(g_mutex);
         r.version = g_version;
@@ -227,8 +221,7 @@ void FinishBenchmark(const CapturedRun& run)
     g_fresh = true;
 }
 
-BenchmarkResult LastBenchmark()
-{
+BenchmarkResult LastBenchmark() {
     std::lock_guard lock(g_mutex);
     if (!g_lastRead) {
         g_lastRead = true;
@@ -242,8 +235,7 @@ BenchmarkResult LastBenchmark()
     return g_last;
 }
 
-bool TakeBenchmarkResult(BenchmarkResult* out)
-{
+bool TakeBenchmarkResult(BenchmarkResult* out) {
     std::lock_guard lock(g_mutex);
     if (!g_fresh) return false;
     g_fresh = false;

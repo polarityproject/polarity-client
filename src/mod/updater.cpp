@@ -26,30 +26,28 @@ constexpr size_t kMaxInfoBytes = 64 * 1024;
 constexpr DWORD kTimeoutMs = 8000;
 
 std::mutex g_mutex;
-UpdateView g_view;         // under g_mutex
-UpdateInfo g_info;         // under g_mutex: the info `g_view.latest` came from
-std::string g_configured;  // the configured site
+UpdateView g_view;        // under g_mutex
+UpdateInfo g_info;        // under g_mutex: the info `g_view.latest` came from
+std::string g_configured; // the configured site
 std::wstring g_gameDir;
 std::atomic<bool> g_busy{false};
 
 std::wstring Wide(const std::string& s) { return std::wstring(s.begin(), s.end()); }
-std::string Narrow(const std::wstring& w)
-{
+
+std::string Narrow(const std::wstring& w) {
     std::string s;
     for (wchar_t c : w) s += c < 128 ? static_cast<char>(c) : '_';
     return s;
 }
 
-void Set(UpdateView::State state, const std::string& message = "")
-{
+void Set(UpdateView::State state, const std::string& message = "") {
     std::lock_guard lock(g_mutex);
     g_view.state = state;
     g_view.message = message;
 }
 
 // A check ended (whatever came of it): UpdateCheckIfStale goes by this.
-void Checked()
-{
+void Checked() {
     std::lock_guard lock(g_mutex);
     g_view.checkedAtMs = static_cast<int64_t>(GetTickCount64());
 }
@@ -61,8 +59,7 @@ constexpr int64_t kCheckEveryMs = 15 * 60 * 1000;
 // GET `url` (http or https) into `out`, at most `maxBytes`; `progress` gets
 // the bytes so far.
 bool HttpGet(const std::string& url, size_t maxBytes, std::vector<uint8_t>* out, std::string* error,
-             const std::function<void(uint64_t)>& progress = nullptr)
-{
+             const std::function<void(uint64_t)>& progress = nullptr) {
     const std::wstring wurl = Wide(url);
     URL_COMPONENTS parts{};
     parts.dwStructSize = sizeof(parts);
@@ -124,12 +121,10 @@ bool HttpGet(const std::string& url, size_t maxBytes, std::vector<uint8_t>* out,
                     }
                 }
             }
-        }
-        else {
+        } else {
             *error = "cannot reach " + url + " (error " + std::to_string(GetLastError()) + ")";
         }
-    }
-    else {
+    } else {
         *error = "cannot open " + url;
     }
     if (request) WinHttpCloseHandle(request);
@@ -138,8 +133,7 @@ bool HttpGet(const std::string& url, size_t maxBytes, std::vector<uint8_t>* out,
     return ok;
 }
 
-std::string SiteUrl()
-{
+std::string SiteUrl() {
     std::lock_guard lock(g_mutex);
     return g_view.url;
 }
@@ -147,17 +141,17 @@ std::string SiteUrl()
 std::wstring OnDisk(const UpdateFile& f);
 void Install();
 
-bool MissingData(const UpdateFile& f)
-{
+bool MissingData(const UpdateFile& f) {
     return f.more && GetFileAttributesW((g_gameDir + L"\\" + OnDisk(f)).c_str()) == INVALID_FILE_ATTRIBUTES;
 }
 
-void Check()
-{
+void Check() {
     ThreadGuard running;
+
     struct Done {
         ~Done() { Checked(); }
     } done;
+
     // Installed in this run: nothing more to do until the next launch.
     if (UpdateViewNow().state == UpdateView::State::Ready) return;
     const std::string url = SiteUrl();
@@ -184,25 +178,26 @@ void Check()
     }
     bool finish = false;
     {
-    std::lock_guard lock(g_mutex);
-    g_view.latest = info.version;
-    g_view.published = info.published;
-    g_view.notes = info.notes;
-    g_view.message.clear();
-    const bool newer = CompareVersions(info.version, g_view.current) > 0;
-    // This version, with a data file missing from the game folder (an
-    // updater before 0.3.0 installed it without "more_files"): that file
-    // only, now. Files that are there are left alone, so a build being
-    // worked on keeps its own.
-    if (!newer && CompareVersions(info.version, g_view.current) == 0) {
-        info.files.erase(std::remove_if(info.files.begin(), info.files.end(), [](const UpdateFile& f) { return !MissingData(f); }),
-                         info.files.end());
-        finish = !info.files.empty();
-    }
-    g_view.state = newer || finish ? UpdateView::State::Available : UpdateView::State::UpToDate;
-    Log("update: the site has Polarity %s (this build %s): %s", info.version.c_str(), g_view.current.c_str(),
-        newer ? "an update" : finish ? "up to date; fetching its data files missing here" : "up to date");
-    g_info = std::move(info);
+        std::lock_guard lock(g_mutex);
+        g_view.latest = info.version;
+        g_view.published = info.published;
+        g_view.notes = info.notes;
+        g_view.message.clear();
+        const bool newer = CompareVersions(info.version, g_view.current) > 0;
+        // This version, with a data file missing from the game folder (an
+        // updater before 0.3.0 installed it without "more_files"): that file
+        // only, now. Files that are there are left alone, so a build being
+        // worked on keeps its own.
+        if (!newer && CompareVersions(info.version, g_view.current) == 0) {
+            info.files.erase(std::remove_if(info.files.begin(), info.files.end(), [](const UpdateFile& f) { return !MissingData(f); }),
+                             info.files.end());
+            finish = !info.files.empty();
+        }
+        g_view.state = newer || finish ? UpdateView::State::Available : UpdateView::State::UpToDate;
+        Log("update: the site has Polarity %s (this build %s): %s", info.version.c_str(), g_view.current.c_str(),
+            newer ? "an update" : finish ? "up to date; fetching its data files missing here"
+                                         : "up to date");
+        g_info = std::move(info);
     }
     if (finish) {
         Install();
@@ -214,13 +209,11 @@ void Check()
 // An update file's place under the game folder (Polarity/fonts/x.ttc or
 // the old site's SFVR/fonts/x.ttc -> Polarity\fonts\x.ttc), and its name in
 // the staging folder (flat).
-std::wstring OnDisk(const UpdateFile& f)
-{
+std::wstring OnDisk(const UpdateFile& f) {
     return Wide(UpdateFileOnDisk(f.path));
 }
 
-std::wstring Staged(const UpdateFile& f)
-{
+std::wstring Staged(const UpdateFile& f) {
     std::wstring name = Wide(f.path);
     std::replace(name.begin(), name.end(), L'/', L'_');
     return name;
@@ -228,8 +221,7 @@ std::wstring Staged(const UpdateFile& f)
 
 // Whether the game folder has this file as the update has it already (the
 // bundled font, 18 MB, rarely changes: not downloaded again).
-bool AlreadyThere(const UpdateFile& f)
-{
+bool AlreadyThere(const UpdateFile& f) {
     const std::wstring target = g_gameDir + L"\\" + OnDisk(f);
     FILE* in = _wfopen(target.c_str(), L"rb");
     if (!in) return false;
@@ -240,12 +232,12 @@ bool AlreadyThere(const UpdateFile& f)
 }
 
 // Puts the staged files in place, the old ones aside; all or nothing.
-bool Apply(const std::wstring& staging, const UpdateInfo& info, std::string* error)
-{
+bool Apply(const std::wstring& staging, const UpdateInfo& info, std::string* error) {
     struct Swap {
         std::wstring target, old;
         bool hadOld;
     };
+
     std::vector<Swap> done;
     const std::wstring stamp = std::to_wstring(GetTickCount64());
     for (const UpdateFile& f : info.files) {
@@ -272,8 +264,7 @@ bool Apply(const std::wstring& staging, const UpdateInfo& info, std::string* err
     return true;
 }
 
-void Install()
-{
+void Install() {
     ThreadGuard running;
     UpdateInfo info;
     std::string base;
@@ -335,8 +326,7 @@ void Install()
 
 // What an earlier update left: the replaced files, which nothing runs now,
 // and any staging folder of a download that did not finish.
-void CleanUp()
-{
+void CleanUp() {
     WIN32_FIND_DATAW fd;
     HANDLE h;
     for (const std::wstring& dir : {g_gameDir, g_gameDir + L"\\Polarity\\fonts"}) {
@@ -367,8 +357,7 @@ void CleanUp()
     }
 }
 
-void RunInBackground(void (*work)())
-{
+void RunInBackground(void (*work)()) {
     if (g_busy.exchange(true)) return;
     std::thread([work] {
         work();
@@ -376,8 +365,7 @@ void RunInBackground(void (*work)())
     }).detach();
 }
 
-void ApplyUrl(const std::string& url)
-{
+void ApplyUrl(const std::string& url) {
     bool anyKey = false;
     for (uint8_t b : kUpdatePublicKey) anyKey |= b != 0;
     std::lock_guard lock(g_mutex);
@@ -385,12 +373,10 @@ void ApplyUrl(const std::string& url)
     if (!anyKey) {
         g_view.state = UpdateView::State::Off;
         g_view.message = "this build has no update signing key";
-    }
-    else if (url.empty()) {
+    } else if (url.empty()) {
         g_view.state = UpdateView::State::Off;
         g_view.message = "no update site set ([update] url in polarity.ini)";
-    }
-    else if (g_view.state == UpdateView::State::Off) {
+    } else if (g_view.state == UpdateView::State::Off) {
         g_view.state = UpdateView::State::Idle;
         g_view.message.clear();
     }
@@ -398,8 +384,7 @@ void ApplyUrl(const std::string& url)
 
 } // namespace
 
-void InstallUpdater(const std::wstring& gameDir, const std::string& currentVersion, const std::string& url, bool checkNow)
-{
+void InstallUpdater(const std::wstring& gameDir, const std::string& currentVersion, const std::string& url, bool checkNow) {
     g_gameDir = gameDir;
     {
         std::lock_guard lock(g_mutex);
@@ -425,32 +410,27 @@ void InstallUpdater(const std::wstring& gameDir, const std::string& currentVersi
     }
 }
 
-UpdateView UpdateViewNow()
-{
+UpdateView UpdateViewNow() {
     std::lock_guard lock(g_mutex);
     return g_view;
 }
 
-void UpdateCheck()
-{
+void UpdateCheck() {
     if (UpdateViewNow().state == UpdateView::State::Off) return;
     RunInBackground(&Check);
 }
 
-void UpdateInstall()
-{
+void UpdateInstall() {
     if (UpdateViewNow().state != UpdateView::State::Available) return;
     RunInBackground(&Install);
 }
 
-bool UpdatePending(const UpdateView& v)
-{
+bool UpdatePending(const UpdateView& v) {
     using S = UpdateView::State;
     return v.state == S::Available || v.state == S::Downloading || v.state == S::Ready;
 }
 
-bool UpdateCheckIfStale(int64_t maxAgeMs)
-{
+bool UpdateCheckIfStale(int64_t maxAgeMs) {
     const UpdateView v = UpdateViewNow();
     using S = UpdateView::State;
     if (v.state == S::Off || v.state == S::Checking || UpdatePending(v) || g_busy) return false;
@@ -462,8 +442,7 @@ bool UpdateCheckIfStale(int64_t maxAgeMs)
     return true;
 }
 
-void UpdatePretendVersion(const std::string& version)
-{
+void UpdatePretendVersion(const std::string& version) {
     std::lock_guard lock(g_mutex);
     Log("update: this build reports Polarity %s (was %s), for testing", version.c_str(), g_view.current.c_str());
     g_view.current = version;
@@ -471,8 +450,7 @@ void UpdatePretendVersion(const std::string& version)
     g_view.checkedAtMs = -1;
 }
 
-bool RestartGame(void* window, std::string* error)
-{
+bool RestartGame(void* window, std::string* error) {
     wchar_t exe[MAX_PATH] = {};
     if (!GetModuleFileNameW(nullptr, exe, MAX_PATH)) {
         if (error) *error = "cannot find the game's program";
@@ -508,8 +486,7 @@ bool RestartGame(void* window, std::string* error)
     return true;
 }
 
-void SetUpdateUrl(const std::string& url)
-{
+void SetUpdateUrl(const std::string& url) {
     ApplyUrl(url.empty() ? g_configured : url);
     Log("update: site %s", url.empty() ? g_configured.c_str() : url.c_str());
 }

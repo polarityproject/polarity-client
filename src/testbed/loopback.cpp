@@ -10,8 +10,7 @@ public:
 
     void Send(uint64_t peer, const uint8_t* data, size_t len) override { net_.Send(id_, peer, data, len); }
 
-    bool Receive(Packet& out) override
-    {
+    bool Receive(Packet& out) override {
         if (inbox.empty()) return false;
         out = std::move(inbox.front());
         inbox.pop_front();
@@ -29,15 +28,13 @@ LoopbackNetwork::LoopbackNetwork(uint64_t seed, LinkConditions link) : link_(lin
 
 LoopbackNetwork::~LoopbackNetwork() = default;
 
-ITransport& LoopbackNetwork::Endpoint(uint64_t id)
-{
+ITransport& LoopbackNetwork::Endpoint(uint64_t id) {
     auto& ep = endpoints_[id];
     if (!ep) ep = std::make_unique<Endpoint_>(*this, id);
     return *ep;
 }
 
-void LoopbackNetwork::Send(uint64_t from, uint64_t to, const uint8_t* data, size_t len)
-{
+void LoopbackNetwork::Send(uint64_t from, uint64_t to, const uint8_t* data, size_t len) {
     if (cut_ && (from == cut_ || to == cut_)) return;
     if (std::uniform_real_distribution<double>(0.0, 1.0)(rng_) < link_.loss) return;
     uint64_t delay = static_cast<uint64_t>(link_.latencyFrames);
@@ -45,8 +42,7 @@ void LoopbackNetwork::Send(uint64_t from, uint64_t to, const uint8_t* data, size
     inFlight_.push_back({now_ + delay, seq_++, from, to, std::vector<uint8_t>(data, data + len)});
 }
 
-void LoopbackNetwork::Tick()
-{
+void LoopbackNetwork::Tick() {
     now_++;
     // Deliver in arrival order; jitter makes that differ from send order.
     std::stable_sort(inFlight_.begin(), inFlight_.end(),

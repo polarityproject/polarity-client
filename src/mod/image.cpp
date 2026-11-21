@@ -7,8 +7,7 @@
 
 namespace sfv::mod {
 
-bool OpenGameImage(GameImage* out, std::string* why)
-{
+bool OpenGameImage(GameImage* out, std::string* why) {
     const auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
     const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
@@ -34,8 +33,7 @@ bool OpenGameImage(GameImage* out, std::string* why)
     return true;
 }
 
-bool IsReadable(const void* p, size_t size)
-{
+bool IsReadable(const void* p, size_t size) {
     auto addr = reinterpret_cast<uintptr_t>(p);
     const uintptr_t end = addr + size;
     if (!p || end < addr) return false;

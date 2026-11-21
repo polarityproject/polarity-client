@@ -11,8 +11,7 @@ namespace {
 thread_local ITransport* t_transport = nullptr;
 thread_local std::vector<GekkoNetResult*> t_results;
 
-void SendData(GekkoNetAddress* addr, const char* data, int length)
-{
+void SendData(GekkoNetAddress* addr, const char* data, int length) {
     if (!t_transport || !addr || addr->size != sizeof(uint64_t) || length <= 0) return;
     uint64_t peer;
     std::memcpy(&peer, addr->data, sizeof(peer));
@@ -20,8 +19,7 @@ void SendData(GekkoNetAddress* addr, const char* data, int length)
 }
 
 // GekkoNet frees each result, its address and its data through FreeData.
-GekkoNetResult** ReceiveData(int* length)
-{
+GekkoNetResult** ReceiveData(int* length) {
     t_results.clear();
     Packet pkt;
     while (t_transport && t_transport->Receive(pkt)) {

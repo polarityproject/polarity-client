@@ -40,7 +40,10 @@ constexpr int kPlayersInView = 8;
 constexpr double kCardMarginSeconds = 1.5; // the call's time the card does not show (the trip to the keeper)
 constexpr int kMaxCardDelay = 10;
 
-enum class Modal { None, Leaving, Rules, Remove };
+enum class Modal { None,
+                   Leaving,
+                   Rules,
+                   Remove };
 
 struct State {
     int table = 0;
@@ -55,22 +58,22 @@ struct State {
     bool chatHeard = false;
     uint32_t chatHeardFrom = 0;
     std::string chatHeardText;
-    int cardTick = -1;         // the countdown's last second ticked on the card
-    int choice = 0;            // a confirm's focused button (0 the first)
-    int seatSide = 0;          // the seat A takes when both are open (left/right)
-    bool onPlayers = false;    // RB: the cursor in the player list
+    int cardTick = -1;      // the countdown's last second ticked on the card
+    int choice = 0;         // a confirm's focused button (0 the first)
+    int seatSide = 0;       // the seat A takes when both are open (left/right)
+    bool onPlayers = false; // RB: the cursor in the player list
     int player = 0;
-    float playersFirst = 0;    // the list's first row shown
-    std::set<uint32_t> muted;  // their chat hidden (this session)
-    uint32_t removing = 0;     // the owner's removal, to confirm
+    float playersFirst = 0;   // the list's first row shown
+    std::set<uint32_t> muted; // their chat hidden (this session)
+    uint32_t removing = 0;    // the owner's removal, to confirm
     // The your-turn card.
     int cardTable = -1;
-    uint32_t cardCall = 0;     // the keeper's number for the call (a call again is a new card)
+    uint32_t cardCall = 0; // the keeper's number for the call (a call again is a new card)
     double cardSince = 0;
     int cardDelay = 2;
     bool cardReady = false;
-    int cardRow = 0;           // 0 V-Skill, 1 V-Trigger, 2 the input delay
-    int cardVs = 1, cardVt = 1; // this player's, as chosen on the card
+    int cardRow = 0;                         // 0 V-Skill, 1 V-Trigger, 2 the input delay
+    int cardVs = 1, cardVt = 1;              // this player's, as chosen on the card
     int cardMouseRow = -1, cardMouseDir = 0; // a click on a row (acted on the next frame)
     // The opponent's, as last seen, and when they last changed (shown gold a moment).
     int oppVs = 0, oppVt = 0;
@@ -89,15 +92,13 @@ std::map<std::string, std::string> g_names;
 std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::string>>> g_skillNames;
 CardPick g_cardPick;
 
-std::string Roman(int n)
-{
+std::string Roman(int n) {
     static const char* const kRoman[] = {"I", "II", "III", "IV", "V"};
     return n >= 1 && n <= 5 ? kRoman[n - 1] : std::to_string(n);
 }
 
 // "II HAZANSHU" (as the select screen has it); "" for 0.
-std::string SkillLabel(const std::string& code, bool trigger, int index)
-{
+std::string SkillLabel(const std::string& code, bool trigger, int index) {
     if (index <= 0) return "";
     const auto it = g_skillNames.find(code);
     if (it != g_skillNames.end()) {
@@ -107,8 +108,7 @@ std::string SkillLabel(const std::string& code, bool trigger, int index)
     return Roman(index);
 }
 
-int SkillCount(const std::string& code, bool trigger)
-{
+int SkillCount(const std::string& code, bool trigger) {
     const auto it = g_skillNames.find(code);
     const int n = it == g_skillNames.end() ? 0 : static_cast<int>((trigger ? it->second.second : it->second.first).size());
     return std::max(2, n);
@@ -116,22 +116,19 @@ int SkillCount(const std::string& code, bool trigger)
 
 ImU32 Dim(ImU32 c, bool dim) { return dim ? (c & ~IM_COL32_A_MASK) | (static_cast<ImU32>(((c >> IM_COL32_A_SHIFT) & 0xFF) * 0.45f) << IM_COL32_A_SHIFT) : c; }
 
-const RoomMember* Member(const RoomsView& v, uint32_t id)
-{
+const RoomMember* Member(const RoomsView& v, uint32_t id) {
     for (const RoomMember& m : v.members) {
         if (m.id == id) return &m;
     }
     return nullptr;
 }
 
-std::string NameOf(const RoomsView& v, uint32_t id)
-{
+std::string NameOf(const RoomsView& v, uint32_t id) {
     const RoomMember* m = Member(v, id);
     return m ? m->name : std::string("?");
 }
 
-std::string Ordinal(int n)
-{
+std::string Ordinal(int n) {
     static const char* const k[] = {"1st", "2nd", "3rd"};
     return n >= 1 && n <= 3 ? k[n - 1] : std::to_string(n) + "th";
 }
@@ -139,8 +136,7 @@ std::string Ordinal(int n)
 void Panel(ImDrawList* d, float x0, float y0, float x1, float y1) { Pane(d, x0, y0, x1, y1); }
 
 // A name cut to fit `width` (ui units) at this size, with an ellipsis.
-std::string FitName(ImFont* font, float size, std::string text, float width)
-{
+std::string FitName(ImFont* font, float size, std::string text, float width) {
     if (TextW(font, size, text) <= width) return text;
     while (!text.empty() && TextW(font, size, text + "...") > width) {
         text.pop_back();
@@ -155,8 +151,7 @@ std::string FitName(ImFont* font, float size, std::string text, float width)
 // score, each fading out toward it; the text is on the side toward the score
 // (mock-up Room2, 2026-11-04). The 1d look: a control's glass with a 1 px
 // frame, the name after the player's flag.
-void Seat(ImDrawList* d, const HubFonts& f, float x, float y, const RoomMember* m, bool ready, bool sitHere, int seat, bool dim)
-{
+void Seat(ImDrawList* d, const HubFonts& f, float x, float y, const RoomMember* m, bool ready, bool sitHere, int seat, bool dim) {
     const ImVec2 a = g_v.P(x, y), b = g_v.P(x + 330, y + 120);
     if (sitHere) {
         d->AddRectFilled(a, b, Rgba(233, 196, 106, 36));
@@ -195,8 +190,7 @@ void Seat(ImDrawList* d, const HubFonts& f, float x, float y, const RoomMember* 
     if (!m) Text(d, f.body, g_v.L(18), g_v.P(x + 165, y + 49), Dim(kSoft, dim), "Open seat", 0.5f);
 }
 
-void Table(ImDrawList* d, const HubFonts& f, const RoomsView& v, float y, int index, bool on, bool dim)
-{
+void Table(ImDrawList* d, const HubFonts& f, const RoomsView& v, float y, int index, bool on, bool dim) {
     const TableView* tv = index < static_cast<int>(v.tableViews.size()) ? &v.tableViews[index] : nullptr;
     const keeper::TableState s = tv ? tv->s : keeper::TableState{};
     Pane(d, 48, y, 868, y + kTableH);
@@ -232,14 +226,15 @@ void Table(ImDrawList* d, const HubFonts& f, const RoomsView& v, float y, int in
     if (live) StageText(d, f.display, 40, 458, y + 78, Dim(Rgba(255, 255, 255), dim), std::to_string(s.wins[0]) + " - " + std::to_string(s.wins[1]), 0.5f);
     else Text(d, f.display, g_v.L(30), g_v.P(458, y + 88), Dim(Rgba(138, 129, 112), dim), "VS", 0.5f);
     const char* doing = s.phase == TablePhase::Call ? "Your turn" : s.phase == TablePhase::Connecting ? "Connecting"
-                        : s.phase == TablePhase::Playing ? "Playing" : s.phase == TablePhase::After ? "Set over" : "";
+                                                                : s.phase == TablePhase::Playing      ? "Playing"
+                                                                : s.phase == TablePhase::After        ? "Set over"
+                                                                                                      : "";
     if (s.phase == TablePhase::Call && !mine) doing = "Getting ready";
     if (*doing) Text(d, f.body, g_v.L(16), g_v.P(458, y + 130), Dim(kCream, dim), doing, 0.5f);
     if (lit) Ring(d, 48, y, 868, y + kTableH);
 }
 
-std::vector<RoomMember> PlayerOrder(const RoomsView& v)
-{
+std::vector<RoomMember> PlayerOrder(const RoomsView& v) {
     // You first, then the others oldest first.
     std::vector<RoomMember> list = v.members;
     std::stable_partition(list.begin(), list.end(), [&](const RoomMember& m) { return m.id == v.self; });
@@ -259,24 +254,64 @@ struct FacePoint {
     const char* code;
     int8_t x, y;
 };
+
 constexpr FacePoint kFaces[] = {
-    {"ALX", 75, 68}, {"BLR", 83, 51}, {"BRD", 81, 49}, {"BSN", 86, 62}, {"CMY", 83, 50}, {"CNL", 98, 64}, {"DSM", 75, 52},
-    {"ELV", 90, 74}, {"FAN", 84, 52}, {"GUL", 94, 52}, {"IBK", 98, 42}, {"JRI", 110, 65}, {"KEN", 80, 48}, {"KRN", 69, 53},
-    {"LAR", 85, 51}, {"NCL", 101, 53}, {"NSH", 73, 58}, {"RMK", 102, 53}, {"RSD", 78, 53}, {"RYU", 87, 54}, {"URN", 79, 44},
-    {"VEG", 91, 44}, {"Z20", 88, 49}, {"Z21", 102, 64}, {"Z22", 85, 44}, {"Z23", 89, 46}, {"Z24", 107, 46}, {"Z25", 76, 66},
-    {"Z26", 83, 54}, {"Z27", 110, 56}, {"Z28", 95, 52}, {"Z29", 87, 50}, {"Z30", 84, 52}, {"Z31", 86, 50}, {"Z32", 108, 50},
-    {"Z33", 90, 52}, {"Z34", 85, 53}, {"Z35", 82, 58}, {"Z36", 104, 46}, {"Z37", 116, 53}, {"Z38", 88, 53}, {"Z39", 100, 53},
-    {"Z40", 75, 54}, {"Z41", 85, 49}, {"Z42", 99, 54}, {"ZGF", 126, 64},
+    {"ALX", 75, 68},
+    {"BLR", 83, 51},
+    {"BRD", 81, 49},
+    {"BSN", 86, 62},
+    {"CMY", 83, 50},
+    {"CNL", 98, 64},
+    {"DSM", 75, 52},
+    {"ELV", 90, 74},
+    {"FAN", 84, 52},
+    {"GUL", 94, 52},
+    {"IBK", 98, 42},
+    {"JRI", 110, 65},
+    {"KEN", 80, 48},
+    {"KRN", 69, 53},
+    {"LAR", 85, 51},
+    {"NCL", 101, 53},
+    {"NSH", 73, 58},
+    {"RMK", 102, 53},
+    {"RSD", 78, 53},
+    {"RYU", 87, 54},
+    {"URN", 79, 44},
+    {"VEG", 91, 44},
+    {"Z20", 88, 49},
+    {"Z21", 102, 64},
+    {"Z22", 85, 44},
+    {"Z23", 89, 46},
+    {"Z24", 107, 46},
+    {"Z25", 76, 66},
+    {"Z26", 83, 54},
+    {"Z27", 110, 56},
+    {"Z28", 95, 52},
+    {"Z29", 87, 50},
+    {"Z30", 84, 52},
+    {"Z31", 86, 50},
+    {"Z32", 108, 50},
+    {"Z33", 90, 52},
+    {"Z34", 85, 53},
+    {"Z35", 82, 58},
+    {"Z36", 104, 46},
+    {"Z37", 116, 53},
+    {"Z38", 88, 53},
+    {"Z39", 100, 53},
+    {"Z40", 75, 54},
+    {"Z41", 85, 49},
+    {"Z42", 99, 54},
+    {"ZGF", 126, 64},
 };
 constexpr int kRowFaceX = 80, kRowFaceY = 52;
 
-ImVec2 RowArtShift(const std::string& code)
-{
+ImVec2 RowArtShift(const std::string& code) {
     for (const FacePoint& p : kFaces) {
         if (code == p.code) return ImVec2(static_cast<float>(kRowFaceX - p.x), static_cast<float>(kRowFaceY - p.y));
     }
     return ImVec2(0, 0);
 }
+
 constexpr float kRowsTop = 112, kRowH = 50, kPlayersBottom = 526, kChatTop = 538;
 // The activity column (its widest, "Watching T8" or "T8 · set over", ends
 // clear of a relayed ping's cloud); was at 1160, which cut names short.
@@ -284,16 +319,14 @@ constexpr float kPlaceX = 1215;
 
 // A player's activity, short for the list's column: "T2 · playing",
 // "Watching T2" (the full wording elsewhere: "Table 2 · playing").
-std::string ShortPlace(std::string place)
-{
+std::string ShortPlace(std::string place) {
     const std::string watching = "Watching Table ", table = "Table ";
     if (place.rfind(watching, 0) == 0) return "Watching T" + place.substr(watching.size());
     if (place.rfind(table, 0) == 0) return "T" + place.substr(table.size());
     return place;
 }
 
-void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
-{
+void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v) {
     Panel(d, 892, 80, 1552, kPlayersBottom);
     Strip(d, 894, 82, 1550, 110, false);
     Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(910, 86), kGold, "PLAYERS \xC2\xB7 " + std::to_string(v.members.size()) + " / 16");
@@ -378,8 +411,7 @@ void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v)
               static_cast<float>(list.size()), false);
 }
 
-void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox, bool* clickedSend)
-{
+void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox, bool* clickedSend) {
     Panel(d, 892, kChatTop, 1552, 832);
     Strip(d, 894, kChatTop + 2, 1550, kChatTop + 30, false);
     Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(910, kChatTop + 6), kGold, "ROOM CHAT");
@@ -416,8 +448,7 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
         if (g.chatScroll <= 0) {
             g.chatSeenFrom = last.from;
             g.chatSeenText = last.text;
-        }
-        else {
+        } else {
             for (int i = static_cast<int>(v.chat.size()) - 1; i >= 0; i--) {
                 if (v.chat[i].from == g.chatSeenFrom && v.chat[i].text == g.chatSeenText) break;
                 unseen++;
@@ -449,8 +480,7 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
             if (line.from) {
                 d->AddText(f.body, TextPx(size), g_v.P(910, y), kCream, all.c_str(), nullptr, g_v.L(wrap));
                 d->AddText(f.bold ? f.bold : f.strong, TextPx(size), g_v.P(910, y), kGold, Upper(name).c_str());
-            }
-            else {
+            } else {
                 d->AddText(f.body, TextPx(size), g_v.P(910, y), kSoft, all.c_str(), nullptr, g_v.L(wrap));
             }
         }
@@ -482,8 +512,7 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
         std::string tail = shown;
         while (tail.size() > 1 && TextW(f.body, 19, tail) > 520) tail.erase(0, 1);
         Text(d, f.body, g_v.L(19), g_v.P(924, 788), kCream, tail);
-    }
-    else {
+    } else {
         Text(d, f.body, g_v.L(19), g_v.P(924, 788), kSoft,
              ui::MappedPadKeys(0x0D /* Enter */) ? "Say something (Back + Y, or click here)" : "Say something (Enter, or Back + Y)");
     }
@@ -497,8 +526,7 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
 // focused one gold, red when it cannot be undone); its prompts in its footer.
 // *pressed: the button clicked (0 the first, 1 the second).
 void Dialog(ImDrawList* d, const HubFonts& f, const std::string& kicker, const std::string& title, const std::string& text, bool danger,
-            const char* yes, const char* no, const PromptList& prompts, int* clicked, int* pressed)
-{
+            const char* yes, const char* no, const PromptList& prompts, int* clicked, int* pressed) {
     ImFont* bold = f.bold ? f.bold : f.strong;
     const float wrap = 544;
     const float textH = f.body->CalcTextSizeA(TextPx(19), FLT_MAX, g_v.L(wrap), text.c_str()).y / g_v.s;
@@ -519,8 +547,7 @@ void Dialog(ImDrawList* d, const HubFonts& f, const std::string& kicker, const s
     if (Button(d, bold, 822, y, 1072, y + 48, no, g.choice == 1)) *pressed = 1;
 }
 
-std::string LeaveText(const RoomsView& v)
-{
+std::string LeaveText(const RoomsView& v) {
     std::string text;
     for (const TableView& t : v.tableViews) {
         const auto at = std::find(t.queue.begin(), t.queue.end(), v.self);
@@ -541,8 +568,7 @@ std::string LeaveText(const RoomsView& v)
 // The your-turn card (M): the two players, the timer, the delay for this
 // match; its prompts and hint in its footer.
 void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const PromptList& prompts, const std::string& hint, ImU32 hintCol,
-          int* clicked)
-{
+          int* clicked) {
     const keeper::TableState& s = v.tableViews[t].s;
     ImFont* bold = f.bold ? f.bold : f.strong;
     const float x0 = 380, w = 840, h = 616, y0 = 142, x1 = x0 + w;
@@ -566,20 +592,25 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
         const float sx = i ? x1 - 28 - 330 : x0 + 28;
         const float align = i ? 1.0f : 0.0f, ax = i ? sx + 330 : sx;
         Seat(d, f, sx, y0 + 66, mm, s.ready[i], false, i, false);
-        Text(d, bold, g_v.L(15), g_v.P(ax, y0 + 192), kSoft, i ? (i == mySeat ? "P2 \xC2\xB7 YOU" : "P2") : i == mySeat ? "P1 \xC2\xB7 YOU \xC2\xB7 HOSTS" : "P1 \xC2\xB7 HOSTS THE MATCH",
+        Text(d, bold, g_v.L(15), g_v.P(ax, y0 + 192), kSoft, i ? (i == mySeat ? "P2 \xC2\xB7 YOU" : "P2") : i == mySeat ? "P1 \xC2\xB7 YOU \xC2\xB7 HOSTS"
+                                                                                                                        : "P1 \xC2\xB7 HOSTS THE MATCH",
              align);
         // Under each seat its V-Skill and V-Trigger: this player's as chosen
         // below, the opponent's live.
         const bool me = i == mySeat;
-        const std::string code = me ? g_cardPick.chara : mm ? mm->chara : std::string();
-        const int vs = me ? (g_cardPick.editable ? g.cardVs : -1) : mm ? mm->vskill : 0;
-        const int vt = me ? (g_cardPick.editable ? g.cardVt : -1) : mm ? mm->vtrigger : 0;
+        const std::string code = me ? g_cardPick.chara : mm ? mm->chara
+                                                            : std::string();
+        const int vs = me ? (g_cardPick.editable ? g.cardVs : -1) : mm ? mm->vskill
+                                                                       : 0;
+        const int vt = me ? (g_cardPick.editable ? g.cardVt : -1) : mm ? mm->vtrigger
+                                                                       : 0;
         const bool fresh = !me && ImGui::GetTime() - g.oppChangedAt < 1.5;
         for (int k = 0; k < 2; k++) {
             const float ly = y0 + 222 + k * 30;
             const char* kicker = k ? "V-TRIGGER" : "V-SKILL";
             const int value = k ? vt : vs;
-            const std::string text = value < 0 ? std::string("Random") : value == 0 ? std::string("\xE2\x80\x94") : SkillLabel(code, k == 1, value);
+            const std::string text = value < 0 ? std::string("Random") : value == 0 ? std::string("\xE2\x80\x94")
+                                                                                    : SkillLabel(code, k == 1, value);
             const float kw = TextW(bold, 15, kicker) + 10;
             const float tw = TextW(f.strong, 18, text);
             const float tx = i ? ax - tw : ax + kw;
@@ -624,9 +655,10 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
         const float ry = ty + 62 + r * 56;
         const bool on = r == g.cardRow, usable = r == 2 || g_cardPick.editable;
         Control(d, rx0, ry, rx1, ry + 50, on);
-        const ImU32 col = on ? look::kInk : usable ? kCream : Rgba(244, 241, 232, 110);
+        const ImU32 col = on ? look::kInk : usable ? kCream
+                                                   : Rgba(244, 241, 232, 110);
         Text(d, on ? bold : f.strong, g_v.L(19), g_v.P(rx0 + 22, ry + 12), col, kRows[r]);
-        std::string value = r == 2 ? std::to_string(g.cardDelay) + (g.cardDelay == 1 ? " frame" : " frames")
+        std::string value = r == 2                 ? std::to_string(g.cardDelay) + (g.cardDelay == 1 ? " frame" : " frames")
                             : !g_cardPick.editable ? std::string("Random")
                                                    : SkillLabel(g_cardPick.chara, r == 1, r ? g.cardVt : g.cardVs);
         Text(d, on ? bold : f.strong, g_v.L(19), g_v.P(vx, ry + 12), col, FitName(bold, 19, value, 230), 0.5f);
@@ -644,8 +676,7 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
 }
 
 // A name cut to fit `width` (ui units) at this size, with an ellipsis.
-std::string Fit(ImFont* font, float size, std::string text, float width)
-{
+std::string Fit(ImFont* font, float size, std::string text, float width) {
     if (TextW(font, size, text) <= width) return text;
     while (!text.empty() && TextW(font, size, text + "...") > width) {
         text.pop_back();
@@ -660,8 +691,7 @@ struct HandoffStep {
     int state;
 };
 
-std::vector<HandoffStep> HandoffSteps(const HubFonts& f, const RoomsView& v, const keeper::TableState& s, const TableHandoff& h)
-{
+std::vector<HandoffStep> HandoffSteps(const HubFonts& f, const RoomsView& v, const keeper::TableState& s, const TableHandoff& h) {
     const bool host = s.seat[0] == v.self;
     const std::string other = Fit(f.body, 17, NameOf(v, s.seat[host ? 1 : 0]), 190);
     const bool room = h.jumping || (h.session && (!host || h.roomOpen));
@@ -669,13 +699,20 @@ std::vector<HandoffStep> HandoffSteps(const HubFonts& f, const RoomsView& v, con
     const bool loaded = h.jumping || (h.preloaded[0] && h.preloaded[1]);
     std::vector<HandoffStep> steps;
     steps.push_back({"Both ready", 2});
-    steps.push_back({room ? std::string("Match set up") : host ? std::string("Setting up the match") : "Waiting for " + other, room ? 2 : 1});
+    steps.push_back({room ? std::string("Match set up") : host ? std::string("Setting up the match")
+                                                               : "Waiting for " + other,
+                     room ? 2 : 1});
     std::string connected = "Connected";
     if (h.pingMs) connected += " \xC2\xB7 " + std::to_string(h.pingMs) + " ms";
-    steps.push_back({linked ? connected : host ? "Waiting for " + other + " to join" : "Connecting to " + other, linked ? 2 : room ? 1 : 0});
+    steps.push_back({linked ? connected : host ? "Waiting for " + other + " to join"
+                                               : "Connecting to " + other,
+                     linked ? 2 : room ? 1
+                                       : 0});
     const bool mine = h.preloaded[host ? 0 : 1];
-    steps.push_back({loaded ? std::string("Characters loaded") : mine ? "Waiting for " + other + "'s game" : std::string("Loading characters"),
-                     loaded ? 2 : linked ? 1 : 0});
+    steps.push_back({loaded ? std::string("Characters loaded") : mine ? "Waiting for " + other + "'s game"
+                                                                      : std::string("Loading characters"),
+                     loaded ? 2 : linked ? 1
+                                         : 0});
     steps.push_back({"Starting the match", h.jumping ? 1 : 0});
     return steps;
 }
@@ -683,8 +720,7 @@ std::vector<HandoffStep> HandoffSteps(const HubFonts& f, const RoomsView& v, con
 // Over the room from both players' Ready to the match loading (M): who
 // against whom, each step of the way in, the set's rules in its footer.
 void HandoffModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const std::vector<HandoffStep>& steps, double stepSeconds,
-                  const PromptList& prompts, int* clicked)
-{
+                  const PromptList& prompts, int* clicked) {
     const keeper::TableState& s = v.tableViews[t].s;
     const uint32_t otherId = s.seat[s.seat[0] == v.self ? 1 : 0];
     ImFont* bold = f.bold ? f.bold : f.strong;
@@ -713,13 +749,13 @@ void HandoffModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, c
     float y = y0 + 158;
     for (const HandoffStep& st : steps) {
         const ImVec2 c = g_v.P(x0 + 40, y + 11);
-        const ImU32 ring = st.state == 2 ? kGreen : st.state == 1 ? kRing : look::kEdgeControl;
+        const ImU32 ring = st.state == 2 ? kGreen : st.state == 1 ? kRing
+                                                                  : look::kEdgeControl;
         d->AddCircle(c, g_v.L(12), ring, 24, g_v.L(2));
         if (st.state == 2) {
             const ImVec2 tick[] = {g_v.P(x0 + 34, y + 11), g_v.P(x0 + 38.5f, y + 16), g_v.P(x0 + 46.5f, y + 6)};
             d->AddPolyline(tick, 3, kGreen, 0, g_v.L(2.2f));
-        }
-        else if (st.state == 1) {
+        } else if (st.state == 1) {
             // A dot going round: still working.
             const float turn = static_cast<float>(ImGui::GetTime() * 4.0);
             d->AddCircleFilled(g_v.P(x0 + 40 + 7 * std::cos(turn), y + 11 + 7 * std::sin(turn)), g_v.L(2.6f), kRing);
@@ -733,19 +769,19 @@ void HandoffModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, c
 
 const char* const kRuleRows[] = {"First to", "Rounds per game", "Round timer", "Rotation", "Stays up to"};
 
-std::string RuleValue(const Rules& r, int row)
-{
+std::string RuleValue(const Rules& r, int row) {
     switch (row) {
-    case 0: return std::to_string(r.firstTo) + (r.firstTo == 1 ? " game" : " games");
-    case 1: return r.bestOf == 1 ? "One round" : "Best of " + std::to_string(r.bestOf);
-    case 2: return std::to_string(r.timer) + " seconds";
-    case 3: return r.rotation == Rotation::WinnerStays ? "Winner stays" : r.rotation == Rotation::LoserStays ? "Loser stays" : "Round robin";
-    default: return r.rotation == Rotation::RoundRobin ? "-" : r.staysLimit ? std::to_string(r.staysLimit) + " sets in a row" : "No limit";
+        case 0: return std::to_string(r.firstTo) + (r.firstTo == 1 ? " game" : " games");
+        case 1: return r.bestOf == 1 ? "One round" : "Best of " + std::to_string(r.bestOf);
+        case 2: return std::to_string(r.timer) + " seconds";
+        case 3: return r.rotation == Rotation::WinnerStays ? "Winner stays" : r.rotation == Rotation::LoserStays ? "Loser stays"
+                                                                                                                 : "Round robin";
+        default: return r.rotation == Rotation::RoundRobin ? "-" : r.staysLimit ? std::to_string(r.staysLimit) + " sets in a row"
+                                                                                : "No limit";
     }
 }
 
-void StepRule(Rules* r, int row, int dir)
-{
+void StepRule(Rules* r, int row, int dir) {
     auto cycle = [&](int value, std::initializer_list<int> values) {
         std::vector<int> list(values);
         auto at = std::find(list.begin(), list.end(), value);
@@ -754,20 +790,19 @@ void StepRule(Rules* r, int row, int dir)
         return list[i];
     };
     switch (row) {
-    case 0: r->firstTo = static_cast<uint8_t>(std::clamp(r->firstTo + dir, 1, 20)); break;
-    case 1: r->bestOf = static_cast<uint8_t>(cycle(r->bestOf, {3, 5, 1})); break;
-    case 2: r->timer = static_cast<uint8_t>(cycle(r->timer, {99, 60, 30})); break;
-    case 3: r->rotation = static_cast<Rotation>(cycle(static_cast<int>(r->rotation), {0, 1, 2})); break;
-    default:
-        if (r->rotation != Rotation::RoundRobin) r->staysLimit = static_cast<uint8_t>(cycle(r->staysLimit, {3, 5, 0}));
-        break;
+        case 0: r->firstTo = static_cast<uint8_t>(std::clamp(r->firstTo + dir, 1, 20)); break;
+        case 1: r->bestOf = static_cast<uint8_t>(cycle(r->bestOf, {3, 5, 1})); break;
+        case 2: r->timer = static_cast<uint8_t>(cycle(r->timer, {99, 60, 30})); break;
+        case 3: r->rotation = static_cast<Rotation>(cycle(static_cast<int>(r->rotation), {0, 1, 2})); break;
+        default:
+            if (r->rotation != Rotation::RoundRobin) r->staysLimit = static_cast<uint8_t>(cycle(r->staysLimit, {3, 5, 0}));
+            break;
     }
 }
 
 // The owner's table rules (Start): the shared editor, with what changed
 // since the tables' rules said in gold.
-void RulesModal(const HubFonts& f, const RoomsView& v, const PromptList& prompts, int* clicked)
-{
+void RulesModal(const HubFonts& f, const RoomsView& v, const PromptList& prompts, int* clicked) {
     const int t = g.rules.table;
     Rules now;
     const std::string current = t < static_cast<int>(v.tableRules.size()) ? v.tableRules[t] : "";
@@ -775,16 +810,14 @@ void RulesModal(const HubFonts& f, const RoomsView& v, const PromptList& prompts
     DrawTableRules(f, g.rules, "OWNER", "Changes apply from the table's next set.", changed ? kGold : kSoft, prompts, clicked);
 }
 
-void Request(RoomScreenInput* in, const char* kind, std::vector<std::string> args = {})
-{
+void Request(RoomScreenInput* in, const char* kind, std::vector<std::string> args = {}) {
     in->request = kind;
     in->args = std::move(args);
 }
 
 } // namespace
 
-void StepTableRules(TableRulesEditor& e)
-{
+void StepTableRules(TableRulesEditor& e) {
     const int tables = static_cast<int>(e.rules.size());
     if (!tables) return;
     e.table = std::clamp(e.table, 0, tables - 1);
@@ -797,8 +830,7 @@ void StepTableRules(TableRulesEditor& e)
 }
 
 void DrawTableRules(const HubFonts& f, const TableRulesEditor& e, const char* kicker, const std::string& hint, ImU32 hintCol,
-                    const PromptList& prompts, int* clicked)
-{
+                    const PromptList& prompts, int* clicked) {
     if (e.rules.empty()) return;
     ImDrawList* d = ImGui::GetBackgroundDrawList();
     ImFont* bold = f.bold ? f.bold : f.strong;
@@ -847,8 +879,7 @@ void DrawTableRules(const HubFonts& f, const TableRulesEditor& e, const char* ki
     }
 }
 
-void QueueTableRules(const std::vector<std::string>& rules)
-{
+void QueueTableRules(const std::vector<std::string>& rules) {
     g.rules.rules.assign(rules.size(), Rules{});
     g.rulesPending.clear();
     for (size_t t = 0; t < rules.size(); t++) {
@@ -866,8 +897,7 @@ void SetTableHandoff(const TableHandoff& handoff) { g_handoff = handoff; }
 
 void SetCardPick(const CardPick& pick) { g_cardPick = pick; }
 
-void ToggleMuteForTest(uint32_t id)
-{
+void ToggleMuteForTest(uint32_t id) {
     if (!g.muted.erase(id)) g.muted.insert(id);
     Log("room screen: member %u %s (this player's view only)", id, g.muted.count(id) ? "muted" : "unmuted");
 }
@@ -876,14 +906,12 @@ bool RoomMemberMuted(uint32_t id) { return g.muted.count(id) != 0; }
 
 void SetSkillNames(std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::string>>> names) { g_skillNames = std::move(names); }
 
-void SetCharaNames(std::vector<std::pair<std::string, std::string>> codeToName)
-{
+void SetCharaNames(std::vector<std::pair<std::string, std::string>> codeToName) {
     g_names.clear();
     for (auto& [code, name] : codeToName) g_names[code] = name;
 }
 
-void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomScreenInput* in)
-{
+void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomScreenInput* in) {
     *in = RoomScreenInput{};
     if (!f.display || !f.strong || !f.body) return;
     BeginScreen();
@@ -901,7 +929,8 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     int callTable = -1, mySeat = -1;
     for (int t = 0; t < static_cast<int>(v.tableViews.size()); t++) {
         const keeper::TableState& s = v.tableViews[t].s;
-        const int seat = s.seat[0] == v.self ? 0 : s.seat[1] == v.self ? 1 : -1;
+        const int seat = s.seat[0] == v.self ? 0 : s.seat[1] == v.self ? 1
+                                                                       : -1;
         if (seat >= 0 && s.phase == TablePhase::Call && !paused) {
             callTable = t;
             mySeat = seat;
@@ -988,7 +1017,8 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
                 }
             }
             if (Down()) g.cardRow = std::min(2, g.cardRow + 1);
-            int dir = Left() ? -1 : Right() ? 1 : 0;
+            int dir = Left() ? -1 : Right() ? 1
+                                            : 0;
             if (g.cardMouseRow >= 0) {
                 g.cardRow = g.cardMouseRow;
                 dir = g.cardMouseDir;
@@ -1007,26 +1037,21 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
                 Request(in, "ready", {std::to_string(g.cardTable)});
                 in->delay = g.cardDelay;
                 if (!v.tableNotice.empty()) in->clearNotice = true;
-            }
-            else if (Back()) {
+            } else if (Back()) {
                 Request(in, "decline", {std::to_string(g.cardTable)});
             }
         }
-    }
-    else if (handoffTable >= 0) {
+    } else if (handoffTable >= 0) {
         if (canCancel && Back()) in->cancelHandoff = true;
-    }
-    else if (g.modal == Modal::Leaving || g.modal == Modal::Remove) {
+    } else if (g.modal == Modal::Leaving || g.modal == Modal::Remove) {
         if (Left()) g.choice = 0;
         if (Right()) g.choice = 1;
         if (Confirm()) {
             if (g.choice == 0 && g.modal == Modal::Leaving) in->leave = true;
             else if (g.choice == 0) Request(in, "kick", {std::to_string(g.removing)});
             g.modal = Modal::None;
-        }
-        else if (Back()) g.modal = Modal::None;
-    }
-    else if (g.modal == Modal::Rules) {
+        } else if (Back()) g.modal = Modal::None;
+    } else if (g.modal == Modal::Rules) {
         StepTableRules(g.rules);
         if (Confirm() || Pressed({ImGuiKey_GamepadStart}, false)) {
             // Every table whose rules changed (sent one a frame, below).
@@ -1036,10 +1061,8 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
                 if (!(ParseRules(current, &now) && now == g.rules.rules[t])) g.rulesPending.push_back(t);
             }
             g.modal = Modal::None;
-        }
-        else if (Back()) g.modal = Modal::None;
-    }
-    else if (g.typing) {
+        } else if (Back()) g.modal = Modal::None;
+    } else if (g.typing) {
         for (ImWchar c : ImGui::GetIO().InputQueueCharacters) {
             if (c < 32 || c == 127) continue;
             char utf8[5] = {};
@@ -1054,8 +1077,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
         }
         if (Pressed({ImGuiKey_Enter, ImGuiKey_KeypadEnter}, false)) send = true;
         if (Pressed({ImGuiKey_Escape, ImGuiKey_GamepadFaceRight}, false)) g.typing = false;
-    }
-    else {
+    } else {
         // On a pad, Back + Y starts typing (a Deck's keyboard, Steam + X,
         // types into it); Back alone, let go without Y, copies the code.
         static bool backHeld = false, usedY = false;
@@ -1088,8 +1110,7 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
                 g.choice = 0;
             }
             if (Back()) g.onPlayers = false;
-        }
-        else {
+        } else {
             if (Up()) g.table = std::max(0, g.table - 1);
             if (Down()) g.table = std::min(tables - 1, g.table + 1);
             if (fs.phase == TablePhase::Open && !fs.seat[0] && !fs.seat[1]) {
@@ -1102,15 +1123,14 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
             const bool confirm = Confirm() && !enter;
             if (!v.tableNotice.empty() && confirm) {
                 in->clearNotice = true; // A reads the notice, nothing more
-            }
-            else if (!paused && confirm) {
+            } else if (!paused && confirm) {
                 const std::string t = std::to_string(g.table);
                 if (fs.phase == TablePhase::Open && atFocused) Request(in, "stand");
                 else if (fs.phase == TablePhase::Open && (!fs.seat[0] || !fs.seat[1])) {
-                    const int seat = !fs.seat[0] && !fs.seat[1] ? g.seatSide : !fs.seat[0] ? 0 : 1;
+                    const int seat = !fs.seat[0] && !fs.seat[1] ? g.seatSide : !fs.seat[0] ? 0
+                                                                                           : 1;
                     Request(in, "seat", {t, std::to_string(seat)});
-                }
-                else if (queuedHere) Request(in, "unqueue");
+                } else if (queuedHere) Request(in, "unqueue");
                 else if (!atFocused) Request(in, "queue", {t});
             }
             if (y && !back) in->myCharacter = true;
@@ -1224,82 +1244,71 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
             leadCol = kRed;
             text = v.tableNotice;
         }
-    }
-    else if (g.modal == Modal::Leaving) {
+    } else if (g.modal == Modal::Leaving) {
         prompts = {{"button_a", "Select"}, {"button_b", "Stay"}};
-    }
-    else if (g.modal == Modal::Remove) {
+    } else if (g.modal == Modal::Remove) {
         prompts = {{"button_a", "Select"}, {"button_b", "Cancel"}};
-    }
-    else if (g.modal == Modal::Rules) {
+    } else if (g.modal == Modal::Rules) {
         text = "";
         prompts = {{"button_a", "Done"}, {"button_b", "Cancel"}};
-    }
-    else if (g.typing) {
+    } else if (g.typing) {
         text = "Enter to send, Escape to cancel. On Steam Deck, press Steam + X for the keyboard.";
-    }
-    else if (paused) {
+    } else if (paused) {
         lead = "ROOM PAUSED";
         text = "Tables are on hold while the rooms server reconnects. Chat still works.";
         prompts = {{"button_b", "Leave"}};
-    }
-    else if (handoffTable >= 0) {
+    } else if (handoffTable >= 0) {
         const keeper::TableState& s = v.tableViews[handoffTable].s;
         lead = "TABLE " + std::to_string(handoffTable + 1);
         text = g_handoff.jumping ? "The match is loading." : "Getting the match ready with " + NameOf(v, s.seat[s.seat[0] == v.self ? 1 : 0]) + ".";
         if (canCancel) prompts = {{"button_b", "Cancel"}};
-    }
-    else if (ms && ms->phase == TablePhase::After && (ms->lastWinner == v.self || ms->lastLoser == v.self)) {
+    } else if (ms && ms->phase == TablePhase::After && (ms->lastWinner == v.self || ms->lastLoser == v.self)) {
         const bool won = ms->lastWinner == v.self;
         // Ended before anyone reached the set's target (a player left, maybe
         // with the games they meant to play): no winner or loser to name.
         Rules rules;
         const bool early = ParseRules(v.tableViews[myTable].rules, &rules) && ms->lastScore[0] < rules.firstTo;
-        lead = early ? "SET ENDED" : won ? "YOU WON THE SET" : "YOU LOST THE SET";
-        leadCol = early ? kSoft : won ? kGreen : kSoft;
+        lead = early ? "SET ENDED" : won ? "YOU WON THE SET"
+                                         : "YOU LOST THE SET";
+        leadCol = early ? kSoft : won ? kGreen
+                                      : kSoft;
         text = std::to_string(won ? ms->lastScore[0] : ms->lastScore[1]) + " - " + std::to_string(won ? ms->lastScore[1] : ms->lastScore[0]) + ". ";
         const std::vector<uint32_t>& q = v.tableViews[myTable].queue;
         const auto at = std::find(q.begin(), q.end(), v.self);
         if (ms->seat[0] == v.self || ms->seat[1] == v.self) text += "You stay on Table " + std::to_string(myTable + 1) + ".";
         else if (at != q.end()) text += "Back in the queue \xC2\xB7 " + Ordinal(static_cast<int>(at - q.begin()) + 1) + ".";
         else text += "Back to the room.";
-    }
-    else if (!v.tableNotice.empty()) {
+    } else if (!v.tableNotice.empty()) {
         lead = "NO MATCH";
         leadCol = kRed;
         text = v.tableNotice;
         prompts = {{"button_a", "OK"}};
-    }
-    else if (g.onPlayers) {
+    } else if (g.onPlayers) {
         const uint32_t who = players.empty() ? 0 : players[g.player].id;
         text = who == v.self ? "That's you." : "";
         prompts = {};
         if (who != v.self) prompts.push_back({"button_a", g.muted.count(who) ? "Unmute" : "Mute"});
         if (who != v.self && v.owner == v.self) prompts.push_back({"button_x", "Remove"});
         prompts.push_back({"button_b", "Tables"});
-    }
-    else {
+    } else {
         const std::string place = RoomsPlace(v, v.self);
         if (v.members.size() <= 1) {
             lead = "ROOM OPEN";
             text = "Share the code to invite friends.";
-        }
-        else if (v.watching >= 0 && place.rfind("Watching", 0) == 0) {
+        } else if (v.watching >= 0 && place.rfind("Watching", 0) == 0) {
             lead = Upper(place);
             text = "Its matches open automatically.";
-        }
-        else if (place != "Idle") {
+        } else if (place != "Idle") {
             lead = Upper(place);
-        }
-        else {
+        } else {
             text = "Pick a table to sit at or queue for.";
         }
         if (fs.phase == TablePhase::Open && atFocused) prompts.push_back({"button_a", "Stand up"});
         else if (fs.phase == TablePhase::Open && (!fs.seat[0] || !fs.seat[1])) {
-            const int seat = !fs.seat[0] && !fs.seat[1] ? g.seatSide : !fs.seat[0] ? 0 : 1;
+            const int seat = !fs.seat[0] && !fs.seat[1] ? g.seatSide : !fs.seat[0] ? 0
+                                                                                   : 1;
             prompts.push_back({"button_a", seat ? "Sit as P2" : "Sit as P1"});
-        }
-        else if (queuedHere) prompts.push_back({"button_a", "Leave the queue"});
+        } else if (queuedHere) prompts.push_back({"button_a", "Leave the queue"});
         else if (!atFocused) prompts.push_back({"button_a", "Join the queue"});
         if (!atFocused) prompts.push_back({"button_x", v.watching == g.table ? "Stop watching" : "Watch"});
         prompts.push_back({"button_y", "My character"});
@@ -1317,12 +1326,10 @@ void DrawRoomScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     else if (g.modal == Modal::Leaving) {
         Dialog(d, f, StreamerMode() ? std::string("ROOM") : "ROOM \xC2\xB7 " + WeyveService::DisplayCode(v.room), "Leave the room?", LeaveText(v), false, "Leave",
                "Stay", prompts, &clicked, &pressed);
-    }
-    else if (g.modal == Modal::Remove) {
+    } else if (g.modal == Modal::Remove) {
         Dialog(d, f, "OWNER", "Remove " + NameOf(v, g.removing) + "?", "They won't be able to rejoin.", true,
                "Remove", "Cancel", prompts, &clicked, &pressed);
-    }
-    else if (g.modal == Modal::Rules) RulesModal(f, v, prompts, &clicked);
+    } else if (g.modal == Modal::Rules) RulesModal(f, v, prompts, &clicked);
     if (pressed >= 0 && g_inputOn) {
         if (pressed == 0 && g.modal == Modal::Leaving) in->leave = true;
         else if (pressed == 0) Request(in, "kick", {std::to_string(g.removing)});

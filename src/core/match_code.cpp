@@ -9,10 +9,9 @@ namespace {
 
 const char kAlphabet[] = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const char kRoomAlphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Weyvelength's
-constexpr size_t kRoomCodeLength = 6;                             // the server's --room-code-length
+constexpr size_t kRoomCodeLength = 6;                            // the server's --room-code-length
 
-bool DecodeRoom(const std::string& clean, MatchCode* out)
-{
+bool DecodeRoom(const std::string& clean, MatchCode* out) {
     std::string room;
     for (char c : clean) room += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     if (room.size() == kRoomCodeLength + 1 && room[0] == 'W') room.erase(0, 1);
@@ -28,8 +27,7 @@ bool DecodeRoom(const std::string& clean, MatchCode* out)
     return true;
 }
 
-int Decode32(char c)
-{
+int Decode32(char c) {
     c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     if (c == 'O') c = '0';
     if (c == 'I' || c == 'L') c = '1';
@@ -39,8 +37,7 @@ int Decode32(char c)
     return -1;
 }
 
-std::vector<uint8_t> Payload(const MatchCode& code)
-{
+std::vector<uint8_t> Payload(const MatchCode& code) {
     std::vector<uint8_t> bytes;
     for (int i = 0; i < 6; i++) bytes.push_back(uint8_t(code.address >> (8 * i)));
     bytes.push_back(uint8_t(code.nonce));
@@ -48,8 +45,7 @@ std::vector<uint8_t> Payload(const MatchCode& code)
     return bytes;
 }
 
-int Check(const std::vector<int>& digits)
-{
+int Check(const std::vector<int>& digits) {
     int sum = 0;
     for (size_t i = 0; i < digits.size(); i++) sum = (sum * 7 + digits[i] + int(i)) % 32;
     return sum;
@@ -57,8 +53,7 @@ int Check(const std::vector<int>& digits)
 
 } // namespace
 
-std::string EncodeMatchCode(const MatchCode& code)
-{
+std::string EncodeMatchCode(const MatchCode& code) {
     if (code.kind == MatchCode::Kind::Room) return code.room;
     const std::vector<uint8_t> bytes = Payload(code);
     std::vector<int> digits;
@@ -83,8 +78,7 @@ std::string EncodeMatchCode(const MatchCode& code)
     return out;
 }
 
-bool DecodeMatchCode(const std::string& text, MatchCode* out)
-{
+bool DecodeMatchCode(const std::string& text, MatchCode* out) {
     std::string clean;
     for (char c : text) {
         if (c != '-' && c != ' ' && c != '\t' && c != '\r' && c != '\n') clean += c;

@@ -36,13 +36,18 @@ public:
     explicit MockGame(MockGameOptions options = {});
 
     std::string BuildId() const override { return "mockfighter-1"; }
+
     bool BeginMatch(const MatchSetup& setup) override;
+
     const std::vector<StateRegion>& Regions() override { return regions_; }
+
     PackedInput ReadLocalInput(int player) override;
     void Advance(const FrameInputs& inputs, bool rollingBack) override;
 
     int Frame() const { return round_.frame; }
+
     int Health(int player) const { return fighters_[player].hp; }
+
     int Wins(int player) const { return round_.wins[player]; }
 
 private:
@@ -59,11 +64,13 @@ private:
         uint8_t attackHit;
         uint8_t pad[3];
     };
+
     struct Projectile {
         int32_t x, vx;
         int16_t owner;
         int16_t life;
     };
+
     struct Round {
         int32_t frame;
         int32_t timer;
@@ -72,6 +79,7 @@ private:
         int16_t roundsToWin;
         int16_t matchOver;
     };
+
     struct Camera {
         int32_t x;
     };

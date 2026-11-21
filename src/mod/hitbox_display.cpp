@@ -30,7 +30,7 @@ using namespace actor; // battle_actors.h
 // drawn: location, rotation (pitch, yaw, roll), FOV (horizontal), ...,
 // aspect ratio (+0x28).
 constexpr size_t kCameraManager = 0x390, kPov = 0x370;
-constexpr ULONGLONG kStaleMs = 250; // no collection this long: the battle is gone
+constexpr ULONGLONG kStaleMs = 250;  // no collection this long: the battle is gone
 constexpr ULONGLONG kPausedMs = 150; // no battle tick this long out of a replay: the game is paused
 
 uintptr_t g_base = 0;
@@ -45,10 +45,14 @@ std::atomic<const uint8_t*> g_camera{nullptr};
 std::atomic<uintptr_t> g_cameraVtable{0};
 uint64_t g_cameraLayout = ~0ull;
 
-template <class T> T At(const uint8_t* p, size_t offset) { T v; std::memcpy(&v, p + offset, sizeof(T)); return v; }
+template <class T>
+T At(const uint8_t* p, size_t offset) {
+    T v;
+    std::memcpy(&v, p + offset, sizeof(T));
+    return v;
+}
 
-bool ClassNamed(const void* object, const char* part)
-{
+bool ClassNamed(const void* object, const char* part) {
     return object && IsReadable(object, 0x30) && ue4::ObjectName(ue4::ClassOf(object)).find(part) != std::string::npos;
 }
 
@@ -58,8 +62,7 @@ bool ClassNamed(const void* object, const char* part)
 // 0x2C4F4A0 at +0xE8) points at both battle player controllers (+0x198,
 // +0x1C0); the object walk (as replay_driver's CameraText, ~0.5 s) only when
 // that path does not hold.
-const uint8_t* ManagerOf(const uint8_t* controller)
-{
+const uint8_t* ManagerOf(const uint8_t* controller) {
     if (!ClassNamed(controller, "PlayerController") || !IsReadable(controller + kCameraManager, 8) || !At<const void*>(controller, 0x360)) {
         return nullptr;
     }
@@ -67,8 +70,7 @@ const uint8_t* ManagerOf(const uint8_t* controller)
     return ClassNamed(manager, "CameraManager") ? manager : nullptr;
 }
 
-const uint8_t* FindCameraManager(SfvGame& game)
-{
+const uint8_t* FindCameraManager(SfvGame& game) {
     if (!ue4::EnsureObjects(g_base)) return nullptr;
     for (const StateRegion& r : game.Regions()) {
         if (r.size != 528 || !IsReadable(r.ptr - 0x100, 0x200)) continue;
@@ -84,16 +86,15 @@ const uint8_t* FindCameraManager(SfvGame& game)
     Log("hitboxes: camera found by the object walk");
     return found;
 }
-bool Wanted()
-{
+
+bool Wanted() {
     if (g_forced) return true;
     const ReplayView v = ReplayViewNow();
     if (v.active) return !v.benchmark && HitboxesInReplays();
     return HitboxesInTraining() && CurrentScene() == "TrainingBattleState";
 }
 
-void Collect(SfvGame& game, std::vector<WorldBox>& boxes)
-{
+void Collect(SfvGame& game, std::vector<WorldBox>& boxes) {
     const bool logging = g_log > 0;
     std::string text;
     const uintptr_t entryVtable = g_base + kEntryVtable;
@@ -126,10 +127,10 @@ void Collect(SfvGame& game, std::vector<WorldBox>& boxes)
                 if (hit) {
                     const uint8_t type = e[kEntryType];
                     if (type > 5) continue;
-                    b.kind = type == 2 ? WorldBox::Throw : type == 4 ? WorldBox::Proximity : WorldBox::Hit;
+                    b.kind = type == 2 ? WorldBox::Throw : type == 4 ? WorldBox::Proximity
+                                                                     : WorldBox::Hit;
                     boxes.push_back(b);
-                }
-                else {
+                } else {
                     const uint32_t type = At<uint32_t>(e, kEntryType);
                     if (type & 3) boxes.push_back(b);
                     if (type & 4) {
@@ -150,8 +151,7 @@ void Collect(SfvGame& game, std::vector<WorldBox>& boxes)
     if (logging) Log("boxlog %d:%s", --g_log, text.c_str());
 }
 
-int ReadChoice(std::atomic<int>& cache, const wchar_t* key, int fallback)
-{
+int ReadChoice(std::atomic<int>& cache, const wchar_t* key, int fallback) {
     int v = cache;
     if (v < 0) cache = v = ReadMainIni(L"hitboxes", key, fallback) ? 1 : 0;
     return v;
@@ -160,28 +160,25 @@ int ReadChoice(std::atomic<int>& cache, const wchar_t* key, int fallback)
 } // namespace
 
 bool HitboxesInTraining() { return ReadChoice(g_training, L"training", 1) != 0; }
+
 bool HitboxesInReplays() { return ReadChoice(g_replays, L"replays", 0) != 0; }
 
-void SetHitboxesInTraining(bool on)
-{
+void SetHitboxesInTraining(bool on) {
     g_training = on ? 1 : 0;
     SaveMainIni(L"hitboxes", L"training", on ? 1 : 0);
 }
 
-void SetHitboxesInReplays(bool on)
-{
+void SetHitboxesInReplays(bool on) {
     g_replays = on ? 1 : 0;
     SaveMainIni(L"hitboxes", L"replays", on ? 1 : 0);
 }
 
-void SetHitboxesForced(bool on)
-{
+void SetHitboxesForced(bool on) {
     g_forced = on;
     Log("hitboxes: %s in any battle", on ? "forced on" : "back to the choices");
 }
 
-void CollectHitboxes(SfvGame& game)
-{
+void CollectHitboxes(SfvGame& game) {
     if (!g_base) g_base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     if (!Wanted()) return;
     // Training's pause menu stops the ticks (a paused replay runs none either,
@@ -204,21 +201,18 @@ void CollectHitboxes(SfvGame& game)
     g_collectedAt = GetTickCount64();
 }
 
-bool HitboxesVisible()
-{
+bool HitboxesVisible() {
     return g_camera.load() && GetTickCount64() - g_collectedAt.load() < kStaleMs;
 }
 
-std::vector<WorldBox> HitboxSnapshot()
-{
+std::vector<WorldBox> HitboxSnapshot() {
     std::lock_guard lock(g_mutex);
     return g_boxes;
 }
 
 void LogHitboxes(int frames) { g_log = frames; }
 
-void DrawHitboxes(ImDrawList* d, float width, float height)
-{
+void DrawHitboxes(ImDrawList* d, float width, float height) {
     if (!HitboxesVisible()) return;
     // The camera as drawn this frame (the manager still the one found: its
     // vtable checked, the object gone with the battle).
@@ -236,8 +230,7 @@ void DrawHitboxes(ImDrawList* d, float width, float height)
     if (width / height > aspect) {
         vw = height * aspect;
         vx = (width - vw) / 2;
-    }
-    else {
+    } else {
         vh = width / aspect;
         vy = (height - vh) / 2;
     }
@@ -267,23 +260,23 @@ void DrawHitboxes(ImDrawList* d, float width, float height)
             const ImVec2 p0 = project(b.x, b.y + b.h), p1 = project(b.x + b.w, b.y);
             if (!ok) continue;
             switch (kind) {
-            case WorldBox::Hurt: d->AddRect(p0, p1, IM_COL32(40, 230, 70, 255), 0, 0, line); break;
-            case WorldBox::Throwable:
-                d->AddRectFilled(p0, p1, IM_COL32(250, 220, 40, 70));
-                d->AddRect(p0, p1, IM_COL32(250, 220, 40, 210), 0, 0, line * 0.5f);
-                break;
-            case WorldBox::Proximity:
-                d->AddRectFilled(p0, p1, IM_COL32(150, 150, 150, 60));
-                d->AddRect(p0, p1, IM_COL32(175, 175, 175, 170), 0, 0, line * 0.5f);
-                break;
-            case WorldBox::Throw:
-                d->AddRectFilled(p0, p1, IM_COL32(40, 90, 250, 110));
-                d->AddRect(p0, p1, IM_COL32(70, 120, 255, 255), 0, 0, line);
-                break;
-            case WorldBox::Hit:
-                d->AddRectFilled(p0, p1, IM_COL32(240, 40, 40, 110));
-                d->AddRect(p0, p1, IM_COL32(255, 60, 60, 255), 0, 0, line);
-                break;
+                case WorldBox::Hurt: d->AddRect(p0, p1, IM_COL32(40, 230, 70, 255), 0, 0, line); break;
+                case WorldBox::Throwable:
+                    d->AddRectFilled(p0, p1, IM_COL32(250, 220, 40, 70));
+                    d->AddRect(p0, p1, IM_COL32(250, 220, 40, 210), 0, 0, line * 0.5f);
+                    break;
+                case WorldBox::Proximity:
+                    d->AddRectFilled(p0, p1, IM_COL32(150, 150, 150, 60));
+                    d->AddRect(p0, p1, IM_COL32(175, 175, 175, 170), 0, 0, line * 0.5f);
+                    break;
+                case WorldBox::Throw:
+                    d->AddRectFilled(p0, p1, IM_COL32(40, 90, 250, 110));
+                    d->AddRect(p0, p1, IM_COL32(70, 120, 255, 255), 0, 0, line);
+                    break;
+                case WorldBox::Hit:
+                    d->AddRectFilled(p0, p1, IM_COL32(240, 40, 40, 110));
+                    d->AddRect(p0, p1, IM_COL32(255, 60, 60, 255), 0, 0, line);
+                    break;
             }
         }
     }

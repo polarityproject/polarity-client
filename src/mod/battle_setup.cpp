@@ -26,12 +26,10 @@ constexpr uint32_t kBattleDataPtr = 0x30;
 
 // BattleSetting::CheckPlayers(this): once, when character select ends.
 constexpr game::CodeSite kCheckPlayers{
-    "BattleSetting::CheckPlayers", 0x7B33B0,
-    {0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x38, 0x4C, 0x8B, 0xF9, 0xE8, 0xD0, 0xE2, 0xD6, 0xFF}};
+    "BattleSetting::CheckPlayers", 0x7B33B0, {0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x38, 0x4C, 0x8B, 0xF9, 0xE8, 0xD0, 0xE2, 0xD6, 0xFF}};
 // BattleActor::ReadSettings(this): when the battle is created.
 constexpr game::CodeSite kReadSettings{
-    "BattleActor::ReadSettings", 0x6A45E0,
-    {0x4C, 0x8B, 0xDC, 0x49, 0x89, 0x4B, 0x08, 0x53, 0x48, 0x81, 0xEC, 0xB0, 0x00, 0x00, 0x00, 0x48}};
+    "BattleActor::ReadSettings", 0x6A45E0, {0x4C, 0x8B, 0xDC, 0x49, 0x89, 0x4B, 0x08, 0x53, 0x48, 0x81, 0xEC, 0xB0, 0x00, 0x00, 0x00, 0x48}};
 
 GameImage g_image;
 uint64_t (*g_origCheckPlayers)(uint8_t*, void*, void*, void*) = nullptr;
@@ -46,18 +44,19 @@ int g_specRoundsForTest = 0; // setrounds: battledata::kSpecRounds as a game tha
 std::atomic<int> g_setups{0};
 std::atomic<int> g_creations{0};
 
-template <typename T> T Get(const uint8_t* p, uint32_t off) { return *reinterpret_cast<const T*>(p + off); }
-template <typename T> void Put(uint8_t* p, uint32_t off, T v) { *reinterpret_cast<T*>(p + off) = v; }
+template <typename T>
+T Get(const uint8_t* p, uint32_t off) { return *reinterpret_cast<const T*>(p + off); }
 
-void ApplyPending(const char* when)
-{
+template <typename T>
+void Put(uint8_t* p, uint32_t off, T v) { *reinterpret_cast<T*>(p + off) = v; }
+
+void ApplyPending(const char* when) {
     std::lock_guard lock(g_mutex);
     if (!g_pending) return;
     if (ApplyMatchSetup(g_setup)) Log("battle setup applied %s: %s", when, DescribeSetup(g_setup).c_str());
 }
 
-uint64_t CheckPlayersDetour(uint8_t* self, void* a2, void* a3, void* a4)
-{
+uint64_t CheckPlayersDetour(uint8_t* self, void* a2, void* a3, void* a4) {
     HookGuard guard;
     g_setups++;
     LogStack("CheckPlayers", reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)));
@@ -65,8 +64,7 @@ uint64_t CheckPlayersDetour(uint8_t* self, void* a2, void* a3, void* a4)
     return g_origCheckPlayers(self, a2, a3, a4);
 }
 
-uint64_t ReadSettingsDetour(uint8_t* self, void* a2, void* a3, void* a4)
-{
+uint64_t ReadSettingsDetour(uint8_t* self, void* a2, void* a3, void* a4) {
     HookGuard guard;
     g_creations++;
     LogStack("ReadSettings", reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)));
@@ -82,8 +80,7 @@ uint64_t ReadSettingsDetour(uint8_t* self, void* a2, void* a3, void* a4)
     return g_origReadSettings(self, a2, a3, a4);
 }
 
-bool Hook(const GameImage& image, const game::CodeSite& site, void* detour, void** original)
-{
+bool Hook(const GameImage& image, const game::CodeSite& site, void* detour, void** original) {
     void* target = image.At<void*>(site.rva);
     if (std::memcmp(target, site.bytes, sizeof(site.bytes)) != 0) {
         Log("battle setup: signature mismatch at %s", site.name);
@@ -94,8 +91,7 @@ bool Hook(const GameImage& image, const game::CodeSite& site, void* detour, void
 
 } // namespace
 
-bool InstallBattleSetup(const GameImage& image)
-{
+bool InstallBattleSetup(const GameImage& image) {
     g_image = image;
     const bool ok = Hook(image, kCheckPlayers, reinterpret_cast<void*>(&CheckPlayersDetour),
                          reinterpret_cast<void**>(&g_origCheckPlayers)) &&
@@ -107,8 +103,7 @@ bool InstallBattleSetup(const GameImage& image)
 
 namespace {
 
-uint8_t* BattleSetting()
-{
+uint8_t* BattleSetting() {
     if (!g_image.base) return nullptr;
     auto* engine = Get<uint8_t*>(reinterpret_cast<uint8_t*>(g_image.base), kEngineGlobal);
     if (!IsReadable(engine, kGameInstance + 8)) return nullptr;
@@ -122,8 +117,7 @@ uint8_t* BattleSetting()
     return IsReadable(setting, situation::kObject + 8) ? setting : nullptr;
 }
 
-uint8_t* SituationData()
-{
+uint8_t* SituationData() {
     uint8_t* setting = BattleSetting();
     auto* object = setting ? Get<uint8_t*>(setting, situation::kObject) : nullptr;
     if (!IsReadable(object, situation::kData + 8)) return nullptr;
@@ -133,15 +127,13 @@ uint8_t* SituationData()
 
 } // namespace
 
-uint8_t* BattleData()
-{
+uint8_t* BattleData() {
     uint8_t* setting = BattleSetting();
     auto* data = setting ? Get<uint8_t*>(setting, kBattleDataPtr) : nullptr;
     return IsReadable(data, 2 * bd::kRecordStride) ? data : nullptr;
 }
 
-bool ReadMatchSetup(MatchSetup* out)
-{
+bool ReadMatchSetup(MatchSetup* out) {
     uint8_t* data = BattleData();
     if (!data) return false;
     MatchSetup s;
@@ -171,8 +163,7 @@ bool ReadMatchSetup(MatchSetup* out)
     return true;
 }
 
-bool ApplyMatchSetup(const MatchSetup& setup)
-{
+bool ApplyMatchSetup(const MatchSetup& setup) {
     uint8_t* data = BattleData();
     if (!data) {
         Log("battle setup: no battle data to write to");
@@ -267,8 +258,7 @@ bool ApplyMatchSetup(const MatchSetup& setup)
         const int32_t before = Get<int32_t>(s, situation::kBattleCount);
         Put<int32_t>(s, situation::kBattleCount, setup.played);
         if (before != setup.played) Log("battle setup: matches played %d -> %u", before, setup.played);
-    }
-    else {
+    } else {
         Log("battle setup: no battle situation to write the matches played to");
     }
     return true;
@@ -276,14 +266,12 @@ bool ApplyMatchSetup(const MatchSetup& setup)
 
 void SetMatchRoundsForTest(int rounds) { g_specRoundsForTest = rounds; }
 
-bool IsElevenPick(const PlayerSetup& p)
-{
+bool IsElevenPick(const PlayerSetup& p) {
     const int index = CharaIndex(UnpackCode(p.character));
     return index >= 0 && p.costume == CostumeInFolder(index, "0C");
 }
 
-LookRules GameLookRules()
-{
+LookRules GameLookRules() {
     LookRules rules;
     rules.isEleven = IsElevenPick;
     rules.elevenOtherColor = 1; // the 0C costume's color 2 of 2
@@ -300,26 +288,22 @@ LookRules GameLookRules()
     return rules;
 }
 
-void SetUniqueParamOverride(int player, int index, int value)
-{
+void SetUniqueParamOverride(int player, int index, int value) {
     if (player >= 0 && player < 2 && index >= 0 && index < 8) g_uniqueParams[player][index] = value;
 }
 
-void SetPendingSetup(const MatchSetup& setup)
-{
+void SetPendingSetup(const MatchSetup& setup) {
     std::lock_guard lock(g_mutex);
     g_setup = setup;
     g_pending = true;
 }
 
-bool HasPendingSetup()
-{
+bool HasPendingSetup() {
     std::lock_guard lock(g_mutex);
     return g_pending;
 }
 
-void ClearPendingSetup()
-{
+void ClearPendingSetup() {
     std::lock_guard lock(g_mutex);
     g_pending = false;
 }
@@ -328,8 +312,7 @@ int BattleSetupCount() { return g_setups; }
 
 int BattleCreationCount() { return g_creations; }
 
-std::string DescribeSetup(const MatchSetup& s)
-{
+std::string DescribeSetup(const MatchSetup& s) {
     std::string out;
     char buf[160];
     for (int p = 0; p < kNumPlayers; p++) {
@@ -346,8 +329,7 @@ std::string DescribeSetup(const MatchSetup& s)
     return out + buf;
 }
 
-void LogBattleSetup(const char* when)
-{
+void LogBattleSetup(const char* when) {
     MatchSetup s;
     if (!ReadMatchSetup(&s)) {
         Log("battle setup %s: not available", when);

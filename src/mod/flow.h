@@ -66,6 +66,7 @@ std::string JumpStageCode();
 // battle with it later finds its assets loaded. Takes the asset queue for a
 // few seconds (the game thread is busy meanwhile); a jump waits for it.
 void PreloadCharacter(const std::string& code, int costume);
+
 // What to keep preloaded: polled at the main menu, preloaded once unchanged
 // for a second (the local pick, from the netplay driver).
 struct PreloadPick {
@@ -73,6 +74,7 @@ struct PreloadPick {
     int costume = 0;
     int version = -1; // the match setup's; -1: the final game's if this game has it, else its latest
 };
+
 // Preloads each in turn, then runs `then` on the game thread (a replay's jump).
 void PreloadCharacters(std::vector<PreloadPick> picks, std::function<void()> then);
 void SetPreloadSource(std::function<std::vector<PreloadPick>()> source);
@@ -156,6 +158,7 @@ const char* SpecialVariantName(const std::string& code);
 // A variation's name for the panel and logs: "Normal", "Variant", "Thong",
 // "Variant + Thong".
 std::string VariantLabel(const std::string& code, uint8_t variation);
+
 // The game's own name and color ids of each costume of character `index`
 // (by costume index): colors 0.. are the costume's colors, 100.. its EX
 // colors (the battle setup's color is the id). Empty when the game's table
@@ -168,6 +171,7 @@ struct CostumeSpec {
     std::string charaCode, charaVisibleCode, costumeCode;
     std::map<int, std::string> colorCodes;
 };
+
 std::map<int, CostumeSpec> CharaCostumeSpecs(int index);
 // A stage's entitlement code (StageSpec RefAvailableCode, by its index in the
 // stage list; "" when it has none or the table is not loaded).
@@ -189,11 +193,13 @@ std::vector<std::string> SkillNames(const std::string& charaCode, bool vtrigger)
 // subtitle asset (DA_<code>_Subtitle) on the game thread when needed and
 // waits for it, so not from the game thread.
 std::vector<std::string> VCommentNames(const std::string& charaCode);
+
 // The colour preview's two swatch colours (0xAARRGGBB) per colour of a costume:
 // its colours, then its EX colours (ids 100..). Empty without a preview.
 struct CostumeSwatches {
     std::vector<std::pair<uint32_t, uint32_t>> colors, ex;
 };
+
 CostumeSwatches CostumeSwatchColors(int index, int costume);
 // The index of character `index`'s costume in SkelMesh folder `folder` ("0C",
 // the silver model Eleven wears), or -1.
@@ -215,6 +221,7 @@ constexpr uint16_t kKeepStage = 0xFFFF; // MatchSetup::stage: whatever the game 
 // too ([netplay] lockstep_round_stages=1: lockstep, as before).
 // The state lives in a snapshot region of its own, so a rollback restores it.
 bool RoundInFight();
+
 // A replay's keyframe of what a load needs beside the snapshot regions: the
 // battle phase machine and its phases, the round end wait, the input
 // recorder's head (the per-tick copies a rollback restores from reach only
@@ -227,6 +234,7 @@ struct OutsideState {
     std::vector<uint8_t> machine;
     std::vector<std::shared_ptr<const std::vector<uint8_t>>> rounds; // in chunks, shared with the previous keyframe's while unchanged
 };
+
 bool SaveOutsideState(OutsideState* out, const OutsideState* previous);
 // After the regions were loaded, before SfvGame::OnStateLoaded (whose fix-ups
 // then see the director as it was).

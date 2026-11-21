@@ -17,8 +17,7 @@ int g_focus = 1; // 0 Previous, 1 Current, 2 Next
 
 } // namespace
 
-void DrawWatchPanel(const HubFonts& f, const WatchPanelLive& live, float alpha, bool takeInput, WatchPanelInput* in)
-{
+void DrawWatchPanel(const HubFonts& f, const WatchPanelLive& live, float alpha, bool takeInput, WatchPanelInput* in) {
     *in = WatchPanelInput{};
     if (!f.display || !f.strong || !f.body || alpha <= 0) {
         g_focus = 1; // it opens on the current game
@@ -84,7 +83,8 @@ void DrawWatchPanel(const HubFonts& f, const WatchPanelLive& live, float alpha, 
         const float bx = 448 + i * (bw + 12);
         const bool on = i == g_focus;
         Control(d, bx, y, bx + bw, y + 52, on);
-        const ImU32 col = on ? look::kInk : can[i] ? look::kCream : Rgba(244, 241, 232, 80);
+        const ImU32 col = on ? look::kInk : can[i] ? look::kCream
+                                                   : Rgba(244, 241, 232, 80);
         const float lw = TextW(bold, 18, kLabels[i]);
         const float gw = 30, gx = bx + (bw - gw - 10 - lw) / 2;
         Glyph(d, kGlyphs[i], g_v.P(gx, y + 11), g_v.P(gx + gw, y + 41), Rgba(255, 255, 255, can[i] ? 255 : 80), false);
@@ -116,7 +116,8 @@ void DrawWatchPanel(const HubFonts& f, const WatchPanelLive& live, float alpha, 
         if (Back() || Pressed({ImGuiKey_GamepadStart}, false)) in->resume = true;
         if (pressed >= 0) {
             g_focus = pressed;
-            in->watch = pressed == 0 ? at - 1 : pressed == 2 ? at + 1 : -1;
+            in->watch = pressed == 0 ? at - 1 : pressed == 2 ? at + 1
+                                                             : -1;
         }
     }
     g_inputOn = false;

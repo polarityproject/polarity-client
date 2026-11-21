@@ -21,7 +21,12 @@ namespace sfv::mod {
 class SfvGame;
 
 struct WorldBox {
-    enum Kind : uint8_t { Hurt, Throwable, Hit, Throw, Proximity };
+    enum Kind : uint8_t { Hurt,
+                          Throwable,
+                          Hit,
+                          Throw,
+                          Proximity };
+
     float x, y, w, h;
     Kind kind;
 };

@@ -22,7 +22,7 @@ struct Config {
     Mode mode = Mode::Probe;
 
     // probe
-    bool savestateHotkeys = false; // F5/F6/F9/F10 ([probe] debug_hotkeys)
+    bool savestateHotkeys = false;   // F5/F6/F9/F10 ([probe] debug_hotkeys)
     bool forceOfflineFrames = false; // open snapshot frames offline (see probes.cpp)
     bool forceEnable = false;        // set RollbackUnit::enabled offline
     bool includeSyncCounters = true; // snapshot the battle sync frame counters too
@@ -52,7 +52,7 @@ struct Config {
 
     NetplayOptions netplay; // [netplay] and [netsim]
 
-    int virtualPads = 0; // XInput pads driven by sfv_cmd.txt, connected at startup
+    int virtualPads = 0;       // XInput pads driven by sfv_cmd.txt, connected at startup
     bool alwaysActive = false; // keep reading pads while the window is in the background
 };
 

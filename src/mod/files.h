@@ -18,15 +18,15 @@ constexpr size_t kKeptRunLogs = 20;      // earlier runs' event logs
 constexpr size_t kKeptRecordings = 300;  // .sfvr files in the matches folder (a match, its desync reports)
 constexpr size_t kKeptMatchLogs = 200;   // .log files in the matches folder
 constexpr size_t kSharedMatches = 10;    // the latest matches in a shared zip
-constexpr size_t kKeptCrashReports = 20;  // crash reports (.log, and .dmp with a fault)
-constexpr size_t kSharedCrashFiles = 6;   // the latest crash reports' files in a shared zip
+constexpr size_t kKeptCrashReports = 20; // crash reports (.log, and .dmp with a fault)
+constexpr size_t kSharedCrashFiles = 6;  // the latest crash reports' files in a shared zip
 
 void SetDataDir(const std::wstring& dir);
-std::wstring DataDir();                   // ...\Win64\Polarity
-std::wstring LogsDir();                   // ...\Polarity\logs
-std::wstring MatchesDir();                // ...\Polarity\matches
-std::wstring ReplaysDir();                // ...\Polarity\replays: the Battle Log (kept, never pruned)
-std::wstring CrashesDir();                // ...\Polarity\crashes
+std::wstring DataDir();    // ...\Win64\Polarity
+std::wstring LogsDir();    // ...\Polarity\logs
+std::wstring MatchesDir(); // ...\Polarity\matches
+std::wstring ReplaysDir(); // ...\Polarity\replays: the Battle Log (kept, never pruned)
+std::wstring CrashesDir(); // ...\Polarity\crashes
 
 // Creates the folder and any missing parents.
 bool EnsureDirectory(const std::wstring& path);

@@ -50,10 +50,14 @@ struct RegionMismatch {
 };
 
 struct VerifyResult {
-    enum class Status { Match, SetupMismatch, Diverged, StressMismatch, Unsupported };
+    enum class Status { Match,
+                        SetupMismatch,
+                        Diverged,
+                        StressMismatch,
+                        Unsupported };
 
     Status status = Status::Match;
-    int frame = -1;          // first bad frame (-1 = before frame 0)
+    int frame = -1; // first bad frame (-1 = before frame 0)
     int framesChecked = 0;
     std::vector<RegionMismatch> regions;
     std::string message;

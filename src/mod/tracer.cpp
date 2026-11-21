@@ -30,13 +30,11 @@ Stub* g_stubs = nullptr;
 size_t g_used = 0;
 constexpr size_t kMaxStubs = 512;
 
-int32_t Rel(const Stub& s, size_t codeEnd, const void* field)
-{
+int32_t Rel(const Stub& s, size_t codeEnd, const void* field) {
     return static_cast<int32_t>(reinterpret_cast<const uint8_t*>(field) - (s.code + codeEnd));
 }
 
-void Emit(Stub& s)
-{
+void Emit(Stub& s) {
     uint8_t* c = s.code;
     size_t n = 0;
     auto put = [&](std::initializer_list<uint8_t> bytes) {
@@ -62,8 +60,7 @@ void Emit(Stub& s)
 
 } // namespace
 
-void TraceFunctions(uintptr_t imageBase, const std::vector<uint32_t>& rvas)
-{
+void TraceFunctions(uintptr_t imageBase, const std::vector<uint32_t>& rvas) {
     if (!g_stubs) {
         // Near the image so the stubs can be reached by MinHook's relative jumps.
         for (uintptr_t want = imageBase - 0x10000000; !g_stubs && want > 0x10000000; want -= 0x1000000) {
@@ -98,8 +95,7 @@ void TraceFunctions(uintptr_t imageBase, const std::vector<uint32_t>& rvas)
     Log("trace: %d functions hooked (%zu total)", ok, g_used);
 }
 
-void TraceReport(uintptr_t imageBase)
-{
+void TraceReport(uintptr_t imageBase) {
     int n = 0;
     for (size_t i = 0; i < g_used; i++) {
         Stub& s = g_stubs[i];

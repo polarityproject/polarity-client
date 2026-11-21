@@ -1,4 +1,5 @@
 #pragma once
+
 // Finds state that the battle ticks change but its snapshot does not restore:
 // saves the snapshot and a copy of every UObject, runs ticks, loads the
 // snapshot, and copies the objects again. What still differs (minus what

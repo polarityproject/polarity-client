@@ -22,8 +22,7 @@ namespace {
 // locked queue the sound thread drains). It checks itself that the sound
 // system is up (0x771900).
 constexpr game::CodeSite kPlayGameSe{
-    "PlayGameSE", 0x52AE30,
-    {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xDA, 0x48, 0x8B, 0xF9}};
+    "PlayGameSE", 0x52AE30, {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xDA, 0x48, 0x8B, 0xF9}};
 using PlayFn = void (*)(const uint8_t* cue, const uint8_t* mode);
 PlayFn g_play = nullptr;
 uintptr_t g_base = 0;
@@ -80,29 +79,32 @@ enum Cue : uint8_t {
 
 constexpr size_t kSounds = static_cast<size_t>(UiSound::Count);
 
-uint8_t CueOf(UiSound s, UiSoundSet set)
-{
+uint8_t CueOf(UiSound s, UiSoundSet set) {
     const bool main = set == UiSoundSet::MainMenu, chara = set == UiSoundSet::CharaSelect;
     switch (s) {
-    case UiSound::Cursor: return chara ? CHARASELECT_CURSOR : main ? MAINMENU_CURSOR1 : CURSOR1;
-    case UiSound::Step: return chara ? CHARASELECT_CURSOR : main ? MAINMENU_CURSOR_LR : CURSOR_LR;
-    case UiSound::Decide: return chara ? CHARASELECT_DECISION : main ? MAINMENU_DECISION1 : DECISION1;
-    case UiSound::Cancel: return chara ? CHARASELECT_CANCEL : main ? MAINMENU_CANCEL1 : CANCEL1;
-    case UiSound::Error: return main ? MAINMENU_NG1 : NG1;
-    case UiSound::Open: return main ? MAINMENU_WINDOW_OP1 : WINDOW_OP1;
-    case UiSound::Close: return main ? MAINMENU_WINDOW_CLS1 : WINDOW_CLS1;
-    case UiSound::Notice: return NOTICE_INFO;
-    case UiSound::NoticeError: return NOTICE_ERROR;
-    case UiSound::Invite: return NOTICE_INVITE;
-    case UiSound::ChatPost: return LOUNGE_CHAT_USER_POST;
-    case UiSound::ReadyOn: return LOUNGE_READY_ON;
-    case UiSound::ReadyOff: return LOUNGE_READY_OFF;
-    case UiSound::YourTurn: return LOUNGE_COMMING_PLAYERS_TURN_SE;
-    case UiSound::Countdown: return LOUNGE_PLAYERS_TURN_COUNT_DOWN_SE;
-    case UiSound::Found: return FIGHT_REQUEST_FOUND_OPPONENT;
-    case UiSound::Joined: return LOUNGE_CHAT_SYSTEM_ENTER;
-    case UiSound::Left: return LOUNGE_CHAT_SYSTEM_LEAVE;
-    default: return CURSOR1;
+        case UiSound::Cursor: return chara ? CHARASELECT_CURSOR : main ? MAINMENU_CURSOR1
+                                                                       : CURSOR1;
+        case UiSound::Step: return chara ? CHARASELECT_CURSOR : main ? MAINMENU_CURSOR_LR
+                                                                     : CURSOR_LR;
+        case UiSound::Decide: return chara ? CHARASELECT_DECISION : main ? MAINMENU_DECISION1
+                                                                         : DECISION1;
+        case UiSound::Cancel: return chara ? CHARASELECT_CANCEL : main ? MAINMENU_CANCEL1
+                                                                       : CANCEL1;
+        case UiSound::Error: return main ? MAINMENU_NG1 : NG1;
+        case UiSound::Open: return main ? MAINMENU_WINDOW_OP1 : WINDOW_OP1;
+        case UiSound::Close: return main ? MAINMENU_WINDOW_CLS1 : WINDOW_CLS1;
+        case UiSound::Notice: return NOTICE_INFO;
+        case UiSound::NoticeError: return NOTICE_ERROR;
+        case UiSound::Invite: return NOTICE_INVITE;
+        case UiSound::ChatPost: return LOUNGE_CHAT_USER_POST;
+        case UiSound::ReadyOn: return LOUNGE_READY_ON;
+        case UiSound::ReadyOff: return LOUNGE_READY_OFF;
+        case UiSound::YourTurn: return LOUNGE_COMMING_PLAYERS_TURN_SE;
+        case UiSound::Countdown: return LOUNGE_PLAYERS_TURN_COUNT_DOWN_SE;
+        case UiSound::Found: return FIGHT_REQUEST_FOUND_OPPONENT;
+        case UiSound::Joined: return LOUNGE_CHAT_SYSTEM_ENTER;
+        case UiSound::Left: return LOUNGE_CHAT_SYSTEM_LEAVE;
+        default: return CURSOR1;
     }
 }
 
@@ -111,11 +113,10 @@ const char* const kNames[kSounds] = {"cursor", "step", "decide", "cancel", "erro
 
 std::mutex g_mutex;
 std::array<bool, kSounds> g_pending{};
-UiSoundSet g_set = UiSoundSet::Menu; // render thread
+UiSoundSet g_set = UiSoundSet::Menu;            // render thread
 bool g_modalNow = false, g_modalBefore = false; // render thread
 
-void PlayCue(uint8_t cue)
-{
+void PlayCue(uint8_t cue) {
     if (!g_play || cue >= kCueCount) return;
     const uint8_t mode = 0;
     SetSoundCaptureExempt(true); // a menu sound of the mod's: never stopped as a muted run's
@@ -125,8 +126,7 @@ void PlayCue(uint8_t cue)
 
 } // namespace
 
-void InstallUiSound(const GameImage& image)
-{
+void InstallUiSound(const GameImage& image) {
     const auto* code = image.At<const uint8_t*>(kPlayGameSe.rva);
     if (std::memcmp(code, kPlayGameSe.bytes, sizeof(kPlayGameSe.bytes)) != 0) {
         Log("ui sound: signature mismatch at %s: the mod's screens stay silent", kPlayGameSe.name);
@@ -138,8 +138,7 @@ void InstallUiSound(const GameImage& image)
 
 bool GameSoundsMuted() { return g_muted; }
 
-void MuteGameSounds(bool mute)
-{
+void MuteGameSounds(bool mute) {
     if (!g_base || mute == g_muted) return;
     auto setVolume = *reinterpret_cast<CategoryVolumeFn*>(g_base + kCategoryVolumeByName);
     if (!setVolume) return;
@@ -168,8 +167,7 @@ void MuteGameSounds(bool mute)
         // Without the save, the categories at full: better than silent.
         for (const char* category : {"M_SE", "M_VOICE", "M_SYS_VOICE", "M_EXTRA_VOICE"}) setVolume(category, 1.0f);
         Log("ui sound: the options save not found; sounds unmuted at full volume");
-    }
-    else {
+    } else {
         using ApplyFn = void (*)(void*);
         reinterpret_cast<ApplyFn>(g_base + kApplySoundOptions)(options);
         Log("ui sound: the game's sounds back at the player's volumes (%d asked for while muted, stopped)", stopped);
@@ -177,8 +175,7 @@ void MuteGameSounds(bool mute)
     g_muted = false;
 }
 
-void PlayUi(UiSound sound)
-{
+void PlayUi(UiSound sound) {
     if (sound >= UiSound::Count) return;
     std::lock_guard lock(g_mutex);
     g_pending[static_cast<size_t>(sound)] = true;
@@ -188,8 +185,7 @@ void SetUiSoundSet(UiSoundSet set) { g_set = set; }
 
 void NoteModalDrawn() { g_modalNow = true; }
 
-void FlushUiSounds()
-{
+void FlushUiSounds() {
     std::array<bool, kSounds> now;
     {
         std::lock_guard lock(g_mutex);
@@ -220,8 +216,7 @@ void FlushUiSounds()
     }
 }
 
-bool PlayUiNamed(const std::string& name)
-{
+bool PlayUiNamed(const std::string& name) {
     for (size_t i = 0; i < kSounds; i++) {
         if (name == kNames[i]) {
             const uint8_t cue = CueOf(static_cast<UiSound>(i), UiSoundSet::Menu);

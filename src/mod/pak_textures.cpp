@@ -36,7 +36,11 @@ constexpr int kHandleSlotDestroy = 0, kHandleSlotRead = 4;
 constexpr int kWorkers = 2;
 constexpr int64_t kLargestFile = 64ll * 1024 * 1024;
 
-enum class State { Queued, Loading, Upload, Ready, Failed };
+enum class State { Queued,
+                   Loading,
+                   Upload,
+                   Ready,
+                   Failed };
 
 struct Entry {
     std::string path;
@@ -69,8 +73,7 @@ int g_batchFrames = 0, g_batchLongFrames = 0;
 double g_batchWorstFrameMs = 0;
 Clock::time_point g_lastPresent;
 
-std::string Key(const std::string& path, uint32_t maxSide, const TexLook& look = {})
-{
+std::string Key(const std::string& path, uint32_t maxSide, const TexLook& look = {}) {
     std::string key = path + "@" + std::to_string(maxSide);
     if (look.Any()) {
         char extra[80];
@@ -81,8 +84,7 @@ std::string Key(const std::string& path, uint32_t maxSide, const TexLook& look =
 }
 
 // The pak platform file, checked; null when this build's differs.
-void* PakFile()
-{
+void* PakFile() {
     if (g_pakLooked) return g_pakFile;
     g_pakLooked = true;
     const auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
@@ -104,16 +106,14 @@ void* PakFile()
 }
 
 // "/Game/Chara/RYU/Hud/PartCharacter" -> the package's name in the paks.
-std::wstring PakPath(const std::string& path)
-{
+std::wstring PakPath(const std::string& path) {
     std::string rest = path.compare(0, 6, "/Game/") == 0 ? path.substr(6) : path;
     std::wstring out = L"../../../StreetFighterV/Content/";
     out.append(rest.begin(), rest.end());
     return out + L".uasset";
 }
 
-bool ReadPackage(void* file, const std::string& path, std::vector<uint8_t>* out, std::string* error)
-{
+bool ReadPackage(void* file, const std::string& path, std::vector<uint8_t>* out, std::string* error) {
     void** vt = *static_cast<void***>(file);
     const std::wstring name = PakPath(path);
     const int64_t size = reinterpret_cast<int64_t (*)(void*, const wchar_t*)>(vt[kSlotFileSize])(file, name.c_str());
@@ -134,20 +134,18 @@ bool ReadPackage(void* file, const std::string& path, std::vector<uint8_t>* out,
     return ok;
 }
 
-DXGI_FORMAT DxgiFormat(TexFormat f)
-{
+DXGI_FORMAT DxgiFormat(TexFormat f) {
     switch (f) {
-    case TexFormat::Bgra8: return DXGI_FORMAT_B8G8R8A8_UNORM;
-    case TexFormat::Bc1: return DXGI_FORMAT_BC1_UNORM;
-    case TexFormat::Bc3: return DXGI_FORMAT_BC3_UNORM;
-    case TexFormat::Bc5: return DXGI_FORMAT_BC5_UNORM;
-    default: return DXGI_FORMAT_UNKNOWN;
+        case TexFormat::Bgra8: return DXGI_FORMAT_B8G8R8A8_UNORM;
+        case TexFormat::Bc1: return DXGI_FORMAT_BC1_UNORM;
+        case TexFormat::Bc3: return DXGI_FORMAT_BC3_UNORM;
+        case TexFormat::Bc5: return DXGI_FORMAT_BC5_UNORM;
+        default: return DXGI_FORMAT_UNKNOWN;
     }
 }
 
 // The texture and its view, on `device`.
-bool Upload(ID3D11Device* device, const TexImage& image, TextureView* view, std::string* error)
-{
+bool Upload(ID3D11Device* device, const TexImage& image, TextureView* view, std::string* error) {
     D3D11_TEXTURE2D_DESC desc{};
     desc.Width = image.width;
     desc.Height = image.height;
@@ -181,14 +179,12 @@ bool Upload(ID3D11Device* device, const TexImage& image, TextureView* view, std:
 }
 
 // Under g_mutex: an entry is done (ready or failed).
-void Finish(Entry& e, bool ok, double ms, const std::string& error)
-{
+void Finish(Entry& e, bool ok, double ms, const std::string& error) {
     e.state = ok ? State::Ready : State::Failed;
     if (ok) {
         g_loaded++;
         g_bytes += TexBytes(e.image.format == TexFormat::Unknown ? TexFormat::Bgra8 : e.image.format, e.view.width, e.view.height);
-    }
-    else {
+    } else {
         g_failed++;
         Log("pak textures: %s: %s (the game's loader draws it)", e.path.c_str(), error.c_str());
     }
@@ -198,8 +194,7 @@ void Finish(Entry& e, bool ok, double ms, const std::string& error)
     g_slowestMs = std::max(g_slowestMs, ms);
 }
 
-void LogBatchIfDone()
-{
+void LogBatchIfDone() {
     // Under g_mutex.
     if (!g_queue.empty() || g_batch == 0) return;
     bool busy = false;
@@ -216,8 +211,7 @@ void LogBatchIfDone()
     g_batchWorstFrameMs = 0;
 }
 
-void Work()
-{
+void Work() {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
     std::unique_lock lock(g_mutex);
     for (;;) {
@@ -248,8 +242,7 @@ void Work()
             image.format = TexFormat::Bgra8;
             image.width = image.height = maxSide;
             image.bytes = NoiseBgra(maxSide, 0x5F3759DFu);
-        }
-        else {
+        } else {
             {
                 std::lock_guard held(g_mutex);
                 file = PakFile();
@@ -280,8 +273,7 @@ void Work()
     }
 }
 
-void StartLocked()
-{
+void StartLocked() {
     if (g_started) return;
     g_started = true;
     for (int i = 0; i < kWorkers; i++) std::thread(Work).detach();
@@ -289,8 +281,7 @@ void StartLocked()
 
 } // namespace
 
-void SetPakTextureDevice(void* device)
-{
+void SetPakTextureDevice(void* device) {
     auto* d = static_cast<ID3D11Device*>(device);
     std::lock_guard lock(g_mutex);
     if (d == g_device) return;
@@ -318,8 +309,7 @@ void SetPakTextureDevice(void* device)
 namespace {
 
 const TextureView* Ask(const std::string& key, const std::string& path, uint32_t maxSide, bool urgent, bool* failed, const TexLook& look,
-                       bool noise)
-{
+                       bool noise) {
     std::lock_guard lock(g_mutex);
     if (!g_device) return nullptr;
     auto it = g_entries.find(key);
@@ -354,8 +344,7 @@ const TextureView* Ask(const std::string& key, const std::string& path, uint32_t
 
 } // namespace
 
-const TextureView* PakTexture(const std::string& path, uint32_t maxSide, bool urgent, bool* failed, const TexLook& look)
-{
+const TextureView* PakTexture(const std::string& path, uint32_t maxSide, bool urgent, bool* failed, const TexLook& look) {
     *failed = false;
     if (!g_enabled) {
         *failed = true;
@@ -364,20 +353,17 @@ const TextureView* PakTexture(const std::string& path, uint32_t maxSide, bool ur
     return Ask(Key(path, maxSide, look), path, maxSide, urgent, failed, look, false);
 }
 
-const TextureView* NoiseTexture(uint32_t side)
-{
+const TextureView* NoiseTexture(uint32_t side) {
     bool failed = false;
     return Ask("(noise)@" + std::to_string(side), "(noise)", side, true, &failed, {}, true);
 }
 
-void WarmPakTextures(const std::vector<std::pair<std::string, uint32_t>>& textures)
-{
+void WarmPakTextures(const std::vector<std::pair<std::string, uint32_t>>& textures) {
     bool failed = false;
     for (const auto& [path, maxSide] : textures) PakTexture(path, maxSide, false, &failed);
 }
 
-void CreatePakTextures()
-{
+void CreatePakTextures() {
     std::vector<std::pair<std::string, TexImage>> todo;
     ID3D11Device* device = nullptr;
     {
@@ -427,8 +413,7 @@ void CreatePakTextures()
     LogBatchIfDone();
 }
 
-void DumpPakPackage(const std::string& path, const std::string& file)
-{
+void DumpPakPackage(const std::string& path, const std::string& file) {
     void* pak = nullptr;
     {
         std::lock_guard lock(g_mutex);
@@ -454,14 +439,12 @@ void DumpPakPackage(const std::string& path, const std::string& file)
     for (const TexMip& m : package.mips) Log("  mip %ux%u at %zu, %zu bytes", m.width, m.height, m.offset, m.size);
 }
 
-void SetPakTexturesEnabled(bool on)
-{
+void SetPakTexturesEnabled(bool on) {
     g_enabled = on;
     Log("pak textures: %s", on ? "on" : "off (the game's loader draws)");
 }
 
-std::string PakTextureStatus()
-{
+std::string PakTextureStatus() {
     std::lock_guard lock(g_mutex);
     int queued = 0, ready = 0, failed = 0;
     for (const auto& [key, e] : g_entries) {
@@ -471,7 +454,8 @@ std::string PakTextureStatus()
     }
     char line[200];
     std::snprintf(line, sizeof(line), "pak textures %s: %d ready (%.1f MB), %d loading, %d failed; device %s", g_enabled ? "on" : "off",
-                  ready, g_bytes / 1048576.0, queued, failed, !g_device ? "none" : g_freeThreaded ? "free threaded" : "single threaded");
+                  ready, g_bytes / 1048576.0, queued, failed, !g_device ? "none" : g_freeThreaded ? "free threaded"
+                                                                                                  : "single threaded");
     return line;
 }
 

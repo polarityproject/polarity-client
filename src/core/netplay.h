@@ -58,7 +58,9 @@ struct NetplayConfig {
     std::function<void(const std::string&)> log;
 };
 
-enum class NetplayPhase { Syncing, Running, Ended };
+enum class NetplayPhase { Syncing,
+                          Running,
+                          Ended };
 
 struct DesyncInfo {
     int frame = 0;
@@ -80,10 +82,14 @@ public:
     void Leave();
 
     NetplayPhase Phase() const { return phase_; }
+
     // The first few desync events, in arrival order, and how many there were.
     const std::vector<DesyncInfo>& Desyncs() const { return desyncs_; }
+
     int DesyncCount() const { return desyncCount_; }
+
     int NextFrame() const { return nextFrame_; }
+
     float FramesAhead();
     // How far past the remote's last input this side may predict, up to the
     // configured window; 0 runs in lockstep (still correcting frames already
@@ -95,11 +101,13 @@ public:
     void SetInputDelay(unsigned char delay);
     GekkoNetworkStats NetworkStats();
     GekkoRollbackStats RollbackStats();
+
     // The session's saves so far, those that skipped their copy, and loads
     // whose state did not match its save (verifyLoads).
     struct SaveStats {
         int saves = 0, skipped = 0, loads = 0, loadMismatches = 0;
     };
+
     SaveStats SaveCounts() const { return saveCounts_; }
 
     // The recording so far with its confirmed range updated.
@@ -148,11 +156,13 @@ private:
 
     ReplayFile recording_;
     StateHistory history_;
+
     // Where a session's time goes (microseconds), logged every kCostEvery advances.
     struct Costs {
         double tick = 0, replayTick = 0, hash = 0, record = 0, save = 0, load = 0, loadCallbacks = 0;
         int ticks = 0, replayed = 0, saves = 0, skippedSaves = 0, loads = 0, loadMismatches = 0;
     } costs_;
+
     // The last saves (by frame % size): their checksum, and whether the copy was skipped.
     struct SavedFrame {
         int frame = -1;
@@ -160,12 +170,14 @@ private:
         bool skipped = false;
         bool pending = false; // hashOnConfirm: no checksum yet
     };
+
     std::array<SavedFrame, 256> saved_{};
     int loadMismatches_ = 0;
     unsigned int loadsSeen_ = 0; // loads so far, for verifyLoadsEvery
     SaveStats saveCounts_;
     std::vector<uint64_t> frameHashes_;
     int hashedFrame_ = -2; // frame whose hashes frameHashes_ holds
+
     // Frames simulated on predicted inputs and not hashed yet (hashOnConfirm),
     // by frame % size: the inputs they ran on, and their last save.
     struct PendingFrame {
@@ -174,11 +186,14 @@ private:
         const uint8_t* state = nullptr; // GekkoNet's save buffer
         unsigned int* checksum = nullptr;
     };
+
     std::array<PendingFrame, 256> pending_{};
     int lowestPending_ = 0;
     int unsettled_ = 0; // pending frames that had no save to hash (logged)
     std::vector<uint64_t> settleHashes_;
+
     bool HashOnConfirm() const { return config_.hashOnConfirm && config_.stressCheckDistance == 0; }
+
     void Settle(PendingFrame& p);
     void SettleConfirmed(int upTo = INT32_MAX);
     std::vector<DesyncInfo> desyncs_;

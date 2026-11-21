@@ -25,8 +25,7 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-bool Connect(WeyveClient* c, const std::string& server)
-{
+bool Connect(WeyveClient* c, const std::string& server) {
     std::string host = server;
     uint16_t port = 5555;
     if (const size_t colon = server.rfind(':'); colon != std::string::npos) {
@@ -41,8 +40,7 @@ bool Connect(WeyveClient* c, const std::string& server)
 }
 
 // Polls until an event of `type` arrives (true) or `ms` pass.
-bool WaitFor(WeyveClient* c, WeyveEventType type, int ms, WeyveEvent* out)
-{
+bool WaitFor(WeyveClient* c, WeyveEventType type, int ms, WeyveEvent* out) {
     const auto end = Clock::now() + std::chrono::milliseconds(ms);
     while (Clock::now() < end) {
         if (!weyve_poll(c)) return false;
@@ -61,8 +59,7 @@ bool WaitFor(WeyveClient* c, WeyveEventType type, int ms, WeyveEvent* out)
 
 } // namespace
 
-int main(int argc, char** argv)
-{
+int main(int argc, char** argv) {
     if (argc < 2) {
         std::printf("usage: weyve_probe host [server] | join <code> [server]\n");
         return 2;
@@ -134,8 +131,7 @@ int main(int argc, char** argv)
         if (i == 0) {
             std::printf("link up after %.0f ms\n",
                         std::chrono::duration<double, std::milli>(Clock::now() - start).count());
-        }
-        else {
+        } else {
             rtts.push_back(ms);
         }
     }

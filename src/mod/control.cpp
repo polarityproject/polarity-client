@@ -72,7 +72,24 @@ namespace {
 using XInputGetStateFn = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
 
 struct Step {
-    enum Kind { Press, Wait, Connect, Disconnect, Game, Setup, ShowSetup, ClearSetup, Scan, Rescan, ScanShow, ScanSmall, ScanDelta, ScanRecord, Trace, TraceReport, Net } kind;
+    enum Kind { Press,
+                Wait,
+                Connect,
+                Disconnect,
+                Game,
+                Setup,
+                ShowSetup,
+                ClearSetup,
+                Scan,
+                Rescan,
+                ScanShow,
+                ScanSmall,
+                ScanDelta,
+                ScanRecord,
+                Trace,
+                TraceReport,
+                Net } kind;
+
     std::string line;
     MatchSetup setup;
     std::vector<uint32_t> rvas;
@@ -99,7 +116,7 @@ struct VirtualPad {
 
 XInputGetStateFn g_origGetState = nullptr;
 std::atomic<bool> g_blockPause{false};
-std::atomic<uint16_t> g_uiButtons{0};      // PressUiButtons
+std::atomic<uint16_t> g_uiButtons{0}; // PressUiButtons
 std::atomic<uint64_t> g_uiButtonsUntil{0};
 using HwndFn = HWND(WINAPI*)();
 HwndFn g_origForeground = nullptr;
@@ -112,8 +129,7 @@ std::atomic<uint16_t> g_realStartBack[XUSER_MAX_COUNT] = {};
 void KeepWindowActive();
 void SubclassWindow();
 
-HWND FindGameWindow()
-{
+HWND FindGameWindow() {
     HWND found = nullptr;
     EnumWindows(
         [](HWND w, LPARAM out) -> BOOL {
@@ -131,24 +147,24 @@ HWND FindGameWindow()
     return found;
 }
 
-HWND WINAPI ForegroundDetour()
-{
+HWND WINAPI ForegroundDetour() {
     HookGuard guard;
     HWND w = g_gameWindow;
     return w ? w : g_origForeground();
 }
-HWND WINAPI ActiveDetour()
-{
+
+HWND WINAPI ActiveDetour() {
     HookGuard guard;
     HWND w = g_gameWindow;
     return w ? w : g_origActive();
 }
-HWND WINAPI FocusDetour()
-{
+
+HWND WINAPI FocusDetour() {
     HookGuard guard;
     HWND w = g_gameWindow;
     return w ? w : g_origFocus();
 }
+
 uintptr_t g_imageBase = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
 VirtualPad g_pads[XUSER_MAX_COUNT];
 std::atomic<uint64_t> g_polls[XUSER_MAX_COUNT];
@@ -198,8 +214,7 @@ uint8_t g_padsKept[2][kPadStateEnd - kPadStateBegin] = {};
 bool g_padsCleared = false;
 std::atomic<uint32_t> g_gameKeys{0}; // both pads' keys (kPadDown) as the last update made them
 
-uint64_t InputUpdateDetour(void* self, float deltaSeconds)
-{
+uint64_t InputUpdateDetour(void* self, float deltaSeconds) {
     HookGuard guard;
     // During a netplay match the frame's wait goes here, before the pads are
     // read, so it adds no input lag (pacing.h).
@@ -247,8 +262,7 @@ uint64_t InputUpdateDetour(void* self, float deltaSeconds)
 
 // The game's input value for a pad state, with the default button layout
 // (type A: X LP, Y MP, RB HP, A LK, B MK, RT HK), d-pad or left stick.
-PackedInput ToGameInput(const XINPUT_GAMEPAD& g)
-{
+PackedInput ToGameInput(const XINPUT_GAMEPAD& g) {
     constexpr SHORT kStick = 16000;
     PackedInput in = 0;
     if ((g.wButtons & XINPUT_GAMEPAD_DPAD_UP) || g.sThumbLY > kStick) in |= kUp;
@@ -265,8 +279,7 @@ PackedInput ToGameInput(const XINPUT_GAMEPAD& g)
     return in;
 }
 
-DWORD ComposeState(DWORD user, XINPUT_STATE* state)
-{
+DWORD ComposeState(DWORD user, XINPUT_STATE* state) {
     DWORD result = g_origGetState(user, state);
     if (user >= XUSER_MAX_COUNT) return result;
     g_polls[user]++;
@@ -301,8 +314,7 @@ DWORD ComposeState(DWORD user, XINPUT_STATE* state)
     return ERROR_SUCCESS;
 }
 
-DWORD WINAPI GetStateDetour(DWORD user, XINPUT_STATE* state)
-{
+DWORD WINAPI GetStateDetour(DWORD user, XINPUT_STATE* state) {
     HookGuard guard;
     // The engine polls the pads on the game thread once per frame.
     if (user == 0) PumpGameThread();
@@ -351,16 +363,14 @@ bool ParseButtons(const std::string& spec, Step& step);
 
 std::string g_testName; // from `name`; empty: "Player <instance + 1>"
 
-std::string TestName()
-{
+std::string TestName() {
     return g_testName.empty() ? "Player " + std::to_string(StatusInstance() + 1) : g_testName;
 }
 
 // Research commands of the box display work (hitbox_display.h, battle_driver.h
 // region research): kept out of RunNetCommand's chain, which is at the
 // compiler's nesting limit. Returns whether `cmd` was one of them.
-bool RunResearchCommand(const std::string& cmd, std::stringstream& ss)
-{
+bool RunResearchCommand(const std::string& cmd, std::stringstream& ss) {
     if (cmd == "canceljump") {
         // canceljump: research (calls off the jump under way, as a session
         // going back to the lobby mid-jump does; `battlenow; canceljump`)
@@ -394,77 +404,65 @@ bool RunResearchCommand(const std::string& cmd, std::stringstream& ss)
         ss >> name >> off >> len;
         const size_t offset = std::stoull(off.empty() ? "0" : off, nullptr, 16);
         WatchRegionNamed(name, offset, len); // from this thread: a watch covers every thread but the one arming it
-    }
-    else if (cmd == "watchphase") {
+    } else if (cmd == "watchphase") {
         // watchphase: research (a write watch on the phase machine's requested phase, +0x134; `watchreport`)
         uint8_t* m = PhaseMachineObject();
         if (!m) Log("watchphase: no phase machine");
         else Log("watchphase: %s", ArmWatch(1, m + 0x134, 4, g_imageBase) ? "armed on +0x134" : "not armed");
-    }
-    else if (cmd == "camrollback" || cmd == "camlog") {
+    } else if (cmd == "camrollback" || cmd == "camlog") {
         // camrollback 0|1: camera views follow rollbacks (on by default); camlog 1|0: research (every view request)
         int on = 1;
         ss >> on;
         if (cmd == "camlog") RunOnGameThread([on] { SetCameraRollbackLog(on != 0); });
         else RunOnGameThread([on] { SetCameraRollback(on != 0); });
-    }
-    else if (cmd == "hudstep") {
+    } else if (cmd == "hudstep") {
         // hudstep 0|1: replay runs keep the battle HUD's movies in step (on by default; research)
         int on = 1;
         ss >> on;
         RunOnGameThread([on] { SetHudStep(on); });
-    }
-    else if (cmd == "camtrace") {
+    } else if (cmd == "camtrace") {
         // camtrace <from tick> <to tick> [class text]: research (camera objects per tick and frame)
         uint32_t from = 0, to = 0;
         std::string text = "Camera";
         ss >> from >> to >> text;
         RunOnGameThread([=] { TraceCameraObjects(from, to, text); });
-    }
-    else if (cmd == "cinelog") {
+    } else if (cmd == "cinelog") {
         // cinelog 2|1|0: research (2: every tick and frame; (cinematics, scripts per tick; the camera while one plays)
         int on = 1;
         ss >> on;
         RunOnGameThread([on] { LogCinematics(on); });
-    }
-    else if (cmd == "actorlog") {
+    } else if (cmd == "actorlog") {
         // actorlog <ticks>: research (script runners' move, frame; position regions)
         int ticks = 120;
         ss >> ticks;
         RunOnGameThread([ticks] { LogActors(ticks); });
-    }
-    else if (cmd == "rcmp") {
+    } else if (cmd == "rcmp") {
         // rcmp <a> <b> <hex from, - allowed> <hex to>: research
         std::string a, b, f, t;
         ss >> a >> b >> f >> t;
         auto hex = [](const std::string& s) { return s.rfind('-', 0) == 0 ? -std::stoll(s.substr(1), nullptr, 16) : std::stoll(s, nullptr, 16); };
         const long long from = hex(f), to = hex(t);
         RunOnGameThread([=] { CompareRegions(a, b, from, to); });
-    }
-    else if (cmd == "rpeek") {
+    } else if (cmd == "rpeek") {
         // rpeek <region> <hex offset, - allowed> [qwords]: research
         std::string name, off;
         int qwords = 4;
         ss >> name >> off >> qwords;
         const long long offset = off.rfind('-', 0) == 0 ? -std::stoll(off.substr(1), nullptr, 16) : std::stoll(off, nullptr, 16);
         RunOnGameThread([=] { PeekRegion(name, offset, qwords); });
-    }
-    else if (cmd == "ptrscan") {
+    } else if (cmd == "ptrscan") {
         // ptrscan <from region> <hex before> <hex after> <to region>: research
         std::string from, to;
         size_t before = 0, after = 0;
         ss >> from >> std::hex >> before >> after >> std::dec >> to;
         RunOnGameThread([=] { ScanForPointers(from, before, after, to); });
-    }
-    else if (cmd == "rsnap") {
+    } else if (cmd == "rsnap") {
         RunOnGameThread([] { SnapRegions(); });
-    }
-    else if (cmd == "boxlog") {
+    } else if (cmd == "boxlog") {
         int ticks = 60;
         ss >> ticks;
         LogHitboxes(ticks);
-    }
-    else if (cmd == "winsize") {
+    } else if (cmd == "winsize") {
         // winsize <client width> <client height>: research (the game window resized)
         int w = 0, h = 0;
         ss >> w >> h;
@@ -476,34 +474,29 @@ bool RunResearchCommand(const std::string& cmd, std::stringstream& ss)
             GetClientRect(win, &c);
             Log("winsize: client %ldx%ld", c.right, c.bottom);
         }
-    }
-    else if (cmd == "ftrace") {
+    } else if (cmd == "ftrace") {
         // ftrace <ticks>: research (changed snapshot words per tick to Polarity\research\ftrace.bin)
         int ticks = 600;
         ss >> ticks;
         RunOnGameThread([ticks] { TraceRegions(ticks); });
-    }
-    else if (cmd == "freeze") {
+    } else if (cmd == "freeze") {
         // freeze 1|0: research (the battle held on its frame)
         int on = 1;
         ss >> on;
         SetBattleFreeze(on != 0);
-    }
-    else if (cmd == "framemeter") {
+    } else if (cmd == "framemeter") {
         // framemeter 0|1: research (the frame meter in any battle)
         int on = 1;
         ss >> on;
         SetFrameMeterForced(on != 0);
-    }
-    else if (cmd == "battledata") {
+    } else if (cmd == "battledata") {
         // battledata [dump]: research (the loaded move data against the game's own; dump: their hashes to Polarity/research)
         std::string what;
         ss >> what;
         if (what == "dump") RunOnGameThread([] { DumpLoadedBattleData(); });
         else CheckBattleDataSoon("asked");
         Log("battledata: mod paks: %s", ScanModPaks().Text().c_str());
-    }
-    else if (cmd == "benchmark") {
+    } else if (cmd == "benchmark") {
         // benchmark: test (the built-in round under stress 8, as Settings' Run benchmark starts it)
         // | benchmark dump <frame>|off: research (runs save that frame's state, a reference for a failing run's) | benchmark file <path>
         std::string what;
@@ -512,64 +505,53 @@ bool RunResearchCommand(const std::string& cmd, std::stringstream& ss)
             std::string frame;
             ss >> frame;
             SetBenchmarkDumpFrame(frame.empty() || frame == "off" ? -1 : std::atoi(frame.c_str()));
-        }
-        else if (what == "file") {
+        } else if (what == "file") {
             // benchmark file <recording in Polarity\matches, or a full path>: research (any recording as the benchmark plays it)
             std::string file;
             std::getline(ss >> std::ws, file);
             const std::string path = file.find(':') != std::string::npos ? file : Utf8Path(MatchesDir()) + "\\" + file;
             if (!RequestBenchmark(path)) Log("benchmark: not started");
-        }
-        else if (!StartBenchmark(kPolarityVersion)) Log("benchmark: not started");
-    }
-    else if (cmd == "fmlog") {
+        } else if (!StartBenchmark(kPolarityVersion)) Log("benchmark: not started");
+    } else if (cmd == "fmlog") {
         // fmlog <ticks>: research (each tick's frame meter classification)
         int ticks = 120;
         ss >> ticks;
         LogFrameMeter(ticks);
-    }
-    else if (cmd == "hitboxes") {
+    } else if (cmd == "hitboxes") {
         // hitboxes 0|1: research (the box display in any battle)
         int on = 1;
         ss >> on;
         SetHitboxesForced(on != 0);
-    }
-    else if (cmd == "rdump") {
+    } else if (cmd == "rdump") {
         // rdump <region> <tag>: research (region bytes to Polarity\research\<tag>.bin)
         std::string name, tag;
         ss >> name >> tag;
         RunOnGameThread([=] { DumpRegion(name, tag); });
-    }
-    else if (cmd == "rdiff") {
+    } else if (cmd == "rdiff") {
         // rdiff side|all [region name prefix]: research (snapshot region words changed since rsnap)
         std::string mode = "side", prefix;
         ss >> mode >> prefix;
         RunOnGameThread([mode, prefix] { DiffRegions(mode, prefix); });
-    }
-    else if (cmd == "dumpbac") {
+    } else if (cmd == "dumpbac") {
         // dumpbac <BAC_RYU|BCH_RYU|...>: research (the loaded move file to Polarity\research)
         std::string name;
         ss >> name;
         RunOnGameThread([name] { DumpMoveFile(name); });
-    }
-    else if (cmd == "rfind") {
+    } else if (cmd == "rfind") {
         // rfind f <float> | i <int> | bac <KWBAC name>: research (in the snapshot regions)
         std::string kind, a, b;
         ss >> kind >> a >> b;
         RunOnGameThread([kind, a, b] { FindInRegions(kind, a, b); });
-    }
-    else if (cmd == "uobj") {
+    } else if (cmd == "uobj") {
         // uobj <name>: research (objects of that name, their class and owner)
         std::string name, how;
         ss >> name >> how;
         RunOnGameThread([name, dump = how == "dump"] { LogObjectsNamed(name, dump); });
-    }
-    else return false;
+    } else return false;
     return true;
 }
 
-void RunNetCommand(const std::string& line)
-{
+void RunNetCommand(const std::string& line) {
     std::stringstream ss(line);
     std::string cmd;
     ss >> cmd;
@@ -591,16 +573,14 @@ void RunNetCommand(const std::string& line)
         command.autoReady = !manual;
         command.name = TestName();
         NetHost(command);
-    }
-    else if (cmd == "join" || cmd == "spectate") {
+    } else if (cmd == "join" || cmd == "spectate") {
         std::string code, word;
         ss >> code >> word;
         NetplayOptions command = o;
         command.autoReady = word != "manual";
         command.name = TestName();
         NetJoin(code, command, cmd == "spectate");
-    }
-    else if (cmd == "ticket") {
+    } else if (cmd == "ticket") {
         // ticket host | join <code> | watch <code>, then any of: token <n>
         // (the P2 seat's), set (a table's set instead of a vote), rules
         // <r1 ...> (the rest of the line, core/rules.h): a session from a
@@ -626,8 +606,7 @@ void RunNetCommand(const std::string& line)
         command.autoReady = true;
         command.name = TestName();
         NetPlayTicket(t, command);
-    }
-    else if (cmd == "presence") {
+    } else if (cmd == "presence") {
         // presence open | status | close: a second Weyvelength connection
         // beside any session's, as the hub's presence room will be (M3): it
         // connects (5555, then 443 for the public server), creates a room and
@@ -640,24 +619,20 @@ void RunNetCommand(const std::string& line)
             presence = WeyveService::Start(server, TestName() + " (presence)", server == kDefaultServer ? kDefaultServerAlsoPort : 0);
             presence->CreateRoom();
             Log("presence: connecting to %s", server.c_str());
-        }
-        else if (what == "close") {
+        } else if (what == "close") {
             presence.reset();
             Log("presence: closed");
-        }
-        else if (presence) {
+        } else if (presence) {
             const WeyveRoomView v = presence->View();
             static const char* const kServer[] = {"connecting", "connected", "failed", "lost"};
             Log("presence: %s (%s), room %s, %zu members, self %u", kServer[static_cast<int>(v.server)], v.serverText.c_str(),
                 v.room.empty() ? "-" : WeyveService::DisplayCode(v.room).c_str(), v.members.size(), v.self);
             WeyveEvent e;
             while (presence->NextEvent(e)) Log("presence: event %d %s", static_cast<int>(e.type), e.text.c_str());
-        }
-        else {
+        } else {
             Log("presence: not open");
         }
-    }
-    else if (cmd == "settings") {
+    } else if (cmd == "settings") {
         // settings [row] | settings <row> type [text] | settings close: the
         // settings screen (test), on a row, typing text in it.
         std::string row, what;
@@ -667,10 +642,8 @@ void RunNetCommand(const std::string& line)
             std::string text;
             std::getline(ss >> std::ws, text);
             OpenSettingsScreenTyping(row, text);
-        }
-        else OpenSettingsScreen(row);
-    }
-    else if (cmd == "rooms") {
+        } else OpenSettingsScreen(row);
+    } else if (cmd == "rooms") {
         // rooms open | close | status | create [tables] [public 0|1] [title: 5, 3,RYU,KEN] |
         // join <code> | leave | chat <text> | table <request> [args]: the hub's presence (rooms_client.h),
         // driven by hand until the hub's screens (M3).
@@ -681,11 +654,9 @@ void RunNetCommand(const std::string& line)
             // As from the rooms screen: in the keeper's desk, so requests
             // (create, peek) go through (the hub alone stays in no room).
             OpenRoomsScreen();
-        }
-        else if (what == "close") {
+        } else if (what == "close") {
             RoomsClose();
-        }
-        else if (what == "create") {
+        } else if (what == "create") {
             keeper::RoomSettings s;
             int pub = 1;
             std::string title = "0";
@@ -699,16 +670,13 @@ void RunNetCommand(const std::string& line)
             // this game was on the hub or in a room just now).
             OpenRoomsScreen();
             if (!RoomsCreate(s)) Log("rooms: not open");
-        }
-        else if (what == "join") {
+        } else if (what == "join") {
             std::string code;
             ss >> code;
             if (!RoomsJoin(code)) Log("rooms: '%s' is no room code (or not open)", code.c_str());
-        }
-        else if (what == "leave") {
+        } else if (what == "leave") {
             RoomsLeave();
-        }
-        else if (what == "table") {
+        } else if (what == "table") {
             // rooms table <seat|stand|queue|unqueue|ready|decline|rules|kick> [args...]
             std::string kind, a;
             ss >> kind;
@@ -719,31 +687,26 @@ void RunNetCommand(const std::string& line)
                 std::getline(ss, rest);
                 if (!rest.empty() && rest[0] == ' ') rest.erase(0, 1);
                 args = {table, rest};
-            }
-            else {
+            } else {
                 while (ss >> a) args.push_back(a);
             }
             RoomsTable(kind, args);
-        }
-        else if (what == "watch") {
+        } else if (what == "watch") {
             // rooms watch <table, from 0> | -1: as X on the room screen.
             int table = -1;
             ss >> table;
             RoomsWatch(table);
-        }
-        else if (what == "mute") {
+        } else if (what == "mute") {
             // rooms mute <member id>: as A on that player's row (testing).
             uint32_t id = 0;
             ss >> id;
             ToggleMuteForTest(id);
-        }
-        else if (what == "chat") {
+        } else if (what == "chat") {
             std::string text;
             std::getline(ss, text);
             if (!text.empty() && text[0] == ' ') text.erase(0, 1);
             if (!RoomsChat(text)) Log("rooms: chat not sent (not in a room, or past the limits)");
-        }
-        else {
+        } else {
             const RoomsView v = RoomsSnapshot();
             Log("rooms: %s", DescribeRooms(v).c_str());
             for (const keeper::ListedRoom& r : v.publicRooms)
@@ -752,26 +715,22 @@ void RunNetCommand(const std::string& line)
             for (size_t i = v.chat.size() > 5 ? v.chat.size() - 5 : 0; i < v.chat.size(); i++)
                 Log("rooms:   chat %s: %s", v.chat[i].from ? v.chat[i].name.c_str() : "*", v.chat[i].text.c_str());
         }
-    }
-    else if (cmd == "matchchat") {
+    } else if (cmd == "matchchat") {
         // matchchat <text>: chat into the session's match room (testing the
         // host's ban of a modified client).
         std::string text;
         std::getline(ss >> std::ws, text);
         NetTestMatchChat(text);
-    }
-    else if (cmd == "delay") {
+    } else if (cmd == "delay") {
         // delay <frames>: this player's input delay for the next host/join.
         int frames = 2;
         ss >> frames;
         o.inputDelay = static_cast<uint8_t>(std::clamp(frames, 0, 10));
         Log("netplay: input delay %u for the next session", o.inputDelay);
-    }
-    else if (cmd == "name") {
+    } else if (cmd == "name") {
         std::getline(ss >> std::ws, g_testName);
         Log("netplay: test sessions play as %s", TestName().c_str());
-    }
-    else if (cmd == "crash") {
+    } else if (cmd == "crash") {
         // crash game|thread|overflow|hang|fastfail|raise|stub|exit: testing crash reports
         // (crash_report.h). The game ends (or freezes) for real.
         std::string how;
@@ -779,13 +738,11 @@ void RunNetCommand(const std::string& line)
         Log("crash: %s on purpose (testing)", how.c_str());
         if (how == "thread") {
             std::thread([] { *reinterpret_cast<volatile int*>(16) = 1; }).detach();
-        }
-        else if (how == "overflow") {
+        } else if (how == "overflow") {
             RunOnGameThread([] {
                 struct Deep {
 #pragma warning(suppress : 4717) // endless on purpose
-                    static int Down(volatile int n)
-                    {
+                    static int Down(volatile int n) {
                         volatile char pad[4096];
                         pad[0] = static_cast<char>(n);
                         return Down(n + 1) + pad[0];
@@ -793,22 +750,18 @@ void RunNetCommand(const std::string& line)
                 };
                 Deep::Down(0);
             });
-        }
-        else if (how == "hang") {
+        } else if (how == "hang") {
             RunOnGameThread([] {
                 for (volatile bool spin = true; spin;) {
                 }
             });
-        }
-        else if (how == "fastfail") {
+        } else if (how == "fastfail") {
             RunOnGameThread([] { __fastfail(7); });
-        }
-        else if (how == "raise") {
+        } else if (how == "raise") {
             // An exception that is not a fault, left to the engine (as its
             // own errors are): it ends the game itself.
             RunOnGameThread([] { RaiseException(1, 0, 0, nullptr); });
-        }
-        else if (how == "stub") {
+        } else if (how == "stub") {
             // What Wine raises for a function it does not have (cabinet.dll's
             // Compress, imported by ordinal, before 0.2.6.1).
             RunOnGameThread([] {
@@ -816,16 +769,13 @@ void RunNetCommand(const std::string& line)
                 const ULONG_PTR args[2] = {reinterpret_cast<ULONG_PTR>(dll), 33};
                 RaiseException(0x80000100, EXCEPTION_NONCONTINUABLE, 2, args);
             });
-        }
-        else if (how == "exit") {
+        } else if (how == "exit") {
             // The game ending itself with an error code (as the engine does after an error).
             RunOnGameThread([] { TerminateProcess(GetCurrentProcess(), 3); });
-        }
-        else {
+        } else {
             RunOnGameThread([] { *reinterpret_cast<volatile int*>(16) = 1; });
         }
-    }
-    else if (cmd == "reports") {
+    } else if (cmd == "reports") {
         // reports [send] [url <address>]: desync report uploads (report_upload.h).
         std::string what, url;
         ss >> what;
@@ -833,10 +783,8 @@ void RunNetCommand(const std::string& line)
             ss >> url;
             SetReportUrl(url);
             Log("reports: server %s", url.empty() ? "as configured" : url.c_str());
-        }
-        else SendReadyReports();
-    }
-    else if (cmd == "update") {
+        } else SendReadyReports();
+    } else if (cmd == "update") {
         // update [check [url]] | update install | update pretend <version> |
         // update restart: the updater (updater.h).
         std::string what, url;
@@ -844,8 +792,7 @@ void RunNetCommand(const std::string& line)
         if (what == "check") {
             if (!url.empty()) SetUpdateUrl(url);
             UpdateCheck();
-        }
-        else if (what == "install") UpdateInstall();
+        } else if (what == "install") UpdateInstall();
         else if (what == "pretend" && !url.empty()) UpdatePretendVersion(url);
         else if (what == "restart") {
             std::string error;
@@ -855,13 +802,11 @@ void RunNetCommand(const std::string& line)
         Log("update: state %d, this build %s, site's %s, %llu of %llu bytes%s%s", static_cast<int>(v.state), v.current.c_str(),
             v.latest.empty() ? "-" : v.latest.c_str(), static_cast<unsigned long long>(v.done),
             static_cast<unsigned long long>(v.total), v.message.empty() ? "" : ": ", v.message.c_str());
-    }
-    else if (cmd == "packlogs") {
+    } else if (cmd == "packlogs") {
         // packlogs: what Settings, Logs, "Pack logs to share" does (files.h).
         std::string error;
         if (PackLogsToShare(&error).empty()) Log("files: cannot pack the logs: %s", error.c_str());
-    }
-    else if (cmd == "server") {
+    } else if (cmd == "server") {
         // server [host:port [also port]]: the rooms server the next host/join
         // uses, in this game only (the panel keeps its own choice). None:
         // back to the default. The second port is tried at the same time
@@ -869,34 +814,30 @@ void RunNetCommand(const std::string& line)
         std::string address;
         int alsoPort = 0;
         ss >> address >> alsoPort;
-        o.server = !address.empty() ? address : !o.savedServer.empty() ? o.savedServer : kDefaultServer;
+        o.server = !address.empty() ? address : !o.savedServer.empty() ? o.savedServer
+                                                                       : kDefaultServer;
         o.serverAlsoPort = static_cast<uint16_t>(std::clamp(alsoPort, 0, 65535));
         Log("netplay: rooms server %s for the next sessions", o.server.c_str());
-    }
-    else if (cmd == "transport") {
+    } else if (cmd == "transport") {
         // transport udp|weyve: for the next host/join (testing both paths).
         std::string which;
         ss >> which;
         o.udp = which == "udp";
         Log("netplay: transport %s", o.udp ? "UDP" : ("Weyvelength " + o.server).c_str());
-    }
-    else if (cmd == "ready") {
+    } else if (cmd == "ready") {
         int on = 1;
         ss >> on;
         NetSetReady(on != 0);
-    }
-    else if (cmd == "choose") {
+    } else if (cmd == "choose") {
         std::string what;
         ss >> what;
-        NetChoose(what == "rematch" ? lobby::Choice::Rematch : what == "select" ? lobby::Choice::CharacterSelect : lobby::Choice::None);
-    }
-    else if (cmd == "leave") {
+        NetChoose(what == "rematch" ? lobby::Choice::Rematch : what == "select" ? lobby::Choice::CharacterSelect
+                                                                                : lobby::Choice::None);
+    } else if (cmd == "leave") {
         NetLeave();
-    }
-    else if (cmd == "park") {
+    } else if (cmd == "park") {
         NetPark();
-    }
-    else if (cmd == "members") {
+    } else if (cmd == "members") {
         // members <hex address> [bytes]: names the UObjects its fields point at.
         unsigned long long address = 0;
         int bytes = 0x400;
@@ -910,8 +851,7 @@ void RunNetCommand(const std::string& line)
             const std::string d = ue4::Describe(reinterpret_cast<const void*>(v));
             if (d.find('?') == std::string::npos && d.size() > 3 && d.front() != ' ') Log("  +0x%x: %s (%llx)", off, d.c_str(), static_cast<unsigned long long>(v));
         }
-    }
-    else if (cmd == "classes") {
+    } else if (cmd == "classes") {
         // classes <text>: classes whose name contains `text`, with how many
         // live objects each has (diagnostics).
         std::string text;
@@ -938,8 +878,7 @@ void RunNetCommand(const std::string& line)
             Log("class %s (%p): %d objects, first %s (%p)", ue4::ObjectName(cls).c_str(), cls, count,
                 ue4::Describe(first).c_str(), first);
         }
-    }
-    else if (cmd == "packages") {
+    } else if (cmd == "packages") {
         // packages mark: remembers the loaded packages. packages new: logs
         // the packages loaded since (with how many objects each holds) and
         // those gone since (diagnostics: what a battle load brings in).
@@ -973,18 +912,15 @@ void RunNetCommand(const std::string& line)
             gone++;
         }
         Log("packages: %zu now, %zu new (%zu objects), %zu gone since the mark", packages.size(), added, objects, gone);
-    }
-    else if (cmd == "preload") {
+    } else if (cmd == "preload") {
         // preload <code> [costume]: into the game's character cache.
         std::string code;
         int costume = 0;
         ss >> code >> costume;
         PreloadCharacter(code, costume);
-    }
-    else if (cmd == "versions") {
+    } else if (cmd == "versions") {
         LogCharaVersions();
-    }
-    else if (cmd == "uistart") {
+    } else if (cmd == "uistart") {
         // uistart [ms] [buttons]: testing, buttons (default start) on the
         // game's own pad input (PressUiButtons).
         int ms = 150;
@@ -992,15 +928,13 @@ void RunNetCommand(const std::string& line)
         ss >> ms >> buttons;
         Step parsed;
         if (ParseButtons(buttons, parsed)) PressUiButtons(parsed.buttons, ms);
-    }
-    else if (cmd == "textures") {
+    } else if (cmd == "textures") {
         // textures <filter> [limit]: loaded Texture2D objects by name or package.
         std::string filter;
         int limit = 80;
         ss >> filter >> limit;
         LogTextures(filter, limit);
-    }
-    else if (cmd == "showtex") {
+    } else if (cmd == "showtex") {
         // showtex <object name | /Game/... path> | showtex off: the texture's
         // shader resource view drawn by the overlay (research: portraits and
         // stage pictures for the controller UI).
@@ -1019,8 +953,7 @@ void RunNetCommand(const std::string& line)
             const TextureView view = ViewOfTexture(texture);
             if (view.srv) SetOverlayTexture(view.srv, view.width, view.height, which);
         });
-    }
-    else if (cmd == "paktex") {
+    } else if (cmd == "paktex") {
         // paktex on|off | status | show <path> [max side] | save <path> [max side]
         // | format <path> | dump <path>: textures read from the paks (pak_textures.h): on
         // or off for the screens, figures, one drawn by the overlay or
@@ -1033,8 +966,7 @@ void RunNetCommand(const std::string& line)
         else if (what == "status") Log("%s", PakTextureStatus().c_str());
         else if (what == "dump") {
             std::thread([path] { DumpPakPackage(path, Utf8Path(DataDir()) + "\\textures\\" + path.substr(path.rfind('/') + 1) + ".uasset"); }).detach();
-        }
-        else if (what == "format") {
+        } else if (what == "format") {
             RunOnGameThread([path] {
                 const TextureView view = ViewOfTexture(FindOrLoadTexture(path + "." + path.substr(path.rfind('/') + 1)), true);
                 if (!view.srv) return;
@@ -1045,8 +977,7 @@ void RunNetCommand(const std::string& line)
                     int(desc.Format), desc.Texture2D.MipLevels);
                 srv->Release();
             });
-        }
-        else if (what == "show" || what == "save") {
+        } else if (what == "show" || what == "save") {
             std::thread([what, path, maxSide] {
                 for (int i = 0; i < 200; i++) {
                     bool failed = false;
@@ -1066,8 +997,7 @@ void RunNetCommand(const std::string& line)
                 Log("paktex: %s: not ready after 5 s", path.c_str());
             }).detach();
         }
-    }
-    else if (cmd == "savetex") {
+    } else if (cmd == "savetex") {
         // savetex <object name | /Game/... path> ...: each texture's top mip
         // written to Polarity\textures\<name>.dds (research).
         std::vector<std::string> which;
@@ -1089,8 +1019,7 @@ void RunNetCommand(const std::string& line)
                 SaveTextureLater(view.srv, name);
             }
         });
-    }
-    else if (cmd == "watchmatch") {
+    } else if (cmd == "watchmatch") {
         // watchmatch <n | live>: a spectator watches the session's n-th kept
         // match (1: the oldest) or the newest from its start (the panel's
         // Previous / Next / Live).
@@ -1108,16 +1037,14 @@ void RunNetCommand(const std::string& line)
         }
         Log("watchmatch: %s of %zu", which.c_str(), v.matches.size());
         NetWatchMatch(id);
-    }
-    else if (cmd == "warmupsleep") {
+    } else if (cmd == "warmupsleep") {
         // warmupsleep <ms>: each neutral warm-up tick before the battle's
         // objects exist waits first (a slower PC's warm-up; sfv_game.h).
         int ms = 0;
         ss >> ms;
         SetWarmupSleep(ms);
         Log("control: warm-up ticks wait %d ms", ms);
-    }
-    else if (cmd == "watchcamera") {
+    } else if (cmd == "watchcamera") {
         // watchcamera: write watches on the battle camera's +0x94 and +0xE4
         // from the next freeze (research; watchreport, unwatch).
         // watchcamera new: from the next camera's construction instead
@@ -1127,25 +1054,21 @@ void RunNetCommand(const std::string& line)
         if (when == "new") {
             WatchNextCamera();
             Log("control: the next battle camera is watched from its construction");
-        }
-        else {
+        } else {
             WatchCameraAtFreeze();
             Log("control: the camera is watched from the next freeze");
         }
-    }
-    else if (cmd == "emptystage") {
+    } else if (cmd == "emptystage") {
         TestEmptyStageRequest();
         Log("control: the next jump's stage request is emptied (test)");
-    }
-    else if (cmd == "warmupextra") {
+    } else if (cmd == "warmupextra") {
         // warmupextra <n>: n more neutral warm-up ticks once the battle's
         // objects exist (test; sfv_game.h).
         int n = 0;
         ss >> n;
         SetWarmupExtra(n);
         Log("control: %d warm-up ticks after the objects", n);
-    }
-    else if (cmd == "shot") {
+    } else if (cmd == "shot") {
         // shot <path> [scale]: the next frame as shown, to a PNG (overlay.h
         // RequestScreenshot; path relative to Win64).
         std::string path;
@@ -1153,28 +1076,24 @@ void RunNetCommand(const std::string& line)
         ss >> path >> scale;
         if (path.empty()) Log("control: shot <path> [scale]");
         else RequestScreenshot(path, scale > 0 ? scale : 1);
-    }
-    else if (cmd == "burston") {
+    } else if (cmd == "burston") {
         int code = 5, frames = 300, scale = 4, count = 4;
         std::string dir;
         ss >> code >> dir >> frames >> scale >> count;
         SetBurstOnEvent(code, dir, frames, scale, count);
-    }
-    else if (cmd == "shotburst") {
+    } else if (cmd == "shotburst") {
         // shotburst <dir> <frames> [scale]: research (overlay.h RequestShotBurst; dir relative to Win64)
         std::string dir;
         int frames = 60, scale = 2;
         ss >> dir >> frames >> scale;
         RequestShotBurst(dir, frames, scale);
-    }
-    else if (cmd == "echo") {
+    } else if (cmd == "echo") {
         // echo <text>: logs it once every step before it has run (scripts
         // wait for it: cmd.ps1 -Wait).
         std::string rest;
         std::getline(ss, rest);
         Log("cmd: echo%s", rest.c_str());
-    }
-    else if (cmd == "uipads") {
+    } else if (cmd == "uipads") {
         // uipads <0|1>: testing, 1 lets the game see the local pads (with
         // Start and Back) during a netplay match, 0 isolates them again.
         int on = 0;
@@ -1182,19 +1101,16 @@ void RunNetCommand(const std::string& line)
         SetPadIsolation(!on);
         SetBlockPause(!on);
         Log("control: game sees the local pads during a match: %d", on);
-    }
-    else if (cmd == "mappedlog") {
+    } else if (cmd == "mappedlog") {
         int updates = 0;
         ss >> updates;
         g_mappedLog = updates;
         Log("mappedlog: the input manager's pad 0 for the next %d updates, on change", updates);
-    }
-    else if (cmd == "inputlog") {
+    } else if (cmd == "inputlog") {
         int ticks = 0;
         ss >> ticks;
         LogGameInputs(ticks);
-    }
-    else if (cmd == "resimtasks") {
+    } else if (cmd == "resimtasks") {
         // resimtasks <task rva (hex)> | v<class vtable rva> (the generic task
         // 0x3EB3F4 by its object's class)... | off | default (the lean replayed ticks' list)
         std::vector<uintptr_t> rvas;
@@ -1210,53 +1126,44 @@ void RunNetCommand(const std::string& line)
             else rvas.push_back(static_cast<uintptr_t>(std::stoull(word, nullptr, 16)));
         }
         SetResimTaskSkip(standard ? DefaultLeanResimTasks() : std::move(rvas));
-    }
-    else if (cmd == "resimskip") {
+    } else if (cmd == "resimskip") {
         int on = 1;
         ss >> on;
         SetResimPresentationSkip(on != 0);
-    }
-    else if (cmd == "phasecost") {
+    } else if (cmd == "phasecost") {
         int on = 1;
         ss >> on;
         SetPhaseTiming(on != 0);
-    }
-    else if (cmd == "serialjobs") {
+    } else if (cmd == "serialjobs") {
         // serialjobs 0|1: driven ticks run the battle's jobs in order on the game thread (1, the default) or on its threads
         int on = 1;
         ss >> on;
         SetSerialJobs(on != 0);
-    }
-    else if (cmd == "joborder") {
+    } else if (cmd == "joborder") {
         int calls = 1;
         ss >> calls;
         LogJobOrderNext(calls);
-    }
-    else if (cmd == "startprobe") {
+    } else if (cmd == "startprobe") {
         LogStartProbe();
-    }
-    else if (cmd == "soundrollback") {
+    } else if (cmd == "soundrollback") {
         // soundrollback 0|1: the game's own rollback of sounds (on by default; 0: resimulated ticks play theirs again)
         int on = 1;
         ss >> on;
         SetSoundRollback(on != 0);
-    }
-    else if (cmd == "frameids") {
+    } else if (cmd == "frameids") {
         // frameids 0|1: the game's restore callbacks get the game's own frame id (on by default; 0: the mod's old one)
         int on = 1;
         ss >> on;
         SetGameFrameIds(on != 0);
         Log("restore: callbacks get %s frame id", on ? "the game's" : "the mod's old");
-    }
-    else if (cmd == "leanresim") {
+    } else if (cmd == "leanresim") {
         // leanresim 0|1: replayed ticks without phase 8 and some phase-4 tasks (on by default; 0: whole updates)
         int on = 1;
         ss >> on;
         SetLeanResim(on != 0);
         SetResimTaskSkip(on ? DefaultLeanResimTasks() : std::vector<uintptr_t>{});
         Log("resim: replayed ticks %s", on ? "without presentation the newest tick makes up for" : "each a whole battle update");
-    }
-    else if (cmd == "forcerollback") {
+    } else if (cmd == "forcerollback") {
         // forcerollback <frame>... [xor <hex>]: research (mispredict replays reload before
         // those frames; with xor, the frames first ran on a wrong guess of the remote input)
         std::vector<int> frames;
@@ -1267,14 +1174,12 @@ void RunNetCommand(const std::string& line)
             else frames.push_back(std::atoi(w.c_str()));
         }
         SetForcedRollbacks(std::move(frames), guessXor);
-    }
-    else if (cmd == "ptrtest") {
+    } else if (cmd == "ptrtest") {
         // ptrtest old|new: research (flow.h SetLegacyPointerTest)
         std::string how;
         ss >> how;
         SetLegacyPointerTest(how == "old");
-    }
-    else if (cmd == "mapat") {
+    } else if (cmd == "mapat") {
         // mapat <hex address>...: research (commits 64 KB at each, zeroed: an address
         // a player's process had mapped, for a test that depends on it)
         std::string a;
@@ -1283,34 +1188,29 @@ void RunNetCommand(const std::string& line)
             void* p = VirtualAlloc(reinterpret_cast<void*>(at), 0x10000, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
             Log("mapat: %p %s", reinterpret_cast<void*>(at), p ? "committed" : "not free");
         }
-    }
-    else if (cmd == "kowaitmode") {
+    } else if (cmd == "kowaitmode") {
         // kowaitmode 0|1: loads put back the mode the round's end waits on (on by default; 0: as before)
         int on = 1;
         ss >> on;
         SetKoWaitRollback(on != 0);
-    }
-    else if (cmd == "uisound") {
+    } else if (cmd == "uisound") {
         // uisound <cursor|step|decide|cancel|error|open|close|notice|...|GameSoundSECue number>:
         // plays one of the mod's menu sounds now (ui_sound.h).
         std::string name;
         ss >> name;
         if (!PlayUiNamed(name)) Log("uisound: no sound %s", name.c_str());
-    }
-    else if (cmd == "soundlog") {
+    } else if (cmd == "soundlog") {
         // soundlog <count>: the next cue plays (research: sounds a rollback plays again)
         int count = 400;
         ss >> count;
         LogSoundPlays(count);
-    }
-    else if (cmd == "bonelog") {
+    } else if (cmd == "bonelog") {
         // bonelog <count> [<caller rva, hex>]
         int count = 200;
         std::string from;
         ss >> count >> from;
         LogBonePositions(count, from.empty() ? 0 : std::stoull(from, nullptr, 16));
-    }
-    else if (cmd == "drawlog") {
+    } else if (cmd == "drawlog") {
         // drawlog <count> | drawlog ticks <from> <to> (every draw in those driven ticks)
         std::string first;
         ss >> first;
@@ -1318,93 +1218,78 @@ void RunNetCommand(const std::string& line)
             uint32_t from = 0, to = 0;
             ss >> from >> to;
             LogRandomDrawsInTicks(from, to);
-        }
-        else {
+        } else {
             LogRandomDraws(std::atoi(first.c_str()));
         }
-    }
-    else if (cmd == "charcache") {
+    } else if (cmd == "charcache") {
         LogCharaCache();
-    }
-    else if (cmd == "datatable") {
+    } else if (cmd == "datatable") {
         std::string name, filter;
         int limit = 200;
         ss >> name >> filter >> limit;
         if (filter == "-") filter.clear();
         LogDataTable(name, filter, limit);
-    }
-    else if (cmd == "variants") {
+    } else if (cmd == "variants") {
         LogAllVariants();
-    }
-    else if (cmd == "uniqueparam") {
+    } else if (cmd == "uniqueparam") {
         int player = 0, index = 0, value = -1;
         ss >> player >> index >> value;
         SetUniqueParamOverride(player, index, value);
         Log("uniqueparam: P%d [%d] = %d", player + 1, index, value);
-    }
-    else if (cmd == "voicelang") {
+    } else if (cmd == "voicelang") {
         // voicelang ja|en|auto: every character's voice in the next battles
         // (testing), or each one's from the Sound options (auto).
         std::string what;
         ss >> what;
-        SetVoiceLanguageOverride(what == "ja" ? 0 : what == "en" ? 1 : -1);
+        SetVoiceLanguageOverride(what == "ja" ? 0 : what == "en" ? 1
+                                                                 : -1);
         Log("voicelang: %s (Ryu speaks %d)", what.c_str(), VoiceLanguageFor("RYU"));
-    }
-    else if (cmd == "vsync") {
+    } else if (cmd == "vsync") {
         std::string what;
         ss >> what;
         if (what == "on" || what == "off") SetVsync(what == "on");
         Log("overlay: %s", VsyncInfo().c_str());
-    }
-    else if (cmd == "countryflag") {
+    } else if (cmd == "countryflag") {
         // countryflag on|off: the Country flag setting for this run (testing; not saved).
         std::string what;
         ss >> what;
         WeyveService::SetHideCountry(what == "off");
-    }
-    else if (cmd == "wordfilter") {
+    } else if (cmd == "wordfilter") {
         // wordfilter on|off: the Word filter setting for this run (testing; not saved).
         std::string what;
         ss >> what;
         SetRoomsWordFilter(what != "off");
-    }
-    else if (cmd == "relayonly") {
+    } else if (cmd == "relayonly") {
         // relayonly on|off: the next sessions' links go only through TURN (testing).
         std::string what;
         ss >> what;
         WeyveService::SetRelayOnly(what != "off");
-    }
-    else if (cmd == "freeplay") {
+    } else if (cmd == "freeplay") {
         std::string what;
         ss >> what;
         SetFreePlayGuard(what);
-    }
-    else if (cmd == "presets") {
+    } else if (cmd == "presets") {
         std::string code;
         ss >> code;
         LogCostumePresets(code);
-    }
-    else if (cmd == "costumes") {
+    } else if (cmd == "costumes") {
         std::string code;
         ss >> code;
         LogCharaCostumes(code);
-    }
-    else if (cmd == "charas") {
+    } else if (cmd == "charas") {
         std::string list;
         for (int i = 0; i < CharaCount(); i++) {
             list += " " + CharaCode(i) + "=" + CharaName(i) + "(" + std::to_string(CharaCostumeCount(i)) + ")";
         }
         Log("characters (%d):%s", CharaCount(), list.c_str());
-    }
-    else if (cmd == "watchregion") {
+    } else if (cmd == "watchregion") {
         // watchregion <region name> <hex offset> [bytes]: for the next battle.
         std::string name;
         size_t offset = 0;
         int bytes = 8;
         ss >> name >> std::hex >> offset >> std::dec >> bytes;
         WatchRegionOfNextBattle(name, offset, bytes);
-    }
-    else if (cmd == "overlay") {
+    } else if (cmd == "overlay") {
         // overlay show|hide|toggle|preview <words>|select [stage|grid|loadout|ready] [spectate]
         // | rooms (the hub's custom rooms screen, open) | hub (back to the hub from it)
         // | battlelog (the hub's Battle Log, open)
@@ -1414,44 +1299,38 @@ void RunNetCommand(const std::string& line)
         else if (what == "select") {
             std::string phase, watching;
             ss >> phase >> watching;
-            RequestSelectPreview(phase == "grid" ? 1 : phase == "loadout" ? 2 : phase == "ready" ? 3 : 0, watching == "spectate");
-        }
-        else if (what == "hide") SetOverlayVisible(false);
+            RequestSelectPreview(phase == "grid" ? 1 : phase == "loadout" ? 2
+                                                   : phase == "ready"     ? 3
+                                                                          : 0,
+                                 watching == "spectate");
+        } else if (what == "hide") SetOverlayVisible(false);
         else if (what == "rooms") {
             // Tests: the pad's A on the hub goes to the tile the mouse is over.
             OpenHub();
             OpenRoomsScreen();
-        }
-        else if (what == "hub") CloseRoomsScreen();
+        } else if (what == "hub") CloseRoomsScreen();
         else if (what == "benchresult") {
             ShowLastBenchmarkResult();
-        }
-        else if (what == "battlelog") {
+        } else if (what == "battlelog") {
             OpenHub();
             OpenBattleLog();
-        }
-        else if (what == "preview") {
+        } else if (what == "preview") {
             std::string rest;
             std::getline(ss, rest);
             PreviewOverlay(rest);
-        }
-        else ToggleOverlay();
-    }
-    else if (cmd == "menu") {
+        } else ToggleOverlay();
+    } else if (cmd == "menu") {
         ReturnToMainMenu(1);
-    }
-    else if (cmd == "relocate") {
+    } else if (cmd == "relocate") {
         // Finds the object array again (diagnostics).
         const auto engine = *reinterpret_cast<uint8_t* const*>(g_imageBase + 0x3D878C8);
         ue4::LocateObjectsFrom(engine ? *reinterpret_cast<void* const*>(engine + 0x1E0) : nullptr);
-    }
-    else if (cmd == "scene") {
+    } else if (cmd == "scene") {
         // scene <StateClass> [init message object name]
         std::string name, param;
         ss >> name >> param;
         ChangeScene(name, param);
-    }
-    else if (cmd == "named") {
+    } else if (cmd == "named") {
         // named <object name>: every object with that name, with its outer.
         std::string name;
         ss >> name;
@@ -1462,8 +1341,7 @@ void RunNetCommand(const std::string& line)
             shown++;
             Log("named %s (%p) in %s", ue4::Describe(object).c_str(), object, ue4::Describe(ue4::OuterOf(object)).c_str());
         });
-    }
-    else if (cmd == "ofclass") {
+    } else if (cmd == "ofclass") {
         // ofclass <class name> [max]: live objects of that class or a subclass,
         // with their class and outer (research).
         std::string name;
@@ -1483,8 +1361,7 @@ void RunNetCommand(const std::string& line)
             }
         });
         Log("ofclass %s: %d of %d shown", name.c_str(), shown, total);
-    }
-    else if (cmd == "gfx") {
+    } else if (cmd == "gfx") {
         // gfx [vtable words]: the live Scaleform players (ScaleformUtilGFxPlayer
         // and subclasses): movie asset path (+0x300), step mode (+0x3A0), the
         // GFxMovie object (+0x318), the native movie player (+0x398) with its
@@ -1508,8 +1385,7 @@ void RunNetCommand(const std::string& line)
                     w += b;
                 }
                 Log("gfx player virtuals (slot:actor/player):%s", w.c_str());
-            }
-            else Log("gfx: no Default__Actor (%p) or Default__ScaleformUtilGFxPlayer (%p)", actor, player);
+            } else Log("gfx: no Default__Actor (%p) or Default__ScaleformUtilGFxPlayer (%p)", actor, player);
         }
         ue4::ForEachObject([&](const void* object) {
             bool is = false;
@@ -1553,8 +1429,7 @@ void RunNetCommand(const std::string& line)
                 words = 0; // once
             }
         });
-    }
-    else if (cmd == "find") {
+    } else if (cmd == "find") {
         // find <text>: objects whose name contains `text` (case-insensitive), up to 60.
         std::string text;
         ss >> text;
@@ -1571,8 +1446,7 @@ void RunNetCommand(const std::string& line)
             Log("find %s (%p) in %s", ue4::Describe(object).c_str(), object, ue4::ObjectName(ue4::OuterOf(object)).c_str());
         });
         Log("find %s: %d shown", text.c_str(), shown);
-    }
-    else if (cmd == "classinfo") {
+    } else if (cmd == "classinfo") {
         // classinfo <class name>: its fields (UField chain from +0x38, next at
         // +0x28) with the raw words that hold a property's offset and size.
         std::string name;
@@ -1615,8 +1489,7 @@ void RunNetCommand(const std::string& line)
             }
         };
         fields(cls, "  ");
-    }
-    else if (cmd == "poke") {
+    } else if (cmd == "poke") {
         // poke <hex address> <hex value> [bytes 1|4|8]: testing only.
         unsigned long long address = 0, value = 0;
         int bytes = 4;
@@ -1625,16 +1498,14 @@ void RunNetCommand(const std::string& line)
         const bool ok = (bytes == 1 || bytes == 4 || bytes == 8) &&
                         WriteProcessMemory(GetCurrentProcess(), reinterpret_cast<void*>(address), &value, bytes, &done);
         Log("poke %llx = %llx (%d bytes): %s", address, value, bytes, ok ? "ok" : "failed");
-    }
-    else if (cmd == "findbytes") {
+    } else if (cmd == "findbytes") {
         // findbytes <hex bytes, e.g. 0a0b0c>: where they are in writable memory (research).
         std::string hex;
         ss >> hex;
         std::vector<uint8_t> bytes;
         for (size_t i = 0; i + 1 < hex.size(); i += 2) bytes.push_back(static_cast<uint8_t>(std::stoi(hex.substr(i, 2), nullptr, 16)));
         FindBytes(bytes);
-    }
-    else if (cmd == "layout") {
+    } else if (cmd == "layout") {
         // layout [16 hex values]: pad 0's live Button Settings table (kPadKeyTable),
         // logged, or replaced for this run (testing: different layouts per PC).
         auto* pads = *reinterpret_cast<uint8_t* const*>(g_imageBase + kInputManager + 8);
@@ -1652,8 +1523,7 @@ void RunNetCommand(const std::string& line)
             text += hex;
         }
         Log("layout: pad 0 keys up..select give%s%s", text.c_str(), count == 16 ? " (set)" : "");
-    }
-    else if (cmd == "keys") {
+    } else if (cmd == "keys") {
         // keys <key names> [hold ms]: presses each key in turn through the
         // system (to the game when its window is in front; testing a PC's
         // keyboard layout from a script). Names: letters, digits, up/down/left/right, enter.
@@ -1706,8 +1576,7 @@ void RunNetCommand(const std::string& line)
             Sleep(150);
         }
         Log("keys: %u of %zu pressed (game window %s)", accepted, vks.size(), inFront ? "in front" : "not in front");
-    }
-    else if (cmd == "input2") {
+    } else if (cmd == "input2") {
         // input2 <key> <value> | input2 restore: a key of [AssignKeyboard] in
         // the game's Input2.ini (KeyboardKeys_N = a key name), from the next
         // start; the first change keeps Input2.ini.sfvr-backup (testing).
@@ -1727,8 +1596,7 @@ void RunNetCommand(const std::string& line)
         const bool ok = WritePrivateProfileStringW(L"AssignKeyboard", std::wstring(key.begin(), key.end()).c_str(),
                                                    std::wstring(value.begin(), value.end()).c_str(), path.c_str());
         Log("input2: [AssignKeyboard] %s=%s %s (from the next start)", key.c_str(), value.c_str(), ok ? "set" : "failed");
-    }
-    else if (cmd == "owner") {
+    } else if (cmd == "owner") {
         // owner <hex address>: the UObject whose memory holds it, and the offset (research).
         unsigned long long address = 0;
         ss >> std::hex >> address;
@@ -1743,8 +1611,7 @@ void RunNetCommand(const std::string& line)
             found++;
         });
         if (!found) Log("owner %llx: no UObject holds it", address);
-    }
-    else if (cmd == "enuminfo") {
+    } else if (cmd == "enuminfo") {
         // enuminfo <enum name>: its names and values (UEnum::Names at +0x40,
         // FNames in value order (this engine version); research).
         std::string name;
@@ -1765,8 +1632,7 @@ void RunNetCommand(const std::string& line)
             const int32_t index = *reinterpret_cast<const int32_t*>(pairs + i * 8);
             Log("enuminfo %s: %d %s", name.c_str(), i, ue4::NameText(index).c_str());
         }
-    }
-    else if (cmd == "keyconfigs") {
+    } else if (cmd == "keyconfigs") {
         // keyconfigs: the button settings (KWKeyConfigs, KWUserProfileDetails
         // +0xB0: 15 bytes Data, then TypeData) of every user profile (research).
         if (!ue4::EnsureObjects(g_imageBase)) return;
@@ -1778,13 +1644,11 @@ void RunNetCommand(const std::string& line)
             for (int i = 0; i < 16; i++) std::snprintf(hex + i * 2, 3, "%02x", p[0xB0 + i]);
             Log("keyconfigs: %s (%p) main %d: %s", ue4::ObjectName(object).c_str(), object, p[0x28] & 1, hex);
         });
-    }
-    else if (cmd == "findptr") {
+    } else if (cmd == "findptr") {
         unsigned long long v = 0;
         ss >> std::hex >> v;
         FindPointer(v);
-    }
-    else if (cmd == "replay") {
+    } else if (cmd == "replay") {
         // replay <file in Polarity\matches (or reports\) or a full path> [stress <distance>]
         // ... [watch <from> <to> <region>]
         // ... [keep <from> <to>] (a straight run kept as a full recording with
@@ -1817,7 +1681,8 @@ void RunNetCommand(const std::string& line)
             if (word == "latch") {
                 std::string how;
                 ss >> how;
-                SetReplayLatch(how == "tick" ? 1 : how == "game" ? 0 : -1);
+                SetReplayLatch(how == "tick" ? 1 : how == "game" ? 0
+                                                                 : -1);
             }
             if (word == "trap") {
                 std::string f, r, off, b;
@@ -1826,25 +1691,21 @@ void RunNetCommand(const std::string& line)
             }
         }
         RequestReplay(file, stress, from, to, region, keepFrom, keepTo, !cold, traps, holdAt, holdSeconds, mispredict, remote - 1);
-    }
-    else if (cmd == "roundinfo") {
+    } else if (cmd == "roundinfo") {
         RunOnGameThread([] { LogRoundInfo(); });
-    }
-    else if (cmd == "ufunc") {
+    } else if (cmd == "ufunc") {
         // ufunc <name>: research (a UFunction's owner and native code)
         std::string name;
         ss >> name;
         RunOnGameThread([name] { LogFunction(name); });
-    }
-    else if (cmd == "functrace") {
+    } else if (cmd == "functrace") {
         // functrace <name> <owner|-> <offset hex>: research (log a UFunction's native calls)
         std::string name, owner;
         uint32_t offset = 0;
         ss >> name >> owner >> std::hex >> offset;
         if (owner == "-") owner.clear();
         RunOnGameThread([name, owner, offset] { TraceFunction(name, owner, offset); });
-    }
-    else if (cmd == "rview") {
+    } else if (cmd == "rview") {
         // rview pause|play|toggle|step <n>|seek <frame>|round <1|-1>|fast <n>|leave|status:
         // the viewed replay's controls (tests)
         std::string what;
@@ -1868,59 +1729,54 @@ void RunNetCommand(const std::string& line)
             Log("rview: takeover %d, countdown %.1f, ending %d", v.takeover, static_cast<double>(v.takeoverCountdown), v.takeoverEnding ? 1 : 0);
             return;
         }
-        const ReplayControl c = what == "pause" ? ReplayControl::Pause : what == "play" ? ReplayControl::Play
-                              : what == "step" ? ReplayControl::Step : what == "seek" ? ReplayControl::Seek
-                              : what == "round" ? ReplayControl::Round : what == "fast" ? ReplayControl::Fast
-                              : what == "takeover" ? ReplayControl::Takeover : what == "takeoverstop" ? ReplayControl::TakeoverStop
-                              : what == "leave" ? ReplayControl::Leave : what == "outofsync" ? ReplayControl::OutOfSync
-                              : what == "holdat" ? ReplayControl::HoldAt
-                              : ReplayControl::Toggle;
+        const ReplayControl c = what == "pause" ? ReplayControl::Pause : what == "play"       ? ReplayControl::Play
+                                                                     : what == "step"         ? ReplayControl::Step
+                                                                     : what == "seek"         ? ReplayControl::Seek
+                                                                     : what == "round"        ? ReplayControl::Round
+                                                                     : what == "fast"         ? ReplayControl::Fast
+                                                                     : what == "takeover"     ? ReplayControl::Takeover
+                                                                     : what == "takeoverstop" ? ReplayControl::TakeoverStop
+                                                                     : what == "leave"        ? ReplayControl::Leave
+                                                                     : what == "outofsync"    ? ReplayControl::OutOfSync
+                                                                     : what == "holdat"       ? ReplayControl::HoldAt
+                                                                                              : ReplayControl::Toggle;
         ControlReplay(c, arg);
-    }
-    else if (cmd == "regions") {
+    } else if (cmd == "regions") {
         size_t size = 0;
         ss >> size;
         LogRegionsOfSize(size);
-    }
-    else if (cmd == "phases") {
+    } else if (cmd == "phases") {
         LogPhaseMachine();
-    }
-    else if (cmd == "tasklist") {
+    } else if (cmd == "tasklist") {
         int calls = 3000;
         ss >> calls;
         TaskCensus(calls);
-    }
-    else if (cmd == "outsidetest") {
+    } else if (cmd == "outsidetest") {
         int ticks = 8;
         std::string mode;
         ss >> ticks >> mode;
         if (ue4::EnsureObjects(g_imageBase)) RequestOutsideProbe(nullptr, ticks, mode == "all");
         else Log("outside: object array not found");
-    }
-    else if (cmd == "recdiff") {
+    } else if (cmd == "recdiff") {
         // The int32 fields that differ between the P1 and P2 battle records.
         uint8_t* data = BattleData();
         if (!data) {
             Log("recdiff: no battle data");
-        }
-        else {
+        } else {
             for (uint32_t off = 0; off < battledata::kRecordStride; off += 4) {
                 const int32_t a = *reinterpret_cast<int32_t*>(data + off);
                 const int32_t b = *reinterpret_cast<int32_t*>(data + battledata::kRecordStride + off);
                 if (a != b) Log("recdiff +0x%03x: P1 %d (%08x) P2 %d (%08x)", off, a, a, b, b);
             }
         }
-    }
-    else if (cmd == "nextstage") {
+    } else if (cmd == "nextstage") {
         std::string code;
         ss >> code;
         SetPendingStage(code);
         Log("next stage: %s", code.empty() ? "(game's choice)" : code.c_str());
-    }
-    else if (cmd == "stages") {
+    } else if (cmd == "stages") {
         LogStageTable();
-    }
-    else if (cmd == "randomoff") {
+    } else if (cmd == "randomoff") {
         // randomoff [CHN,S25]: the Random stages list's stages left out, for
         // the sessions hosted from now on (testing; not saved: the panel
         // file keeps the player's own list).
@@ -1928,8 +1784,7 @@ void RunNetCommand(const std::string& line)
         ss >> list;
         o.randomOff = ParseStageMask(list);
         Log("random stages: leaving out '%s'", FormatStageMask(o.randomOff).c_str());
-    }
-    else if (cmd == "randomstages") {
+    } else if (cmd == "randomstages") {
         // randomstages [n]: n random stage draws (as the host's: owned, from
         // the Random stages list; and from any stage), counted; each draw
         // walks the stage table (about 12 ms).
@@ -1943,27 +1798,22 @@ void RunNetCommand(const std::string& line)
             counts["any " + (any < 0 ? std::string("none") : StageCode(any))]++;
         }
         for (const auto& [code, count] : counts) Log("randomstages: %s %d", code.c_str(), count);
-    }
-    else if (cmd == "worldctx") {
+    } else if (cmd == "worldctx") {
         LogWorldContext();
-    }
-    else if (cmd == "battlenow") {
+    } else if (cmd == "battlenow") {
         JumpToBattle();
-    }
-    else if (cmd == "transitions") {
+    } else if (cmd == "transitions") {
         // transitions 0|1: research ([netplay] lockstep_round_transitions for the next sessions)
         int on = 1;
         ss >> on;
         o.lockstepTransitions = on != 0;
         Log("netplay: round transitions %s for the next sessions", on ? "in lockstep" : "rolled back");
-    }
-    else if (cmd == "netsim") {
+    } else if (cmd == "netsim") {
         double loss = 0;
         ss >> o.conditions.latencyMs >> o.conditions.jitterMs >> loss;
         o.conditions.loss = loss / 100.0;
         NetSetConditions(o.conditions);
-    }
-    else if (cmd == "mash") {
+    } else if (cmd == "mash") {
         // mash <seed> [from frame] | mash loop <buttons>:<frames>... (buttons as `pad`, "none")
         o.mashFrom = 0;
         o.inputLoop.clear();
@@ -1982,18 +1832,15 @@ void RunNetCommand(const std::string& line)
                 o.inputLoop.push_back({step.buttons, static_cast<uint16_t>(std::max(1, std::atoi(word.c_str() + colon + 1)))});
             }
             Log("netplay: local player plays a loop of %zu inputs", o.inputLoop.size());
-        }
-        else {
+        } else {
             o.mashSeed = std::strtoull(first.c_str(), nullptr, 10);
             ss >> o.mashFrom;
             Log("netplay: local player mashes with seed %llu", static_cast<unsigned long long>(o.mashSeed));
         }
-    }
-    else if (cmd == "dumps") {
+    } else if (cmd == "dumps") {
         ss >> o.dumpEvery >> o.maxDumps;
         Log("netplay: recordings dump the state every %d frames, at most %d times", o.dumpEvery, o.maxDumps);
-    }
-    else if (cmd == "skipcallbacks") {
+    } else if (cmd == "skipcallbacks") {
         // skipcallbacks <thunk rva>/<target rva> ... | off: game callbacks
         // loads leave out (research: load cost).
         std::vector<uint64_t> keys;
@@ -2004,15 +1851,13 @@ void RunNetCommand(const std::string& line)
             keys.push_back(std::stoull(word.substr(0, slash), nullptr, 16) << 32 | std::stoull(word.substr(slash + 1), nullptr, 16));
         }
         SetSkippedLoadCallbacks(std::move(keys));
-    }
-    else if (cmd == "recordings") {
+    } else if (cmd == "recordings") {
         // recordings full|compact: which frames' region hashes the next saved recordings keep.
         std::string what;
         ss >> what;
         if (what == "full" || what == "compact") o.fullRecordings = what == "full";
         Log("netplay: recordings are %s", o.fullRecordings ? "full (every frame's region hashes)" : "compact (region hashes around desyncs)");
-    }
-    else if (cmd == "pick") {
+    } else if (cmd == "pick") {
         std::string code;
         int costume = 0, color = 1, comment = 0, vskill = 1, vtrigger = 1;
         ss >> code >> costume >> color >> comment >> vskill >> vtrigger;
@@ -2044,8 +1889,7 @@ void RunNetCommand(const std::string& line)
             }
         }
         NetSetPick(o.hasPick, o.pick);
-    }
-    else if (cmd == "stage") {
+    } else if (cmd == "stage") {
         // stage <code> | stage <table index> | stage (keep)
         std::string v;
         ss >> v;
@@ -2055,14 +1899,11 @@ void RunNetCommand(const std::string& line)
         else o.stageCode = v;
         // In a session, the host's stage for the next match (as the panel sets it).
         if (!o.stageCode.empty()) NetSetStage(o.stageCode);
-    }
-    else if (cmd == "netstatus") {
+    } else if (cmd == "netstatus") {
         Log("netplay status: %s", NetStatus().c_str());
-    }
-    else if (cmd == "battle") {
+    } else if (cmd == "battle") {
         Log("battle: %s | rendering %.1f fps", BattleInfo().c_str(), RenderFps());
-    }
-    else if (cmd == "peek") {
+    } else if (cmd == "peek") {
         // peek <hex address> [qwords]: logs memory, with image addresses as RVAs.
         unsigned long long address = 0;
         int count = 4;
@@ -2075,21 +1916,18 @@ void RunNetCommand(const std::string& line)
             Log("peek %llx: %016llx%s", address + 8 * i, static_cast<unsigned long long>(v),
                 inImage ? (" (rva 0x" + [&] { char b[16]; std::snprintf(b, sizeof(b), "%llX", static_cast<unsigned long long>(v - g_imageBase)); return std::string(b); }() + ")").c_str() : "");
         }
-    }
-    else if (cmd == "setstage") {
+    } else if (cmd == "setstage") {
         int stage = 0;
         ss >> stage;
         uint8_t* data = BattleData();
         if (data) *reinterpret_cast<int32_t*>(data + battledata::kStage) = stage;
         Log("setstage %d: %s", stage, data ? "written" : "no battle data now");
-    }
-    else if (cmd == "startskew") {
+    } else if (cmd == "startskew") {
         // startskew: the next netplay start's frozen state hashes differently
         // here (testing the end of a session whose starts differ).
         NetSkewNextStartForTest();
         Log("startskew: the next frozen start hashes differently");
-    }
-    else if (cmd == "setrounds") {
+    } else if (cmd == "setrounds") {
         // setrounds <n>: the +0x08 round count match setups write, as a game
         // that kept another one would (testing; 0: the match's own).
         int rounds = 0;
@@ -2101,8 +1939,7 @@ void RunNetCommand(const std::string& line)
 
 constexpr int kBothPads = -2; // Step::user: pads 0 and 1 together
 
-bool ParseButtons(const std::string& spec, Step& step)
-{
+bool ParseButtons(const std::string& spec, Step& step) {
     std::stringstream ss(spec);
     std::string b;
     while (std::getline(ss, b, '+')) {
@@ -2129,8 +1966,7 @@ bool ParseButtons(const std::string& spec, Step& step)
     return true;
 }
 
-bool Parse(const std::string& line, Step& step)
-{
+bool Parse(const std::string& line, Step& step) {
     std::stringstream ss(line);
     std::string cmd;
     ss >> cmd;
@@ -2231,128 +2067,123 @@ bool Parse(const std::string& line, Step& step)
         c = GameCommand::Watch;
         step.request.arg2 = 4;
         ss >> step.request.arg0 >> std::hex >> step.request.arg1 >> std::dec >> step.request.arg2;
-    }
-    else if (cmd == "watchaddr") {
+    } else if (cmd == "watchaddr") {
         c = GameCommand::WatchAddr;
         step.request.arg2 = 4;
         std::string rw;
         ss >> std::hex >> step.request.address >> std::dec >> step.request.arg2 >> rw;
         step.request.flag = rw == "rw";
-    }
-    else if (cmd == "watchreport") c = GameCommand::WatchReport;
+    } else if (cmd == "watchreport") c = GameCommand::WatchReport;
     else if (cmd == "stress" || cmd == "learnnoise") {
         c = cmd == "stress" ? GameCommand::Stress : GameCommand::LearnNoise;
         step.request.arg0 = 600;
         step.request.arg1 = 7;
         step.request.arg2 = 1;
         ss >> step.request.arg0 >> step.request.arg1 >> step.request.arg2;
-    }
-    else if (cmd == "unwatch") c = GameCommand::Unwatch;
+    } else if (cmd == "unwatch") c = GameCommand::Unwatch;
     else if (cmd == "synctest") {
         c = GameCommand::SyncTest;
         step.request.arg0 = 300;
         step.request.arg1 = 1;
         ss >> step.request.arg0 >> step.request.arg1;
-    }
-    else return false;
+    } else return false;
     return true;
 }
 
-void Run(const Step& s)
-{
+void Run(const Step& s) {
     switch (s.kind) {
-    case Step::Press: {
-        const int first = s.user == kBothPads ? 0 : s.user;
-        const int last = s.user == kBothPads ? 1 : s.user;
-        for (int u = first; u <= last; u++) {
-            VirtualPad& pad = g_pads[u];
-            pad.connected = true;
-            pad.buttons = s.buttons;
-            pad.lt = s.lt;
-            pad.rt = s.rt;
-            pad.lx = s.lx;
-            pad.ly = s.ly;
-            pad.packet++;
-        }
-        // A negative hold leaves them pressed (until the next pad step).
-        if (s.holdMs < 0) break;
-        Sleep(s.holdMs);
-        for (int u = first; u <= last; u++) {
-            VirtualPad& pad = g_pads[u];
-            pad.buttons = 0;
-            pad.lt = 0;
-            pad.rt = 0;
-            pad.lx = 0;
-            pad.ly = 0;
-            pad.packet++;
-        }
-        Sleep(s.gapMs);
-        break;
-    }
-    case Step::Wait:
-        Sleep(s.holdMs);
-        break;
-    case Step::Connect:
-        g_pads[s.user].connected = true;
-        break;
-    case Step::Setup:
-        SetPendingSetup(s.setup);
-        Log("setup pending: %s", DescribeSetup(s.setup).c_str());
-        break;
-    case Step::Net:
-        RunNetCommand(s.line);
-        break;
-    case Step::ShowSetup:
-        LogBattleSetup("now");
-        break;
-    case Step::ClearSetup:
-        ClearPendingSetup();
-        Log("setup cleared");
-        break;
-    case Step::Scan:
-        ScanStart(s.holdMs);
-        break;
-    case Step::Rescan:
-        ScanNext(s.holdMs);
-        break;
-    case Step::ScanShow:
-        ScanShow();
-        break;
-    case Step::ScanSmall:
-        ScanSmall();
-        break;
-    case Step::ScanDelta:
-        ScanDelta(s.holdMs);
-        break;
-    case Step::ScanRecord:
-        ScanRecordFilter(static_cast<uint32_t>(s.holdMs));
-        break;
-    case Step::Trace:
-        TraceFunctions(g_imageBase, s.rvas);
-        break;
-    case Step::TraceReport:
-        TraceReport(g_imageBase);
-        break;
-    case Step::Disconnect:
-        g_pads[s.user].connected = false;
-        break;
-    case Step::Game: {
-        // Watchpoints by address work on every thread from here, also
-        // outside battles (menus have no game-thread hook to run them).
-        const GameCommand c = s.request.command;
-        if (c == GameCommand::WatchAddr || c == GameCommand::WatchReport || c == GameCommand::Unwatch) {
-            if (c == GameCommand::WatchAddr) {
-                ArmWatch(0, reinterpret_cast<const void*>(s.request.address), s.request.arg2, g_imageBase,
-                         s.request.flag);
+        case Step::Press: {
+            const int first = s.user == kBothPads ? 0 : s.user;
+            const int last = s.user == kBothPads ? 1 : s.user;
+            for (int u = first; u <= last; u++) {
+                VirtualPad& pad = g_pads[u];
+                pad.connected = true;
+                pad.buttons = s.buttons;
+                pad.lt = s.lt;
+                pad.rt = s.rt;
+                pad.lx = s.lx;
+                pad.ly = s.ly;
+                pad.packet++;
             }
-            if (c == GameCommand::WatchReport) WatchReport();
-            if (c == GameCommand::Unwatch) DisarmWatches();
+            // A negative hold leaves them pressed (until the next pad step).
+            if (s.holdMs < 0) break;
+            Sleep(s.holdMs);
+            for (int u = first; u <= last; u++) {
+                VirtualPad& pad = g_pads[u];
+                pad.buttons = 0;
+                pad.lt = 0;
+                pad.rt = 0;
+                pad.lx = 0;
+                pad.ly = 0;
+                pad.packet++;
+            }
+            Sleep(s.gapMs);
             break;
         }
-        std::lock_guard lock(g_mutex);
-        g_gameRequests.push_back(s.request);
-        break;
-    }
+        case Step::Wait:
+            Sleep(s.holdMs);
+            break;
+        case Step::Connect:
+            g_pads[s.user].connected = true;
+            break;
+        case Step::Setup:
+            SetPendingSetup(s.setup);
+            Log("setup pending: %s", DescribeSetup(s.setup).c_str());
+            break;
+        case Step::Net:
+            RunNetCommand(s.line);
+            break;
+        case Step::ShowSetup:
+            LogBattleSetup("now");
+            break;
+        case Step::ClearSetup:
+            ClearPendingSetup();
+            Log("setup cleared");
+            break;
+        case Step::Scan:
+            ScanStart(s.holdMs);
+            break;
+        case Step::Rescan:
+            ScanNext(s.holdMs);
+            break;
+        case Step::ScanShow:
+            ScanShow();
+            break;
+        case Step::ScanSmall:
+            ScanSmall();
+            break;
+        case Step::ScanDelta:
+            ScanDelta(s.holdMs);
+            break;
+        case Step::ScanRecord:
+            ScanRecordFilter(static_cast<uint32_t>(s.holdMs));
+            break;
+        case Step::Trace:
+            TraceFunctions(g_imageBase, s.rvas);
+            break;
+        case Step::TraceReport:
+            TraceReport(g_imageBase);
+            break;
+        case Step::Disconnect:
+            g_pads[s.user].connected = false;
+            break;
+        case Step::Game: {
+            // Watchpoints by address work on every thread from here, also
+            // outside battles (menus have no game-thread hook to run them).
+            const GameCommand c = s.request.command;
+            if (c == GameCommand::WatchAddr || c == GameCommand::WatchReport || c == GameCommand::Unwatch) {
+                if (c == GameCommand::WatchAddr) {
+                    ArmWatch(0, reinterpret_cast<const void*>(s.request.address), s.request.arg2, g_imageBase,
+                             s.request.flag);
+                }
+                if (c == GameCommand::WatchReport) WatchReport();
+                if (c == GameCommand::Unwatch) DisarmWatches();
+                break;
+            }
+            std::lock_guard lock(g_mutex);
+            g_gameRequests.push_back(s.request);
+            break;
+        }
     }
 }
 
@@ -2365,8 +2196,7 @@ std::mutex g_stepMutex;
 std::condition_variable g_stepReady;
 std::deque<Step> g_stepQueue;
 
-void StepRunner()
-{
+void StepRunner() {
     ThreadGuard running;
     for (;;) {
         Step s;
@@ -2382,8 +2212,7 @@ void StepRunner()
     }
 }
 
-void CommandLoop(std::wstring path)
-{
+void CommandLoop(std::wstring path) {
     std::thread(StepRunner).detach();
     ThreadGuard running;
     uint64_t lastPolls[XUSER_MAX_COUNT] = {};
@@ -2455,8 +2284,7 @@ WNDPROC g_origWndProc = nullptr;
 std::atomic<bool> g_alwaysActive{false};
 
 // UE4 stops processing pad input once it is told the app went inactive.
-LRESULT CALLBACK ActiveWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
-{
+LRESULT CALLBACK ActiveWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     HookGuard guard;
     // The overlay first; what it takes, the game does not see (raw input
     // still needs DefWindowProc to be released).
@@ -2474,36 +2302,36 @@ LRESULT CALLBACK ActiveWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     }
     const bool active = g_alwaysActive;
     switch (msg) {
-    case WM_ACTIVATEAPP:
-        if (active && !wp) return 0;
-        break;
-    case WM_ACTIVATE:
-        if (active && LOWORD(wp) == WA_INACTIVE) return 0;
-        break;
-    case WM_KEYDOWN:
-    case WM_KEYUP:
-        // Keyboard Start (Enter) and Back (Escape) would pause one side only.
-        // Start still goes to the match as this player's (MappedLocalInput):
-        // the intro skip when both press it.
-        if (g_blockPause && (wp == VK_RETURN || wp == VK_ESCAPE)) {
-            if (wp == VK_RETURN) g_keyboardStart = msg == WM_KEYDOWN;
-            return 0;
-        }
-        break;
-    case WM_KILLFOCUS:
-        g_keyboardStart = false;
-        if (active) return 0;
-        break;
-    case WM_CLOSE:
-    case WM_ENDSESSION:
-        // The game is closing: tell the others now (Bye) rather than let
-        // them wait for the silence timeout. A fault from here on is the
-        // game's exit, not a crash to report.
-        OnQuitting("window closed");
-        NetLeave();
-        break;
-    default:
-        break;
+        case WM_ACTIVATEAPP:
+            if (active && !wp) return 0;
+            break;
+        case WM_ACTIVATE:
+            if (active && LOWORD(wp) == WA_INACTIVE) return 0;
+            break;
+        case WM_KEYDOWN:
+        case WM_KEYUP:
+            // Keyboard Start (Enter) and Back (Escape) would pause one side only.
+            // Start still goes to the match as this player's (MappedLocalInput):
+            // the intro skip when both press it.
+            if (g_blockPause && (wp == VK_RETURN || wp == VK_ESCAPE)) {
+                if (wp == VK_RETURN) g_keyboardStart = msg == WM_KEYDOWN;
+                return 0;
+            }
+            break;
+        case WM_KILLFOCUS:
+            g_keyboardStart = false;
+            if (active) return 0;
+            break;
+        case WM_CLOSE:
+        case WM_ENDSESSION:
+            // The game is closing: tell the others now (Bye) rather than let
+            // them wait for the silence timeout. A fault from here on is the
+            // game's exit, not a crash to report.
+            OnQuitting("window closed");
+            NetLeave();
+            break;
+        default:
+            break;
     }
     return CallWindowProcW(g_origWndProc, w, msg, wp, lp);
 }
@@ -2518,8 +2346,7 @@ PackedInput LocalPadInput(int user) { return user >= 0 && user < XUSER_MAX_COUNT
 
 uint32_t GamePadKeys() { return g_gameKeys; }
 
-PackedInput MappedLocalInput(int)
-{
+PackedInput MappedLocalInput(int) {
     // Start as the player pressed it (the pause filter keeps it from the
     // game): on any pad, or the keyboard's Enter. Players with a keyboard
     // could not skip an intro (2026-10-30), nor a pad in another slot.
@@ -2529,20 +2356,17 @@ PackedInput MappedLocalInput(int)
     return g_mappedInput.load() | start;
 }
 
-void SetBlockPause(bool block)
-{
+void SetBlockPause(bool block) {
     g_blockPause = block;
     if (!block) g_keyboardStart = false;
 }
 
-void PressUiButtons(uint16_t buttons, int ms)
-{
+void PressUiButtons(uint16_t buttons, int ms) {
     g_uiButtons = buttons;
     g_uiButtonsUntil = GetTickCount64() + ms;
 }
 
-void RestoreWindowProc()
-{
+void RestoreWindowProc() {
     if (g_origWndProc && g_gameWindow) {
         SetWindowLongPtrW(g_gameWindow, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(g_origWndProc));
         g_origWndProc = nullptr;
@@ -2551,15 +2375,13 @@ void RestoreWindowProc()
 
 namespace {
 
-void SubclassWindow()
-{
+void SubclassWindow() {
     if (!g_gameWindow || g_origWndProc) return;
     g_origWndProc = reinterpret_cast<WNDPROC>(
         SetWindowLongPtrW(g_gameWindow, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&ActiveWndProc)));
 }
 
-void KeepWindowActive()
-{
+void KeepWindowActive() {
     g_alwaysActive = true;
     SubclassWindow();
     // It may already have been told it is inactive.
@@ -2572,8 +2394,7 @@ void KeepWindowActive()
 
 // Where the game exe's import of `module`'s function (by ordinal or by name)
 // leads, or null.
-void* GameImport(const char* module, WORD ordinal, const char* name)
-{
+void* GameImport(const char* module, WORD ordinal, const char* name) {
     auto* base = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr));
     auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + reinterpret_cast<IMAGE_DOS_HEADER*>(base)->e_lfanew);
     const IMAGE_DATA_DIRECTORY& dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
@@ -2592,8 +2413,7 @@ void* GameImport(const char* module, WORD ordinal, const char* name)
     return nullptr;
 }
 
-bool InstallControl(const std::wstring& commandFile, int virtualPads, bool alwaysActive)
-{
+bool InstallControl(const std::wstring& commandFile, int virtualPads, bool alwaysActive) {
     g_gameWindow = FindGameWindow();
     SubclassWindow();
     if (alwaysActive) {
@@ -2608,7 +2428,8 @@ bool InstallControl(const std::wstring& commandFile, int virtualPads, bool alway
                         hook("GetFocus", reinterpret_cast<void*>(&FocusDetour), &g_origFocus);
         if (ok && g_gameWindow) KeepWindowActive();
         else if (ok) g_activePending = true; // the command loop finishes it once the window exists
-        Log("control: always active %s (window %p)", !ok ? "FAILED" : g_gameWindow ? "on" : "waiting for the window",
+        Log("control: always active %s (window %p)", !ok ? "FAILED" : g_gameWindow ? "on"
+                                                                                   : "waiting for the window",
             g_gameWindow.load());
     }
     for (int u = 0; u < virtualPads && u < XUSER_MAX_COUNT; u++) g_pads[u].connected = true;
@@ -2621,8 +2442,7 @@ bool InstallControl(const std::wstring& commandFile, int virtualPads, bool alway
         HMODULE xinput = sfv::proxy::RealXInput();
         target = xinput ? reinterpret_cast<void*>(GetProcAddress(xinput, "XInputGetState")) : nullptr;
     }
-    if (!target || MH_CreateHook(target, reinterpret_cast<void*>(&GetStateDetour),
-                                 reinterpret_cast<void**>(&g_origGetState)) != MH_OK ||
+    if (!target || MH_CreateHook(target, reinterpret_cast<void*>(&GetStateDetour), reinterpret_cast<void**>(&g_origGetState)) != MH_OK ||
         MH_EnableHook(target) != MH_OK) {
         Log("control: cannot hook XInputGetState");
         return false;
@@ -2650,8 +2470,7 @@ bool InstallControl(const std::wstring& commandFile, int virtualPads, bool alway
     return true;
 }
 
-GameRequest TakeGameRequest()
-{
+GameRequest TakeGameRequest() {
     std::lock_guard lock(g_mutex);
     if (g_gameRequests.empty()) return {};
     const GameRequest r = g_gameRequests.front();
@@ -2659,8 +2478,7 @@ GameRequest TakeGameRequest()
     return r;
 }
 
-void SetScriptedPad(int user, bool enabled, uint16_t buttons, uint8_t rightTrigger)
-{
+void SetScriptedPad(int user, bool enabled, uint16_t buttons, uint8_t rightTrigger) {
     if (user < 0 || user >= XUSER_MAX_COUNT) return;
     VirtualPad& pad = g_pads[user];
     pad.scriptedButtons = buttons;
@@ -2670,8 +2488,7 @@ void SetScriptedPad(int user, bool enabled, uint16_t buttons, uint8_t rightTrigg
     pad.packet++;
 }
 
-uint64_t PadPolls(int user)
-{
+uint64_t PadPolls(int user) {
     return user >= 0 && user < XUSER_MAX_COUNT ? g_polls[user].load() : 0;
 }
 

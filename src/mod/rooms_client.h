@@ -25,11 +25,11 @@ struct RoomMember {
     std::string name;  // as shown: "Player N" when the name filter masks it (keeper_protocol.h)
     std::string chara; // member data `ch`
     bool owner = false;
-    int pingMs = -1;   // the round trip to them over a P2P link; -1 not measured (or you)
+    int pingMs = -1;      // the round trip to them over a P2P link; -1 not measured (or you)
     bool relayed = false; // that link goes through TURN
-    int link = 0;      // their connection: 0 unknown, 1 wired, 2 Wi-Fi (member data `net`)
+    int link = 0;         // their connection: 0 unknown, 1 wired, 2 Wi-Fi (member data `net`)
     bool masked = false;
-    int watching = -1; // the table they watch (member data `w`, 1-based), -1 none
+    int watching = -1;   // the table they watch (member data `w`, 1-based), -1 none
     std::string country; // ISO 3166 alpha-2, the rooms server's lookup (member data `@cc`); "" unknown or hidden
     // Their V-Skill and V-Trigger (from 1; member data `vs`, two digits),
     // live as they change them on the your-turn card; 0 not told (an older
@@ -46,7 +46,7 @@ struct TableView {
 };
 
 struct ChatLine {
-    uint32_t from = 0;  // 0: the room's own line (joins, leaves, owner changes)
+    uint32_t from = 0;    // 0: the room's own line (joins, leaves, owner changes)
     std::string name;     // as the word filter shows it ("Player 1234" for a masked name)
     std::string text;     // as typed
     std::string realName; // the player's own name
@@ -56,23 +56,23 @@ struct ChatLine {
 struct RoomsView {
     enum class State {
         Off,
-        Connecting,  // to the rooms server
-        Finding,     // the desk (the keeper's lobby channel): its listing asked for
-        NoLobby,     // no desk listed for this build (the keeper is not running): asked again shortly
-        Browsing,    // the desk listed; in no room (the hub), or on the way into the desk
-        Lobby,       // in the desk (the rooms screen open): requests go to the keeper
-        Creating,    // asked the keeper for a room
-        Joining,     // into a room (or back to the lobby)
-        Room,        // in a custom room
-        Failed,      // no server
+        Connecting, // to the rooms server
+        Finding,    // the desk (the keeper's lobby channel): its listing asked for
+        NoLobby,    // no desk listed for this build (the keeper is not running): asked again shortly
+        Browsing,   // the desk listed; in no room (the hub), or on the way into the desk
+        Lobby,      // in the desk (the rooms screen open): requests go to the keeper
+        Creating,   // asked the keeper for a room
+        Joining,    // into a room (or back to the lobby)
+        Room,       // in a custom room
+        Failed,     // no server
     };
     State state = State::Off;
     std::string server;
     uint32_t self = 0;
-    bool keeper = false; // the current presence room's host is the proven keeper
-    std::string lobby;   // the lobby channel's code
+    bool keeper = false;                         // the current presence room's host is the proven keeper
+    std::string lobby;                           // the lobby channel's code
     std::vector<keeper::ListedRoom> publicRooms; // from the server's room listing, signed by the keeper (rooms screen open)
-    keeper::DeskSummary summary; // the desk's: public rooms and their players (polled whenever connected)
+    keeper::DeskSummary summary;                 // the desk's: public rooms and their players (polled whenever connected)
     // The focused public room's detail (RoomsPeek), when the keeper has
     // answered for it; `peek.code` empty otherwise.
     keeper::RoomDetail peek;
@@ -106,6 +106,7 @@ struct WatchTicket {
     std::string code;  // the match room
     std::string rules; // FormatRules
 };
+
 const char* RoomsStateName(RoomsView::State state);
 // The Word filter setting (Polarity settings): in public rooms,
 // names the keeper masks show as "Player 1234" and chat has the keeper's

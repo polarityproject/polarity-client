@@ -26,12 +26,12 @@ const TextureView* Texture(const std::string& path);
 // stops at the top level), so a big image drawn small skips pixels and looks
 // grainy. The full size stands in until the small one has arrived.
 const TextureView* TextureSized(const std::string& path, float pixels);
-bool BackdropReady(); // Backdrop's stage art is loaded (or failed to)
-extern bool g_drawing; // false while asking ahead (not drawing): those load after what is drawn
+bool BackdropReady();                                            // Backdrop's stage art is loaded (or failed to)
+extern bool g_drawing;                                           // false while asking ahead (not drawing): those load after what is drawn
 std::string CharaTex(const std::string& code, const char* name); // "/Game/Chara/<code>/Hud/<name>"
 std::string StageTex(const std::string& code, const char* name); // "/Game/Stage/<code>/UI/<name>"
-std::string MenuTex(const char* name);                            // the character select's own pictures
-std::string PadTex(const char* name);                             // "button_a" ... the pad glyphs
+std::string MenuTex(const char* name);                           // the character select's own pictures
+std::string PadTex(const char* name);                            // "button_a" ... the pad glyphs
 // A pad glyph between a and b (screen), its soft shadow under it first: the
 // glyph's own outline, blurred (made once on the texture threads), so a
 // round glyph casts a round shadow. `tint` for both (its alpha dims them).
@@ -41,9 +41,12 @@ void Glyph(ImDrawList* d, const char* name, ImVec2 a, ImVec2 b, ImU32 tint = IM_
 // Design coordinates: 1600x900, fitted to the screen.
 struct View {
     float s = 1, ox = 0, oy = 0;
+
     ImVec2 P(float x, float y) const { return ImVec2(ox + x * s, oy + y * s); }
+
     float L(float v) const { return v * s; }
 };
+
 extern View g_v;
 void BeginScreen(); // fits g_v to this frame's display
 // The smallest text drawn, in pixels: at 1280 x 720 or a Steam Deck's
@@ -51,7 +54,9 @@ void BeginScreen(); // fits g_v to this frame's display
 // draw and measure smaller sizes at this; TextPx is a design size's pixels
 // with it (for ImGui's own calls: wrapped text).
 constexpr float kMinTextPx = 13.5f;
+
 inline float TextPx(float size) { return g_v.L(size) > kMinTextPx ? g_v.L(size) : kMinTextPx; }
+
 // Every vertex drawn since `from` at `alpha` (a screen's fade).
 void FadeFrom(ImDrawList* d, int from, float alpha);
 
@@ -110,6 +115,7 @@ ImTextureID Id(const TextureView* t);
 ImU32 FadeIn(const TextureView* t, ImU32 tint = IM_COL32_WHITE); // a texture fades in after arriving
 void Image(ImDrawList* d, const TextureView* t, ImVec2 a, ImVec2 b, ImVec2 uv0 = ImVec2(0, 0), ImVec2 uv1 = ImVec2(1, 1),
            ImU32 tint = IM_COL32_WHITE);
+
 // An image whose alpha runs across it, left to right on the screen, through
 // `stops` ({x 0..1, alpha 0..1}, in order, from 0 to 1): the fades the
 // mock-ups draw with CSS masks. The stops span the image (a..b), or with
@@ -118,6 +124,7 @@ void Image(ImDrawList* d, const TextureView* t, ImVec2 a, ImVec2 b, ImVec2 uv0 =
 struct FadeStop {
     float x, alpha;
 };
+
 void ImageFadeX(ImDrawList* d, const TextureView* t, ImVec2 a, ImVec2 b, ImVec2 uv0, ImVec2 uv1, const FadeStop* stops, int count,
                 bool mirror = false, ImU32 tint = IM_COL32_WHITE, float fadeA = 0, float fadeB = 0);
 void Infinity(ImDrawList* d, ImVec2 c, float w, ImU32 col);
@@ -135,6 +142,7 @@ struct Prompt {
     std::string label;
     int action; // 0 confirm (A), 1 back (B), 3 Y
 };
+
 // `right` and `top` (design units) place the row elsewhere (a panel's own).
 void DrawPrompts(ImDrawList* d, ImFont* text, const std::vector<Prompt>& prompts, float right = 1572, float top = 14);
 
@@ -142,20 +150,20 @@ void DrawPrompts(ImDrawList* d, ImFont* text, const std::vector<Prompt>& prompts
 // Glass panes over the game's stage art, one gold for the focus, square
 // everything, light drop shadows. Positions are design units (1600 x 900).
 namespace look {
-constexpr ImU32 kGold = IM_COL32(233, 196, 106, 255);    // the focus; kickers, rules, actions as text
-constexpr ImU32 kRing = IM_COL32(240, 194, 74, 255);     // the 2 px ring round a focused pane
-constexpr ImU32 kCream = IM_COL32(244, 241, 232, 255);   // names, titles, values
-constexpr ImU32 kSoft = IM_COL32(228, 224, 212, 255);    // body text, rules, labels
-constexpr ImU32 kMuted = IM_COL32(198, 193, 180, 255);   // hints, footers
-constexpr ImU32 kInk = IM_COL32(11, 11, 11, 255);        // text on gold
-constexpr ImU32 kInkSoft = IM_COL32(58, 47, 18, 255);    // a second line on gold
+constexpr ImU32 kGold = IM_COL32(233, 196, 106, 255);  // the focus; kickers, rules, actions as text
+constexpr ImU32 kRing = IM_COL32(240, 194, 74, 255);   // the 2 px ring round a focused pane
+constexpr ImU32 kCream = IM_COL32(244, 241, 232, 255); // names, titles, values
+constexpr ImU32 kSoft = IM_COL32(228, 224, 212, 255);  // body text, rules, labels
+constexpr ImU32 kMuted = IM_COL32(198, 193, 180, 255); // hints, footers
+constexpr ImU32 kInk = IM_COL32(11, 11, 11, 255);      // text on gold
+constexpr ImU32 kInkSoft = IM_COL32(58, 47, 18, 255);  // a second line on gold
 constexpr ImU32 kOk = IM_COL32(127, 216, 139, 255);
 constexpr ImU32 kWarn = IM_COL32(233, 196, 106, 255);
 constexpr ImU32 kDanger = IM_COL32(255, 107, 94, 255);
 constexpr ImU32 kInfo = IM_COL32(111, 195, 255, 255);
 constexpr ImU32 kGround = IM_COL32(6, 8, 11, 255);
-constexpr ImU32 kControl = IM_COL32(255, 255, 255, 15);      // unfocused buttons, rows, seats
-constexpr ImU32 kEdgeControl = IM_COL32(236, 228, 206, 77);  // their 1 px frame
+constexpr ImU32 kControl = IM_COL32(255, 255, 255, 15);     // unfocused buttons, rows, seats
+constexpr ImU32 kEdgeControl = IM_COL32(236, 228, 206, 77); // their 1 px frame
 constexpr ImU32 kHairline = IM_COL32(236, 228, 206, 36);
 constexpr ImU32 kSelfRow = IM_COL32(233, 196, 106, 41);
 // A ping's color by its tier (core::PingTier: the delay it suggests): blue
@@ -218,6 +226,7 @@ int StageTextFit(ImDrawList* d, ImFont* f, float size, float smallest, float x, 
 // enough to read on a Deck (16 px there), in cream.
 void PromptLine(ImDrawList* d, ImFont* body, ImFont* bold, const std::string& lead, ImU32 leadCol, const std::string& text,
                 const PromptList& prompts, int* clicked);
+
 // A modal: the screen dimmed, a glass pane with a header strip (a kicker in
 // gold, or red when `danger`; `aside` on the right) and a footer strip (a
 // hint, then the modal's own prompts). Returns the y where the body starts;
@@ -232,6 +241,7 @@ struct ModalSpec {
     ImU32 hintCol = look::kSoft;
     PromptList prompts;
 };
+
 float Modal(ImDrawList* d, ImFont* bold, ImFont* body, const ModalSpec& m, int* clicked);
 // A modal's button: focused gold (or red when `danger`); true when clicked.
 bool Button(ImDrawList* d, ImFont* bold, float x0, float y0, float x1, float y1, const std::string& label, bool focused, bool danger = false);

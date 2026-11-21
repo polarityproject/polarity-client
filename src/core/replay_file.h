@@ -69,9 +69,11 @@ struct RoundResult {
     int8_t winner = -1;      // 0, 1, or -1 (a draw)
     int32_t fightFrame = -1; // the first action frame
 };
+
 // The rounds' action frames from a session's per-frame flags
 // (ReplayFile::frameFlags), in order; a round still on at the end has endFrame -1.
 std::vector<RoundResult> RoundsFromFrameFlags(const std::vector<uint8_t>& flags);
+
 struct MatchSummary {
     bool present = false;
     std::string names[kNumPlayers];      // as the players typed them
@@ -92,8 +94,8 @@ struct MatchSummary {
 struct ReplayFile {
     std::string modVersion;
     std::string gameBuild;
-    uint64_t matchId = 0;      // chosen by the host, identical in both peers' files
-    int32_t localPlayer = -1;  // -1 when not recorded in a live session
+    uint64_t matchId = 0;     // chosen by the host, identical in both peers' files
+    int32_t localPlayer = -1; // -1 when not recorded in a live session
     uint64_t createdUnix = 0;
     uint32_t inputDelay = 0;
     uint32_t predictionWindow = 0;
@@ -118,7 +120,9 @@ struct ReplayFile {
     std::vector<uint8_t> frameFlags;
 
     int FrameCount() const { return static_cast<int>(inputs.size()); }
+
     size_t RegionCount() const { return regions.size(); }
+
     // Whether FrameHashes(frame) holds that frame's region hashes (always for
     // frame -1, the state before frame 0).
     bool HasRegionHashes(int frame) const;

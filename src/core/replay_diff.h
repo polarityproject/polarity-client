@@ -18,7 +18,7 @@ struct ByteRange {
 };
 
 struct DiffReport {
-    bool comparable = true;      // same build, match and region layout
+    bool comparable = true; // same build, match and region layout
     bool setupDiffers = false;
     bool initialStateDiffers = false;
     int firstInputMismatch = -1; // confirmed inputs disagree: netcode bug

@@ -10,8 +10,7 @@
 
 namespace sfv::proxy {
 
-inline bool RunningOnWine()
-{
+inline bool RunningOnWine() {
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
     if (ntdll && GetProcAddress(ntdll, "wine_get_version")) return true;
     HKEY key = nullptr;
@@ -20,14 +19,12 @@ inline bool RunningOnWine()
     return true;
 }
 
-inline const wchar_t* RealXInputPath()
-{
+inline const wchar_t* RealXInputPath() {
     return RunningOnWine() ? L"xinput1_4.dll" : L"C:\\Windows\\System32\\xinput1_3.dll";
 }
 
 // Loaded once (and kept).
-inline HMODULE RealXInput()
-{
+inline HMODULE RealXInput() {
     static HMODULE module = LoadLibraryW(RealXInputPath());
     return module;
 }
@@ -37,8 +34,7 @@ inline HMODULE RealXInput()
 // Special K hooks every XInput and takes the first xinput1_3 loaded, the
 // proxy, for the original of System32's: proxy and hook called each other
 // until the stack overflowed (a 0.2.1 crash report).
-inline HMODULE FallbackXInput()
-{
+inline HMODULE FallbackXInput() {
     static HMODULE module = [] {
         if (RunningOnWine()) return HMODULE{};
         wchar_t path[MAX_PATH];

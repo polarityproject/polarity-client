@@ -34,6 +34,7 @@ std::set<std::string> g_requested;
 std::deque<std::string> g_texQueue; // asked for, not loaded yet (in order)
 std::set<std::string> g_texDrawn;   // asked for again by drawing: moved to the queue's front once
 bool g_texLoading = false;          // LoadTextures is on its way
+
 // A texture loaded without its view yet (the render thread had not made its
 // resource): asked for again a little later, a few times. Once failed it
 // stayed blank for the whole run (Gill's grid icon, once). A view of a few
@@ -43,8 +44,9 @@ struct TexRetry {
     std::string path;
     std::chrono::steady_clock::time_point due;
 };
+
 std::vector<TexRetry> g_texRetries;
-bool g_drawing = true;          // false while WarmSelectTextures asks ahead (render thread only)
+bool g_drawing = true; // false while WarmSelectTextures asks ahead (render thread only)
 constexpr int64_t kFadeInMs = 150;
 std::map<std::string, int> g_texTries;
 constexpr int kTextureTries = 6;
@@ -57,8 +59,7 @@ double g_texBatchMs = 0, g_texSlowestMs = 0;
 // On the game thread: the queue's textures, a few ms' worth a frame. The
 // screen's first frames ask for about 80: all in one frame held the game
 // ~5 s after a join (presses lost).
-void LoadTextures()
-{
+void LoadTextures() {
     const auto start = std::chrono::steady_clock::now();
     for (;;) {
         std::string path;
@@ -105,8 +106,7 @@ void LoadTextures()
                 continue;
             }
             Log("select screen: no texture at %s (%d tries)", path.c_str(), tries);
-        }
-        else if (g_texTries.count(path)) {
+        } else if (g_texTries.count(path)) {
             Log("select screen: %s loaded on try %d", path.c_str(), g_texTries[path] + 1);
         }
         view.readyMs = TextureClockMs();
@@ -118,8 +118,7 @@ void LoadTextures()
     RunOnGameThread(LoadTextures); // the rest next frame
 }
 
-const TextureView* Texture(const std::string& path)
-{
+const TextureView* Texture(const std::string& path) {
     bool failed = false;
     // Asked for by drawing (not ahead of time): it goes first.
     if (const TextureView* t = PakTexture(path, 0, g_drawing, &failed)) return t;
@@ -148,12 +147,14 @@ const TextureView* Texture(const std::string& path)
 }
 
 std::string CharaTex(const std::string& code, const char* name) { return "/Game/Chara/" + code + "/Hud/" + name; }
+
 std::string StageTex(const std::string& code, const char* name) { return "/Game/Stage/" + code + "/UI/" + name; }
+
 std::string MenuTex(const char* name) { return std::string("/Game/MenuAsset/CharaSelectGFx/") + name; }
+
 std::string PadTex(const char* name) { return std::string("/Game/CommonAsset/PlatformAsset/Windows/padkey/") + name; }
 
-void Glyph(ImDrawList* d, const char* name, ImVec2 a, ImVec2 b, ImU32 tint, bool shadow)
-{
+void Glyph(ImDrawList* d, const char* name, ImVec2 a, ImVec2 b, ImU32 tint, bool shadow) {
     const std::string path = PadTex(name);
     const TextureView* t = Texture(path);
     if (!t) return;
@@ -180,8 +181,7 @@ void Glyph(ImDrawList* d, const char* name, ImVec2 a, ImVec2 b, ImU32 tint, bool
 
 View g_v;
 
-void BeginScreen()
-{
+void BeginScreen() {
     const ImVec2 screen = ImGui::GetIO().DisplaySize;
     g_v.s = std::min(screen.x / 1600.0f, screen.y / 900.0f);
     g_v.ox = (screen.x - 1600 * g_v.s) / 2;
@@ -189,8 +189,7 @@ void BeginScreen()
 }
 
 // Every vertex drawn since `from` at `alpha` (the screen's fade).
-void FadeFrom(ImDrawList* d, int from, float alpha)
-{
+void FadeFrom(ImDrawList* d, int from, float alpha) {
     if (alpha >= 1) return;
     const float k = std::clamp(alpha, 0.0f, 1.0f);
     for (int i = from; i < d->VtxBuffer.Size; i++) {
@@ -202,22 +201,23 @@ void FadeFrom(ImDrawList* d, int from, float alpha)
 
 // ----- input ----------------------------------------------------------------
 
-bool g_inputOn = false;                         // this frame reads input
+bool g_inputOn = false; // this frame reads input
 bool g_textEntry = false;
+
 namespace {
 int g_keyboardMap[16] = {};
 } // namespace
 
 void SetKeyboardMap(const int (&vk)[16]) { std::copy(std::begin(vk), std::end(vk), std::begin(g_keyboardMap)); }
 
-uint32_t MappedPadKeys(int vk)
-{
+uint32_t MappedPadKeys(int vk) {
     uint32_t bits = 0;
     for (int slot = 0; slot < kKeyboardSlots && vk; slot++) {
         if (g_keyboardMap[slot] == vk) bits |= PadKeyOfSlot(slot);
     }
     return bits;
 }
+
 ImGuiKey g_clickKey = ImGuiKey_None, g_clickNext = ImGuiKey_None; // a glyph clicked: this frame's button, the next's
 
 void ClickPad(ImGuiKey key) { g_clickNext = key; }
@@ -233,23 +233,20 @@ float g_testWheel = 0;
 float g_wheelLeft = 0; // a touchpad's fractions of a notch, carried over
 } // namespace
 
-void BeginInputFrame()
-{
+void BeginInputFrame() {
     g_clickKey = std::exchange(g_clickNext, ImGuiKey_None);
     std::lock_guard lock(g_testWheelMutex);
     g_testWheel = std::exchange(g_testWheelNext, 0.0f);
     g_testWheelAt = g_testWheelNextAt;
 }
 
-void TestWheel(float x, float y, float notches)
-{
+void TestWheel(float x, float y, float notches) {
     std::lock_guard lock(g_testWheelMutex);
     g_testWheelNextAt = ImVec2(x, y);
     g_testWheelNext = notches;
 }
 
-int WheelSteps(ImVec2 a, ImVec2 b)
-{
+int WheelSteps(ImVec2 a, ImVec2 b) {
     if (!g_inputOn) return 0;
     float wheel = ImGui::GetIO().MouseWheel;
     bool over = MouseIn(a, b);
@@ -266,8 +263,7 @@ int WheelSteps(ImVec2 a, ImVec2 b)
     return steps;
 }
 
-bool WheelList(ImVec2 a, ImVec2 b, int count, int view, float* first, int* focus)
-{
+bool WheelList(ImVec2 a, ImVec2 b, int count, int view, float* first, int* focus) {
     const int steps = WheelSteps(a, b);
     if (!steps) return false;
     *first = std::clamp(std::round(*first) - static_cast<float>(steps), 0.0f, static_cast<float>(std::max(0, count - view)));
@@ -275,16 +271,21 @@ bool WheelList(ImVec2 a, ImVec2 b, int count, int view, float* first, int* focus
     return true;
 }
 
-ImGuiKey PadKeyOfGlyph(const char* glyph)
-{
+ImGuiKey PadKeyOfGlyph(const char* glyph) {
     struct Named {
         const char* glyph;
         ImGuiKey key;
     };
+
     static const Named kGlyphs[] = {
-        {"button_a", ImGuiKey_GamepadFaceDown}, {"button_b", ImGuiKey_GamepadFaceRight}, {"button_x", ImGuiKey_GamepadFaceLeft},
-        {"button_y", ImGuiKey_GamepadFaceUp},   {"button_start", ImGuiKey_GamepadStart}, {"button_back", ImGuiKey_GamepadBack},
-        {"button_lb", ImGuiKey_GamepadL1},      {"button_rb", ImGuiKey_GamepadR1},
+        {"button_a", ImGuiKey_GamepadFaceDown},
+        {"button_b", ImGuiKey_GamepadFaceRight},
+        {"button_x", ImGuiKey_GamepadFaceLeft},
+        {"button_y", ImGuiKey_GamepadFaceUp},
+        {"button_start", ImGuiKey_GamepadStart},
+        {"button_back", ImGuiKey_GamepadBack},
+        {"button_lb", ImGuiKey_GamepadL1},
+        {"button_rb", ImGuiKey_GamepadR1},
     };
     for (const Named& n : kGlyphs) {
         if (glyph && std::strcmp(glyph, n.glyph) == 0) return n.key;
@@ -295,47 +296,52 @@ ImGuiKey PadKeyOfGlyph(const char* glyph)
 // Directions repeat while held; A and B count once per press (a long
 // frame, a character loading, would make a held A a repeat: the loadout's
 // Ready right after the grid's Select).
-bool Pressed(std::initializer_list<ImGuiKey> keys, bool repeat)
-{
+bool Pressed(std::initializer_list<ImGuiKey> keys, bool repeat) {
     if (!g_inputOn) return false;
     for (ImGuiKey k : keys) {
         if (k == g_clickKey || ImGui::IsKeyPressed(k, repeat)) return true;
     }
     return false;
 }
+
 // The keyboard's keys come as the pad's (SetKeyboardMap): no keys of the
 // mod's own beside them, so a keyboard works as in the game's menus.
 // Each also notes the game's menu sound for it (ui_sound.h), played once at
 // the end of the frame.
 namespace {
-bool Sounded(bool pressed, UiSound sound)
-{
+bool Sounded(bool pressed, UiSound sound) {
     if (pressed) PlayUi(sound);
     return pressed;
 }
 } // namespace
+
 // Every direction plays the menus' up/down cursor sound (the left/right
 // one, UiSound::Step, sounded wrong for moving between the hub's tiles).
 bool Left() { return Sounded(Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}), UiSound::Cursor); }
+
 bool Right() { return Sounded(Pressed({ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight}), UiSound::Cursor); }
+
 bool Up() { return Sounded(Pressed({ImGuiKey_GamepadDpadUp, ImGuiKey_GamepadLStickUp}), UiSound::Cursor); }
+
 bool Down() { return Sounded(Pressed({ImGuiKey_GamepadDpadDown, ImGuiKey_GamepadLStickDown}), UiSound::Cursor); }
+
 bool Confirm() { return Sounded(Pressed({ImGuiKey_GamepadFaceDown}, false), UiSound::Decide); }
+
 bool Back() { return Sounded(Pressed({ImGuiKey_GamepadFaceRight}, false), UiSound::Cancel); }
+
 // Y: the stage's next setting.
-bool NextSetting()
-{
+bool NextSetting() {
     return Pressed({ImGuiKey_GamepadFaceUp}, false);
 }
 
 bool Clicked() { return g_inputOn && ImGui::IsMouseClicked(ImGuiMouseButton_Left); }
-bool MouseIn(ImVec2 a, ImVec2 b)
-{
+
+bool MouseIn(ImVec2 a, ImVec2 b) {
     const ImVec2 m = ImGui::GetIO().MousePos;
     return m.x >= a.x && m.x < b.x && m.y >= a.y && m.y < b.y;
 }
-bool MouseInQuad(const ImVec2 (&q)[4])
-{
+
+bool MouseInQuad(const ImVec2 (&q)[4]) {
     const ImVec2 m = ImGui::GetIO().MousePos;
     bool inside = false;
     for (int i = 0, j = 3; i < 4; j = i++) {
@@ -348,18 +354,17 @@ bool MouseInQuad(const ImVec2 (&q)[4])
 // ----- drawing helpers --------------------------------------------------------
 
 ImU32 Rgba(int r, int g, int b, int a) { return IM_COL32(r, g, b, a); }
+
 ImU32 FromArgb(uint32_t argb) { return IM_COL32((argb >> 16) & 255, (argb >> 8) & 255, argb & 255, 255); }
 
-std::string Upper(std::string v)
-{
+std::string Upper(std::string v) {
     for (char& ch : v) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
     return v;
 }
 
 float TextW(ImFont* f, float size, const std::string& t) { return f->CalcTextSizeA(TextPx(size), FLT_MAX, 0, t.c_str()).x / g_v.s; }
 
-void Text(ImDrawList* d, ImFont* f, float size, ImVec2 at, ImU32 c, const std::string& t, float align, bool shadow)
-{
+void Text(ImDrawList* d, ImFont* f, float size, ImVec2 at, ImU32 c, const std::string& t, float align, bool shadow) {
     size = std::max(size, kMinTextPx);
     const ImVec2 w = f->CalcTextSizeA(size, FLT_MAX, 0, t.c_str());
     const ImVec2 p(at.x - w.x * align, at.y);
@@ -368,8 +373,7 @@ void Text(ImDrawList* d, ImFont* f, float size, ImVec2 at, ImU32 c, const std::s
 }
 
 // A quad with a color per edge (top two corners one color, bottom two another).
-void GradientQuad(ImDrawList* d, const ImVec2 (&q)[4], ImU32 top, ImU32 bottom)
-{
+void GradientQuad(ImDrawList* d, const ImVec2 (&q)[4], ImU32 top, ImU32 bottom) {
     const ImVec2 uv = d->_Data->TexUvWhitePixel;
     d->PrimReserve(6, 4);
     const ImDrawIdx base = static_cast<ImDrawIdx>(d->_VtxCurrentIdx);
@@ -385,8 +389,7 @@ void GradientQuad(ImDrawList* d, const ImVec2 (&q)[4], ImU32 top, ImU32 bottom)
     d->PrimWriteVtx(q[3], uv, bottom);
 }
 
-const TextureView* TextureSized(const std::string& path, float pixels)
-{
+const TextureView* TextureSized(const std::string& path, float pixels) {
     // In steps of 32 px, so a window resize asks for few new sizes.
     const uint32_t side = std::max(32u, static_cast<uint32_t>(std::ceil(pixels / 32.0f)) * 32u);
     const TextureView* full = Texture(path);
@@ -400,22 +403,19 @@ const TextureView* TextureSized(const std::string& path, float pixels)
 ImTextureID Id(const TextureView* t) { return reinterpret_cast<ImTextureID>(t->srv); }
 
 // A texture's tint while it fades in after arriving.
-ImU32 FadeIn(const TextureView* t, ImU32 tint)
-{
+ImU32 FadeIn(const TextureView* t, ImU32 tint) {
     const int64_t age = TextureClockMs() - t->readyMs;
     if (age >= kFadeInMs || age < 0) return tint;
     const uint32_t alpha = (tint >> IM_COL32_A_SHIFT & 0xFF) * static_cast<uint32_t>(age) / kFadeInMs;
     return (tint & ~IM_COL32_A_MASK) | alpha << IM_COL32_A_SHIFT;
 }
 
-void Image(ImDrawList* d, const TextureView* t, ImVec2 a, ImVec2 b, ImVec2 uv0, ImVec2 uv1, ImU32 tint)
-{
+void Image(ImDrawList* d, const TextureView* t, ImVec2 a, ImVec2 b, ImVec2 uv0, ImVec2 uv1, ImU32 tint) {
     if (t) d->AddImage(Id(t), a, b, uv0, uv1, FadeIn(t, tint));
 }
 
 void ImageFadeX(ImDrawList* d, const TextureView* t, ImVec2 a, ImVec2 b, ImVec2 uv0, ImVec2 uv1, const FadeStop* stops, int count,
-                bool mirror, ImU32 tint, float fadeA, float fadeB)
-{
+                bool mirror, ImU32 tint, float fadeA, float fadeB) {
     if (!t || count < 2 || b.x <= a.x) return;
     const ImU32 col = FadeIn(t, tint);
     const float base = static_cast<float>(col >> IM_COL32_A_SHIFT & 0xFF);
@@ -475,8 +475,7 @@ void ImageFadeX(ImDrawList* d, const TextureView* t, ImVec2 a, ImVec2 b, ImVec2 
 }
 
 // The timer's infinity (a lemniscate; the fonts may not have the glyph).
-void Infinity(ImDrawList* d, ImVec2 c, float w, ImU32 col)
-{
+void Infinity(ImDrawList* d, ImVec2 c, float w, ImU32 col) {
     for (int i = 0; i <= 48; i++) {
         const float t = IM_PI * 2 * i / 48;
         const float k = 1 + std::sin(t) * std::sin(t);
@@ -487,33 +486,32 @@ void Infinity(ImDrawList* d, ImVec2 c, float w, ImU32 col)
 
 void Pill(ImDrawList* d, ImVec2 a, ImVec2 b) { d->AddRectFilled(a, b, Rgba(0, 0, 0, 160), (b.y - a.y) / 2); }
 
-void IconWired(ImDrawList* d, ImVec2 c, float s, ImU32 col)
-{
+void IconWired(ImDrawList* d, ImVec2 c, float s, ImU32 col) {
     d->AddRect(ImVec2(c.x - 5 * s, c.y - 3 * s), ImVec2(c.x + 5 * s, c.y + 3 * s), col, 0, 0, 1.4f * s);
     d->AddRect(ImVec2(c.x - 2.5f * s, c.y + 3 * s), ImVec2(c.x + 2.5f * s, c.y + 5 * s), col, 0, 0, 1.4f * s);
     for (int i = -1; i <= 1; i++) d->AddLine(ImVec2(c.x + i * 2.2f * s, c.y - 3 * s), ImVec2(c.x + i * 2.2f * s, c.y - 0.5f * s), col, 1.2f * s);
 }
-void IconWifi(ImDrawList* d, ImVec2 c, float s, ImU32 col)
-{
+
+void IconWifi(ImDrawList* d, ImVec2 c, float s, ImU32 col) {
     for (int i = 1; i <= 3; i++) {
         d->PathArcTo(ImVec2(c.x, c.y + 4 * s), 2.6f * i * s, -IM_PI * 0.78f, -IM_PI * 0.22f, 10);
         d->PathStroke(col, 0, 1.6f * s);
     }
 }
-void IconLink(ImDrawList* d, ImVec2 c, float s, ImU32 col)
-{
+
+void IconLink(ImDrawList* d, ImVec2 c, float s, ImU32 col) {
     d->AddRect(ImVec2(c.x - 7 * s, c.y - 3 * s), ImVec2(c.x - 1 * s, c.y + 3 * s), col, 3 * s, 0, 1.5f * s);
     d->AddRect(ImVec2(c.x + 1 * s, c.y - 3 * s), ImVec2(c.x + 7 * s, c.y + 3 * s), col, 3 * s, 0, 1.5f * s);
     d->AddLine(ImVec2(c.x - 3 * s, c.y), ImVec2(c.x + 3 * s, c.y), col, 1.5f * s);
 }
-void IconCloud(ImDrawList* d, ImVec2 c, float s, ImU32 col)
-{
+
+void IconCloud(ImDrawList* d, ImVec2 c, float s, ImU32 col) {
     d->AddCircle(ImVec2(c.x - 3 * s, c.y + 1 * s), 3 * s, col, 12, 1.5f * s);
     d->AddCircle(ImVec2(c.x + 1.5f * s, c.y - 1 * s), 4 * s, col, 12, 1.5f * s);
     d->AddLine(ImVec2(c.x - 3 * s, c.y + 4 * s), ImVec2(c.x + 5 * s, c.y + 4 * s), col, 1.5f * s);
 }
-void IconLinkType(ImDrawList* d, ImVec2 c, float s, int link, ImU32 col)
-{
+
+void IconLinkType(ImDrawList* d, ImVec2 c, float s, int link, ImU32 col) {
     if (link == 1) IconWired(d, c, s, col);
     else if (link == 2) IconWifi(d, ImVec2(c.x, c.y - 1 * s), s, col);
 }
@@ -521,9 +519,7 @@ void IconLinkType(ImDrawList* d, ImVec2 c, float s, int link, ImU32 col)
 // The prompts at the top right: the game's pad icons with what they do here.
 // A click acts as the button (A and B on the next frame).
 
-
-void DrawPrompts(ImDrawList* d, ImFont* text, const std::vector<Prompt>& prompts, float right, float top)
-{
+void DrawPrompts(ImDrawList* d, ImFont* text, const std::vector<Prompt>& prompts, float right, float top) {
     for (int i = static_cast<int>(prompts.size()) - 1; i >= 0; i--) {
         const Prompt& p = prompts[i];
         const float w = TextW(text, 19, p.label) + 52;
@@ -561,15 +557,13 @@ constexpr ImU32 kStageTint = IM_COL32(224, 224, 224, 255);
 constexpr ImU32 kScrim = IM_COL32(6, 8, 11, 38);
 constexpr ImU32 kGrain = IM_COL32(255, 255, 255, 22); // the noise over the backdrop
 
-ImU32 WithAlpha(ImU32 c, float k)
-{
+ImU32 WithAlpha(ImU32 c, float k) {
     const ImU32 a = static_cast<ImU32>(((c >> IM_COL32_A_SHIFT) & 0xFF) * std::clamp(k, 0.0f, 1.0f));
     return (c & ~IM_COL32_A_MASK) | (a << IM_COL32_A_SHIFT);
 }
 
 // A quad with one color at its first two corners and another at the last two.
-void Quad(ImDrawList* d, ImVec2 p0, ImVec2 p1, ImVec2 p2, ImVec2 p3, ImU32 c01, ImU32 c23)
-{
+void Quad(ImDrawList* d, ImVec2 p0, ImVec2 p1, ImVec2 p2, ImVec2 p3, ImU32 c01, ImU32 c23) {
     const ImVec2 uv = d->_Data->TexUvWhitePixel;
     d->PrimReserve(6, 4);
     const ImDrawIdx i = static_cast<ImDrawIdx>(d->_VtxCurrentIdx);
@@ -590,8 +584,7 @@ void Quad(ImDrawList* d, ImVec2 p0, ImVec2 p1, ImVec2 p2, ImVec2 p3, ImU32 c01, 
 // 18 px, saturate 1.25). `pixels`: the copy's width; the blur is in design
 // units, so the same whatever the window's size. Until the blurred one is
 // made: nothing (the ground), or the plain one if it cannot be.
-void StageAt(ImDrawList* d, float x0, float y0, float x1, float y1, uint32_t pixels, float blur, float saturate, ImU32 tint)
-{
+void StageAt(ImDrawList* d, float x0, float y0, float x1, float y1, uint32_t pixels, float blur, float saturate, ImU32 tint) {
     TexLook look;
     look.blur = blur * pixels / kStageW;
     look.saturate = saturate;
@@ -607,8 +600,7 @@ void StageAt(ImDrawList* d, float x0, float y0, float x1, float y1, uint32_t pix
 
 int g_backdropEnd = -1;
 
-bool BackdropReady()
-{
+bool BackdropReady() {
     // Backdrop's stage art (StageAt's look, 1024 px): loaded, or it never will.
     TexLook look;
     look.blur = 4.0f * 1024 / kStageW;
@@ -617,8 +609,7 @@ bool BackdropReady()
     return PakTexture(kStage, 1024, true, &failed, look) || failed;
 }
 
-void Backdrop(ImDrawList* d, float alpha)
-{
+void Backdrop(ImDrawList* d, float alpha) {
     const ImVec2 screen = ImGui::GetIO().DisplaySize;
     d->AddRectFilled(ImVec2(0, 0), screen, WithAlpha(kGround, alpha));
     // Softened a little: a copy about a quarter of the drawn width, stretched.
@@ -629,8 +620,7 @@ void Backdrop(ImDrawList* d, float alpha)
     g_backdropEnd = d->VtxBuffer.Size;
 }
 
-void Grain(ImDrawList* d, float alpha)
-{
+void Grain(ImDrawList* d, float alpha) {
     // A 256 px tile of noise at about a screen pixel each (two on a big
     // screen), laid over lightly.
     const TextureView* n = NoiseTexture(256);
@@ -643,8 +633,7 @@ void Grain(ImDrawList* d, float alpha)
     }
 }
 
-const TextureView* BlurredStage(const std::string& path, float blur, float saturate, bool* failed)
-{
+const TextureView* BlurredStage(const std::string& path, float blur, float saturate, bool* failed) {
     // 1024 px across the stage's 3600 design units (it is 4:1 at 900 high).
     TexLook look;
     look.blur = blur * 1024 / kStageW;
@@ -652,8 +641,7 @@ const TextureView* BlurredStage(const std::string& path, float blur, float satur
     return PakTexture(path, 1024, g_drawing, failed, look);
 }
 
-void DropShadow(ImDrawList* d, float x0, float y0, float x1, float y1, float offset, float blur, float alpha, bool core)
-{
+void DropShadow(ImDrawList* d, float x0, float y0, float x1, float y1, float offset, float blur, float alpha, bool core) {
     // A solid core under the box (hidden by an opaque pane), and a feather
     // from its edge out to `blur`, falling to nothing.
     const ImU32 in = IM_COL32(0, 0, 0, static_cast<int>(255 * alpha)), out = IM_COL32(0, 0, 0, 0);
@@ -696,8 +684,7 @@ void DropShadow(ImDrawList* d, float x0, float y0, float x1, float y1, float off
     }
 }
 
-void Pane(ImDrawList* d, float x0, float y0, float x1, float y1, Glass kind, ImU32 edge)
-{
+void Pane(ImDrawList* d, float x0, float y0, float x1, float y1, Glass kind, ImU32 edge) {
     // shadow-pane: 0 6px 20px rgba(0,0,0,.35) (a fight's pane has nothing
     // opaque inside, so no core under it).
     DropShadow(d, x0, y0, x1, y1, 6, 18, 0.32f, kind != Glass::Fight);
@@ -709,26 +696,26 @@ void Pane(ImDrawList* d, float x0, float y0, float x1, float y1, Glass kind, ImU
         StageAt(d, x0, y0, x1, y1, 512, 18, 1.25f, kStageTint);
         d->AddRectFilled(a, b, kScrim);
     }
-    d->AddRectFilled(a, b, kind == Glass::Modal ? kGlassModal : kind == Glass::Fight ? kGlassFight : kGlassPanel);
+    d->AddRectFilled(a, b, kind == Glass::Modal ? kGlassModal : kind == Glass::Fight ? kGlassFight
+                                                                                     : kGlassPanel);
     const float e = g_v.L(2);
     d->AddRect(ImVec2(a.x - 1, a.y - 1), ImVec2(b.x + 1, b.y + 1), kOutline, 0.0f, 0, 1.0f);
-    d->AddRect(ImVec2(a.x + e / 2, a.y + e / 2), ImVec2(b.x - e / 2, b.y - e / 2), edge ? edge : kind == Glass::Modal ? kEdgeModal : kEdge, 0, 0, e);
+    d->AddRect(ImVec2(a.x + e / 2, a.y + e / 2), ImVec2(b.x - e / 2, b.y - e / 2), edge ? edge : kind == Glass::Modal ? kEdgeModal
+                                                                                                                      : kEdge,
+               0, 0, e);
     d->AddLine(ImVec2(a.x + e, a.y + e + 0.5f), ImVec2(b.x - e, a.y + e + 0.5f), kHighlight, std::max(1.0f, g_v.L(1)));
 }
 
-void Strip(ImDrawList* d, float x0, float y0, float x1, float y1, bool lit)
-{
+void Strip(ImDrawList* d, float x0, float y0, float x1, float y1, bool lit) {
     d->AddRectFilled(g_v.P(x0, y0), g_v.P(x1, y1), lit ? kGold : kStrip);
 }
 
-void Ring(ImDrawList* d, float x0, float y0, float x1, float y1)
-{
+void Ring(ImDrawList* d, float x0, float y0, float x1, float y1) {
     const float w = g_v.L(2);
     d->AddRect(ImVec2(g_v.P(x0, y0).x - w / 2, g_v.P(x0, y0).y - w / 2), ImVec2(g_v.P(x1, y1).x + w / 2, g_v.P(x1, y1).y + w / 2), kRing, 0, 0, w);
 }
 
-void Control(ImDrawList* d, float x0, float y0, float x1, float y1, bool focused, ImU32 focusFill)
-{
+void Control(ImDrawList* d, float x0, float y0, float x1, float y1, bool focused, ImU32 focusFill) {
     const ImVec2 a = g_v.P(x0, y0), b = g_v.P(x1, y1);
     if (focused) {
         d->AddRectFilled(a, b, focusFill);
@@ -738,8 +725,7 @@ void Control(ImDrawList* d, float x0, float y0, float x1, float y1, bool focused
     d->AddRect(a, b, kEdgeControl, 0, 0, std::max(1.0f, g_v.L(1)));
 }
 
-void StageText(ImDrawList* d, ImFont* f, float size, float x, float y, ImU32 c, const std::string& t, float align)
-{
+void StageText(ImDrawList* d, ImFont* f, float size, float x, float y, ImU32 c, const std::string& t, float align) {
     // shadow-text: 0 2px 4px rgba(0,0,0,.8), 0 0 12px rgba(0,0,0,.5): a
     // copy 2 px down, and a soft halo of four copies round it.
     const float px = TextPx(size);
@@ -756,8 +742,7 @@ void StageText(ImDrawList* d, ImFont* f, float size, float x, float y, ImU32 c, 
     d->AddText(f, px, p, c, t.c_str());
 }
 
-void ScrollBar(ImDrawList* d, float x, float y0, float y1, float first, float inView, float total, bool stage)
-{
+void ScrollBar(ImDrawList* d, float x, float y0, float y1, float first, float inView, float total, bool stage) {
     if (total <= inView || total <= 0) return;
     const float h = y1 - y0;
     const float top = y0 + h * std::clamp(first / total, 0.0f, 1.0f), len = std::max(h * inView / total, 12.0f);
@@ -773,8 +758,7 @@ void ScrollBar(ImDrawList* d, float x, float y0, float y1, float first, float in
     d->AddRectFilled(g_v.P(x, std::min(top, y1 - len)), g_v.P(x + 5, std::min(top + len, y1)), IM_COL32(236, 228, 206, 153));
 }
 
-float PromptRow(ImDrawList* d, ImFont* f, float size, const PromptList& prompts, float right, float y, float glyph, bool stage, int* clicked)
-{
+float PromptRow(ImDrawList* d, ImFont* f, float size, const PromptList& prompts, float right, float y, float glyph, bool stage, int* clicked) {
     const float gap = glyph > 28 ? 26.0f : 22.0f;
     for (int i = static_cast<int>(prompts.size()) - 1; i >= 0; i--) {
         const float w = glyph + 8 + TextW(f, size, prompts[i].second);
@@ -792,8 +776,7 @@ float PromptRow(ImDrawList* d, ImFont* f, float size, const PromptList& prompts,
     return right + gap;
 }
 
-int StageTextFit(ImDrawList* d, ImFont* f, float size, float smallest, float x, float y, float room, ImU32 c, const std::string& t, int lines)
-{
+int StageTextFit(ImDrawList* d, ImFont* f, float size, float smallest, float x, float y, float room, ImU32 c, const std::string& t, int lines) {
     if (t.empty() || room <= 0) return 0;
     float s = size;
     while (s > smallest && TextW(f, s, t) > room) s -= 1;
@@ -830,8 +813,7 @@ int StageTextFit(ImDrawList* d, ImFont* f, float size, float smallest, float x, 
 }
 
 void PromptLine(ImDrawList* d, ImFont* /*body*/, ImFont* bold, const std::string& lead, ImU32 leadCol, const std::string& text,
-                const PromptList& prompts, int* clicked)
-{
+                const PromptList& prompts, int* clicked) {
     // The prompts first (right to left), then the hint in the room left.
     *clicked = -1;
     const float left = PromptRow(d, bold, 20, prompts, 1564, 849, 36, true, clicked);
@@ -844,8 +826,7 @@ void PromptLine(ImDrawList* d, ImFont* /*body*/, ImFont* bold, const std::string
     StageTextFit(d, bold, 20, 17, x, 855, left - 36 - x, kCream, text);
 }
 
-float Modal(ImDrawList* d, ImFont* bold, ImFont* body, const ModalSpec& m, int* clicked)
-{
+float Modal(ImDrawList* d, ImFont* bold, ImFont* body, const ModalSpec& m, int* clicked) {
     NoteModalDrawn();
     const ImVec2 screen = ImGui::GetIO().DisplaySize;
     d->AddRectFilled(ImVec2(0, 0), screen, IM_COL32(4, 5, 7, 153));
@@ -869,15 +850,13 @@ float Modal(ImDrawList* d, ImFont* bold, ImFont* body, const ModalSpec& m, int* 
     return m.y0 + 44;
 }
 
-bool Button(ImDrawList* d, ImFont* bold, float x0, float y0, float x1, float y1, const std::string& label, bool focused, bool danger)
-{
+bool Button(ImDrawList* d, ImFont* bold, float x0, float y0, float x1, float y1, const std::string& label, bool focused, bool danger) {
     Control(d, x0, y0, x1, y1, focused, danger ? kDanger : kGold);
     Text(d, bold, g_v.L(18), g_v.P((x0 + x1) / 2, (y0 + y1) / 2 - 12), focused ? kInk : kCream, label, 0.5f);
     return Clicked() && MouseIn(g_v.P(x0, y0), g_v.P(x1, y1));
 }
 
-ImU32 PingColor(unsigned pingMs, unsigned jitterMs)
-{
+ImU32 PingColor(unsigned pingMs, unsigned jitterMs) {
     return look::kPingTiers[core::PingTier(pingMs, jitterMs ? jitterMs : core::kTypicalJitterMs)];
 }
 

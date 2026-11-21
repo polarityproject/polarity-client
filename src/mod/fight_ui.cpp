@@ -19,19 +19,16 @@ int g_leaveChoice = 1; // 0 Leave, 1 Stay
 int g_voteFocus = 0;   // 0 Rematch, 1 Character select, 2 Leave, 3 the delay
 
 // A diamond (a square on its point), `size` across, centred at (x, y).
-void Diamond(ImDrawList* d, float x, float y, float size, ImU32 col)
-{
+void Diamond(ImDrawList* d, float x, float y, float size, ImU32 col) {
     const float h = size * 0.7071f;
     d->AddQuadFilled(g_v.P(x, y - h), g_v.P(x + h, y), g_v.P(x, y + h), g_v.P(x - h, y), col);
 }
 
-float WrappedH(ImFont* f, float size, float width, const std::string& t)
-{
+float WrappedH(ImFont* f, float size, float width, const std::string& t) {
     return f->CalcTextSizeA(TextPx(size), FLT_MAX, g_v.L(width), t.c_str()).y / g_v.s;
 }
 
-void Wrapped(ImDrawList* d, ImFont* f, float size, float x, float y, float width, ImU32 col, const std::string& t)
-{
+void Wrapped(ImDrawList* d, ImFont* f, float size, float x, float y, float width, ImU32 col, const std::string& t) {
     d->AddText(f, TextPx(size), g_v.P(x, y), col, t.c_str(), nullptr, g_v.L(width));
 }
 
@@ -41,8 +38,7 @@ void Wrapped(ImDrawList* d, ImFont* f, float size, float x, float y, float width
 
 void ResetLeaveModal() { g_leaveChoice = 1; }
 
-void DrawLeaveModal(const HubFonts& f, bool set, bool takeInput, bool* leave, bool* stay)
-{
+void DrawLeaveModal(const HubFonts& f, bool set, bool takeInput, bool* leave, bool* stay) {
     *leave = *stay = false;
     if (!f.display || !f.body) return;
     BeginScreen();
@@ -86,8 +82,7 @@ void DrawLeaveModal(const HubFonts& f, bool set, bool takeInput, bool* leave, bo
 
 void ResetVote() { g_voteFocus = 0; }
 
-void DrawVote(const HubFonts& f, const VoteSide (&sides)[2], bool armed, bool takeInput, VoteInput* in)
-{
+void DrawVote(const HubFonts& f, const VoteSide (&sides)[2], bool armed, bool takeInput, VoteInput* in) {
     *in = VoteInput{};
     if (!f.display || !f.body) return;
     BeginScreen();
@@ -185,8 +180,7 @@ void DrawVote(const HubFonts& f, const VoteSide (&sides)[2], bool armed, bool ta
 
 // ----- notices ----------------------------------------------------------------------
 
-void DrawToasts(const HubFonts& f, const std::vector<Notice>& toasts, bool overScreen)
-{
+void DrawToasts(const HubFonts& f, const std::vector<Notice>& toasts, bool overScreen) {
     if (toasts.empty() || !f.body) return;
     BeginScreen();
     ImDrawList* d = ImGui::GetForegroundDrawList();
@@ -214,8 +208,7 @@ void DrawToasts(const HubFonts& f, const std::vector<Notice>& toasts, bool overS
     }
 }
 
-void DrawFightNotes(const HubFonts& f, const std::vector<Notice>& notes)
-{
+void DrawFightNotes(const HubFonts& f, const std::vector<Notice>& notes) {
     if (notes.empty() || !f.body) return;
     BeginScreen();
     ImDrawList* d = ImGui::GetForegroundDrawList();
@@ -246,8 +239,7 @@ void DrawFightNotes(const HubFonts& f, const std::vector<Notice>& notes)
     }
 }
 
-void DrawStatusNote(const HubFonts& f, const std::string& text, uint32_t color)
-{
+void DrawStatusNote(const HubFonts& f, const std::string& text, uint32_t color) {
     if (!f.body || text.empty()) return;
     BeginScreen();
     ImDrawList* d = ImGui::GetForegroundDrawList();
@@ -261,8 +253,7 @@ void DrawStatusNote(const HubFonts& f, const std::string& text, uint32_t color)
     Text(d, f.body, g_v.L(14), g_v.P(x0 + 32, y0 + 6), look::kSoft, shown);
 }
 
-void DrawMenuNote(const HubFonts& f)
-{
+void DrawMenuNote(const HubFonts& f) {
     if (!f.body) return;
     BeginScreen();
     ImDrawList* d = ImGui::GetForegroundDrawList();

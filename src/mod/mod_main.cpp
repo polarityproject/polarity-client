@@ -44,16 +44,14 @@ namespace {
 
 constexpr const char* kModVersion = kPolarityVersion; // core/version.h
 
-std::wstring DirectoryOf(HMODULE module)
-{
+std::wstring DirectoryOf(HMODULE module) {
     wchar_t path[MAX_PATH];
     const DWORD n = GetModuleFileNameW(module, path, MAX_PATH);
     std::wstring s(path, n);
     return s.substr(0, s.find_last_of(L"\\/"));
 }
 
-std::string Narrow(const std::wstring& w)
-{
+std::string Narrow(const std::wstring& w) {
     std::string s(WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr), '\0');
     WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, s.data(), static_cast<int>(s.size()), nullptr, nullptr);
     if (!s.empty()) s.pop_back();
@@ -62,8 +60,7 @@ std::string Narrow(const std::wstring& w)
 
 } // namespace
 
-DWORD WINAPI ModMain(LPVOID self)
-{
+DWORD WINAPI ModMain(LPVOID self) {
     ThreadGuard running;
     const std::wstring dir = DirectoryOf(static_cast<HMODULE>(self));
     // Several game instances can share the folder; the loader numbers them.
@@ -126,7 +123,8 @@ DWORD WINAPI ModMain(LPVOID self)
     static StateMap stateMap;
     const std::wstring stateMapPath = dir + L"\\sfv_statemap.bin";
     const bool haveMap = config.mode != Mode::LearnStateMap && stateMap.Load(stateMapPath);
-    Log("state map: %s", haveMap ? "loaded" : config.mode == Mode::LearnStateMap ? "learning" : "none (hashes include pointers)");
+    Log("state map: %s", haveMap ? "loaded" : config.mode == Mode::LearnStateMap ? "learning"
+                                                                                 : "none (hashes include pointers)");
 
     static SfvGame game(image);
     // No AddressTest for the checksums: whether a value is an address in use
@@ -142,8 +140,7 @@ DWORD WINAPI ModMain(LPVOID self)
     if (!config.noiseFile.empty() && game.LoadNoise(noisePath)) {
         Log("noise mask: %s (%zu words; not the built-in one: peers need the same file)", Narrow(config.noiseFile).c_str(),
             game.NoiseWords());
-    }
-    else {
+    } else {
         if (!config.noiseFile.empty()) Log("noise mask: cannot read %s; the built-in one instead", Narrow(config.noiseFile).c_str());
         game.LoadNoiseText(reinterpret_cast<const char*>(kBuiltinNoise), sizeof(kBuiltinNoise));
         Log("noise mask: built in (%zu words)", game.NoiseWords());
@@ -184,27 +181,26 @@ DWORD WINAPI ModMain(LPVOID self)
     InstallReportUploads(config.reportDir, Narrow(config.reportUrl), kModVersion, config.netplay.uploadReports);
 
     switch (config.mode) {
-    case Mode::Netplay:
-    case Mode::Playback: {
-        if (config.mode == Mode::Playback) {
-            ReplayFile rf;
-            std::string error;
-            if (LoadReplay(Utf8Path(config.playbackFile), &rf, &error)) {
-                Log("playback: %s, %d frames, build %s (this build %s)", Narrow(config.playbackFile).c_str(),
-                    rf.FrameCount(), rf.gameBuild.c_str(), game.BuildId().c_str());
+        case Mode::Netplay:
+        case Mode::Playback: {
+            if (config.mode == Mode::Playback) {
+                ReplayFile rf;
+                std::string error;
+                if (LoadReplay(Utf8Path(config.playbackFile), &rf, &error)) {
+                    Log("playback: %s, %d frames, build %s (this build %s)", Narrow(config.playbackFile).c_str(),
+                        rf.FrameCount(), rf.gameBuild.c_str(), game.BuildId().c_str());
+                } else {
+                    Log("playback: %s", error.c_str());
+                }
             }
-            else {
-                Log("playback: %s", error.c_str());
-            }
+            // NetplaySession and VerifyReplay drive the game through
+            // SfvGame::BeginMatch/ReadLocalInput/Advance, which need the phase 3
+            // input and tick hooks. Until those exist the mod stays in probe mode.
+            Log("%s needs the phase 3 input and tick hooks; running probes only", ModeName(config.mode));
+            break;
         }
-        // NetplaySession and VerifyReplay drive the game through
-        // SfvGame::BeginMatch/ReadLocalInput/Advance, which need the phase 3
-        // input and tick hooks. Until those exist the mod stays in probe mode.
-        Log("%s needs the phase 3 input and tick hooks; running probes only", ModeName(config.mode));
-        break;
-    }
-    default:
-        break;
+        default:
+            break;
     }
     return 0;
 }

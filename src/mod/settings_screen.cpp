@@ -24,10 +24,11 @@ const ImU32 kLine = IM_COL32(201, 168, 92, 190);
 
 // The list inside its pane (48, 96)-(948, 832): rows of 50 under strips of 38.
 constexpr float kTop = 98, kBottom = 830, kRowH = 50, kRowPitch = 50, kHeaderH = 38;
-constexpr float kValueX = 766; // the value box's centre (260 wide), its arrows either side
+constexpr float kValueX = 766;  // the value box's centre (260 wide), its arrows either side
 constexpr size_t kMaxText = 96; // a name's bytes (lobby::kMaxName)
 
 std::atomic<bool> g_open{false};
+
 struct State {
     int focus = 0;
     std::string focusId; // asked for on open
@@ -38,38 +39,33 @@ struct State {
     std::string testText;
 } g;
 
-void Wrapped(ImDrawList* d, ImFont* f, float size, float x, float y, float width, ImU32 col, const std::string& t, float* bottom)
-{
+void Wrapped(ImDrawList* d, ImFont* f, float size, float x, float y, float width, ImU32 col, const std::string& t, float* bottom) {
     d->AddText(f, TextPx(size), g_v.P(x, y), col, t.c_str(), nullptr, g_v.L(width));
     *bottom = y + f->CalcTextSizeA(TextPx(size), FLT_MAX, g_v.L(width), t.c_str()).y / g_v.s;
 }
 
 } // namespace
 
-void OpenSettingsScreen(const std::string& focusRow)
-{
+void OpenSettingsScreen(const std::string& focusRow) {
     g.focusId = focusRow;
     g.typing = false;
     if (!g_open.exchange(true)) Log("settings: open");
 }
 
-void OpenSettingsScreenTyping(const std::string& focusRow, const std::string& text)
-{
+void OpenSettingsScreenTyping(const std::string& focusRow, const std::string& text) {
     OpenSettingsScreen(focusRow);
     g.testText = text;
     g.testType = true;
 }
 
-void CloseSettingsScreen()
-{
+void CloseSettingsScreen() {
     if (g_open.exchange(false)) Log("settings: closed");
 }
 
 bool SettingsScreenOpen() { return g_open; }
 
 void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std::vector<SettingsRow>& rows, bool takeInput,
-                        SettingsInput* in)
-{
+                        SettingsInput* in) {
     *in = SettingsInput{};
     if (!g_open || !f.display || !f.strong || !f.body || rows.empty()) return;
     BeginScreen();
@@ -122,13 +118,11 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
             in->typed = true;
             in->text = g.text;
             g.typing = false;
-        }
-        else if (Pressed({ImGuiKey_Escape, ImGuiKey_GamepadFaceRight}, false)) {
+        } else if (Pressed({ImGuiKey_Escape, ImGuiKey_GamepadFaceRight}, false)) {
             PlayUi(UiSound::Cancel);
             g.typing = false;
         }
-    }
-    else {
+    } else {
         if (Up()) g.focus = step(g.focus, -1);
         if (Down()) g.focus = step(g.focus, 1);
         const SettingsRow& r = rows[g.focus];
@@ -140,17 +134,14 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
             if (r.text) {
                 g.typing = true;
                 g.text = r.editValue;
-            }
-            else if (r.arrows) {
+            } else if (r.arrows) {
                 in->row = r.id;
                 in->delta = 1;
-            }
-            else if (!r.action.empty()) {
+            } else if (!r.action.empty()) {
                 in->row = r.id;
                 in->confirm = true;
             }
-        }
-        else if (Back()) {
+        } else if (Back()) {
             in->back = true;
         }
     }
@@ -177,7 +168,7 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
         if (const int w = WheelSteps(g_v.P(48, kTop), g_v.P(948, kBottom))) {
             g.scroll = std::clamp(g.scroll - w * kRowPitch, 0.0f, std::max(0.0f, total - view));
             auto inView = [&](int i) { return ys[i] - kHeaderH >= g.scroll && ys[i] + kRowH <= g.scroll + view; };
-            const bool above = ys[g.focus] - kHeaderH < g.scroll, below = ys[g.focus] + kRowH > g.scroll + view;
+            const bool above = ys[g.focus] - kHeaderH<g.scroll, below = ys[g.focus] + kRowH> g.scroll + view;
             for (int k = 0; (above || below) && k < count; k++) {
                 const int i = above ? k : count - 1 - k;
                 if (rows[i].enabled && inView(i)) {
@@ -238,11 +229,13 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
                 Text(d, f.strong, g_v.L(21), g_v.P(end + 1, ry + 11), kCream, "|");
             }
             d->AddRect(a, b, look::kRing, 0, 0, g_v.L(2));
-        }
-        else {
-            const ImU32 labelCol = focused ? look::kInk : r.enabled ? kCream : Rgba(244, 241, 232, 90);
+        } else {
+            const ImU32 labelCol = focused ? look::kInk : r.enabled ? kCream
+                                                                    : Rgba(244, 241, 232, 90);
             Text(d, rowFont, g_v.L(21), g_v.P(90, ry + 11), labelCol, r.label);
-            const ImU32 valueCol = focused ? look::kInk : !r.enabled ? Rgba(233, 196, 106, 90) : r.highlight ? kGold : kCream;
+            const ImU32 valueCol = focused ? look::kInk : !r.enabled ? Rgba(233, 196, 106, 90)
+                                                      : r.highlight  ? kGold
+                                                                     : kCream;
             const float w = TextW(rowFont, 21, r.value);
             Text(d, rowFont, g_v.L(21), g_v.P(valueAt(w), ry + 11), valueCol, r.value, valueAlign(w));
             if (r.arrows && focused) {
@@ -255,8 +248,7 @@ void DrawSettingsScreen(const HubFonts& f, const std::string& version, const std
                 if (r.text) {
                     g.typing = true;
                     g.text = r.editValue;
-                }
-                else if (r.arrows) in->row = r.id, in->delta = MouseIn(g_v.P(48, ry), g_v.P(kValueX, ry + kRowH)) ? -1 : 1;
+                } else if (r.arrows) in->row = r.id, in->delta = MouseIn(g_v.P(48, ry), g_v.P(kValueX, ry + kRowH)) ? -1 : 1;
                 else if (!r.action.empty()) in->row = r.id, in->confirm = true;
             }
             g.focus = i;

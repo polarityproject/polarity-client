@@ -44,6 +44,7 @@ struct NetConditions {
 class ConditionedTransport : public ITransport {
 public:
     ConditionedTransport(ITransport& base, uint64_t seed) : base_(base), rng_(seed) {}
+
     void SetConditions(const NetConditions& c);
     NetConditions Conditions();
 
@@ -52,12 +53,14 @@ public:
 
 private:
     using Clock = std::chrono::steady_clock;
+
     struct Pending {
         Clock::time_point due;
         uint64_t seq;
         uint64_t peer;
         std::vector<uint8_t> data;
     };
+
     void Flush();
 
     ITransport& base_;

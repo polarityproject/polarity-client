@@ -44,8 +44,8 @@ inline constexpr const char* kDefaultServer = "2.29.123.240:5555";
 inline constexpr uint16_t kDefaultServerAlsoPort = 443;
 
 struct NetplayOptions {
-    bool udp = false;                      // the testing transport (U- codes) instead of Weyvelength rooms
-    std::string server = kDefaultServer;    // Weyvelength server, host[:port]
+    bool udp = false;                    // the testing transport (U- codes) instead of Weyvelength rooms
+    std::string server = kDefaultServer; // Weyvelength server, host[:port]
     // The server the panel chose (its Debug tab, or its saved settings), the
     // one its settings file keeps; empty: none. A `server` command (test
     // scripts) changes `server` for this run only, not this.
@@ -53,9 +53,9 @@ struct NetplayOptions {
     uint16_t serverAlsoPort = 0;            // testing: the server's host on this port too (0: 443 for kDefaultServer)
     std::vector<std::string> recentServers; // the Debug tab's list, newest first
     std::string keeperKey;                  // [rooms] keeper_key: another trusted keeper key (rooms_client.h; local tests)
-    std::string name;                      // display name; empty: the Steam persona name
-    uint16_t udpPort = 47001;              // UDP: the host listens here; a joiner binds any port
-    std::string udpHost = "127.0.0.1";     // UDP: address the host writes into its code
+    std::string name;                       // display name; empty: the Steam persona name
+    uint16_t udpPort = 47001;               // UDP: the host listens here; a joiner binds any port
+    std::string udpHost = "127.0.0.1";      // UDP: address the host writes into its code
     uint8_t inputDelay = 2;
     // Polarity settings' Input delay: kDelayAuto (each session starts at the
     // suggestion for its link, core/input_delay.h), 0-8 that many frames
@@ -63,46 +63,46 @@ struct NetplayOptions {
     // session.
     int8_t delaySetting = -1;
     uint8_t predictionWindow = 8;
-    bool lockstepPresentation = false;     // [netplay] lockstep_round_stages: no prediction (so no rollbacks) outside the fight (flow.h); off by default
-    bool lockstepDelay = true;             // there, a local input delay that covers the one-way trip
-    bool lockstepTransitions = true;       // [netplay] lockstep_round_transitions: no prediction from a KO to the next FIGHT, nor in round 1's call
-    bool roundEndRollback = true;          // a round's end may be rolled back (flow.h), instead of held
-    bool hasPick = false;                  // this player's own character choice
+    bool lockstepPresentation = false; // [netplay] lockstep_round_stages: no prediction (so no rollbacks) outside the fight (flow.h); off by default
+    bool lockstepDelay = true;         // there, a local input delay that covers the one-way trip
+    bool lockstepTransitions = true;   // [netplay] lockstep_round_transitions: no prediction from a KO to the next FIGHT, nor in round 1's call
+    bool roundEndRollback = true;      // a round's end may be rolled back (flow.h), instead of held
+    bool hasPick = false;              // this player's own character choice
     PlayerSetup pick;
-    uint16_t stage = 0xFFFF;               // host: stage table index (flow.h); 0xFFFF keeps the prepared one
-    std::string stageCode;                 // host: as configured; turned into `stage` when a match starts
+    uint16_t stage = 0xFFFF; // host: stage table index (flow.h); 0xFFFF keeps the prepared one
+    std::string stageCode;   // host: as configured; turned into `stage` when a match starts
     // My character's "Random stages": the variant codes the host's random
     // leaves out (core/random_stage.h); randomOffSaved once the panel has
     // the list (else it starts from the Fighter Profile's once).
     std::vector<std::string> randomOff;
     bool randomOffSaved = false;
-    bool randomSetup = false;              // host: random characters, settings and stage (testing)
-    bool randomCostumes = false;           // with randomSetup: costumes other than the default too
-    NetConditions conditions;              // simulated latency/jitter/loss on what this side sends
-    uint64_t mashSeed = 0;                 // testing: the local player mashes random inputs
-    int mashFrom = 0;                      // testing: ... from this session frame on
+    bool randomSetup = false;    // host: random characters, settings and stage (testing)
+    bool randomCostumes = false; // with randomSetup: costumes other than the default too
+    NetConditions conditions;    // simulated latency/jitter/loss on what this side sends
+    uint64_t mashSeed = 0;       // testing: the local player mashes random inputs
+    int mashFrom = 0;            // testing: ... from this session frame on
     // testing (`mash loop <buttons>:<frames>...`): the local player plays these
     // inputs in a loop instead, frame by frame (from mashFrom).
     std::vector<std::pair<uint16_t, uint16_t>> inputLoop;
-    int dumpEvery = 600;                   // full state dumps in match recordings: every N confirmed frames
-    int maxDumps = 24;                     // ... at most this many
-    bool fullRecordings = false;           // recordings keep every frame's region hashes, not only around desyncs (testing)
-    bool skipSaves = true;                 // saves that can never be loaded skip their copy (netplay.h)
-    bool skipLoadCallbacks = true;         // loads leave out the costliest game callbacks (DefaultSkippedLoadCallbacks)
-    bool verifyLoads = true;               // loads checked against their save's checksum (netplay.h)
-    unsigned int verifyLoadsEvery = 16;    // ... every this many loads (1: all)
-    bool leanResim = true;                 // replayed ticks without presentation work (sfv_game.h SetLeanResim)
-    bool cameraRollback = true;            // camera views follow rollbacks (camera_rollback.h)
-    bool hashOnConfirm = true;             // frames on predicted inputs hashed once confirmed (NetplayConfig)
-    bool menuAfterMatch = true;            // back to the main menu when a session ends or on leave
-    bool hotkeys = false;                  // F7 hosts, F8 joins (testing; capture tools bind F8)
-    bool allowSpectators = true;           // host: others may watch
-    bool uploadReports = true;             // desync reports go to the Polarity server (report_upload.h)
-    bool autoReady = false;                // ready as soon as the lobby is reached (commands, tests)
-    bool showOwnFps = false;               // the match HUD also shows this game's frame rate
-    bool shareCountry = true;              // others see this player's flag (off: WeyveService::SetHideCountry)
-    bool streamerMode = false;             // room codes stay off the screen (rooms_screen.h SetStreamerMode)
-    bool wordFilter = true;                // public rooms: masked names, starred chat (rooms_client.h SetRoomsWordFilter)
+    int dumpEvery = 600;                // full state dumps in match recordings: every N confirmed frames
+    int maxDumps = 24;                  // ... at most this many
+    bool fullRecordings = false;        // recordings keep every frame's region hashes, not only around desyncs (testing)
+    bool skipSaves = true;              // saves that can never be loaded skip their copy (netplay.h)
+    bool skipLoadCallbacks = true;      // loads leave out the costliest game callbacks (DefaultSkippedLoadCallbacks)
+    bool verifyLoads = true;            // loads checked against their save's checksum (netplay.h)
+    unsigned int verifyLoadsEvery = 16; // ... every this many loads (1: all)
+    bool leanResim = true;              // replayed ticks without presentation work (sfv_game.h SetLeanResim)
+    bool cameraRollback = true;         // camera views follow rollbacks (camera_rollback.h)
+    bool hashOnConfirm = true;          // frames on predicted inputs hashed once confirmed (NetplayConfig)
+    bool menuAfterMatch = true;         // back to the main menu when a session ends or on leave
+    bool hotkeys = false;               // F7 hosts, F8 joins (testing; capture tools bind F8)
+    bool allowSpectators = true;        // host: others may watch
+    bool uploadReports = true;          // desync reports go to the Polarity server (report_upload.h)
+    bool autoReady = false;             // ready as soon as the lobby is reached (commands, tests)
+    bool showOwnFps = false;            // the match HUD also shows this game's frame rate
+    bool shareCountry = true;           // others see this player's flag (off: WeyveService::SetHideCountry)
+    bool streamerMode = false;          // room codes stay off the screen (rooms_screen.h SetStreamerMode)
+    bool wordFilter = true;             // public rooms: masked names, starred chat (rooms_client.h SetRoomsWordFilter)
 };
 
 void InstallNetplay(SfvGame* game, const std::wstring& reportDir, const std::string& modVersion,
@@ -169,52 +169,63 @@ std::string NetStatus();
 // (never blocks: while the driver is being replaced it returns the previous
 // copy).
 struct NetView {
-    enum class Phase { Idle, Connecting, Hosting, Joining, Lobby, Jumping, Loading, Running, PostMatch, Ended };
+    enum class Phase { Idle,
+                       Connecting,
+                       Hosting,
+                       Joining,
+                       Lobby,
+                       Jumping,
+                       Loading,
+                       Running,
+                       PostMatch,
+                       Ended };
     Phase phase = Phase::Idle;
     bool host = false;
     bool spectator = false;
     bool scripted = false; // started by a command (tests): it keeps the delay the command set
     bool udp = false;
-    std::string code;     // the match code (hosting or joining)
-    std::string build;    // this side's build, as its match room's data says (the keeper's relay room says it too)
-    std::string status;   // the status line
-    std::string result;   // how the last session ended, or the last failure
-    std::string server;   // the Weyvelength server
+    std::string code;   // the match code (hosting or joining)
+    std::string build;  // this side's build, as its match room's data says (the keeper's relay room says it too)
+    std::string status; // the status line
+    std::string result; // how the last session ended, or the last failure
+    std::string server; // the Weyvelength server
     // The session: both seats (P1 is the host), whose seat is this one's (-1
     // for a spectator), matches finished, spectators watching.
     lobby::Seat seats[kNumPlayers];
     int you = -1;
-    bool setPlay = false; // a table's set (AfterMatch::Set): a vote after each game, a timer on it
+    bool setPlay = false;     // a table's set (AfterMatch::Set): a vote after each game, a timer on it
     int voteSecondsLeft = -1; // a table set's vote: seconds until no choice counts as rematch (-1 none)
     // The set is won and nobody else waits for the table (the keeper's again
     // mark): the vote as between games, Rematch the next set (rooms_client).
     bool againVote = false;
     bool againAsk = false; // P1: both chose to play on; ask the keeper for the next set
-    int forfeitSeat = -1;     // the seat that left the set (a forfeit), -1 none
-    uint8_t firstTo = 0;  // ... games to win it
+    int forfeitSeat = -1;  // the seat that left the set (a forfeit), -1 none
+    uint8_t firstTo = 0;   // ... games to win it
     int played = 0;
     int spectators = 0;
     unsigned linkPingMs = 0; // round trip of the session's heartbeat
     // The heartbeat's last 10 seconds (core/input_delay.h): the median round
     // trip and the jitter the delay suggestion goes by.
     core::LinkStats link;
+
     // The input delay suggested for this link, -1 until enough heartbeats
     // were measured (core::kSuggestSamples, 2 seconds of the lobby).
-    int SuggestedDelay() const
-    {
+    int SuggestedDelay() const {
         return link.samples >= core::kSuggestSamples ? core::SuggestedDelay(link.pingMs, link.jitterMs) : -1;
     }
     // How the link to the other side (a spectator's: to the host) travels,
     // from its selected ICE candidate pair; the TURN server's name when one
     // was handed out ("turn.cloudflare.com").
-    enum class Path { Unknown, Direct, Relayed };
+    enum class Path { Unknown,
+                      Direct,
+                      Relayed };
     Path linkPath = Path::Unknown;
     std::string relayHost;
     uint16_t stageRule = 0xFFFF; // the host's: a stage table index, lobby::kRandomStage or kAnyStage
     bool stageLocked = false;    // the host confirmed the stage (NetSetStageLocked)
-    bool overResults = false; // the lobby after a match: over its results screen (character select stays there)
+    bool overResults = false;    // the lobby after a match: over its results screen (character select stays there)
     bool haveSetup = false;
-    MatchSetup setup;     // what both sides play, once agreed
+    MatchSetup setup; // what both sides play, once agreed
     // While a match runs (copied by the game thread every frame):
     bool syncing = false; // connected, waiting for the first inputs
     int frame = 0;
@@ -235,6 +246,7 @@ struct NetView {
     std::vector<lobby::MatchEntry> matches;
     uint64_t watchingMatch = 0;
 };
+
 NetView NetViewNow();
 // The seat that last forfeited a table set (this player leaving one, or the
 // other's Bye saying so), once: -1 none. rooms_client tells the keeper.

@@ -55,27 +55,25 @@ namespace {
 int g_failures = 0;
 int g_checks = 0;
 
-#define CHECK(cond)                                                                                 \
-    do {                                                                                            \
-        g_checks++;                                                                                 \
-        if (!(cond)) {                                                                              \
-            g_failures++;                                                                           \
-            std::printf("    FAILED %s:%d: %s\n", __FILE__, __LINE__, #cond);                       \
-        }                                                                                           \
+#define CHECK(cond)                                                           \
+    do {                                                                      \
+        g_checks++;                                                           \
+        if (!(cond)) {                                                        \
+            g_failures++;                                                     \
+            std::printf("    FAILED %s:%d: %s\n", __FILE__, __LINE__, #cond); \
+        }                                                                     \
     } while (0)
 
 const char* RegionName(const ReplayFile& rf, size_t i) { return rf.regions[i].name.c_str(); }
 
-bool HasRegion(const ReplayFile& rf, const std::vector<size_t>& regions, const char* name)
-{
+bool HasRegion(const ReplayFile& rf, const std::vector<size_t>& regions, const char* name) {
     for (size_t r : regions) {
         if (rf.regions[r].name == name) return true;
     }
     return false;
 }
 
-VerifyResult Verify(const ReplayFile& rf, MockBug bug, uint32_t machineValue, int stress)
-{
+VerifyResult Verify(const ReplayFile& rf, MockBug bug, uint32_t machineValue, int stress) {
     MockGameOptions go;
     go.bug = bug;
     go.machineValue = machineValue;
@@ -85,15 +83,13 @@ VerifyResult Verify(const ReplayFile& rf, MockBug bug, uint32_t machineValue, in
     return VerifyReplay(game, rf, vo);
 }
 
-void PrintVerify(const char* label, const VerifyResult& v, const ReplayFile& rf)
-{
+void PrintVerify(const char* label, const VerifyResult& v, const ReplayFile& rf) {
     std::printf("    verify %-22s %s at frame %d (%s)", label, ToString(v.status), v.frame, v.message.c_str());
     for (const auto& m : v.regions) std::printf(" [%s]", RegionName(rf, m.region));
     std::printf("\n");
 }
 
-int FirstDesync(const MockMatchResult& r)
-{
+int FirstDesync(const MockMatchResult& r) {
     int first = -1;
     for (const auto& list : r.desyncs) {
         for (const auto& d : list) {
@@ -103,8 +99,7 @@ int FirstDesync(const MockMatchResult& r)
     return first;
 }
 
-void PrintMatch(const MockMatchResult& r)
-{
+void PrintMatch(const MockMatchResult& r) {
     for (int p = 0; p < kNumPlayers; p++) {
         std::printf("    P%d: %d frames, final through %d, %u rollbacks (max %u frames), %u stalls, %d desync events\n",
                     p + 1, r.recording[p].FrameCount(), r.recording[p].finalThrough, r.rollbacks[p].total_count,
@@ -114,8 +109,7 @@ void PrintMatch(const MockMatchResult& r)
 
 // ---------------------------------------------------------------------------
 
-void TestHashes()
-{
+void TestHashes() {
     CHECK(Hash64("", 0) == 0xEF46DB3751D8E999ull);
     CHECK(Hash64("abc", 3) == 0x44BC2CF5AD770999ull);
     const char* longer = "Nobody inspects the spammish repetition";
@@ -123,8 +117,7 @@ void TestHashes()
     CHECK(Crc32("123456789", 9) == 0xCBF43926u);
 }
 
-void TestBuildIds()
-{
+void TestBuildIds() {
     const std::string live = "sfv-648AD3A4/adapter-12/sim-12/map-0000000000000000/noise-c2da3f81207455e0";
     // A recording from before the sim part: its adapter version stands in.
     const std::string old = "sfv-648AD3A4/adapter-12/map-0000000000000000/noise-1111111111111111";
@@ -142,8 +135,7 @@ void TestBuildIds()
     CHECK(!ReplayCompatible("mockfighter-1", live));
 }
 
-void TestPingTiers()
-{
+void TestPingTiers() {
     using core::PingTier;
     // The tier is the delay suggested, 0 to 3, then 4 once 3 frames leave
     // more than 2 to rollback (late above 5 frames: past 166 ms, no jitter).
@@ -157,8 +149,7 @@ void TestPingTiers()
     CHECK(PingTier(135, 17) == core::kPingTierHeavy);
 }
 
-void TestLoaderChoice()
-{
+void TestLoaderChoice() {
     using proxy::HasArgument;
     const wchar_t* flag = L"-sfve_loader=launcher";
     CHECK(HasArgument(L"\"C:\\Game\\StreetFighterV.exe\" -sfve_loader=launcher -sfve_mode=netplay", flag));
@@ -184,17 +175,17 @@ void TestLoaderChoice()
     DeleteFileW(ini);
 }
 
-void TestDisplayName()
-{
+void TestDisplayName() {
     using core::DisplayName;
     CHECK(DisplayName("Ryu") == "Ryu");
     CHECK(DisplayName("") == "");
     // Emoji, their joiners and selectors go; the spaces they leave collapse.
     CHECK(DisplayName("\xF0\x9F\x94\xA5 Kira \xF0\x9F\x94\xA5") == "Kira");
     CHECK(DisplayName("Dad\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80\x8D\xF0\x9F\x91\xA7 Bod") == "Dad Bod");
-    CHECK(DisplayName("\xE2\x9A\xA7 Eastwood \xE2\x9A\xA7") == "Eastwood");                        // U+26A7
+    CHECK(DisplayName("\xE2\x9A\xA7 Eastwood \xE2\x9A\xA7") == "Eastwood");                       // U+26A7
     CHECK(DisplayName("\xF0\x90\x99\x9A sweetsakurastar \xF0\x90\x99\x9A") == "sweetsakurastar"); // U+1065A
-    CHECK(DisplayName("A\xE2\x9D\xA4\xEF\xB8\x8F" " B") == "A B");                                // heart + VS16
+    CHECK(DisplayName("A\xE2\x9D\xA4\xEF\xB8\x8F"
+                      " B") == "A B"); // heart + VS16
     // Script and bold letters read plain; CJK and accents stay.
     CHECK(DisplayName("\xF0\x9D\x93\xA2\xF0\x9D\x93\xAA\xF0\x9D\x93\xB4\xF0\x9D\x93\xBE") == "Saku");
     CHECK(DisplayName("\xF0\x9D\x9F\x8F\xF0\x9D\x9F\x90") == "12");
@@ -205,8 +196,7 @@ void TestDisplayName()
     CHECK(DisplayName(std::string("ab\xF0\x9F", 4)) == "ab\xEF\xBF\xBD\xEF\xBF\xBD");
 }
 
-void TestInputDelaySuggestion()
-{
+void TestInputDelaySuggestion() {
     using core::SuggestedDelay;
     // Steady link (no jitter): 0 frames up to 66 ms, then a frame per 33 ms, 3 at most.
     CHECK(SuggestedDelay(0, 0) == 0);
@@ -243,8 +233,7 @@ void TestInputDelaySuggestion()
     CHECK(core::MeasureLink({}).samples == 0);
 }
 
-void TestIgnoreMask()
-{
+void TestIgnoreMask() {
     uint8_t mem[24] = {};
     StateRegion r{"r", mem, sizeof(mem), {0x02}}; // ignore bytes 8..15
     std::vector<StateRegion> regions{r};
@@ -287,8 +276,7 @@ void TestIgnoreMask()
 // A delay that covers the latency: most saves can never be loaded and skip
 // their copy. The match stays in sync and every load (jitter still causes
 // some) restores its saved state; with skipping off nothing is skipped.
-void TestSkippedSaves()
-{
+void TestSkippedSaves() {
     MockMatchOptions mo;
     mo.seed = 12;
     mo.link = {2, 1, 0.0};
@@ -320,8 +308,7 @@ void TestSkippedSaves()
 // The Battle Log's summary chunk and list: the header alone reads it, a file
 // without one still lists, both players' copies of a match list once (the
 // player's own kept), sets group and score, filters pick.
-void TestBattleLog()
-{
+void TestBattleLog() {
     auto make = [](uint64_t id, int local, uint64_t created, uint32_t c0, uint32_t c1, const char* n0, const char* n1, int winner,
                    uint64_t setKey, uint16_t game, uint8_t w0, uint8_t w1) {
         ReplayFile rf;
@@ -425,8 +412,7 @@ void TestBattleLog()
     CHECK(opponents.size() == 2 && opponents[0].first == "KANZUKI" && opponents[0].second == 3);
 }
 
-void TestReplayRoundTrip()
-{
+void TestReplayRoundTrip() {
     ReplayFile rf;
     rf.modVersion = "0.1.0";
     rf.gameBuild = "mockfighter-1";
@@ -479,8 +465,7 @@ void TestReplayRoundTrip()
 // saves: the recordings come out as hashing every simulation makes them (delay
 // 0, a link of 5 ticks each way: most frames run predicted and many run again), the peers
 // agree, and each recording verifies against a straight run.
-void TestHashOnConfirm()
-{
+void TestHashOnConfirm() {
     MockMatchOptions mo;
     mo.seed = 11;
     mo.link = {4, 3, 0.05};
@@ -513,8 +498,7 @@ void TestHashOnConfirm()
 }
 
 // Through the compact format and back.
-ReplayFile Compacted(const ReplayFile& rf, size_t* size = nullptr)
-{
+ReplayFile Compacted(const ReplayFile& rf, size_t* size = nullptr) {
     const std::vector<uint8_t> bytes = SerializeReplay(rf, ReplayDetail::Compact);
     if (size) *size = bytes.size();
     ReplayFile back;
@@ -525,8 +509,7 @@ ReplayFile Compacted(const ReplayFile& rf, size_t* size = nullptr)
 
 // The decoder for Proton (no XPRESS Huffman in its cabinet.dll) against
 // Windows' own encoder: what Windows packs, it unpacks the same.
-void TestXpressHuffmanDecoder()
-{
+void TestXpressHuffmanDecoder() {
     std::vector<std::vector<uint8_t>> inputs;
     inputs.push_back(std::vector<uint8_t>(4096, 0)); // one long match
     std::vector<uint8_t> random(70000);
@@ -574,8 +557,7 @@ void TestXpressHuffmanDecoder()
     std::printf("    %d inputs decoded as Windows encoded them\n", checked);
 }
 
-void TestCompactRecording()
-{
+void TestCompactRecording() {
     ReplayFile rf;
     rf.regions = {{"a", 16, {}}, {"b", 4, {}}, {"c", 1000, {}}};
     rf.initialHashes = {1, 2, 3};
@@ -620,8 +602,7 @@ void TestCompactRecording()
     CHECK(fullBack.hashes == rf.hashes && fullBack.hashesKept.empty());
 }
 
-void TestCleanMatch()
-{
+void TestCleanMatch() {
     MockMatchOptions mo;
     mo.seed = 11;
     mo.link = {4, 3, 0.05};
@@ -685,8 +666,7 @@ void TestCleanMatch()
     RemoveDirectoryW(dir.c_str());
 }
 
-void TestSetupMismatch()
-{
+void TestSetupMismatch() {
     MockMatchOptions mo;
     mo.seed = 12;
     mo.renderedFrames = 600;
@@ -701,8 +681,7 @@ void TestSetupMismatch()
     CHECK(d.initialStateDiffers);
 }
 
-void TestStateOutsideSnapshot()
-{
+void TestStateOutsideSnapshot() {
     MockMatchOptions mo;
     mo.seed = 13;
     mo.link = {5, 3, 0.05};
@@ -741,12 +720,10 @@ void TestStateOutsideSnapshot()
     CHECK(HasRegion(c.recording[0], [&] {
         std::vector<size_t> idx;
         for (const auto& m : stress.regions) idx.push_back(m.region);
-        return idx;
-    }(), "fighters"));
+        return idx; }(), "fighters"));
 }
 
-void TestMachineSpecificValue()
-{
+void TestMachineSpecificValue() {
     MockMatchOptions mo;
     mo.seed = 14;
     mo.renderedFrames = 6000;
@@ -788,8 +765,7 @@ void TestMachineSpecificValue()
     CHECK(cv2.status == VerifyResult::Status::Diverged && cv2.frame == v2.frame);
 }
 
-void TestEffectUsesGameplayRng()
-{
+void TestEffectUsesGameplayRng() {
     MockMatchOptions mo;
     mo.seed = 15;
     mo.link = {5, 3, 0.05};
@@ -813,8 +789,7 @@ void TestEffectUsesGameplayRng()
     CHECK(v.status != VerifyResult::Status::Match);
 }
 
-int RunStress(MockBug bug, int frames)
-{
+int RunStress(MockBug bug, int frames) {
     MockGameOptions go;
     go.bug = bug;
     go.input = [](int poll, int player) { return MasherInput(21, poll, player); };
@@ -830,15 +805,13 @@ int RunStress(MockBug bug, int frames)
     return session.DesyncCount();
 }
 
-void TestStressSession()
-{
+void TestStressSession() {
     CHECK(RunStress(MockBug::None, 1200) == 0);
     CHECK(RunStress(MockBug::EffectUsesGameplayRng, 1200) > 0);
     CHECK(RunStress(MockBug::StateOutsideSnapshot, 3000) > 0);
 }
 
-void TestMatchCodes()
-{
+void TestMatchCodes() {
     MatchCode room;
     room.kind = MatchCode::Kind::Room;
     room.room = "HWRH49";
@@ -859,7 +832,8 @@ void TestMatchCodes()
     std::string sloppy;
     for (char c : u) {
         if (c == '-') continue;
-        sloppy += char(std::tolower(static_cast<unsigned char>(c == '0' ? 'O' : c == '1' ? 'I' : c)));
+        sloppy += char(std::tolower(static_cast<unsigned char>(c == '0' ? 'O' : c == '1' ? 'I'
+                                                                                         : c)));
     }
     CHECK(DecodeMatchCode(sloppy, &back) && back == udp);
     std::string typo = u;
@@ -868,8 +842,7 @@ void TestMatchCodes()
     CHECK(!DecodeMatchCode("X-1234", &back));
 }
 
-void TestLobbyMessages()
-{
+void TestLobbyMessages() {
     lobby::Message hello;
     hello.type = lobby::Type::Hello;
     hello.nonce = 77;
@@ -1035,8 +1008,7 @@ void TestLobbyMessages()
     CHECK(!lobby::Decode(bytes.data(), 5));
 }
 
-void TestMuxAndConditions()
-{
+void TestMuxAndConditions() {
     LoopbackNetwork net(3, {});
     Mux a(net.Endpoint(1)), b(net.Endpoint(2));
     const uint8_t x[] = {1, 2, 3};
@@ -1063,8 +1035,7 @@ void TestMuxAndConditions()
     CHECK(got == 10);
 }
 
-void TestWrongBuildIsRefused()
-{
+void TestWrongBuildIsRefused() {
     MockMatchOptions mo;
     mo.seed = 16;
     mo.renderedFrames = 200;
@@ -1083,8 +1054,7 @@ struct Test {
 
 // A spectator fed the host's confirmed frames (out of order, in batches)
 // plays the same match, and notices a frame whose checksum differs.
-void TestSpectator()
-{
+void TestSpectator() {
     MockMatchOptions mo;
     mo.seed = 21;
     mo.renderedFrames = 1500;
@@ -1129,8 +1099,7 @@ void TestSpectator()
 // Watching with the stream falling behind: low on frames it holds some
 // rendered frames (and plays the rest), dry it stalls, and it resumes with a
 // quarter of the delay in hand, not all of it.
-void TestSpectatorPacing()
-{
+void TestSpectatorPacing() {
     MockGame game;
     SpectateConfig sc;
     sc.delayFrames = 20;
@@ -1149,7 +1118,7 @@ void TestSpectatorPacing()
     for (int i = 0; i < 9; i++) spec.Update();
     CHECK(spec.NextFrame() == 9 && spec.Held() == 0); // 11 in hand: full speed
     for (int i = 0; i < 12; i++) spec.Update();
-    CHECK(spec.Held() > 0 && spec.Stalls() == 0);     // under a quarter of the delay: some frames held
+    CHECK(spec.Held() > 0 && spec.Stalls() == 0); // under a quarter of the delay: some frames held
     const int played = spec.NextFrame();
     for (int i = 0; i < 40 && spec.Stalls() == 0; i++) spec.Update();
     CHECK(spec.Stalls() == 1 && spec.NextFrame() == 20); // dry
@@ -1167,8 +1136,7 @@ void TestSpectatorPacing()
     CHECK(spec.Held() == heldBefore); // half the delay in hand again: full speed
 }
 
-void TestUpdateInfo()
-{
+void TestUpdateInfo() {
     JsonValue j;
     std::string error;
     CHECK(ParseJson(R"({"a": [1, 2.5, -3e2], "b": "x\u00e9\n", "c": {"d": true, "e": null}})", &j, &error));
@@ -1239,8 +1207,7 @@ void TestUpdateInfo()
 
 // The move from SFVR's names (mod/migrate.h), on a folder laid out as an SFVR
 // install that just took the Polarity update.
-std::wstring MigrateTemp(const wchar_t* name)
-{
+std::wstring MigrateTemp(const wchar_t* name) {
     wchar_t tmp[MAX_PATH];
     GetTempPathW(MAX_PATH, tmp);
     std::wstring dir = std::wstring(tmp) + L"polarity-migrate-" + name + L"-" + std::to_wstring(GetCurrentProcessId());
@@ -1255,8 +1222,7 @@ std::wstring MigrateTemp(const wchar_t* name)
     return dir;
 }
 
-void Put(const std::wstring& path, const std::string& text)
-{
+void Put(const std::wstring& path, const std::string& text) {
     const size_t slash = path.find_last_of(L'\\');
     std::wstring parent = path.substr(0, slash);
     // Parents first (two levels are enough here).
@@ -1270,15 +1236,13 @@ void Put(const std::wstring& path, const std::string& text)
 
 bool Has(const std::wstring& path) { return GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES; }
 
-std::wstring IniValue(const std::wstring& path, const wchar_t* section, const wchar_t* key)
-{
+std::wstring IniValue(const std::wstring& path, const wchar_t* section, const wchar_t* key) {
     wchar_t v[256] = {};
     GetPrivateProfileStringW(section, key, L"(none)", v, 256, path.c_str());
     return v;
 }
 
-void TestMigrateFromSfvr()
-{
+void TestMigrateFromSfvr() {
     using sfv::mod::MigrateFromSfvr;
     SetEnvironmentVariableW(L"POLARITY_LOADER", L"1"); // as Polarity's loader sets it
     {
@@ -1379,8 +1343,7 @@ void TestMigrateFromSfvr()
     }
 }
 
-void TestShownSetup()
-{
+void TestShownSetup() {
     // Ryu's costume 0 has colors 0..9 and EX colors 100 and 101; Eleven
     // plays a fighter in costume 12 (two colors); Gill's costume 3 has one.
     LookRules rules;
@@ -1448,8 +1411,7 @@ void TestShownSetup()
     CHECK(!(RealPicks(host, same, 0, rules) == RealPicks(odd, same, 1, rules)));
 }
 
-void TestRulesFormat()
-{
+void TestRulesFormat() {
     // The defaults (the Table rules screen's), and a round trip of every kind.
     Rules r;
     CHECK(FormatRules(r) == "r1 ft2 bo3 t99 ws3");
@@ -1474,12 +1436,17 @@ void TestRulesFormat()
     CHECK(DescribeRules(Rules{3, 1, 30, Rotation::RoundRobin, 0}) == "First to 3 \xC2\xB7 round robin \xC2\xB7 30 seconds \xC2\xB7 one round");
 }
 
-void TestRandomStage()
-{
+void TestRandomStage() {
     // Random never lands on Flamenco Tavern, Skies of Honor or Kanzuki Beach,
     // nor on a setting of theirs; every other stage still comes up.
     const std::vector<RandomStageChoice> stages = {
-        {3, "CHN", ""}, {14, "KPB", ""}, {15, "DBI", ""}, {17, "SX1", ""}, {10, "TRN", ""}, {67, "S25", "TRN"}, {70, "X01", "SX1"},
+        {3, "CHN", ""},
+        {14, "KPB", ""},
+        {15, "DBI", ""},
+        {17, "SX1", ""},
+        {10, "TRN", ""},
+        {67, "S25", "TRN"},
+        {70, "X01", "SX1"},
     };
     std::map<int, int> seen;
     std::mt19937_64 rng{1234};
@@ -1515,8 +1482,7 @@ void TestRandomStage()
     CHECK(ParseStageMask(FormatStageMask({"TRN", "AFB", "SH4"})) == (std::vector<std::string>{"AFB", "SH4", "TRN"}));
 }
 
-void TestMatchTicket()
-{
+void TestMatchTicket() {
     // Direct Match: the rules it always had, the first joiner plays, a vote.
     const MatchTicket host = DirectMatchHost(), join = DirectMatchJoin("ABC123", false);
     CHECK(host.host && !join.host && join.roomCode == "ABC123" && !host.seatToken && host.after == AfterMatch::Vote);
@@ -1537,8 +1503,7 @@ void TestMatchTicket()
 // The keeper's relay (core/spectate_relay.h) between a scripted host and
 // viewers: Hello, the host's Loaded for each game, the stream, and the Bye
 // once a viewer has seen the set. No game state passes through it.
-void TestSpectateRelay()
-{
+void TestSpectateRelay() {
     {
         lobby::Message a;
         a.type = lobby::Type::InputsAck;
@@ -1555,16 +1520,17 @@ void TestSpectateRelay()
     }
     using lobby::Message;
     using lobby::Type;
+
     struct Sent {
         uint64_t to;
         Message m;
     };
+
     std::vector<Sent> up, down;
     RelayConfig cfg;
     cfg.maxViewers = 3;
     cfg.firstTo = 2;
-    SpectateRelay relay(cfg, [&](uint64_t to, const Message& m) { up.push_back({to, m}); },
-                        [&](uint64_t to, const Message& m) { down.push_back({to, m}); });
+    SpectateRelay relay(cfg, [&](uint64_t to, const Message& m) { up.push_back({to, m}); }, [&](uint64_t to, const Message& m) { down.push_back({to, m}); });
     auto upOf = [&](Type t) {
         std::vector<Message> out;
         for (const Sent& s : up) {
@@ -1829,8 +1795,7 @@ void TestSpectateRelay()
 // The screenshot PNG (core/png.h): signature, IHDR, chunk CRCs, and the
 // stored deflate blocks carrying every row (a 300x80 image is over 65535 bytes:
 // two blocks).
-void TestPng()
-{
+void TestPng() {
     const int w = 300, h = 80;
     std::vector<uint8_t> rgb(static_cast<size_t>(w) * h * 3);
     for (size_t i = 0; i < rgb.size(); i++) rgb[i] = static_cast<uint8_t>(i * 7);
@@ -1875,11 +1840,11 @@ void TestPng()
 // each request comes back once (a client or a failure), a cancelled one never
 // does and its client is freed, retired clients are freed, and whatever is
 // left at the end is freed too.
-void TestKeeperConnector()
-{
+void TestKeeperConnector() {
     struct Fake {
         int n = 0;
     };
+
     std::atomic<int> made{0}, freed{0}, calls{0};
     auto make = [&]() -> Fake* {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -1931,8 +1896,7 @@ void TestKeeperConnector()
     CHECK(freed.load() == made.load());
 }
 
-void TestKeeperProtocol()
-{
+void TestKeeperProtocol() {
     using namespace sfv::keeper;
     // Requests: a room's settings round trip; bad ones are refused.
     const Request room = RoomRequest(7, RoomSettings{8, false, RoomTitle{3, {"Z30", "CNL"}}});
@@ -1993,13 +1957,16 @@ void TestKeeperProtocol()
         r.openSeats = i % 3 == 0 ? 0 : 2;
         r.rules = "r1 ft2 bo3 t99 ws3";
         r.faces = {"RYU", "KEN", "Z21", "Z39", "CNL", "NSH", "ZGF"};
-        r.ownerCountry = i % 4 == 0 ? "" : i % 4 == 1 ? "DE" : i % 4 == 2 ? "jp" : "USA"; // only two capitals go through
+        r.ownerCountry = i % 4 == 0 ? "" : i % 4 == 1 ? "DE"
+                                       : i % 4 == 2   ? "jp"
+                                                      : "USA"; // only two capitals go through
         rooms.push_back(r);
     }
     SortRoomList(&rooms);
     CHECK(rooms.front().openSeats > 0 && rooms.front().members < kRoomCap && rooms.back().members == kRoomCap);
     for (size_t i = 1; i < rooms.size(); i++) {
-        auto group = [](const ListedRoom& r) { return r.members >= kRoomCap ? 2 : r.openSeats > 0 ? 0 : 1; };
+        auto group = [](const ListedRoom& r) { return r.members >= kRoomCap ? 2 : r.openSeats > 0 ? 0
+                                                                                                  : 1; };
         CHECK(group(rooms[i - 1]) < group(rooms[i]) || (group(rooms[i - 1]) == group(rooms[i]) && rooms[i - 1].members >= rooms[i].members));
     }
     // The public list in the server's room listing: each room's slots fit
@@ -2175,7 +2142,8 @@ void TestKeeperProtocol()
     for (int t = 0; t < 8; t++) detail.tables.push_back("r1 ft2 bo3 t99 ws3");
     for (int i = 0; i < 16; i++) detail.people.push_back({std::string(96, static_cast<char>('a' + i)), i % 2 ? "RYU" : "Z41"});
     detail.people[3].name = "bad\x1Ename\x1F";
-    for (int i = 0; i < 16; i++) detail.people[i].country = i % 3 == 0 ? "" : i % 3 == 1 ? "FR" : "x\x1F";
+    for (int i = 0; i < 16; i++) detail.people[i].country = i % 3 == 0 ? "" : i % 3 == 1 ? "FR"
+                                                                                         : "x\x1F";
     const std::vector<std::string> parts = PackRoomDetail(detail);
     CHECK(parts.size() >= 2);
     std::vector<std::string> bodies;
@@ -2350,8 +2318,7 @@ void TestKeeperProtocol()
 
 // A version 3 pak's index (a mod's: unencrypted, two files, one compressed),
 // read back, and the game's paths classified.
-void TestPakIndex()
-{
+void TestPakIndex() {
     std::vector<uint8_t> pak(64, 0xAB); // file data before the index
     const uint64_t indexAt = pak.size();
     auto put = [&](const void* p, size_t n) { pak.insert(pak.end(), static_cast<const uint8_t*>(p), static_cast<const uint8_t*>(p) + n); };
@@ -2364,7 +2331,7 @@ void TestPakIndex()
     str("../../../StreetFighterV/Content/");
     put32(2);
     str("Chara/JRI/BattleResource/061/BAC_JRI.uasset");
-    put64(0), put64(100), put64(300), put32(1); // offset, size, uncompressed, zlib
+    put64(0), put64(100), put64(300), put32(1);  // offset, size, uncompressed, zlib
     put(std::vector<uint8_t>(20, 0).data(), 20); // hash
     put32(1), put64(0), put64(100);              // one block
     uint8_t enc = 0;
@@ -2431,8 +2398,7 @@ void TestPakIndex()
     CHECK(BattleDataKey("/Game/Chara/KEN/Texture/T_KEN").empty());
 }
 
-void TestTexturePackage()
-{
+void TestTexturePackage() {
     // A package as the paks hold one: a name table entry first (the same
     // string, no header), then the platform data with two mips, the first's
     // bytes at the end of the file, the second's inline.
@@ -2447,23 +2413,43 @@ void TestTexturePackage()
     for (int i = 0; i < 4; i++) i32(-7);
     str("PF_B8G8R8A8");
     i32(0x1234);
-    i32(4); i32(2); i32(1);
+    i32(4);
+    i32(2);
+    i32(1);
     str("PF_B8G8R8A8");
-    i32(0); i32(2);
+    i32(0);
+    i32(2);
     // Each mip: bCooked, the bulk data header (offsets from where the bulk
     // data starts, at the end), the inline bytes if any, the mip's size.
-    i32(1); i32(0x1); i32(32); i32(32);
+    i32(1);
+    i32(0x1);
+    i32(32);
+    i32(32);
     const size_t offsetAt = pkg.size();
     i64(0);
-    i32(4); i32(2);
-    i32(1); i32(0x40); i32(8); i32(8); i64(0);
-    for (int i = 0; i < 2; i++) { pkg.push_back(10); pkg.push_back(20); pkg.push_back(30); pkg.push_back(255); }
-    i32(2); i32(1);
+    i32(4);
+    i32(2);
+    i32(1);
+    i32(0x40);
+    i32(8);
+    i32(8);
+    i64(0);
+    for (int i = 0; i < 2; i++) {
+        pkg.push_back(10);
+        pkg.push_back(20);
+        pkg.push_back(30);
+        pkg.push_back(255);
+    }
+    i32(2);
+    i32(1);
     const int64_t end = static_cast<int64_t>(pkg.size());
     // Mip 0: red opaque, blue clear, alternating.
     for (int i = 0; i < 8; i++) {
         const bool red = i % 2 == 0;
-        pkg.push_back(red ? 0 : 255); pkg.push_back(0); pkg.push_back(red ? 255 : 0); pkg.push_back(red ? 255 : 0);
+        pkg.push_back(red ? 0 : 255);
+        pkg.push_back(0);
+        pkg.push_back(red ? 255 : 0);
+        pkg.push_back(red ? 255 : 0);
     }
     i32(0x9E2A83C1); // the package tag that closes the file
     TexPackage p;
@@ -2490,14 +2476,22 @@ void TestTexturePackage()
     // BC3, as the pad glyphs are: mips below 4x4 stored as 4x4, all inline.
     pkg.clear();
     i32(0x9E2A83C1);
-    i32(8); i32(8); i32(1);
+    i32(8);
+    i32(8);
+    i32(1);
     str("PF_DXT5");
-    i32(0); i32(3);
+    i32(0);
+    i32(3);
     for (const int side : {8, 4, 4}) {
         const int bytes = side == 8 ? 64 : 16;
-        i32(1); i32(0x40); i32(bytes); i32(bytes); i64(0);
+        i32(1);
+        i32(0x40);
+        i32(bytes);
+        i32(bytes);
+        i64(0);
         pkg.insert(pkg.end(), static_cast<size_t>(bytes), static_cast<uint8_t>(side));
-        i32(side); i32(side);
+        i32(side);
+        i32(side);
     }
     i32(0x9E2A83C1);
     CHECK(ParseTexturePackage(pkg.data(), pkg.size(), &p, &error) && p.format == TexFormat::Bc3 && p.mips.size() == 3);
@@ -2542,8 +2536,7 @@ void TestTexturePackage()
     CHECK(n1 == n2 && n1.size() == 64 * 64 * 4 && white > 1700 && black > 1700);
 }
 
-void TestKeyNames()
-{
+void TestKeyNames() {
     // The default assignment, slot by slot: W S D A B N G H K J Comma M Period Slash Enter Escape.
     CHECK(VirtualKeyOf("W") == 'W' && VirtualKeyOf("b") == 'B' && VirtualKeyOf("Comma") == 0xBC && VirtualKeyOf("Period") == 0xBE);
     CHECK(VirtualKeyOf("Slash") == 0xBF && VirtualKeyOf("Enter") == 0x0D && VirtualKeyOf("Escape") == 0x1B);
@@ -2555,8 +2548,7 @@ void TestKeyNames()
     CHECK(PadKeyOfSlot(14) == 0x4000 && PadKeyOfSlot(15) == 0x8000 && PadKeyOfSlot(16) == 0 && PadKeyOfSlot(-1) == 0);
 }
 
-void TestUpdateSignature()
-{
+void TestUpdateSignature() {
     // A key pair as the release script makes one, through the same API.
     BCRYPT_KEY_HANDLE key = nullptr;
     CHECK(BCRYPT_SUCCESS(BCryptGenerateKeyPair(BCRYPT_ECDSA_P256_ALG_HANDLE, &key, 256, 0)));
@@ -2587,8 +2579,7 @@ void TestUpdateSignature()
     CHECK(!VerifySignature(bytes, text.size(), sig, 64, noKey));
 }
 
-int main()
-{
+int main() {
     // Unbuffered: a crash keeps what was printed before it (a pipe buffers).
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     const Test tests[] = {

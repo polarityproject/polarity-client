@@ -14,14 +14,12 @@ namespace sfv::mod {
 DWORD WINAPI ModMain(LPVOID self);
 }
 
-BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
-{
+BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(module);
         // Hooks and file I/O happen off the loader lock.
         if (HANDLE t = CreateThread(nullptr, 0, sfv::mod::ModMain, module, 0, nullptr)) CloseHandle(t);
-    }
-    else if (reason == DLL_PROCESS_DETACH) {
+    } else if (reason == DLL_PROCESS_DETACH) {
         // The game exits (or the DLL unloads): this run ended well, unless a
         // fault came just before (crash_report.h).
         sfv::mod::OnProcessExit("exit");
@@ -35,8 +33,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
 // back at the menus): the game thread can be inside the old driver's frame
 // longer than the shutdown waits, and went on in the freed driver after the
 // reload (crash, 2026-10-28).
-extern "C" __declspec(dllexport) bool SfvCanUnload()
-{
+extern "C" __declspec(dllexport) bool SfvCanUnload() {
     using namespace sfv::mod;
     const NetView::Phase phase = NetViewNow().phase;
     if (phase != NetView::Phase::Idle && phase != NetView::Phase::Ended) {
@@ -51,8 +48,7 @@ extern "C" __declspec(dllexport) bool SfvCanUnload()
 }
 
 // Called by the loader proxy before it unloads this DLL for a hot reload.
-extern "C" __declspec(dllexport) void SfvShutdown()
-{
+extern "C" __declspec(dllexport) void SfvShutdown() {
     using namespace sfv::mod;
     g_stopping = true;
     // Its threads and frame driver go first, while the hooks still run.

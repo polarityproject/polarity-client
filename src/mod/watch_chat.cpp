@@ -38,19 +38,19 @@ bool g_testPending = false, g_testSend = false;
 } // namespace
 
 void WatchChatToggle() { g_toggle = true; }
+
 void WatchChatStartTyping() { g_type = true; }
+
 bool WatchChatShown() { return g_shown; }
 
-void WatchChatTestText(const std::string& text, bool send)
-{
+void WatchChatTestText(const std::string& text, bool send) {
     std::lock_guard lock(g_testMutex);
     g_testText = text;
     g_testSend = send;
     g_testPending = true;
 }
 
-void DrawWatchChat(const HubFonts& f, const RoomsView& v, bool takeInput, WatchChatInput* in)
-{
+void DrawWatchChat(const HubFonts& f, const RoomsView& v, bool takeInput, WatchChatInput* in) {
     *in = WatchChatInput{};
     if (!f.body || !f.strong) return;
     BeginScreen();
@@ -101,8 +101,7 @@ void DrawWatchChat(const HubFonts& f, const RoomsView& v, bool takeInput, WatchC
             if (!g_text.empty()) in->send = g_text;
             g_text.clear();
             g_typing = false;
-        }
-        else if (Pressed({ImGuiKey_Escape, ImGuiKey_GamepadFaceRight}, false)) {
+        } else if (Pressed({ImGuiKey_Escape, ImGuiKey_GamepadFaceRight}, false)) {
             g_text.clear();
             g_typing = false;
         }
@@ -115,11 +114,13 @@ void DrawWatchChat(const HubFonts& f, const RoomsView& v, bool takeInput, WatchC
     ImFont* bold = f.bold ? f.bold : f.strong;
     const float wrap = kX1 - kX0 - 2 * kPad;
     const float lineH = kTextSize * 1.3f;
+
     struct Shown {
         std::string name, all;
         bool room;
         float h;
     };
+
     std::vector<Shown> shown;
     float used = 0;
     const float room = kLines * lineH;
@@ -151,8 +152,7 @@ void DrawWatchChat(const HubFonts& f, const RoomsView& v, bool takeInput, WatchC
         y -= s.h + 2;
         if (s.room) {
             d->AddText(f.body, TextPx(kTextSize), g_v.P(kX0 + kPad, y), kSoft, s.all.c_str(), nullptr, g_v.L(wrap));
-        }
-        else {
+        } else {
             d->AddText(f.body, TextPx(kTextSize), g_v.P(kX0 + kPad, y), kCream, s.all.c_str(), nullptr, g_v.L(wrap));
             d->AddText(bold, TextPx(kTextSize), g_v.P(kX0 + kPad, y), kGold, s.name.c_str());
         }

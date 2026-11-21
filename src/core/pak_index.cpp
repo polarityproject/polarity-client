@@ -24,8 +24,9 @@ struct Reader {
     const uint8_t* p;
     size_t size, at = 0;
     bool ok = true;
-    template <class T> T Get()
-    {
+
+    template <class T>
+    T Get() {
         T v{};
         if (at + sizeof(T) > size) {
             ok = false;
@@ -35,14 +36,14 @@ struct Reader {
         at += sizeof(T);
         return v;
     }
-    void Skip(size_t n)
-    {
+
+    void Skip(size_t n) {
         if (at + n > size) ok = false;
         else at += n;
     }
+
     // An FString: its length with the terminator; negative, UTF-16.
-    std::string String()
-    {
+    std::string String() {
         const int32_t n = Get<int32_t>();
         if (!ok || n == 0) return {};
         std::string s;
@@ -53,8 +54,7 @@ struct Reader {
             }
             s.assign(reinterpret_cast<const char*>(p + at), static_cast<size_t>(n));
             at += static_cast<size_t>(n);
-        }
-        else {
+        } else {
             const size_t chars = static_cast<size_t>(-static_cast<int64_t>(n));
             if (chars > (size - at) / 2) {
                 ok = false;
@@ -72,8 +72,7 @@ struct Reader {
 };
 
 // "../../../StreetFighterV/Content/" + "Chara/..." -> "StreetFighterV/Content/Chara/...".
-std::string Join(const std::string& mount, const std::string& name)
-{
+std::string Join(const std::string& mount, const std::string& name) {
     std::string m = mount;
     while (m.rfind("../", 0) == 0) m.erase(0, 3);
     std::string out = m + name;
@@ -81,8 +80,7 @@ std::string Join(const std::string& mount, const std::string& name)
     return out;
 }
 
-std::vector<std::string> Split(const std::string& path)
-{
+std::vector<std::string> Split(const std::string& path) {
     std::vector<std::string> parts;
     size_t from = 0;
     while (from <= path.size()) {
@@ -97,16 +95,14 @@ std::vector<std::string> Split(const std::string& path)
 bool StartsWith(const std::string& s, const char* prefix) { return s.rfind(prefix, 0) == 0; }
 
 // "BAC_KEN.uasset" -> "BAC_KEN" (also .uexp).
-std::string Stem(const std::string& file)
-{
+std::string Stem(const std::string& file) {
     const size_t dot = file.find('.');
     return dot == std::string::npos ? file : file.substr(0, dot);
 }
 
 } // namespace
 
-bool ParsePakIndex(const uint8_t* bytes, size_t size, uint64_t fileSize, uint64_t at, PakIndex* out, std::string* error)
-{
+bool ParsePakIndex(const uint8_t* bytes, size_t size, uint64_t fileSize, uint64_t at, PakIndex* out, std::string* error) {
     auto fail = [&](const char* why) {
         if (error) *error = why;
         return false;
@@ -157,8 +153,7 @@ bool ParsePakIndex(const uint8_t* bytes, size_t size, uint64_t fileSize, uint64_
     return true;
 }
 
-bool ReadPakIndex(const std::string& path, PakIndex* out, std::string* error)
-{
+bool ReadPakIndex(const std::string& path, PakIndex* out, std::string* error) {
     FILE* f = OpenFile(path, "rb");
     if (!f) {
         if (error) *error = "cannot open";
@@ -193,8 +188,7 @@ bool ReadPakIndex(const std::string& path, PakIndex* out, std::string* error)
     return ParsePakIndex(tail.data(), tail.size(), fileSize, indexAt, out, error);
 }
 
-BattleFile ClassifyGamePath(const std::string& path)
-{
+BattleFile ClassifyGamePath(const std::string& path) {
     BattleFile b;
     std::string p = path;
     std::replace(p.begin(), p.end(), '\\', '/');
@@ -234,8 +228,7 @@ BattleFile ClassifyGamePath(const std::string& path)
     return b;
 }
 
-std::string BattleDataKey(const std::string& packagePath)
-{
+std::string BattleDataKey(const std::string& packagePath) {
     // /Game/Chara/KEN/BattleResource/061/BAC_KEN -> KEN/061/BAC_KEN
     const std::vector<std::string> parts = Split(packagePath);
     for (size_t i = 0; i + 1 < parts.size(); i++) {

@@ -17,17 +17,17 @@
 namespace sfv::mod {
 
 struct SettingsRow {
-    std::string id;       // what the overlay calls it ("check", "name", ...)
-    std::string section;  // "UPDATES"; a new header where it changes
-    std::string label;    // "Check at start"
-    std::string value;    // "On"
-    bool arrows = false;  // left and right change it
-    bool text = false;    // A types into it (keyboard), Enter keeps, Escape drops
+    std::string id;        // what the overlay calls it ("check", "name", ...)
+    std::string section;   // "UPDATES"; a new header where it changes
+    std::string label;     // "Check at start"
+    std::string value;     // "On"
+    bool arrows = false;   // left and right change it
+    bool text = false;     // A types into it (keyboard), Enter keeps, Escape drops
     std::string editValue; // what typing starts from (`value` may say "(Steam name)")
     bool enabled = true;
     bool highlight = false; // the value in gold (an action: "Check", "Open")
-    std::string action;   // the A prompt's word ("Check", "Install"); empty: none
-    std::string hint;     // the stripe while focused
+    std::string action;     // the A prompt's word ("Check", "Install"); empty: none
+    std::string hint;       // the stripe while focused
     // The side panel while focused.
     std::string kicker, title;
     std::vector<std::string> lines; // the first in gold when `goldFirst`
@@ -35,8 +35,8 @@ struct SettingsRow {
 };
 
 struct SettingsInput {
-    std::string row;   // the row acted on ("" none)
-    int delta = 0;     // left / right
+    std::string row; // the row acted on ("" none)
+    int delta = 0;   // left / right
     bool confirm = false;
     bool typed = false; // `text` holds the row's new text
     std::string text;

@@ -23,8 +23,7 @@ constexpr int kMaxKeptStates = 240;
 
 } // namespace
 
-void SyncTest::Start(int frames, uint64_t seed)
-{
+void SyncTest::Start(int frames, uint64_t seed) {
     if (Active()) {
         Log("synctest: already running");
         return;
@@ -40,8 +39,7 @@ void SyncTest::Start(int frames, uint64_t seed)
     Log("synctest: %d frames, seed %llu", frames_, static_cast<unsigned long long>(seed));
 }
 
-uint16_t SyncTest::Buttons(int frame, int player, uint8_t* rightTrigger) const
-{
+uint16_t SyncTest::Buttons(int frame, int player, uint8_t* rightTrigger) const {
     *rightTrigger = 0;
     // Seed 0 keeps both pads neutral: separates input-driven state from the rest.
     if (seed_ == 0 || frame < kNeutralFrames || frame >= frames_ - kNeutralFrames) return 0;
@@ -49,11 +47,13 @@ uint16_t SyncTest::Buttons(int frame, int player, uint8_t* rightTrigger) const
     const uint64_t h = Hash64(key, sizeof(key));
     uint16_t b = 0;
     switch (h % 8) {
-    case 0: case 1: b |= XINPUT_GAMEPAD_DPAD_RIGHT; break;
-    case 2: case 3: b |= XINPUT_GAMEPAD_DPAD_LEFT; break;
-    case 4: b |= XINPUT_GAMEPAD_DPAD_DOWN; break;
-    case 5: b |= XINPUT_GAMEPAD_DPAD_UP; break;
-    default: break;
+        case 0:
+        case 1: b |= XINPUT_GAMEPAD_DPAD_RIGHT; break;
+        case 2:
+        case 3: b |= XINPUT_GAMEPAD_DPAD_LEFT; break;
+        case 4: b |= XINPUT_GAMEPAD_DPAD_DOWN; break;
+        case 5: b |= XINPUT_GAMEPAD_DPAD_UP; break;
+        default: break;
     }
     // LP MP HP LK MK HK on the default pad layout.
     static const uint16_t kAttack[] = {XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y, XINPUT_GAMEPAD_RIGHT_SHOULDER,
@@ -66,8 +66,7 @@ uint16_t SyncTest::Buttons(int frame, int player, uint8_t* rightTrigger) const
     return b;
 }
 
-void SyncTest::DrivePads(int frame)
-{
+void SyncTest::DrivePads(int frame) {
     for (int p = 0; p < 2; p++) {
         uint8_t rt;
         const uint16_t b = Buttons(frame, p, &rt);
@@ -75,8 +74,7 @@ void SyncTest::DrivePads(int frame)
     }
 }
 
-void SyncTest::OnTick(SfvGame& game)
-{
+void SyncTest::OnTick(SfvGame& game) {
     if (phase_ == Phase::Idle) return;
     const auto& regions = game.Regions();
     const size_t count = regions.size();
@@ -104,8 +102,7 @@ void SyncTest::OnTick(SfvGame& game)
             states_[k_].resize(size);
             SaveRegions(regions, states_[k_].data());
         }
-    }
-    else if (std::memcmp(&recorded_[size_t(k_) * count], row.data(), count * sizeof(uint64_t)) != 0) {
+    } else if (std::memcmp(&recorded_[size_t(k_) * count], row.data(), count * sizeof(uint64_t)) != 0) {
         mismatchedFrames_++;
         if (firstMismatch_ < 0) {
             firstMismatch_ = k_;
@@ -141,8 +138,7 @@ void SyncTest::OnTick(SfvGame& game)
 }
 
 void SyncTest::LogByteDiffs(const std::vector<StateRegion>& regions, const std::vector<uint8_t>& a,
-                            const std::vector<uint8_t>& b, int frame) const
-{
+                            const std::vector<uint8_t>& b, int frame) const {
     std::vector<RegionInfo> infos;
     std::vector<size_t> offsets;
     size_t base = 0;
@@ -169,8 +165,7 @@ void SyncTest::LogByteDiffs(const std::vector<StateRegion>& regions, const std::
     }
 }
 
-void SyncTest::Finish(SfvGame& game)
-{
+void SyncTest::Finish(SfvGame& game) {
     phase_ = Phase::Idle;
     SetScriptedPad(0, false);
     SetScriptedPad(1, false);

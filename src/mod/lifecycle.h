@@ -15,7 +15,9 @@ inline bool Stopping() { return g_stopping.load(); }
 
 struct HookGuard {
     HookGuard() { g_inDetour++; }
+
     ~HookGuard() { g_inDetour--; }
+
     HookGuard(const HookGuard&) = delete;
     HookGuard& operator=(const HookGuard&) = delete;
 };
@@ -23,7 +25,9 @@ struct HookGuard {
 // Counts a mod thread for as long as it runs.
 struct ThreadGuard {
     ThreadGuard() { g_threads++; }
+
     ~ThreadGuard() { g_threads--; }
+
     ThreadGuard(const ThreadGuard&) = delete;
     ThreadGuard& operator=(const ThreadGuard&) = delete;
 };

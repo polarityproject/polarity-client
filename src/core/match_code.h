@@ -20,7 +20,8 @@
 namespace sfv {
 
 struct MatchCode {
-    enum class Kind : uint8_t { Room = 1, Udp = 2 };
+    enum class Kind : uint8_t { Room = 1,
+                                Udp = 2 };
     Kind kind = Kind::Room;
     std::string room;     // Room: the 6 characters
     uint64_t address = 0; // UDP: (IPv4 address in host byte order << 16) | port

@@ -30,8 +30,8 @@ namespace {
 
 namespace mgr = game::manager;
 
-template <typename T> T Read(const uint8_t* base, uint32_t offset)
-{
+template <typename T>
+T Read(const uint8_t* base, uint32_t offset) {
     return *reinterpret_cast<const T*>(base + offset);
 }
 
@@ -39,8 +39,7 @@ constexpr size_t kMaxRegions = 100000;
 constexpr size_t kMaxGroups = 64;
 
 // Sorted committed address ranges, for cheap "is this a pointer" checks.
-std::vector<std::pair<uintptr_t, uintptr_t>> CommittedRanges()
-{
+std::vector<std::pair<uintptr_t, uintptr_t>> CommittedRanges() {
     std::vector<std::pair<uintptr_t, uintptr_t>> out;
     uintptr_t addr = 0x10000;
     MEMORY_BASIC_INFORMATION mbi;
@@ -57,8 +56,7 @@ std::vector<std::pair<uintptr_t, uintptr_t>> CommittedRanges()
     return out;
 }
 
-bool InRanges(const std::vector<std::pair<uintptr_t, uintptr_t>>& ranges, uint64_t v)
-{
+bool InRanges(const std::vector<std::pair<uintptr_t, uintptr_t>>& ranges, uint64_t v) {
     auto it = std::upper_bound(ranges.begin(), ranges.end(), std::make_pair(static_cast<uintptr_t>(v), UINTPTR_MAX));
     if (it == ranges.begin()) return false;
     --it;
@@ -74,8 +72,7 @@ ULONGLONG g_freeGranulesSince = 0;
 
 } // namespace
 
-bool LooksLikeAddress(uint64_t v)
-{
+bool LooksLikeAddress(uint64_t v) {
     // Below 4 GB are mostly plain integers; nothing of the game's lives there.
     if (v < 0x100000000ull || v >= 0x800000000000ull) return false;
     std::lock_guard lock(g_addressMutex);
@@ -110,8 +107,7 @@ bool LooksLikeAddress(uint64_t v)
 // ---------------------------------------------------------------------------
 // StateMap
 
-bool StateMap::Load(const std::wstring& path)
-{
+bool StateMap::Load(const std::wstring& path) {
     FILE* f = _wfopen(path.c_str(), L"rb");
     if (!f) return false;
     bool ok = true;
@@ -139,8 +135,7 @@ bool StateMap::Load(const std::wstring& path)
     return ok;
 }
 
-bool StateMap::Save(const std::wstring& path) const
-{
+bool StateMap::Save(const std::wstring& path) const {
     FILE* f = _wfopen(path.c_str(), L"wb");
     if (!f) return false;
     const uint32_t header[3] = {0x4D564653, 1, static_cast<uint32_t>(regions.size())};
@@ -154,8 +149,7 @@ bool StateMap::Save(const std::wstring& path) const
     return std::fclose(f) == 0;
 }
 
-uint64_t StateMap::Fingerprint() const
-{
+uint64_t StateMap::Fingerprint() const {
     uint64_t h = regions.size();
     for (const auto& r : regions) {
         h = Hash64(&r.size, sizeof(r.size), h);
@@ -167,8 +161,7 @@ uint64_t StateMap::Fingerprint() const
 // ---------------------------------------------------------------------------
 // SfvGame
 
-void SfvGame::OnInputUnit(uint8_t* inputUnit)
-{
+void SfvGame::OnInputUnit(uint8_t* inputUnit) {
     lastInputMs_ = GetTickCount64();
     if (inputUnit != inputUnit_) {
         inputUnit_ = inputUnit;
@@ -200,8 +193,7 @@ void SfvGame::OnInputUnit(uint8_t* inputUnit)
     }
 }
 
-void SfvGame::OnRollbackUnitTick(uint8_t* unit)
-{
+void SfvGame::OnRollbackUnitTick(uint8_t* unit) {
     if (unit != unit_) {
         unit_ = unit;
         ResetRoundFlow();
@@ -220,8 +212,7 @@ int g_regionWatchLength = 0;
 
 } // namespace
 
-void WatchRegionOfNextBattle(const std::string& name, size_t offset, int length)
-{
+void WatchRegionOfNextBattle(const std::string& name, size_t offset, int length) {
     std::lock_guard lock(g_regionWatchMutex);
     g_regionWatchName = name;
     g_regionWatchOffset = offset;
@@ -236,8 +227,7 @@ bool IsPoolWatch() { return g_regionWatchName.size() > 2 && g_regionWatchName.co
 
 std::map<const uint8_t*, std::vector<uint8_t>> g_poolWatchSeen;
 
-void CheckChangeWatch(const std::vector<StateRegion>& regions, uintptr_t imageBase)
-{
+void CheckChangeWatch(const std::vector<StateRegion>& regions, uintptr_t imageBase) {
     std::lock_guard lock(g_regionWatchMutex);
     if (g_regionWatchName.empty() || !IsPoolWatch()) return;
     const std::string prefix = g_regionWatchName.substr(0, g_regionWatchName.size() - 1); // "s44."
@@ -267,8 +257,7 @@ void CheckChangeWatch(const std::vector<StateRegion>& regions, uintptr_t imageBa
     }
 }
 
-void ArmPendingRegionWatch(const std::vector<StateRegion>& regions, uintptr_t imageBase)
-{
+void ArmPendingRegionWatch(const std::vector<StateRegion>& regions, uintptr_t imageBase) {
     std::lock_guard lock(g_regionWatchMutex);
     if (g_regionWatchName.empty() || IsPoolWatch()) return;
     for (const StateRegion& r : regions) {
@@ -284,8 +273,7 @@ void ArmPendingRegionWatch(const std::vector<StateRegion>& regions, uintptr_t im
     }
 }
 
-uint8_t* SfvGame::Manager() const
-{
+uint8_t* SfvGame::Manager() const {
     if (!unit_) return nullptr;
     using GetManagerFn = uint8_t* (*)(void*);
     auto getManager = image_.At<GetManagerFn>(game::kUnitGetManager.rva);
@@ -293,16 +281,17 @@ uint8_t* SfvGame::Manager() const
     return IsReadable(m, mgr::kGroupsEnd + 8) ? m : nullptr;
 }
 
-void SfvGame::FindPresentationState()
-{
+void SfvGame::FindPresentationState() {
     presentation_.clear();
     if (!ue4::EnsureObjects(image_.base)) return;
+
     // The current battle's objects: the newest (highest numbered) instances
     // in the persistent level; older battles' may not be collected yet.
     struct Found {
         uint8_t* object;
         int number;
     };
+
     std::vector<Found> pawns, targets;
     ue4::ForEachObject([&](const void* object) {
         const std::string cls = ue4::ObjectName(ue4::ClassOf(object));
@@ -326,8 +315,7 @@ void SfvGame::FindPresentationState()
     Log("presentation state: %zu pawns, %zu view targets; %zu regions", pawns.size(), targets.size(), presentation_.size());
 }
 
-uint8_t* SfvGame::SingletonTicks() const
-{
+uint8_t* SfvGame::SingletonTicks() const {
     auto* engine = *image_.At<uint8_t* const*>(game::singleton::kEngineGlobal);
     if (!engine || !IsReadable(engine + game::singleton::kSingleton, 8)) return nullptr;
     uint8_t* singleton = *reinterpret_cast<uint8_t* const*>(engine + game::singleton::kSingleton);
@@ -357,12 +345,12 @@ constexpr size_t kCameraShakeAt = 0x310, kCameraShakeSize = 0x10;
 // 0x33A7C0 starts a shake, 0x33E090 runs and ends it).
 constexpr size_t kCameraShakeFieldsAt = 0x2E0;
 
-bool IsBattleCamera(const uint8_t* camera, uintptr_t imageBase)
-{
+bool IsBattleCamera(const uint8_t* camera, uintptr_t imageBase) {
     return IsReadable(camera + kCameraPartAt, 8) &&
            *reinterpret_cast<const uintptr_t*>(camera + kCameraPartAt) == imageBase + kCameraPartVtable &&
            IsReadable(camera + kCameraShakeAt, kCameraShakeSize);
 }
+
 // A fighter: the game snapshots its 372-byte vitality block from +0xC0 (the
 // block's owner, vtable rva 0x2C51718, sits at +0xB0). +0x338 is a per-tick
 // event flag (cleared with +0x334 at rva 0x362A64, set at 0x328E13) that no
@@ -406,8 +394,7 @@ constexpr uint32_t kBattleCameraVtable = 0x2C5F520;
 constexpr size_t kBattleCameraRegionSize = 112, kBattleCameraRegionAt = 0x1C0, kBattleCameraSize = 0x400;
 constexpr size_t kFighterSimRegionSize = 300, kFighterSimRegionAt = 0x764, kFighterSimSize = 0x1000;
 
-bool SfvGame::RefreshRegions()
-{
+bool SfvGame::RefreshRegions() {
     // The game's table, in its order, plus our extra regions; only rebuilt
     // when that changes (a new battle).
     std::vector<std::pair<uint8_t*, size_t>> raw;
@@ -472,6 +459,7 @@ bool SfvGame::RefreshRegions()
         StateRegion region;
         uint64_t key;
     };
+
     std::vector<Item> items;
     const size_t gameCount = raw.size() - (extras && inputUnit_ ? 1 : 0) - (extras && battleFrame_ ? 1 : 0) -
                              (singletonTicks ? 1 : 0) - presentation.size() - flow.size();
@@ -539,8 +527,7 @@ bool SfvGame::RefreshRegions()
                 for (size_t s = 0; s < kEffectSwitchCount; s++) {
                     const size_t at = kEffectSwitchesAt + s * kEffectSwitchStride + kEffectSwitchFieldsAt;
                     if (!owned(fighter, kVitalityOwnerAt, kVitalityOwnerVtable, at, kEffectSwitchFieldsSize)) continue;
-                    named.push_back({"fighter.switch" + std::to_string(s) + "." + r.name.substr(5), fighter + at,
-                                     kEffectSwitchFieldsSize, {}});
+                    named.push_back({"fighter.switch" + std::to_string(s) + "." + r.name.substr(5), fighter + at, kEffectSwitchFieldsSize, {}});
                 }
             }
             if (r.size == kEffectSlotsSize && r.name.rfind("s392.", 0) == 0) {
@@ -583,6 +570,7 @@ struct EffectRegionKind {
     size_t ownerBefore; // the owner's vtable pointer, this many bytes before the region
     uint32_t vtable;    // rva
 };
+
 constexpr EffectRegionKind kEffectRegions[] = {
     {44, 0x10, 0x2C6FC18},    // trail object (vtable 0x2C6FB88) +0xC0: timer, state
     {136, 0x40, 0x2C6FC18},   // trail object +0xF0: transforms
@@ -597,8 +585,7 @@ constexpr EffectRegionKind kEffectRegions[] = {
                               // target, time), then +0x1A0..+0x1AF, an address on some machines
 };
 
-bool SfvGame::IsEffectRegion(const StateRegion& r) const
-{
+bool SfvGame::IsEffectRegion(const StateRegion& r) const {
     for (const EffectRegionKind& k : kEffectRegions) {
         if (r.size != k.size) continue;
         const uint8_t* at = r.ptr - k.ownerBefore;
@@ -607,8 +594,7 @@ bool SfvGame::IsEffectRegion(const StateRegion& r) const
     return false;
 }
 
-void SfvGame::SetStateMap(const StateMap* map)
-{
+void SfvGame::SetStateMap(const StateMap* map) {
     stateMap_ = map;
     const bool fits = map && map->regions.size() == regions_.size() &&
                       std::equal(regions_.begin(), regions_.end(), map->regions.begin(),
@@ -647,8 +633,7 @@ void SfvGame::SetStateMap(const StateMap* map)
             // the drawn view reads the shake. Restored, but out of the checksum.
             if (r.name == "camera.shake") {
                 r.ignore.assign((r.size / 8 + 8) / 8, 0xFF);
-            }
-            else {
+            } else {
                 r.ignore.resize((r.size / 8 + 8) / 8, 0);
                 for (size_t at = kCameraShakeFieldsAt; at < kCameraShakeAt; at += 8) {
                     const size_t word = (at - kCameraRegionAt) / 8;
@@ -679,8 +664,7 @@ void SfvGame::SetStateMap(const StateMap* map)
     }
 }
 
-bool SfvGame::LoadNoise(const std::wstring& path)
-{
+bool SfvGame::LoadNoise(const std::wstring& path) {
     FILE* f = _wfopen(path.c_str(), L"rb");
     if (!f) return false;
     std::string text;
@@ -691,8 +675,7 @@ bool SfvGame::LoadNoise(const std::wstring& path)
     return true;
 }
 
-void SfvGame::LoadNoiseText(const char* text, size_t len)
-{
+void SfvGame::LoadNoiseText(const char* text, size_t len) {
     noise_.clear();
     const char* end = text + len;
     for (const char* p = text; p < end;) {
@@ -706,8 +689,7 @@ void SfvGame::LoadNoiseText(const char* text, size_t len)
     SetStateMap(stateMap_);
 }
 
-uint64_t SfvGame::NoiseHash() const
-{
+uint64_t SfvGame::NoiseHash() const {
     uint64_t noise = 0;
     for (const auto& [size, offsets] : noise_) {
         for (size_t o : offsets) {
@@ -718,8 +700,7 @@ uint64_t SfvGame::NoiseHash() const
     return noise;
 }
 
-bool SfvGame::SaveNoise(const std::wstring& path) const
-{
+bool SfvGame::SaveNoise(const std::wstring& path) const {
     FILE* f = _wfopen(path.c_str(), L"w");
     if (!f) return false;
     std::fprintf(f, "# Words that differ when a frame is resimulated (values derived from engine-side\n"
@@ -731,15 +712,13 @@ bool SfvGame::SaveNoise(const std::wstring& path) const
     return std::fclose(f) == 0;
 }
 
-bool SfvGame::AddNoise(size_t regionSize, size_t offset)
-{
+bool SfvGame::AddNoise(size_t regionSize, size_t offset) {
     if (!noise_[regionSize].insert(offset & ~size_t(7)).second) return false;
     SetStateMap(stateMap_);
     return true;
 }
 
-void SfvGame::LearnPointers(StateMap& map) const
-{
+void SfvGame::LearnPointers(StateMap& map) const {
     if (map.regions.size() != regions_.size()) {
         map.regions.assign(regions_.size(), {});
         for (size_t i = 0; i < regions_.size(); i++) map.regions[i].size = regions_[i].size;
@@ -757,8 +736,7 @@ void SfvGame::LearnPointers(StateMap& map) const
     }
 }
 
-SfvGame::Inventory SfvGame::Inspect() const
-{
+SfvGame::Inventory SfvGame::Inspect() const {
     Inventory inv;
     uint8_t* m = Manager();
     if (!m) return inv;
@@ -782,8 +760,7 @@ SfvGame::Inventory SfvGame::Inspect() const
     return inv;
 }
 
-void SfvGame::LogLayout() const
-{
+void SfvGame::LogLayout() const {
     uint8_t* m = Manager();
     if (!m) {
         Log("layout: no rollback manager");
@@ -834,8 +811,7 @@ void SfvGame::LogLayout() const
     }
 }
 
-bool SfvGame::RestoreRingFrame(const game::FrameId& id, bool discardNewer)
-{
+bool SfvGame::RestoreRingFrame(const game::FrameId& id, bool discardNewer) {
     uint8_t* m = Manager();
     if (!m) return false;
     using RestoreFn = int (*)(void*, const game::FrameId*, int);
@@ -849,8 +825,7 @@ std::atomic<bool> g_skipAny{false};
 std::atomic<bool> g_gameFrameIds{true};
 } // namespace
 
-std::vector<uint64_t> DefaultSkippedLoadCallbacks()
-{
+std::vector<uint64_t> DefaultSkippedLoadCallbacks() {
     // thunk rva << 32 | target rva. About 90% of the time the callbacks take
     // after a load (0.9-1.2 ms a load on the test PC): the fighters'
     // animation re-sync (0x3587D0) and two at 0x448B30 / 0x448B40. The ticks
@@ -859,8 +834,7 @@ std::vector<uint64_t> DefaultSkippedLoadCallbacks()
     return {0x4C1D10ull << 32 | 0x3587D0, 0x447A60ull << 32 | 0x448B30, 0x447A60ull << 32 | 0x448B40};
 }
 
-void SetSkippedLoadCallbacks(std::vector<uint64_t> keys)
-{
+void SetSkippedLoadCallbacks(std::vector<uint64_t> keys) {
     std::lock_guard lock(g_skipMutex);
     g_skipCallbacks = std::move(keys);
     g_skipAny = !g_skipCallbacks.empty();
@@ -874,8 +848,7 @@ void SetSkippedLoadCallbacks(std::vector<uint64_t> keys)
     Log("loads skip %zu game callbacks:%s", g_skipCallbacks.size(), text.c_str());
 }
 
-void SfvGame::RunPostRestoreCallbacks(const game::FrameId& gameId, const game::FrameId& oldId)
-{
+void SfvGame::RunPostRestoreCallbacks(const game::FrameId& gameId, const game::FrameId& oldId) {
     // Mirrors the loop at 0x48A45C in Restore.
     uint8_t* m = Manager();
     if (!m) return;
@@ -921,8 +894,7 @@ void SfvGame::RunPostRestoreCallbacks(const game::FrameId& gameId, const game::F
     }
 }
 
-std::string SfvGame::BuildId() const
-{
+std::string SfvGame::BuildId() const {
     char buf[128];
     const uint64_t noise = NoiseHash();
     std::snprintf(buf, sizeof(buf), "sfv-%08X/adapter-13/sim-%d/map-%016llx/noise-%016llx", image_.timestamp, kSimVersion,
@@ -931,8 +903,7 @@ std::string SfvGame::BuildId() const
     return buf;
 }
 
-bool SfvGame::BeginMatch(const MatchSetup& setup)
-{
+bool SfvGame::BeginMatch(const MatchSetup& setup) {
     // The battle itself is set up and entered beforehand (battle_setup.h); a
     // session starts once that battle runs and its objects have been seen.
     (void)setup;
@@ -940,8 +911,7 @@ bool SfvGame::BeginMatch(const MatchSetup& setup)
     return CanRunTicks() && !regions_.empty();
 }
 
-PackedInput SfvGame::ReadLocalInput(int player)
-{
+PackedInput SfvGame::ReadLocalInput(int player) {
     if (inputOverride) return inputOverride(player);
     // What the game computed from the physical pad on the last tick. Netplay
     // plays the local player with the input manager's pad 0 (keyboard and
@@ -950,8 +920,7 @@ PackedInput SfvGame::ReadLocalInput(int player)
     return sampled_[bothPadsLocal ? std::clamp(player, 0, 3) : localPadSlot];
 }
 
-void SfvGame::Advance(const FrameInputs& inputs, bool rollingBack)
-{
+void SfvGame::Advance(const FrameInputs& inputs, bool rollingBack) {
     if (!CanRunTicks()) return;
     hitch::AddTick(rollingBack); // the frame-drop log: ticks per frame, and how many replayed
     SetReplayingTick(rollingBack);
@@ -995,10 +964,10 @@ std::atomic<bool> g_leanResim{true};
 } // namespace
 
 void SetLeanResim(bool on) { g_leanResim = on; }
+
 bool LeanResimOn() { return g_leanResim; }
 
-void SfvGame::RunBattleTick(bool replayed)
-{
+void SfvGame::RunBattleTick(bool replayed) {
     namespace bf = game::battleframe;
     uint8_t* frame = battleFrame_;
     if (!replayed || !g_leanResim) {
@@ -1055,8 +1024,7 @@ bool SfvGame::OutcomeDecided() { return MatchDecided(); }
 
 uint8_t SfvGame::FrameFlags() { return RoundInFight() ? kFrameFight : 0; }
 
-bool SfvGame::MatchWins(uint32_t& left, uint32_t& right) const
-{
+bool SfvGame::MatchWins(uint32_t& left, uint32_t& right) const {
     // The battle's round state is the one 228-byte region: +0xb4 the round,
     // +0xc4 / +0xc8 the matches each side won since character select (one
     // more as the match is decided; found from recordings, 2026-10-28).
@@ -1076,10 +1044,13 @@ std::atomic<int> g_warmupExtra{0};
 } // namespace
 
 void SetWarmupSleep(int ms) { g_warmupSleepMs = std::max(0, ms); }
+
 void SetGameFrameIds(bool on) { g_gameFrameIds = on; }
+
 void SetWarmupExtra(int ticks) { g_warmupExtra = std::max(0, ticks); }
 
 std::atomic<bool> g_watchCamera{false};
+
 void WatchCameraAtFreeze() { g_watchCamera = true; }
 
 // The battle camera's constructor: (this, the object initializer, ...).
@@ -1088,8 +1059,7 @@ using CameraCtorFn = void* (*)(void*, void*, void*, void*);
 CameraCtorFn g_origCameraCtor = nullptr;
 std::atomic<bool> g_watchNewCamera{false};
 
-void* CameraCtorDetour(void* self, void* a, void* b, void* c)
-{
+void* CameraCtorDetour(void* self, void* a, void* b, void* c) {
     void* r = g_origCameraCtor(self, a, b, c);
     if (g_watchNewCamera.exchange(false)) {
         auto* cam = static_cast<uint8_t*>(self);
@@ -1110,8 +1080,7 @@ void* CameraCtorDetour(void* self, void* a, void* b, void* c)
     return r;
 }
 
-void WatchNextCamera()
-{
+void WatchNextCamera() {
     if (!g_origCameraCtor) {
         void* target = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr)) + kBattleCameraCtor;
         if (MH_CreateHook(target, reinterpret_cast<void*>(&CameraCtorDetour), reinterpret_cast<void**>(&g_origCameraCtor)) != MH_OK ||
@@ -1124,8 +1093,7 @@ void WatchNextCamera()
     g_watchNewCamera = true;
 }
 
-const uint8_t* SfvGame::FindBattleCamera() const
-{
+const uint8_t* SfvGame::FindBattleCamera() const {
     for (const StateRegion& r : regions_) {
         if (r.size == kBattleCameraRegionSize && IsReadable(r.ptr - (kBattleCameraRegionAt - 0xE8), 8) &&
             *reinterpret_cast<const uintptr_t*>(r.ptr - (kBattleCameraRegionAt - 0xE8)) == image_.base + kBattleCameraVtable) {
@@ -1136,8 +1104,7 @@ const uint8_t* SfvGame::FindBattleCamera() const
     return nullptr;
 }
 
-std::string SfvGame::CameraSetupText() const
-{
+std::string SfvGame::CameraSetupText() const {
     const uint8_t* cam = FindBattleCamera();
     if (!cam) return "no battle camera";
     uint32_t flags, set = 0;
@@ -1155,8 +1122,7 @@ std::string SfvGame::CameraSetupText() const
     return text;
 }
 
-bool SfvGame::CameraNotStarted() const
-{
+bool SfvGame::CameraNotStarted() const {
     const uint8_t* cam = FindBattleCamera();
     if (!cam) return false;
     uint32_t flags;
@@ -1169,8 +1135,7 @@ bool SfvGame::CameraNotStarted() const
     return flags == 0x100;
 }
 
-void SfvGame::WatchCameraIfAsked()
-{
+void SfvGame::WatchCameraIfAsked() {
     if (!g_watchCamera.exchange(false)) return;
     const uint8_t* cam = FindBattleCamera();
     if (!cam) {
@@ -1188,8 +1153,7 @@ void SfvGame::WatchCameraIfAsked()
     }).detach();
 }
 
-bool SfvGame::CameraSetUp() const
-{
+bool SfvGame::CameraSetUp() const {
     const uint8_t* cam = FindBattleCamera();
     if (!cam) return false;
     uint32_t flags;
@@ -1197,8 +1161,7 @@ bool SfvGame::CameraSetUp() const
     return (flags & 0x80000000u) != 0;
 }
 
-bool SfvGame::WarmupStep()
-{
+bool SfvGame::WarmupStep() {
     RefreshRegions();
     if (Regions().empty() || !InputUnit()) {
         if (const int ms = g_warmupSleepMs; ms > 0) Sleep(ms);
@@ -1245,15 +1208,13 @@ bool SfvGame::WarmupStep()
 // Start check), latched from the input ring as the game does once per
 // rendered frame after the battle's update: after every driven tick, and
 // after a load, so a replayed tick sees what it saw the first time.
-void SfvGame::LatchInputs()
-{
+void SfvGame::LatchInputs() {
     if (!inputUnit_ || !latchEachTick) return;
     using LatchFn = void (*)(uint8_t*);
     image_.At<LatchFn>(game::kInputUnitLatch.rva)(inputUnit_);
 }
 
-void SfvGame::ArmStartProbe()
-{
+void SfvGame::ArmStartProbe() {
     {
         std::lock_guard lock(probeMutex_);
         probe_.clear();
@@ -1263,8 +1224,7 @@ void SfvGame::ArmStartProbe()
     probeTicks_ = 2;
 }
 
-void SfvGame::CaptureStartProbe(const char* when)
-{
+void SfvGame::CaptureStartProbe(const char* when) {
     ProbeCapture capture{when, {}};
     for (const StateRegion& r : regions_) {
         if (r.size == kBattleCameraRegionSize && IsReadable(r.ptr - (kBattleCameraRegionAt - 0xE8), 8) &&
@@ -1281,8 +1241,7 @@ void SfvGame::CaptureStartProbe(const char* when)
     if (probe_.size() < 6) probe_.push_back(std::move(capture));
 }
 
-void SfvGame::LogStartProbe(const char* why)
-{
+void SfvGame::LogStartProbe(const char* why) {
     std::lock_guard lock(probeMutex_);
     if (probeLogged_ || probe_.empty()) return;
     probeLogged_ = true;
@@ -1314,8 +1273,7 @@ void SfvGame::LogStartProbe(const char* why)
     }
 }
 
-void SfvGame::OnStateLoaded(int frame)
-{
+void SfvGame::OnStateLoaded(int frame) {
     // The callbacks receive the id of the restored frame: the game's own, from
     // the InputUnit's counters (restored with the snapshot), as its Restore
     // passes it; {frame, 0x5346} was the mod's until 2026-11-08.

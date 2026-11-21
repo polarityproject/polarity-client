@@ -109,12 +109,12 @@ bool g_imgui = false;
 // In a match: the leave modal is up (Back + Start). The old F1 panel is gone:
 // the hub, the rooms and Polarity settings do its jobs.
 std::atomic<bool> g_visible{false};
-std::atomic<bool> g_hubAllowed{false}; // at the game's menus with no session: Back + Start opens the hub
-std::atomic<bool> g_chordKey{false};   // F1, the keyboard's Back + Start (window thread -> FeedPads)
+std::atomic<bool> g_hubAllowed{false};    // at the game's menus with no session: Back + Start opens the hub
+std::atomic<bool> g_chordKey{false};      // F1, the keyboard's Back + Start (window thread -> FeedPads)
 std::atomic<bool> g_reloadChoices{false}; // ReloadOverlayChoices: read the choices again
-std::atomic<bool> g_spectating{false};   // a spectator's session: a Start tap opens the watch panel (M5)
+std::atomic<bool> g_spectating{false};    // a spectator's session: a Start tap opens the watch panel (M5)
 std::atomic<bool> g_watchPanelTap{false}; // ... tapped (the frame toggles the panel)
-std::atomic<ULONGLONG> g_xinputAt{0};    // when the XInput hook last saw a pad (OverlayPad)
+std::atomic<ULONGLONG> g_xinputAt{0};     // when the XInput hook last saw a pad (OverlayPad)
 std::atomic<bool> g_voting{false};        // the post-match vote is up and takes input
 // A spectator over a watched match's results screen: the game gets no input
 // (a press there can open its own Results Menu, which players' votes keep
@@ -122,20 +122,21 @@ std::atomic<bool> g_voting{false};        // the post-match vote is up and takes
 std::atomic<bool> g_watchHold{false};
 std::atomic<HWND> g_inputWindow{nullptr}; // the window ImGui reads input for
 std::string g_build;                      // the mod's version (SetOverlayBuild)
+
 // g_build without the product name ("0.4.0" from "Polarity 0.4.0").
-std::string BuildVersion()
-{
+std::string BuildVersion() {
     const size_t space = g_build.find(' ');
     return space == std::string::npos ? g_build : g_build.substr(space + 1);
 }
-std::string g_restartError;               // the update modal's last failed restart, why
-std::atomic<float> g_fps{0};              // presented frames per second (RenderFps)
-std::atomic<bool> g_inMatch{false};       // a netplay match runs (the frame-drop log, Start held for the panel)
-std::string g_packResult;                 // render thread: what the last "Pack logs to share" did
-std::atomic<bool> g_noVsync{false};       // present without waiting for the display's refresh
-std::atomic<UINT> g_gameSyncInterval{0};  // the sync interval and flags the game presents with (VsyncInfo)
+
+std::string g_restartError;              // the update modal's last failed restart, why
+std::atomic<float> g_fps{0};             // presented frames per second (RenderFps)
+std::atomic<bool> g_inMatch{false};      // a netplay match runs (the frame-drop log, Start held for the panel)
+std::string g_packResult;                // render thread: what the last "Pack logs to share" did
+std::atomic<bool> g_noVsync{false};      // present without waiting for the display's refresh
+std::atomic<UINT> g_gameSyncInterval{0}; // the sync interval and flags the game presents with (VsyncInfo)
 std::atomic<UINT> g_gamePresentFlags{0};
-std::atomic<int64_t> g_presentMicros{0};  // ... time in Present, summed with the frames (VsyncInfo)
+std::atomic<int64_t> g_presentMicros{0}; // ... time in Present, summed with the frames (VsyncInfo)
 std::atomic<int64_t> g_presentFrames{0};
 
 // Window messages for ImGui, from the window thread to the render thread.
@@ -144,6 +145,7 @@ struct Message {
     WPARAM wp;
     LPARAM lp;
 };
+
 std::mutex g_inputMutex;
 std::vector<Message> g_input;
 
@@ -155,6 +157,7 @@ struct PadState {
     std::atomic<int16_t> lx{0}, ly{0};
     std::atomic<uint8_t> lt{0}, rt{0}; // the triggers (the Battle Log's filters, fast forward)
 };
+
 PadState g_pads[XUSER_MAX_COUNT];
 
 // All pads together, as ImGui gamepad keys.
@@ -164,8 +167,7 @@ uint32_t g_keyPad = 0;
 
 // Input2.ini's [AssignKeyboard] into ui::SetKeyboardMap, again every 2 s (the
 // game's own key settings write it).
-void LoadKeyboardMap()
-{
+void LoadKeyboardMap() {
     static ULONGLONG readAt = 0;
     if (readAt && GetTickCount64() - readAt < 2000) return;
     readAt = GetTickCount64();
@@ -193,8 +195,7 @@ void LoadKeyboardMap()
     ui::SetKeyboardMap(vk);
 }
 
-void FeedPads(ImGuiIO& io)
-{
+void FeedPads(ImGuiIO& io) {
     uint16_t buttons = 0;
     int lx = 0, ly = 0, lt = 0, rt = 0;
     for (const PadState& p : g_pads) {
@@ -204,29 +205,47 @@ void FeedPads(ImGuiIO& io)
         if (std::abs(p.lx.load()) > std::abs(lx)) lx = p.lx;
         if (std::abs(p.ly.load()) > std::abs(ly)) ly = p.ly;
     }
+
     struct Map {
         uint16_t button;
         ImGuiKey key;
     };
+
     static const Map kButtons[] = {
-        {XINPUT_GAMEPAD_A, ImGuiKey_GamepadFaceDown},   {XINPUT_GAMEPAD_B, ImGuiKey_GamepadFaceRight},
-        {XINPUT_GAMEPAD_X, ImGuiKey_GamepadFaceLeft},   {XINPUT_GAMEPAD_Y, ImGuiKey_GamepadFaceUp},
-        {XINPUT_GAMEPAD_DPAD_UP, ImGuiKey_GamepadDpadUp}, {XINPUT_GAMEPAD_DPAD_DOWN, ImGuiKey_GamepadDpadDown},
-        {XINPUT_GAMEPAD_DPAD_LEFT, ImGuiKey_GamepadDpadLeft}, {XINPUT_GAMEPAD_DPAD_RIGHT, ImGuiKey_GamepadDpadRight},
-        {XINPUT_GAMEPAD_LEFT_SHOULDER, ImGuiKey_GamepadL1}, {XINPUT_GAMEPAD_RIGHT_SHOULDER, ImGuiKey_GamepadR1},
-        {XINPUT_GAMEPAD_START, ImGuiKey_GamepadStart},  {XINPUT_GAMEPAD_BACK, ImGuiKey_GamepadBack},
+        {XINPUT_GAMEPAD_A, ImGuiKey_GamepadFaceDown},
+        {XINPUT_GAMEPAD_B, ImGuiKey_GamepadFaceRight},
+        {XINPUT_GAMEPAD_X, ImGuiKey_GamepadFaceLeft},
+        {XINPUT_GAMEPAD_Y, ImGuiKey_GamepadFaceUp},
+        {XINPUT_GAMEPAD_DPAD_UP, ImGuiKey_GamepadDpadUp},
+        {XINPUT_GAMEPAD_DPAD_DOWN, ImGuiKey_GamepadDpadDown},
+        {XINPUT_GAMEPAD_DPAD_LEFT, ImGuiKey_GamepadDpadLeft},
+        {XINPUT_GAMEPAD_DPAD_RIGHT, ImGuiKey_GamepadDpadRight},
+        {XINPUT_GAMEPAD_LEFT_SHOULDER, ImGuiKey_GamepadL1},
+        {XINPUT_GAMEPAD_RIGHT_SHOULDER, ImGuiKey_GamepadR1},
+        {XINPUT_GAMEPAD_START, ImGuiKey_GamepadStart},
+        {XINPUT_GAMEPAD_BACK, ImGuiKey_GamepadBack},
     };
+
     // The game's own pad keys too: a pad it reads past XInput (DirectInput,
     // Steam Input) gave the overlay nothing (control.h GamePadKeys).
     struct GameKey {
         uint32_t key;
         uint16_t button;
     };
+
     static const GameKey kGameKeys[] = {
-        {0x1, XINPUT_GAMEPAD_DPAD_UP},     {0x2, XINPUT_GAMEPAD_DPAD_DOWN},    {0x4, XINPUT_GAMEPAD_DPAD_LEFT},
-        {0x8, XINPUT_GAMEPAD_DPAD_RIGHT},  {0x10, XINPUT_GAMEPAD_X},           {0x20, XINPUT_GAMEPAD_Y},
-        {0x40, XINPUT_GAMEPAD_A},          {0x80, XINPUT_GAMEPAD_B},           {0x100, XINPUT_GAMEPAD_LEFT_SHOULDER},
-        {0x200, XINPUT_GAMEPAD_RIGHT_SHOULDER}, {0x4000, XINPUT_GAMEPAD_START}, {0x8000, XINPUT_GAMEPAD_BACK},
+        {0x1, XINPUT_GAMEPAD_DPAD_UP},
+        {0x2, XINPUT_GAMEPAD_DPAD_DOWN},
+        {0x4, XINPUT_GAMEPAD_DPAD_LEFT},
+        {0x8, XINPUT_GAMEPAD_DPAD_RIGHT},
+        {0x10, XINPUT_GAMEPAD_X},
+        {0x20, XINPUT_GAMEPAD_Y},
+        {0x40, XINPUT_GAMEPAD_A},
+        {0x80, XINPUT_GAMEPAD_B},
+        {0x100, XINPUT_GAMEPAD_LEFT_SHOULDER},
+        {0x200, XINPUT_GAMEPAD_RIGHT_SHOULDER},
+        {0x4000, XINPUT_GAMEPAD_START},
+        {0x8000, XINPUT_GAMEPAD_BACK},
     };
     // And the keyboard's keys as the game assigns them (the screens eat the
     // keyboard, so the game's own reading of it sees nothing then).
@@ -254,12 +273,10 @@ void FeedPads(ImGuiIO& io)
         if (g_visible) {
             Log("overlay: Back + Start again: the leave modal closes");
             SetOverlayVisible(false);
-        }
-        else if (g_hubAllowed && !HubOpen()) {
+        } else if (g_hubAllowed && !HubOpen()) {
             Log("overlay: Back + Start: the hub");
             OpenHub();
-        }
-        else if (g_spectating) g_watchPanelTap = true;
+        } else if (g_spectating) g_watchPanelTap = true;
         else if (g_inMatch) SetOverlayVisible(true);
     }
     chordWas = chord;
@@ -308,16 +325,14 @@ void FeedPads(ImGuiIO& io)
     io.AddKeyAnalogEvent(ImGuiKey_GamepadR2, rt > 30, rt / 255.0f);
 }
 
-void ReleaseTarget()
-{
+void ReleaseTarget() {
     if (g_rtv) {
         g_rtv->Release();
         g_rtv = nullptr;
     }
 }
 
-bool CreateTarget(IDXGISwapChain* swapChain)
-{
+bool CreateTarget(IDXGISwapChain* swapChain) {
     ID3D11Texture2D* back = nullptr;
     if (FAILED(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&back))) || !back) return false;
     const HRESULT hr = g_device->CreateRenderTargetView(back, nullptr, &g_rtv);
@@ -325,8 +340,7 @@ bool CreateTarget(IDXGISwapChain* swapChain)
     return SUCCEEDED(hr);
 }
 
-void ReleaseImGui()
-{
+void ReleaseImGui() {
     if (g_imgui) {
         ImGui_ImplDX11_Shutdown();
         ImGui_ImplWin32_Shutdown();
@@ -360,24 +374,23 @@ const ImVec4 kRed(1.0f, 0.36f, 0.30f, 1.0f);
 const ImVec4 kGreen(0.55f, 0.86f, 0.45f, 1.0f);
 const ImVec4 kDim(0.66f, 0.65f, 0.59f, 1.0f);
 
-float g_uiScale = 1.0f;          // sizes: 1 at 720 lines (render thread)
-float g_builtScale = 0.0f;       // what the fonts were made for
-ImFont* g_fontHeading = nullptr; // bold italic, as the menus' entries
-ImFont* g_fontBig = nullptr;     // match codes
-ImFont* g_fontSmall = nullptr;   // the player bars' details
-ImFont* g_fontTiny = nullptr;    // ... their frame rate and rollback numbers
-ImFont* g_fontBold = nullptr;    // Barlow Bold: the screens' names, buttons, focused rows
-ImFont* g_fontHuge = nullptr;    // the select screen's character names
-ImFont* g_fontBody = nullptr;    // the default font
-std::atomic<int> g_selectRequest{-1}; // RequestSelectPreview: the phase to open at (+4: watching)
+float g_uiScale = 1.0f;                // sizes: 1 at 720 lines (render thread)
+float g_builtScale = 0.0f;             // what the fonts were made for
+ImFont* g_fontHeading = nullptr;       // bold italic, as the menus' entries
+ImFont* g_fontBig = nullptr;           // match codes
+ImFont* g_fontSmall = nullptr;         // the player bars' details
+ImFont* g_fontTiny = nullptr;          // ... their frame rate and rollback numbers
+ImFont* g_fontBold = nullptr;          // Barlow Bold: the screens' names, buttons, focused rows
+ImFont* g_fontHuge = nullptr;          // the select screen's character names
+ImFont* g_fontBody = nullptr;          // the default font
+std::atomic<int> g_selectRequest{-1};  // RequestSelectPreview: the phase to open at (+4: watching)
 std::atomic<bool> g_selectLive{false}; // a session's select screen is up (or held over the jump) and takes input
 
 float UiScaleFor(float height) { return std::max(1.0f, height / 720.0f); }
 
 ImVec4 Rgb(int r, int g, int b, float a = 1.0f) { return ImVec4(r / 255.0f, g / 255.0f, b / 255.0f, a); }
 
-void ApplyTheme(float scale)
-{
+void ApplyTheme(float scale) {
     ImGuiStyle& s = ImGui::GetStyle();
     s = ImGuiStyle();
     // Square corners and thin outlines, as the game's tiles.
@@ -443,8 +456,7 @@ void ApplyTheme(float scale)
 
 // The DLL's own copy of an embedded font (fonts.rc), as long as the DLL is
 // loaded; empty if missing.
-std::pair<void*, int> EmbeddedFont(int id)
-{
+std::pair<void*, int> EmbeddedFont(int id) {
     HMODULE self = nullptr;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                        reinterpret_cast<LPCWSTR>(&EmbeddedFont), &self);
@@ -459,8 +471,7 @@ std::pair<void*, int> EmbeddedFont(int id)
 // language: the Han characters Chinese, Japanese and Korean share take the
 // player's own shapes (a Chinese system drew them in Japanese ones once).
 // Faces: 0 JP, 1 KR, 2 SC, 3 TC, 4 HK.
-const std::vector<uint8_t>& CjkFont()
-{
+const std::vector<uint8_t>& CjkFont() {
     static const std::vector<uint8_t> data = [] {
         std::vector<uint8_t> out;
         const std::wstring path = DataDir() + L"\\fonts\\NotoSansCJK-Medium.ttc";
@@ -477,8 +488,7 @@ const std::vector<uint8_t>& CjkFont()
     return data;
 }
 
-int CjkFace()
-{
+int CjkFace() {
     const LANGID lang = GetUserDefaultUILanguage();
     if (PRIMARYLANGID(lang) == LANG_KOREAN) return 1;
     if (PRIMARYLANGID(lang) != LANG_CHINESE) return 0;
@@ -493,8 +503,7 @@ int CjkFace()
 // they look the same on Windows and Proton. Each takes the characters it
 // lacks from the bundled Noto Sans CJK; ImGui 1.92 makes glyphs as text
 // needs them, so names in any of its scripts draw without a rebuild.
-void BuildFonts(float scale)
-{
+void BuildFonts(float scale) {
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->Clear();
     const std::vector<uint8_t>& cjk = CjkFont();
@@ -539,15 +548,13 @@ void BuildFonts(float scale)
     g_builtScale = g_uiScale = scale;
 }
 
-std::string Upper(std::string text)
-{
+std::string Upper(std::string text) {
     for (char& ch : text) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
     return text;
 }
 
 // Latency at a glance, by the delay the link suggests (ui::PingColor).
-ImVec4 PingColorVec(unsigned ms, unsigned jitterMs)
-{
+ImVec4 PingColorVec(unsigned ms, unsigned jitterMs) {
     return ImGui::ColorConvertU32ToFloat4(ui::PingColor(ms, jitterMs));
 }
 
@@ -556,8 +563,7 @@ ImVec4 PathColor(const NetView& v) { return v.linkPath == NetView::Path::Relayed
 
 // A connection's icon in a square of `size` from `at`: Wi-Fi's arcs over a
 // dot, or a wired network plug; nothing when unknown.
-void DrawLinkIcon(ImDrawList* d, ImVec2 at, float size, lobby::Link link, ImU32 color)
-{
+void DrawLinkIcon(ImDrawList* d, ImVec2 at, float size, lobby::Link link, ImU32 color) {
     const float line = std::max(1.0f, size * 0.11f);
     if (link == lobby::Link::WiFi) {
         const ImVec2 c(at.x + size * 0.5f, at.y + size * 0.86f);
@@ -567,8 +573,7 @@ void DrawLinkIcon(ImDrawList* d, ImVec2 at, float size, lobby::Link link, ImU32 
             d->PathStroke(color, ImDrawFlags_None, line);
         }
         d->AddCircleFilled(c, size * 0.09f, color);
-    }
-    else if (link == lobby::Link::Wired) {
+    } else if (link == lobby::Link::Wired) {
         // A plug's head with its contacts, and the cable below it.
         const ImVec2 a(at.x + size * 0.2f, at.y + size * 0.12f), b(at.x + size * 0.8f, at.y + size * 0.62f);
         d->AddRect(a, b, color, 0, 0, line);
@@ -582,8 +587,7 @@ void DrawLinkIcon(ImDrawList* d, ImVec2 at, float size, lobby::Link link, ImU32 
 
 // A relayed link's icon in a square of `size` from `at`: a cloud, the relay
 // (Cloudflare's) the datagrams pass through.
-void DrawRelayIcon(ImDrawList* d, ImVec2 at, float size, ImU32 color)
-{
+void DrawRelayIcon(ImDrawList* d, ImVec2 at, float size, ImU32 color) {
     auto p = [&](float x, float y) { return ImVec2(at.x + size * x, at.y + size * y); };
     d->AddRectFilled(p(0.12f, 0.56f), p(0.88f, 0.84f), color, size * 0.14f);
     d->AddCircleFilled(p(0.33f, 0.58f), size * 0.2f, color);
@@ -592,20 +596,19 @@ void DrawRelayIcon(ImDrawList* d, ImVec2 at, float size, ImU32 color)
 }
 
 // "I", "II", "III": how the menus number V-Skills and V-Triggers.
-std::string Roman(int n)
-{
+std::string Roman(int n) {
     static const char* kRoman[] = {"I", "II", "III", "IV", "V"};
     return n >= 1 && n <= 5 ? kRoman[n - 1] : std::to_string(n);
 }
 
 // The other player's frame rate averaged over the last 3 s: it moves
 // around 60 as rollback catches up or the game slows to stay in sync.
-int SmoothedFps(int seat, int fps)
-{
+int SmoothedFps(int seat, int fps) {
     struct Sample {
         ULONGLONG at;
         int fps;
     };
+
     static std::vector<Sample> samples[kNumPlayers];
     auto& s = samples[seat];
     const ULONGLONG now = GetTickCount64();
@@ -618,8 +621,7 @@ int SmoothedFps(int seat, int fps)
 }
 
 // First Present of a swap chain: ImGui for its device and window.
-bool SetUp(IDXGISwapChain* swapChain)
-{
+bool SetUp(IDXGISwapChain* swapChain) {
     ReleaseImGui();
     DXGI_SWAP_CHAIN_DESC desc{};
     if (FAILED(swapChain->GetDesc(&desc))) return false;
@@ -656,8 +658,7 @@ bool g_previewing = false;
 
 // Runs a netplay action off the render thread (hosting and joining open
 // sockets, leaving waits for threads).
-void Act(std::function<void()> action)
-{
+void Act(std::function<void()> action) {
     if (g_previewing) return;
     std::thread([action = std::move(action)] {
         ThreadGuard running;
@@ -677,14 +678,14 @@ struct Tables {
     std::vector<std::vector<int>> costumes;
     std::vector<std::vector<std::string>> costumeNames;
     std::vector<std::vector<std::vector<int>>> colors;
-    std::vector<std::string> stages; // the stage select's stages
-    std::vector<std::string> stageLabels;           // "Bustling Side Street"
-    std::vector<std::vector<std::string>> settings; // per stage: its settings' stage codes (The Grid: S25)
+    std::vector<std::string> stages;                     // the stage select's stages
+    std::vector<std::string> stageLabels;                // "Bustling Side Street"
+    std::vector<std::vector<std::string>> settings;      // per stage: its settings' stage codes (The Grid: S25)
     std::vector<std::vector<std::string>> settingLabels; // their names ("The Grid Alternative")
-    std::vector<std::vector<std::string>> vskills;   // per character, the game's names
+    std::vector<std::vector<std::string>> vskills;       // per character, the game's names
     std::vector<std::vector<std::string>> vtriggers;
-    std::vector<std::vector<std::string>> vcomments; // the V-Comments after Auto
-    std::vector<int> elevenCostume;                   // the 0C costume Eleven wears in each fighter (-1: none)
+    std::vector<std::vector<std::string>> vcomments;    // the V-Comments after Auto
+    std::vector<int> elevenCostume;                     // the 0C costume Eleven wears in each fighter (-1: none)
     std::vector<std::vector<CostumeSwatches>> swatches; // per costume (as listed): the colors' swatches
     // What this profile owns (entitlements.h), as the game's own menus offer
     // it: per character, per costume (as listed), per color (as listed); per
@@ -697,12 +698,12 @@ struct Tables {
     std::vector<std::vector<bool>> settingOwned;
     bool loaded = false;
 };
+
 Tables g_tables;
 
 // Reads the tables on a worker thread: the names walk every object (seconds),
 // which on the render thread froze the game.
-Tables ReadTables()
-{
+Tables ReadTables() {
     Tables t;
     for (int i = 0; i < CharaCount() && !Stopping(); i++) {
         // Entries with a handful of costumes or fewer are not fighters
@@ -863,8 +864,7 @@ std::atomic<bool> g_readingTables{false};
 // not wait for them. Until they come, the V-Comment row says "Comment 2".
 std::unique_ptr<std::map<std::string, std::vector<std::string>>> g_readComments;
 
-void ReadComments(std::vector<std::string> codes)
-{
+void ReadComments(std::vector<std::string> codes) {
     Act([codes = std::move(codes)] {
         const ULONGLONG from = GetTickCount64();
         auto out = std::make_unique<std::map<std::string, std::vector<std::string>>>();
@@ -879,8 +879,7 @@ void ReadComments(std::vector<std::string> codes)
 }
 
 // Render thread: starts the read, and takes its result once there.
-void LoadTables()
-{
+void LoadTables() {
     if (g_tables.loaded) {
         std::lock_guard lock(g_tablesMutex);
         if (g_readComments) {
@@ -931,29 +930,25 @@ void LoadTables()
 
 // Where a costume (the game's index) is in the character's offered list; -1
 // when it is not offered.
-int CostumeSlot(int chara, int costume)
-{
+int CostumeSlot(int chara, int costume) {
     const std::vector<int>& costumes = g_tables.costumes[chara];
     const auto it = std::find(costumes.begin(), costumes.end(), costume);
     return it == costumes.end() ? -1 : static_cast<int>(it - costumes.begin());
 }
 
 // Ownership (Tables::charaOwned and the rest): what this player may pick.
-bool CharaOwned(int chara)
-{
+bool CharaOwned(int chara) {
     return chara >= 0 && chara < static_cast<int>(g_tables.charaOwned.size()) && g_tables.charaOwned[chara];
 }
 
-bool CostumeOwned(int chara, int slot)
-{
+bool CostumeOwned(int chara, int slot) {
     if (chara < 0 || chara >= static_cast<int>(g_tables.costumeOwned.size())) return false;
     const auto& v = g_tables.costumeOwned[chara];
     return slot >= 0 && slot < static_cast<int>(v.size()) && v[slot];
 }
 
 // A color by its place in the costume's list.
-bool ColorOwnedAt(int chara, int slot, int at)
-{
+bool ColorOwnedAt(int chara, int slot, int at) {
     if (chara < 0 || chara >= static_cast<int>(g_tables.colorOwned.size())) return false;
     const auto& costumes = g_tables.colorOwned[chara];
     if (slot < 0 || slot >= static_cast<int>(costumes.size())) return false;
@@ -961,8 +956,7 @@ bool ColorOwnedAt(int chara, int slot, int at)
 }
 
 // A stage select stage (into Tables::stages), itself (setting 0) or one of its settings.
-bool StageOwned(int stage, int setting)
-{
+bool StageOwned(int stage, int setting) {
     if (stage < 0 || stage >= static_cast<int>(g_tables.stageOwned.size())) return false;
     if (setting <= 0) return g_tables.stageOwned[stage];
     const auto& s = g_tables.settingOwned[stage];
@@ -976,14 +970,14 @@ struct Choices {
     bool pick = false;
     int chara = 0;
     int costume = 0;
-    int color = 0;    // the game's color id: 0.. the costume's colors, 100.. its EX colors
-    int vskill = 1;   // from 1
-    int vtrigger = 1; // from 1
-    int variant = 0;  // the costume's variant (dress state), 0: none
-    int comment = 0;  // V-Comment: 0 Auto, n the n-th
+    int color = 0;     // the game's color id: 0.. the costume's colors, 100.. its EX colors
+    int vskill = 1;    // from 1
+    int vtrigger = 1;  // from 1
+    int variant = 0;   // the costume's variant (dress state), 0: none
+    int comment = 0;   // V-Comment: 0 Auto, n the n-th
     int elevenAs = -1; // Eleven: the fighter it copies (a table index), rolled when picked
-    int stage = 1;    // 1 random, 2.. a stage
-    int setting = 0;  // 0 the stage's default, n its n-th setting
+    int stage = 1;     // 1 random, 2.. a stage
+    int setting = 0;   // 0 the stage's default, n its n-th setting
     int delay = 2;
     char code[64] = "";
     char name[lobby::kMaxName + 1] = "";
@@ -994,6 +988,7 @@ struct Choices {
     bool streamerMode = false;
     bool wordFilter = true;
 };
+
 Choices g_choices;
 // My character's Random stages: the stage codes the host's random leaves
 // out (core/random_stage.h), kept apart from the pick (Keep on the grid
@@ -1009,8 +1004,7 @@ std::string CommentText(const std::string& code, int comment);
 // this run (by code): picking a character again brings its loadout back.
 std::map<std::string, PlayerSetup> g_loadouts;
 
-void InitChoices()
-{
+void InitChoices() {
     if (g_choices.initialised || !g_tables.loaded) return;
     if (!g_panelPath.empty()) g_loadouts = ReadLoadouts(g_panelPath);
     const NetplayOptions o = NetOptions();
@@ -1055,8 +1049,7 @@ void InitChoices()
 }
 
 // The netplay options with the panel's choices.
-NetplayOptions ChosenOptions()
-{
+NetplayOptions ChosenOptions() {
     NetplayOptions o = NetOptions();
     const Choices& c = g_choices;
     o.hasPick = c.pick && c.chara < static_cast<int>(g_tables.charas.size());
@@ -1092,14 +1085,12 @@ NetplayOptions ChosenOptions()
     return o;
 }
 
-std::string CharaLabel(const std::string& code)
-{
+std::string CharaLabel(const std::string& code) {
     const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), code);
     return it == g_tables.charas.end() ? code : g_tables.labels[it - g_tables.charas.begin()];
 }
 
-std::string SkillText(const std::string& code, bool vtrigger, unsigned index)
-{
+std::string SkillText(const std::string& code, bool vtrigger, unsigned index) {
     const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), code);
     if (it != g_tables.charas.end()) {
         const auto& names = (vtrigger ? g_tables.vtriggers : g_tables.vskills)[it - g_tables.charas.begin()];
@@ -1110,23 +1101,19 @@ std::string SkillText(const std::string& code, bool vtrigger, unsigned index)
 
 // A color as the menus name it: "Color 3", "EX Color 2" (EX colors are ids
 // from 100).
-std::string ColorLabel(int id)
-{
+std::string ColorLabel(int id) {
     return id >= 100 ? "EX Color " + std::to_string(id - 99) : "Color " + std::to_string(id + 1);
 }
 
-std::string StageText(uint16_t index)
-{
+std::string StageText(uint16_t index) {
     const std::string code = StageCode(index);
     const auto it = std::find(g_tables.stages.begin(), g_tables.stages.end(), code);
     if (code.empty()) return "as prepared";
     return it == g_tables.stages.end() ? code : g_tables.stageLabels[it - g_tables.stages.begin()];
 }
 
-
 // Saves the panel's settings (and keeps them for the next host or join).
-void SaveChoices()
-{
+void SaveChoices() {
     const NetplayOptions o = ChosenOptions();
     Act([o] {
         NetOptions().name = o.name;
@@ -1151,8 +1138,7 @@ std::mutex g_variantMutex;
 std::map<std::pair<int, int>, int> g_variants;
 std::map<std::pair<int, int>, ULONGLONG> g_variantAsked;
 
-int VariantsOf(int chara, int costume)
-{
+int VariantsOf(int chara, int costume) {
     if (chara < 0 || chara >= static_cast<int>(g_tables.charaIndex.size())) return 0;
     const std::pair<int, int> key{chara, costume};
     {
@@ -1180,8 +1166,7 @@ bool IsEleven(int chara) { return chara >= 0 && chara < static_cast<int>(g_table
 
 // Eleven copies a fighter picked at random each time it is picked (another
 // than last time), with that fighter's V-Skill and V-Trigger at random too.
-void RollEleven(Choices& c)
-{
+void RollEleven(Choices& c) {
     static std::mt19937 rng{std::random_device{}()};
     std::vector<int> fighters;
     for (int i = 0; i < static_cast<int>(g_tables.charas.size()); i++) {
@@ -1193,8 +1178,7 @@ void RollEleven(Choices& c)
 }
 
 // The pick Eleven plays: the copied fighter in its 0C costume.
-PlayerSetup ElevenPick(Choices& c)
-{
+PlayerSetup ElevenPick(Choices& c) {
     if (c.elevenAs < 0 || c.elevenAs >= static_cast<int>(g_tables.charas.size())) RollEleven(c);
     PlayerSetup p;
     if (c.elevenAs < 0) return p;
@@ -1206,8 +1190,7 @@ PlayerSetup ElevenPick(Choices& c)
 }
 
 // A pick in a fighter's 0C costume: Eleven's.
-bool IsElevenSetup(const PlayerSetup& p)
-{
+bool IsElevenSetup(const PlayerSetup& p) {
     const std::string code = UnpackCode(p.character);
     const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), code);
     if (it == g_tables.charas.end()) return false;
@@ -1215,8 +1198,7 @@ bool IsElevenSetup(const PlayerSetup& p)
     return costume >= 0 && p.costume == costume;
 }
 
-bool PickValid(Choices& c)
-{
+bool PickValid(Choices& c) {
     if (!g_tables.loaded || !c.initialised) return false;
     c.chara = std::clamp(c.chara, 0, static_cast<int>(g_tables.charas.size()) - 1);
     // Only what this profile owns (a saved pick may be something it lacks):
@@ -1255,8 +1237,7 @@ bool PickValid(Choices& c)
     if (c.stage >= 2 && !StageOwned(c.stage - 2, c.setting)) {
         if (StageOwned(c.stage - 2, 0)) {
             c.setting = 0;
-        }
-        else {
+        } else {
             c.stage = 1;
             c.setting = 0;
         }
@@ -1271,8 +1252,7 @@ bool g_otherHasPick = false;
 PlayerSetup g_otherPick;
 
 // The color the other player wears on this pick's character and costume, or -1.
-int TakenColor(const Choices& c)
-{
+int TakenColor(const Choices& c) {
     if (!g_otherHasPick || !g_tables.loaded || c.chara < 0 || c.chara >= static_cast<int>(g_tables.charas.size()) || IsEleven(c.chara)) {
         return -1;
     }
@@ -1282,8 +1262,7 @@ int TakenColor(const Choices& c)
 
 // After a change of character or costume: off the other player's color, to
 // the next one free (this player made the change, so this player moves).
-void AvoidTakenColor(Choices& c)
-{
+void AvoidTakenColor(Choices& c) {
     const int taken = TakenColor(c);
     if (taken < 0 || c.color != taken) return;
     const std::vector<int>& ids = g_tables.colors[c.chara][std::max(0, CostumeSlot(c.chara, c.costume))];
@@ -1302,8 +1281,7 @@ void AvoidTakenColor(Choices& c)
 // Another character: the one left keeps its loadout for later, the new one
 // gets its own as last saved or left (else the first costume and color, V-Skill
 // and V-Trigger I).
-void SwitchCharacter(Choices& c, int chara)
-{
+void SwitchCharacter(Choices& c, int chara) {
     if (chara == c.chara || !CharaOwned(chara)) return;
     PlayerSetup& left = g_loadouts[g_tables.charas[c.chara]];
     left.costume = static_cast<uint16_t>(c.costume);
@@ -1326,9 +1304,7 @@ void SwitchCharacter(Choices& c, int chara)
     AvoidTakenColor(c);
 }
 
-
-std::string CommentText(const std::string& code, int comment)
-{
+std::string CommentText(const std::string& code, int comment) {
     if (comment == 0) return "Auto";
     const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), code);
     if (it == g_tables.charas.end()) return "Comment " + std::to_string(comment);
@@ -1337,12 +1313,12 @@ std::string CommentText(const std::string& code, int comment)
 
 // This player's input delay for the next match (the vote's delay row).
 constexpr int kMaxDelayFrames = 10;
+
 std::string FramesText(int n) { return std::to_string(n) + (n == 1 ? " frame" : " frames"); }
 
 // In a session: the panel's pick, the host's stage and this player's delay
 // go to the session as they change, and are saved for the next session.
-void SyncChoices(const NetView& v)
-{
+void SyncChoices(const NetView& v) {
     // Not before the panel knows the characters: it would send "no pick".
     // Not from a preview either: what it marks as sent would not be.
     if (!g_tables.loaded || !g_choices.initialised || g_previewing) return;
@@ -1377,19 +1353,21 @@ std::string ShortCharaName(const std::string& code) { return CharaLabel(code); }
 // The Debug tab's previews: the match windows with made-up data, each on
 // its own, to look at without a session (render thread).
 struct Preview {
-    bool hud = false;    // the player bars over the health bars
-    ULONGLONG fadeAt = 0; // their fade at the match's end, played from here
-    bool strip = false;  // the corner line while the panel is closed
-    bool desync = false; // the red banner
+    bool hud = false;                        // the player bars over the health bars
+    ULONGLONG fadeAt = 0;                    // their fade at the match's end, played from here
+    bool strip = false;                      // the corner line while the panel is closed
+    bool desync = false;                     // the red banner
     bool side[kNumPlayers] = {false, false}; // P1's and P2's windows after a match
-    int sides = 0;       // 0 the rematch vote, 1 character select over the results
-    int you = 0;         // whose side is this player's
-    int choice[kNumPlayers] = {0, 1}; // each side's vote: none, rematch, character select
+    int sides = 0;                           // 0 the rematch vote, 1 character select over the results
+    int you = 0;                             // whose side is this player's
+    int choice[kNumPlayers] = {0, 1};        // each side's vote: none, rematch, character select
     bool ready[kNumPlayers] = {false, true};
     bool relayed = true; // the link through Cloudflare's relay (else peer to peer)
     bool set = false;    // the side windows of a table's set (no vote)
+
     bool Any() const { return hud || strip || desync || side[0] || side[1]; }
 };
+
 Preview g_preview;
 bool g_sampleToasts = false; // add a few toasts on the next frame
 
@@ -1399,8 +1377,7 @@ ID3D11ShaderResourceView* g_texture = nullptr;
 uint32_t g_textureW = 0, g_textureH = 0;
 std::string g_textureLabel;
 
-void DrawTexturePreview()
-{
+void DrawTexturePreview() {
     std::lock_guard lock(g_textureMutex);
     if (!g_texture) return;
     const float scale = std::min(1.0f, 512.0f * g_uiScale / std::max<uint32_t>(1, std::max(g_textureW, g_textureH)));
@@ -1416,8 +1393,7 @@ void DrawTexturePreview()
 // The select screen preview's data: the panel's characters (Eleven included)
 // with their costumes, swatches, V-Skills, V-Triggers and V-Comments, and the
 // stage select's stages.
-SelectData PreviewSelectData()
-{
+SelectData PreviewSelectData() {
     SelectData data;
     for (size_t i = 0; i < g_tables.charas.size(); i++) {
         SelectChara c;
@@ -1451,14 +1427,12 @@ SelectData PreviewSelectData()
 
 // ----- a session's select screen -------------------------------------------
 
-int ElevenIndex()
-{
+int ElevenIndex() {
     const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), "ELV");
     return it == g_tables.charas.end() ? -1 : static_cast<int>(it - g_tables.charas.begin());
 }
 
-std::pair<uint32_t, uint32_t> SwatchOf(int chara, int slot, int color)
-{
+std::pair<uint32_t, uint32_t> SwatchOf(int chara, int slot, int color) {
     if (chara < 0 || slot < 0 || chara >= static_cast<int>(g_tables.swatches.size()) || slot >= static_cast<int>(g_tables.swatches[chara].size())) {
         return {0, 0};
     }
@@ -1468,8 +1442,7 @@ std::pair<uint32_t, uint32_t> SwatchOf(int chara, int slot, int color)
     return k >= 0 && k < static_cast<int>(list.size()) ? list[k] : std::pair<uint32_t, uint32_t>{0, 0};
 }
 
-std::string CommentLine(int chara, int comment)
-{
+std::string CommentLine(int chara, int comment) {
     if (comment == 0) return "Changes with your opponent's character.";
     const auto& names = g_tables.vcomments[chara];
     return comment <= static_cast<int>(names.size()) ? "\"" + names[comment - 1] + "\"" : "Comment " + std::to_string(comment);
@@ -1477,13 +1450,13 @@ std::string CommentLine(int chara, int comment)
 
 // One seat for the select screen: this player's from the panel's choices (it
 // answers at once), the other's from the session.
-SelectSide SelectSideFor(const NetView& v, int i)
-{
+SelectSide SelectSideFor(const NetView& v, int i) {
     SelectSide s;
     const lobby::Seat& seat = v.seats[i];
     s.present = seat.present;
     s.player = seat.name;
-    s.link = seat.link == lobby::Link::Wired ? 1 : seat.link == lobby::Link::WiFi ? 2 : 0;
+    s.link = seat.link == lobby::Link::Wired ? 1 : seat.link == lobby::Link::WiFi ? 2
+                                                                                  : 0;
     s.ready = seat.ready;
     const bool mine = i == v.you && !v.spectator;
     s.screen = seat.screen;
@@ -1505,19 +1478,19 @@ SelectSide SelectSideFor(const NetView& v, int i)
         pick.vtrigger = static_cast<uint8_t>(c.vtrigger - 1);
         pick.variation = static_cast<uint8_t>(c.variant);
         pick.comment = static_cast<uint8_t>(c.comment);
-    }
-    else if (seat.hasPick && seat.pick.character) {
+    } else if (seat.hasPick && seat.pick.character) {
         pick = seat.pick;
         const std::string code = UnpackCode(pick.character);
         const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), code);
-        chara = IsElevenSetup(pick) ? ElevenIndex() : it == g_tables.charas.end() ? -1 : static_cast<int>(it - g_tables.charas.begin());
+        chara = IsElevenSetup(pick) ? ElevenIndex() : it == g_tables.charas.end() ? -1
+                                                                                  : static_cast<int>(it - g_tables.charas.begin());
     }
     s.chara = chara;
     const int delay = mine ? c.delay : seat.inputDelay;
     s.rows[6].value = FramesText(delay);
     const int fixed = NetOptions().delaySetting;
     const int suggested = v.SuggestedDelay();
-    s.rows[6].hint = fixed >= 0 ? FramesText(fixed) + " in Polarity settings. Lower feels sharper but rolls back more."
+    s.rows[6].hint = fixed >= 0       ? FramesText(fixed) + " in Polarity settings. Lower feels sharper but rolls back more."
                      : suggested >= 0 ? "Suggested for a " + std::to_string(v.link.pingMs) + " ms ping: " + FramesText(suggested) + ". Lower feels sharper but rolls back more."
                                       : std::string("Lower feels sharper but rolls back more.");
     if (chara < 0) return s;
@@ -1553,8 +1526,7 @@ SelectSide SelectSideFor(const NetView& v, int i)
 
 // The host's stage as an index into the stage select's stages (their count:
 // random), and its setting (SelectLive::setting).
-int SelectStageFor(const NetView& v, int* setting)
-{
+int SelectStageFor(const NetView& v, int* setting) {
     const int count = static_cast<int>(g_tables.stages.size());
     *setting = 0;
     if (v.host) {
@@ -1573,8 +1545,7 @@ int SelectStageFor(const NetView& v, int* setting)
     return count;
 }
 
-SelectLive SelectLiveFor(const NetView& v)
-{
+SelectLive SelectLiveFor(const NetView& v) {
     SelectLive live;
     live.you = v.spectator ? -1 : v.you;
     live.host = v.host;
@@ -1591,69 +1562,68 @@ SelectLive SelectLiveFor(const NetView& v)
 }
 
 // A loadout row one step on (or back): what the panel's pickers offer.
-void StepRow(Choices& c, int row, int delta)
-{
+void StepRow(Choices& c, int row, int delta) {
     auto cycle = [delta](int at, int n) { return n <= 0 ? 0 : ((at + delta) % n + n) % n; };
     switch (row) {
-    case 0: {
-        // Over the costumes this profile owns.
-        const std::vector<int>& list = g_tables.costumes[c.chara];
-        const int n = static_cast<int>(list.size());
-        int at = std::max(0, CostumeSlot(c.chara, c.costume));
-        for (int tries = 0; tries < n; tries++) {
-            at = cycle(at, n);
-            if (CostumeOwned(c.chara, at)) break;
-        }
-        c.costume = list[at];
-        c.variant = 0;
-        PickValid(c);
-        AvoidTakenColor(c);
-        break;
-    }
-    case 1: {
-        // The other player's color on this costume is stepped over; at the
-        // list's end that way, the step does not happen.
-        // Colors this profile does not own are stepped over too.
-        const int slot = std::max(0, CostumeSlot(c.chara, c.costume));
-        const std::vector<int>& ids = g_tables.colors[c.chara][slot];
-        const int n = static_cast<int>(ids.size());
-        const int at = static_cast<int>(std::find(ids.begin(), ids.end(), c.color) - ids.begin());
-        const int taken = TakenColor(c);
-        int next = at < n ? at : 0;
-        bool found = false;
-        for (int tries = 0; tries < n; tries++) {
-            next = cycle(next, n);
-            if (!ColorOwnedAt(c.chara, slot, next)) continue;
-            if (ids[next] == taken) {
-                if (delta > 0 ? next == n - 1 : next == 0) break;
-                continue;
+        case 0: {
+            // Over the costumes this profile owns.
+            const std::vector<int>& list = g_tables.costumes[c.chara];
+            const int n = static_cast<int>(list.size());
+            int at = std::max(0, CostumeSlot(c.chara, c.costume));
+            for (int tries = 0; tries < n; tries++) {
+                at = cycle(at, n);
+                if (CostumeOwned(c.chara, at)) break;
             }
-            found = true;
+            c.costume = list[at];
+            c.variant = 0;
+            PickValid(c);
+            AvoidTakenColor(c);
             break;
         }
-        if (found) c.color = ids[next];
-        break;
-    }
-    case 2: {
-        const int variants = VariantsOf(c.chara, c.costume);
-        if (variants <= 0) break;
-        std::vector<int> options;
-        for (int n = 0; n <= variants; n++) {
-            if ((n & variants) == n) options.push_back(n);
+        case 1: {
+            // The other player's color on this costume is stepped over; at the
+            // list's end that way, the step does not happen.
+            // Colors this profile does not own are stepped over too.
+            const int slot = std::max(0, CostumeSlot(c.chara, c.costume));
+            const std::vector<int>& ids = g_tables.colors[c.chara][slot];
+            const int n = static_cast<int>(ids.size());
+            const int at = static_cast<int>(std::find(ids.begin(), ids.end(), c.color) - ids.begin());
+            const int taken = TakenColor(c);
+            int next = at < n ? at : 0;
+            bool found = false;
+            for (int tries = 0; tries < n; tries++) {
+                next = cycle(next, n);
+                if (!ColorOwnedAt(c.chara, slot, next)) continue;
+                if (ids[next] == taken) {
+                    if (delta > 0 ? next == n - 1 : next == 0) break;
+                    continue;
+                }
+                found = true;
+                break;
+            }
+            if (found) c.color = ids[next];
+            break;
         }
-        const int at = static_cast<int>(std::find(options.begin(), options.end(), c.variant) - options.begin());
-        c.variant = options[cycle(at < static_cast<int>(options.size()) ? at : 0, static_cast<int>(options.size()))];
-        break;
-    }
-    case 3:
-    case 4: {
-        int& value = row == 3 ? c.vskill : c.vtrigger;
-        const auto& names = row == 3 ? g_tables.vskills[c.chara] : g_tables.vtriggers[c.chara];
-        value = 1 + cycle(value - 1, std::max(2, static_cast<int>(names.size())));
-        break;
-    }
-    case 5: c.comment = cycle(c.comment, 1 + static_cast<int>(g_tables.vcomments[c.chara].size())); break;
-    default: c.delay = std::clamp(c.delay + delta, 0, kMaxDelayFrames); break;
+        case 2: {
+            const int variants = VariantsOf(c.chara, c.costume);
+            if (variants <= 0) break;
+            std::vector<int> options;
+            for (int n = 0; n <= variants; n++) {
+                if ((n & variants) == n) options.push_back(n);
+            }
+            const int at = static_cast<int>(std::find(options.begin(), options.end(), c.variant) - options.begin());
+            c.variant = options[cycle(at < static_cast<int>(options.size()) ? at : 0, static_cast<int>(options.size()))];
+            break;
+        }
+        case 3:
+        case 4: {
+            int& value = row == 3 ? c.vskill : c.vtrigger;
+            const auto& names = row == 3 ? g_tables.vskills[c.chara] : g_tables.vtriggers[c.chara];
+            value = 1 + cycle(value - 1, std::max(2, static_cast<int>(names.size())));
+            break;
+        }
+        case 5: c.comment = cycle(c.comment, 1 + static_cast<int>(g_tables.vcomments[c.chara].size())); break;
+        default: c.delay = std::clamp(c.delay + delta, 0, kMaxDelayFrames); break;
     }
 }
 
@@ -1667,8 +1637,7 @@ struct SentSelect {
     uint32_t hover = 0;
 } g_sentSelect;
 
-void ApplySelectInput(const SelectInput& in, const NetView& v)
-{
+void ApplySelectInput(const SelectInput& in, const NetView& v) {
     Choices& c = g_choices;
     if (in.leave) {
         Log("overlay: left from the select screen");
@@ -1716,36 +1685,35 @@ void ApplySelectInput(const SelectInput& in, const NetView& v)
 }
 
 // While the panel is closed: one line in a corner during a session.
-void DrawStrip(const NetView& v)
-{
+void DrawStrip(const NetView& v) {
     std::string text;
     ImVec4 color = kDim;
     char buf[160];
     switch (v.phase) {
-    case NetView::Phase::Hosting: text = "Hosting " + v.code + ": waiting for the other player"; break;
-    case NetView::Phase::Connecting:
-    case NetView::Phase::Joining:
-    case NetView::Phase::Jumping:
-    case NetView::Phase::Loading: text = v.status; break;
-    case NetView::Phase::Lobby: text = "Lobby"; break;
-    case NetView::Phase::PostMatch: text = "Match over"; break;
-    case NetView::Phase::Running:
-        if (v.syncing) {
-            text = "connecting...";
+        case NetView::Phase::Hosting: text = "Hosting " + v.code + ": waiting for the other player"; break;
+        case NetView::Phase::Connecting:
+        case NetView::Phase::Joining:
+        case NetView::Phase::Jumping:
+        case NetView::Phase::Loading: text = v.status; break;
+        case NetView::Phase::Lobby: text = "Lobby"; break;
+        case NetView::Phase::PostMatch: text = "Match over"; break;
+        case NetView::Phase::Running:
+            if (v.syncing) {
+                text = "connecting...";
+                break;
+            }
+            if (v.spectator) std::snprintf(buf, sizeof(buf), "watching  frame %d  %d in hand", v.frame, v.behind);
+            else std::snprintf(buf, sizeof(buf), "%s  ping %u ms  ahead %.1f  rollbacks %u (max %u)  delay %d", v.host ? "P1" : "P2",
+                               v.pingMs, v.framesAhead, v.rollbacks, v.longestRollback, v.inputDelay);
+            text = buf;
+            if (v.desyncFrame >= 0) {
+                text += "  DESYNC at " + std::to_string(v.desyncFrame);
+                color = kRed;
+            }
             break;
-        }
-        if (v.spectator) std::snprintf(buf, sizeof(buf), "watching  frame %d  %d in hand", v.frame, v.behind);
-        else std::snprintf(buf, sizeof(buf), "%s  ping %u ms  ahead %.1f  rollbacks %u (max %u)  delay %d", v.host ? "P1" : "P2",
-                           v.pingMs, v.framesAhead, v.rollbacks, v.longestRollback, v.inputDelay);
-        text = buf;
-        if (v.desyncFrame >= 0) {
-            text += "  DESYNC at " + std::to_string(v.desyncFrame);
-            color = kRed;
-        }
-        break;
-    // How the session ended is a toast (bottom center), not repeated here.
-    case NetView::Phase::Ended:
-    case NetView::Phase::Idle: return;
+        // How the session ended is a toast (bottom center), not repeated here.
+        case NetView::Phase::Ended:
+        case NetView::Phase::Idle: return;
     }
     DrawStatusNote(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, text, ImGui::ColorConvertFloat4ToU32(color));
 }
@@ -1758,10 +1726,10 @@ struct Toast {
     ULONGLONG until;
     ULONGLONG at = 0; // when it came (it slides in)
 };
+
 std::vector<Toast> g_toasts; // render thread
 
-void AddToast(const std::string& text, ImVec4 color = ImVec4(1, 1, 1, 1), int seconds = 4)
-{
+void AddToast(const std::string& text, ImVec4 color = ImVec4(1, 1, 1, 1), int seconds = 4) {
     // The game's notice sound (the error one for a red toast), out of a match:
     // in a fight the toasts are small notes and the fight has its own sounds.
     if (!g_inMatch) PlayUi(color.x > 0.9f && color.y < 0.5f ? UiSound::NoticeError : UiSound::Notice);
@@ -1774,8 +1742,7 @@ bool OnMenuScreen();
 std::atomic<bool> g_migrated{false}; // SetMigratedNotice: not toasted yet
 
 // After the move from SFVR (migrate.h), at the first menu.
-void ToastMigrated()
-{
+void ToastMigrated() {
     if (!g_migrated || !OnMenuScreen()) return;
     g_migrated = false;
     AddToast("SFVR is now Polarity. Your settings, replays and logs are in the Polarity folder.", kGold, 12);
@@ -1783,8 +1750,7 @@ void ToastMigrated()
 
 // Desync reports: once ever, at the main menu, that they are sent (and where
 // that is turned off); then each match's, as it is sent.
-void ToastReports()
-{
+void ToastReports() {
     static bool noticed = false;
     if (!noticed && OnMenuScreen()) {
         noticed = true;
@@ -1803,8 +1769,7 @@ void ToastReports()
 
 // Notices from what changed in the session since the last frame.
 // Once per version the site offers: a toast pointing at Settings.
-void ToastUpdate()
-{
+void ToastUpdate() {
     // At the menus only (never over a match): on the hub its modal says it;
     // in a room the set goes on, and leaving the room brings the modal.
     static std::string toasted;
@@ -1817,8 +1782,7 @@ void ToastUpdate()
     AddToast("Polarity " + u.latest + " is out. " + (inRoom ? "Leave the room to update." : "Press Back + Start to update."), kGold, 10);
 }
 
-void ToastChanges(const NetView& now)
-{
+void ToastChanges(const NetView& now) {
     static NetView before;
     static bool have = false;
     if (!have) {
@@ -1851,8 +1815,7 @@ void ToastChanges(const NetView& now)
 
 // A desync in this match: a note at the bottom centre of the fight until the
 // match is over (the recording is in Polarity\matches, named ..._desync.sfvr).
-Notice DesyncNotice(const NetView& v)
-{
+Notice DesyncNotice(const NetView& v) {
     return {"DESYNC AT FRAME " + std::to_string(v.desyncFrame), v.desyncReport.empty() ? "saving the recording..." : "recording saved",
             IM_COL32(255, 107, 94, 255), 1, 99};
 }
@@ -1862,8 +1825,7 @@ Notice DesyncNotice(const NetView& v)
 // the desync's with them.
 NetView PreviewView(NetView::Phase phase);
 
-void DrawNotices(bool fight, const NetView& v)
-{
+void DrawNotices(bool fight, const NetView& v) {
     const ULONGLONG now = GetTickCount64();
     g_toasts.erase(std::remove_if(g_toasts.begin(), g_toasts.end(), [&](const Toast& t) { return t.until <= now; }),
                    g_toasts.end());
@@ -1890,16 +1852,14 @@ void DrawNotices(bool fight, const NetView& v)
 // once the match is over (its last round's outro).
 constexpr ULONGLONG kBarsFadeMs = 800;
 
-void DrawPlayerBars(const NetView& v)
-{
+void DrawPlayerBars(const NetView& v) {
     static ULONGLONG overAt = 0;
     float alpha = 1.0f;
     if (v.phase == NetView::Phase::PostMatch) {
         if (!overAt) overAt = GetTickCount64();
         alpha = 1.0f - static_cast<float>(GetTickCount64() - overAt) / kBarsFadeMs;
         if (alpha <= 0) return;
-    }
-    else {
+    } else {
         overAt = 0;
     }
     const ImVec2 screen = ImGui::GetIO().DisplaySize;
@@ -1932,13 +1892,17 @@ void DrawPlayerBars(const NetView& v)
         // player's numbers: a cloud when the link is relayed (nothing when
         // it is peer to peer), the ping, and in smaller type their frame
         // rate and the longest rollback in the last second.
-        enum class Kind { Text, Link, Relay };
+        enum class Kind { Text,
+                          Link,
+                          Relay };
+
         struct Part {
             std::string text;
             ImFont* font;
             ImU32 color;
             Kind kind = Kind::Text;
         };
+
         std::vector<Part> parts;
         std::string name = s.name.empty() ? std::string("Player") : s.name;
         const std::string you = v.you == i ? " (you)" : "";
@@ -1953,13 +1917,11 @@ void DrawPlayerBars(const NetView& v)
                 if (relayed) parts.push_back({"", text, color(PathColor(v)), Kind::Relay});
                 parts.push_back({"watching, " + std::to_string(v.behind) + " in hand", text, color(detail)});
             }
-        }
-        else if (v.you != i) {
+        } else if (v.you != i) {
             char line[48];
             if (v.syncing) {
                 parts.push_back({"connecting...", text, color(detail)});
-            }
-            else {
+            } else {
                 if (relayed) parts.push_back({"", text, color(PathColor(v)), Kind::Relay});
                 std::snprintf(line, sizeof(line), "%ums \xC2\xB1%.0f", ping, v.jitterMs);
                 parts.push_back({line, text, color(PingColorVec(ping, static_cast<unsigned>(v.jitterMs + 0.5f)))});
@@ -1999,12 +1961,11 @@ void DrawPlayerBars(const NetView& v)
     }
 }
 
-const char* VoteText(lobby::Choice c)
-{
+const char* VoteText(lobby::Choice c) {
     switch (c) {
-    case lobby::Choice::Rematch: return "Rematch";
-    case lobby::Choice::CharacterSelect: return "Character select";
-    case lobby::Choice::None: break;
+        case lobby::Choice::Rematch: return "Rematch";
+        case lobby::Choice::CharacterSelect: return "Character select";
+        case lobby::Choice::None: break;
     }
     return "Choosing...";
 }
@@ -2014,8 +1975,7 @@ const char* VoteText(lobby::Choice c)
 // follows (Rematch, Character select, Leave) and this player's input delay
 // for the next match. Character select is the select screen. The game's own
 // results menu is kept from opening meanwhile (flow.h SetHoldResults).
-void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
-{
+void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true}) {
     static ULONGLONG shownAt = 0;
     static int shownFor = -1;
     const int key = v.played * 2 + (v.phase == NetView::Phase::Lobby ? 1 : 0);
@@ -2027,7 +1987,9 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
     // Buttons held from the match must not choose by accident: presses in
     // the first 750 ms do nothing.
     const bool armed = GetTickCount64() - shownAt >= 750;
-    const int setWinner = !v.setPlay ? -1 : v.seats[0].wins >= v.firstTo ? 0 : v.seats[1].wins >= v.firstTo ? 1 : -1;
+    const int setWinner = !v.setPlay ? -1 : v.seats[0].wins >= v.firstTo ? 0
+                                        : v.seats[1].wins >= v.firstTo   ? 1
+                                                                         : -1;
     // Flags from the room, for a table's set (the session's seats have none).
     const RoomsView rooms = v.setPlay && !g_previewing ? RoomsSnapshot() : RoomsView{};
     VoteSide sides[kNumPlayers];
@@ -2060,14 +2022,15 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
             }
             if (v.againVote && o.mine) o.lines.push_back("No one's waiting, so you can keep playing.");
             o.choosing = o.mine;
-            o.chosen = s.choice == lobby::Choice::Rematch ? 0 : s.choice == lobby::Choice::CharacterSelect ? 1 : -1;
+            o.chosen = s.choice == lobby::Choice::Rematch ? 0 : s.choice == lobby::Choice::CharacterSelect ? 1
+                                                                                                           : -1;
         }
         char line[160];
         if (o.mine) {
             o.delay = g_choices.delay;
             const int fixed = NetOptions().delaySetting, suggested = v.SuggestedDelay();
-            if (v.spectator) {}
-            else if (fixed >= 0) std::snprintf(line, sizeof(line), "Delay %d, from Polarity settings", fixed), o.suggestion = line;
+            if (v.spectator) {
+            } else if (fixed >= 0) std::snprintf(line, sizeof(line), "Delay %d, from Polarity settings", fixed), o.suggestion = line;
             else if (suggested >= 0) std::snprintf(line, sizeof(line), "Suggested delay %d (ping %u ms)", suggested, v.link.pingMs), o.suggestion = line;
             if (voting && v.voteSecondsLeft >= 0 && s.choice == lobby::Choice::None) {
                 // Playing on: no choice from either is back to the room (both
@@ -2079,10 +2042,9 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
                                                          : "Next set in %d s",
                               v.voteSecondsLeft);
                 o.hint = line;
-            }
-            else o.hint = !v.setPlay ? "Leave ends the session." : v.againVote ? "Leave returns to the room." : "Leave ends the set here.";
-        }
-        else {
+            } else o.hint = !v.setPlay ? "Leave ends the session." : v.againVote ? "Leave returns to the room."
+                                                                                 : "Leave ends the set here.";
+        } else {
             o.delay = s.inputDelay;
             o.hint = "Input delay " + std::to_string(s.inputDelay) + (s.inputDelay == 1 ? " frame" : " frames");
         }
@@ -2099,8 +2061,7 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true})
 // A made-up session for the previews: this player's pick from the panel,
 // the other's another character's second costume; numbers that look like a
 // match on a good connection.
-NetView PreviewView(NetView::Phase phase)
-{
+NetView PreviewView(NetView::Phase phase) {
     const Preview& p = g_preview;
     NetView v;
     v.phase = phase;
@@ -2119,12 +2080,12 @@ NetView PreviewView(NetView::Phase phase)
     for (int i = 0; i < kNumPlayers; i++) {
         lobby::Seat& s = v.seats[i];
         s.present = true;
-        s.name = i == p.you && !mine.name.empty() ? mine.name : i == 0 ? "Player One" : "Player Two";
+        s.name = i == p.you && !mine.name.empty() ? mine.name : i == 0 ? "Player One"
+                                                                       : "Player Two";
         s.hasPick = true;
         if (i == p.you && mine.hasPick) {
             s.pick = mine.pick;
-        }
-        else if (g_tables.charas.size() > 1) {
+        } else if (g_tables.charas.size() > 1) {
             const size_t other = g_choices.chara == 1 ? 0 : 1;
             const auto& costumes = g_tables.costumes[other];
             s.pick.character = PackCode(g_tables.charas[other].c_str());
@@ -2133,7 +2094,8 @@ NetView PreviewView(NetView::Phase phase)
         }
         s.ready = p.ready[i];
         s.preloaded = true;
-        s.choice = p.choice[i] == 1 ? lobby::Choice::Rematch : p.choice[i] == 2 ? lobby::Choice::CharacterSelect : lobby::Choice::None;
+        s.choice = p.choice[i] == 1 ? lobby::Choice::Rematch : p.choice[i] == 2 ? lobby::Choice::CharacterSelect
+                                                                                : lobby::Choice::None;
         s.wins = static_cast<uint16_t>(i == 0 ? 2 : 1);
         s.inputDelay = static_cast<uint8_t>(i == p.you ? g_choices.delay : 1);
         s.fps = 60;
@@ -2162,8 +2124,7 @@ std::string g_previewWords; // from PreviewOverlay, applied on the render thread
 
 // Polarity settings' rows from the live state (settings_screen.h), and what
 // changing them does.
-void UseServer(const std::string& chosen)
-{
+void UseServer(const std::string& chosen) {
     if (chosen.empty()) return;
     Act([chosen] {
         NetplayOptions& o = NetOptions();
@@ -2178,8 +2139,7 @@ void UseServer(const std::string& chosen)
 }
 
 // The servers Polarity settings offers: the public one first, then the ones used before.
-std::vector<std::string> ServerChoices()
-{
+std::vector<std::string> ServerChoices() {
     std::vector<std::string> list{kDefaultServer};
     for (const std::string& s : NetOptions().recentServers) {
         if (std::find(list.begin(), list.end(), s) == list.end()) list.push_back(s);
@@ -2190,8 +2150,7 @@ std::vector<std::string> ServerChoices()
 
 std::string ServerLabel(const std::string& server) { return server == kDefaultServer ? "Public server" : server; }
 
-std::vector<SettingsRow> SettingsRows()
-{
+std::vector<SettingsRow> SettingsRows() {
     std::vector<SettingsRow> rows;
     auto row = [&](const char* id, const char* section, const std::string& label) -> SettingsRow& {
         SettingsRow& r = rows.emplace_back();
@@ -2216,13 +2175,11 @@ std::vector<SettingsRow> SettingsRows()
             r.value = "Download and install";
             r.action = "Install";
             r.hint = "Installs the next time the game starts.";
-        }
-        else if (u.state == U::Downloading) {
+        } else if (u.state == U::Downloading) {
             const int pct = u.total ? static_cast<int>(100 * u.done / u.total) : 0;
             r.value = "Downloading " + std::to_string(pct) + "%";
             r.hint = "Keep playing. It installs the next time the game starts.";
-        }
-        else {
+        } else {
             r.value = "Restart the game to use it";
             r.action = "Restart";
             r.hint = "";
@@ -2231,20 +2188,21 @@ std::vector<SettingsRow> SettingsRows()
     {
         SettingsRow& r = row("check", "UPDATES", "Check now");
         r.highlight = true;
-        r.value = u.state == U::Checking ? "Checking..." : u.state == U::Off ? "Off" : "Check";
+        r.value = u.state == U::Checking ? "Checking..." : u.state == U::Off ? "Off"
+                                                                             : "Check";
         r.enabled = u.state != U::Off;
         r.action = u.state == U::Checking ? "" : "Check";
         r.kicker = "UPDATES";
         r.title = current;
         switch (u.state) {
-        case U::Off: r.lines = {"Updates are off: " + u.message + "."}; break;
-        case U::Idle: r.lines = {"Not checked yet."}; break;
-        case U::Checking: r.lines = {"Checking for updates..."}; break;
-        case U::UpToDate: r.lines = {"You're up to date."}; break;
-        case U::Available: r.lines = {"Polarity " + u.latest + " is available."}; break;
-        case U::Downloading: r.lines = {"Downloading Polarity " + u.latest + "."}; break;
-        case U::Ready: r.lines = {"Polarity " + u.latest + " installs when you restart the game."}; break;
-        case U::Failed: r.lines = {"The check failed: " + u.message + "."}; break;
+            case U::Off: r.lines = {"Updates are off: " + u.message + "."}; break;
+            case U::Idle: r.lines = {"Not checked yet."}; break;
+            case U::Checking: r.lines = {"Checking for updates..."}; break;
+            case U::UpToDate: r.lines = {"You're up to date."}; break;
+            case U::Available: r.lines = {"Polarity " + u.latest + " is available."}; break;
+            case U::Downloading: r.lines = {"Downloading Polarity " + u.latest + "."}; break;
+            case U::Ready: r.lines = {"Polarity " + u.latest + " installs when you restart the game."}; break;
+            case U::Failed: r.lines = {"The check failed: " + u.message + "."}; break;
         }
         r.hint = "Nothing installs without asking you.";
     }
@@ -2359,8 +2317,7 @@ std::vector<SettingsRow> SettingsRows()
             r.value = v;
             r.action = "Show";
             r.hint = "Your last run.";
-        }
-        else {
+        } else {
             r.value = "None yet";
             r.enabled = false;
         }
@@ -2418,7 +2375,10 @@ std::vector<SettingsRow> SettingsRows()
 
 // The benchmark's modals over Polarity settings: before a run, its loading,
 // and a result.
-enum class BenchModal { None, Confirm, Loading, Result };
+enum class BenchModal { None,
+                        Confirm,
+                        Loading,
+                        Result };
 BenchModal g_benchModal = BenchModal::None;
 int g_benchChoice = 0;
 BenchmarkResult g_benchShown;
@@ -2431,28 +2391,26 @@ bool g_benchReturn = false; // a run is on: settings and its result again at the
 // settings sat still for the read and the main menu showed for the preload.
 struct BenchLaunch {
     bool active = false;
-    int step = 0;         // 0 reading the round, 1 loading, 2 starting, 3 fading into it
-    int drawn = 0;        // frames the modal has been shown (the read waits for one)
+    int step = 0;  // 0 reading the round, 1 loading, 2 starting, 3 fading into it
+    int drawn = 0; // frames the modal has been shown (the read waits for one)
     uint64_t switchesAt = 0;
     double since = 0, stepSince = 0, blackFrom = -1, revealFrom = -1;
 };
+
 BenchLaunch g_benchLaunch;
 constexpr double kBenchToBlack = 0.3, kBenchReveal = 0.5, kBenchGiveUp = 60;
 
-void OpenBenchmarkModal(bool result)
-{
+void OpenBenchmarkModal(bool result) {
     g_benchChoice = 0;
     if (result) {
         g_benchShown = LastBenchmark();
         g_benchModal = g_benchShown.valid ? BenchModal::Result : BenchModal::None;
-    }
-    else {
+    } else {
         g_benchModal = BenchModal::Confirm;
     }
 }
 
-void StartBenchmarkRun()
-{
+void StartBenchmarkRun() {
     // The read itself waits for the modal's first frame (it holds this thread).
     g_benchModal = BenchModal::Loading;
     g_benchLaunch = {};
@@ -2461,8 +2419,7 @@ void StartBenchmarkRun()
 }
 
 // The launch's progress, each frame.
-void StepBenchmarkLaunch()
-{
+void StepBenchmarkLaunch() {
     BenchLaunch& l = g_benchLaunch;
     const double now = ImGui::GetTime();
     if (l.step == 0) {
@@ -2511,8 +2468,7 @@ void StepBenchmarkLaunch()
 
 // The launch's modal and its black, over settings and then over the
 // battle's loading, above everything the hub draws.
-void DrawBenchmarkLaunch(const HubFonts& f)
-{
+void DrawBenchmarkLaunch(const HubFonts& f) {
     using namespace ui;
     BenchLaunch& l = g_benchLaunch;
     const double now = ImGui::GetTime();
@@ -2543,15 +2499,16 @@ void DrawBenchmarkLaunch(const HubFonts& f)
         // done, a dot going round while working.
         const char* const kSteps[] = {"Reading the round", "Loading the characters and the stage", "Starting the round"};
         for (int i = 0; i < 3; i++) {
-            const int state = i < l.step ? 2 : i == l.step ? 1 : 0;
+            const int state = i < l.step ? 2 : i == l.step ? 1
+                                                           : 0;
             const ImVec2 c = g_v.P(m.x0 + 40, y + 11);
-            const ImU32 ring = state == 2 ? look::kOk : state == 1 ? look::kRing : look::kEdgeControl;
+            const ImU32 ring = state == 2 ? look::kOk : state == 1 ? look::kRing
+                                                                   : look::kEdgeControl;
             d->AddCircle(c, g_v.L(12), ring, 24, g_v.L(2));
             if (state == 2) {
                 const ImVec2 tick[] = {g_v.P(m.x0 + 34, y + 11), g_v.P(m.x0 + 38.5f, y + 16), g_v.P(m.x0 + 46.5f, y + 6)};
                 d->AddPolyline(tick, 3, look::kOk, 0, g_v.L(2.2f));
-            }
-            else if (state == 1) {
+            } else if (state == 1) {
                 const float turn = static_cast<float>(now * 4.0);
                 d->AddCircleFilled(g_v.P(m.x0 + 40 + 7 * std::cos(turn), y + 11 + 7 * std::sin(turn)), g_v.L(2.6f), look::kRing);
             }
@@ -2580,8 +2537,8 @@ struct BenchDataLine {
     int kind = -1;
     std::string head, body;
 };
-BenchDataLine BenchmarkDataLine(const BenchmarkResult& b)
-{
+
+BenchDataLine BenchmarkDataLine(const BenchmarkResult& b) {
     // "JRI,KEN,CMN" -> "Juri, Ken and every character's shared data".
     auto names = [](const std::string& codes) {
         std::vector<std::string> out;
@@ -2592,10 +2549,14 @@ BenchDataLine BenchmarkDataLine(const BenchmarkResult& b)
             from = comma == std::string::npos ? codes.size() : comma + 1;
             if (code.empty()) continue;
             const char* name = keeper::CharacterName(code);
-            out.push_back(code == "CMN" ? "every character's shared data" : code == "?" ? "a mod that can't be read" : *name ? name : code);
+            out.push_back(code == "CMN" ? "every character's shared data" : code == "?" ? "a mod that can't be read"
+                                                                        : *name         ? name
+                                                                                        : code);
         }
         std::string s;
-        for (size_t i = 0; i < out.size(); i++) s += (i == 0 ? "" : i + 1 == out.size() ? " and " : ", ") + out[i];
+        for (size_t i = 0; i < out.size(); i++) s += (i == 0 ? "" : i + 1 == out.size() ? " and "
+                                                                                        : ", ") +
+                                                     out[i];
         return s;
     };
     BenchDataLine l;
@@ -2622,8 +2583,7 @@ BenchDataLine BenchmarkDataLine(const BenchmarkResult& b)
     return l;
 }
 
-void DrawBenchmarkModal(const HubFonts& f, bool takeInput)
-{
+void DrawBenchmarkModal(const HubFonts& f, bool takeInput) {
     using namespace ui;
     ImDrawList* d = ImGui::GetForegroundDrawList();
     ImFont* bold = f.bold ? f.bold : f.strong;
@@ -2653,13 +2613,13 @@ void DrawBenchmarkModal(const HubFonts& f, bool takeInput)
             if ((Confirm() && g_benchChoice == 0) || run) StartBenchmarkRun();
             else if ((Confirm() && g_benchChoice == 1) || later || Back()) g_benchModal = BenchModal::None;
         }
-    }
-    else if (g_benchModal == BenchModal::Result) {
+    } else if (g_benchModal == BenchModal::Result) {
         const BenchmarkResult& b = g_benchShown;
         const bool pass = b.Pass();
         const BenchDataLine data = BenchmarkDataLine(b);
         ModalSpec m;
-        m.x0 = 350, m.y0 = 120, m.w = 900, m.h = (b.matched ? (pass ? 470.0f : 510.0f) : 510.0f) + (data.kind < 0 ? 0.0f : data.body.empty() ? 44.0f : 74.0f);
+        m.x0 = 350, m.y0 = 120, m.w = 900, m.h = (b.matched ? (pass ? 470.0f : 510.0f) : 510.0f) + (data.kind < 0 ? 0.0f : data.body.empty() ? 44.0f
+                                                                                                                                             : 74.0f);
         const std::time_t t = static_cast<std::time_t>(b.when);
         std::tm tm{};
         localtime_s(&tm, &t);
@@ -2671,7 +2631,8 @@ void DrawBenchmarkModal(const HubFonts& f, bool takeInput)
         m.danger = !b.matched;
         m.prompts = {{"button_a", "Choose"}, {"button_b", "Back"}};
         float y = Modal(d, bold, f.body, m, &clicked);
-        const ImU32 verdict = pass ? look::kOk : !b.matched ? look::kDanger : look::kGold;
+        const ImU32 verdict = pass ? look::kOk : !b.matched ? look::kDanger
+                                                            : look::kGold;
         Text(d, f.display, g_v.L(64), g_v.P(m.x0 + 28, y - 4), verdict, pass ? "PASS" : "FAIL");
         const float vx = m.x0 + 28 + TextW(f.display, 64, pass ? "PASS" : "FAIL") + 28;
         char avg[48];
@@ -2710,8 +2671,7 @@ void DrawBenchmarkModal(const HubFonts& f, bool takeInput)
                      rollbacks ? "Rollbacks took the most time. With 1 or 2 frames of input delay, a match rolls back less."
                                : "Drawing the game took the most time. Lower graphics settings may help.");
             }
-        }
-        else {
+        } else {
             d->AddLine(g_v.P(m.x0 + 30, y + 7), g_v.P(m.x0 + 44, y + 21), look::kDanger, g_v.L(2.4f));
             d->AddLine(g_v.P(m.x0 + 44, y + 7), g_v.P(m.x0 + 30, y + 21), look::kDanger, g_v.L(2.4f));
             Text(d, bold, g_v.L(19), g_v.P(m.x0 + 56, y), look::kCream,
@@ -2724,12 +2684,12 @@ void DrawBenchmarkModal(const HubFonts& f, bool takeInput)
         // mods change.
         if (data.kind >= 0) {
             float dy = y + (b.matched && pass ? 44 : 74);
-            const ImU32 mark = data.kind == 0 ? look::kOk : data.kind == 1 ? look::kGold : look::kDanger;
+            const ImU32 mark = data.kind == 0 ? look::kOk : data.kind == 1 ? look::kGold
+                                                                           : look::kDanger;
             if (data.kind == 0) {
                 d->AddLine(g_v.P(m.x0 + 30, dy + 13), g_v.P(m.x0 + 36, dy + 19), mark, g_v.L(2.4f));
                 d->AddLine(g_v.P(m.x0 + 36, dy + 19), g_v.P(m.x0 + 46, dy + 7), mark, g_v.L(2.4f));
-            }
-            else {
+            } else {
                 d->AddTriangle(g_v.P(m.x0 + 38, dy + 4), g_v.P(m.x0 + 47, dy + 21), g_v.P(m.x0 + 29, dy + 21), mark, g_v.L(2.0f));
                 d->AddLine(g_v.P(m.x0 + 38, dy + 10), g_v.P(m.x0 + 38, dy + 15), mark, g_v.L(2.0f));
             }
@@ -2749,16 +2709,13 @@ void DrawBenchmarkModal(const HubFonts& f, bool takeInput)
     g_inputOn = false;
 }
 
-void ApplySetting(const SettingsInput& in)
-{
+void ApplySetting(const SettingsInput& in) {
     if (in.row == "install" && in.confirm) {
         if (UpdateViewNow().state == UpdateView::State::Ready) {
             std::string error;
             if (!RestartGame(g_window, &error)) g_packResult = "Couldn't restart: " + error + ". Close the game and start it again.";
-        }
-        else UpdateInstall();
-    }
-    else if (in.row == "check" && in.confirm) UpdateCheck();
+        } else UpdateInstall();
+    } else if (in.row == "check" && in.confirm) UpdateCheck();
     else if (in.row == "bench" && in.confirm) OpenBenchmarkModal(false);
     else if (in.row == "benchlast" && in.confirm) OpenBenchmarkModal(true);
     else if (in.row == "checkstart" && in.delta) SaveMainIni(L"update", L"check", ReadMainIni(L"update", L"check", 1) ? 0 : 1);
@@ -2767,8 +2724,7 @@ void ApplySetting(const SettingsInput& in)
     else if (in.row == "name" && in.typed) {
         std::snprintf(g_choices.name, sizeof(g_choices.name), "%s", in.text.c_str());
         SaveChoices();
-    }
-    else if (in.row == "delay" && in.delta) {
+    } else if (in.row == "delay" && in.delta) {
         // Auto, 0, 1, ... 8, around.
         const int n = kMaxDelaySetting + 2;
         const int8_t next = static_cast<int8_t>(((NetOptions().delaySetting + 1 + in.delta) % n + n) % n - 1);
@@ -2778,30 +2734,24 @@ void ApplySetting(const SettingsInput& in)
             if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, NetOptions(), NetOptions().stageCode);
             Log("overlay: input delay setting %s", next >= 0 ? std::to_string(next).c_str() : "auto");
         });
-    }
-    else if (in.row == "fps" && in.delta) {
+    } else if (in.row == "fps" && in.delta) {
         g_choices.showFps = !g_choices.showFps;
         SaveChoices();
-    }
-    else if (in.row == "country" && in.delta) {
+    } else if (in.row == "country" && in.delta) {
         g_choices.shareCountry = !g_choices.shareCountry;
         SaveChoices();
-    }
-    else if (in.row == "wordfilter" && in.delta) {
+    } else if (in.row == "wordfilter" && in.delta) {
         g_choices.wordFilter = !g_choices.wordFilter;
         SetRoomsWordFilter(g_choices.wordFilter); // at once
         SaveChoices();
-    }
-    else if (in.row == "streamer" && in.delta) {
+    } else if (in.row == "streamer" && in.delta) {
         g_choices.streamerMode = !g_choices.streamerMode;
         SetStreamerMode(g_choices.streamerMode); // at once, not on the game thread's turn
         SaveChoices();
-    }
-    else if (in.row == "reports" && in.delta) {
+    } else if (in.row == "reports" && in.delta) {
         g_choices.uploadReports = !g_choices.uploadReports;
         SaveChoices();
-    }
-    else if (in.row == "server" && in.delta) {
+    } else if (in.row == "server" && in.delta) {
         const std::vector<std::string> servers = ServerChoices();
         const auto at = std::find(servers.begin(), servers.end(), NetOptions().server);
         const int i = at == servers.end() ? 0 : static_cast<int>(at - servers.begin());
@@ -2811,8 +2761,7 @@ void ApplySetting(const SettingsInput& in)
             UseServer(next);
             RoomsClose(); // the hub opens its connection again, to the new server
         }
-    }
-    else if (in.row == "folder" && in.confirm) OpenDataFolder();
+    } else if (in.row == "folder" && in.confirm) OpenDataFolder();
     else if (in.row == "pack" && in.confirm) {
         std::string error;
         const std::wstring zip = PackLogsToShare(&error);
@@ -2849,14 +2798,15 @@ int g_watchTable = -1;
 // Training select and Training, until this player's table calls them; then
 // the main menu, where the room screen comes back with the your-turn card.
 // The game's "Go to Main Menu" leads back to the room screen the same way.
-enum class RoomTraining { Off, Asked, In };
+enum class RoomTraining { Off,
+                          Asked,
+                          In };
 RoomTraining g_roomTraining = RoomTraining::Off;
 double g_roomTrainingAt = 0;
 
 bool InTrainingScene() { return CurrentScene().find("Training") != std::string::npos; }
 
-void StartRoomTraining(const RoomsView& rooms)
-{
+void StartRoomTraining(const RoomsView& rooms) {
     const NetView nv = NetViewNow();
     if (g_roomTraining != RoomTraining::Off || (nv.phase != NetView::Phase::Idle && nv.phase != NetView::Phase::Ended)) return;
     // Watching another table would open its matches over Training.
@@ -2871,8 +2821,7 @@ void StartRoomTraining(const RoomsView& rooms)
 }
 
 // Each frame: follows the scene, and ends Training when the table calls.
-void StepRoomTraining()
-{
+void StepRoomTraining() {
     if (g_roomTraining == RoomTraining::Off) return;
     const bool training = InTrainingScene();
     if (g_roomTraining == RoomTraining::Asked) {
@@ -2900,8 +2849,7 @@ void StepRoomTraining()
     }
 }
 
-void StartTableWatch(const WatchTicket& w)
-{
+void StartTableWatch(const WatchTicket& w) {
     g_backToRooms = true;
     g_watchTable = w.table;
     MatchTicket mt;
@@ -2918,8 +2866,7 @@ void StartTableWatch(const WatchTicket& w)
     Act([mt, o] { NetPlayTicket(mt, o); });
 }
 
-void StartTableSession(const keeper::TableTicket& t)
-{
+void StartTableSession(const keeper::TableTicket& t) {
     g_backToRooms = true;
     MatchTicket mt;
     mt.host = t.host;
@@ -2962,20 +2909,19 @@ void StartTableSession(const keeper::TableTicket& t)
 // played when this player hosts as P1. Input delay is the player's usual
 // delay (Polarity settings' Input delay): the your-turn card starts from it.
 struct MyCharacter {
-    Choices saved;               // the pick in effect: the card's, B's on the grid
-    bool fromProfile = false;    // nothing saved yet: the Fighter Profile's favorite
-    bool stagePage = false;      // on the stage select
+    Choices saved;                          // the pick in effect: the card's, B's on the grid
+    bool fromProfile = false;               // nothing saved yet: the Fighter Profile's favorite
+    bool stagePage = false;                 // on the stage select
     int stageBefore = 1, settingBefore = 0; // the stage as the stage select opened (its B)
-    bool savedNow = false;       // SAVED: A goes back to the room, B changes again
-    int8_t delaySetting = kDelayAuto; // the Input delay row (saved with the pick)
-    int openedFrame = 0;         // the Y that opened it is not read again here
+    bool savedNow = false;                  // SAVED: A goes back to the room, B changes again
+    int8_t delaySetting = kDelayAuto;       // the Input delay row (saved with the pick)
+    int openedFrame = 0;                    // the Y that opened it is not read again here
     float alpha = 0;
 } g_my;
 
 // Nothing saved yet: the Fighter Profile's favorite character with its saved
 // loadout, and the profile's stage as the preferred stage.
-void ApplyProfileFavorite(Choices& c)
-{
+void ApplyProfileFavorite(Choices& c) {
     ProfileFavorites fav;
     {
         std::lock_guard lock(g_favoritesMutex);
@@ -3003,8 +2949,7 @@ void ApplyProfileFavorite(Choices& c)
     PickValid(c);
 }
 
-void OpenMyCharacter()
-{
+void OpenMyCharacter() {
     LoadTables();
     InitChoices();
     if (!g_choices.initialised) return; // the lists are still being read
@@ -3023,15 +2968,13 @@ void OpenMyCharacter()
 
 // Closes it; `keep`: back to the pick that was in effect (what changed since
 // the last save is dropped).
-void CloseMyCharacter(bool keep, const char* why)
-{
+void CloseMyCharacter(bool keep, const char* why) {
     if (keep) g_choices = g_my.saved;
     g_myCharacterOpen = false;
     Log("overlay: my character closed (%s): %s", why, g_tables.charas[g_choices.chara].c_str());
 }
 
-void SaveMyCharacter()
-{
+void SaveMyCharacter() {
     Choices& c = g_choices;
     if (IsEleven(c.chara)) RollEleven(c);
     g_my.saved = c;
@@ -3059,8 +3002,7 @@ void SaveMyCharacter()
 }
 
 // A new Random stages list: in effect and saved at once (the panel file).
-void SetRandomOff(std::vector<std::string> off, const char* why)
-{
+void SetRandomOff(std::vector<std::string> off, const char* why) {
     g_randomOff = ParseStageMask(FormatStageMask(off));
     g_randomOffSaved = true;
     const std::vector<std::string> list = g_randomOff;
@@ -3074,8 +3016,7 @@ void SetRandomOff(std::vector<std::string> off, const char* why)
 
 // Random's stages as the card says it: the owned stages and settings on,
 // of all owned ones (never the never-random stages).
-std::string RandomStagesText()
-{
+std::string RandomStagesText() {
     int on = 0, owned = 0;
     auto count = [&](const std::string& code, bool have) {
         if (!have || IsNeverRandomStage(code)) return;
@@ -3095,8 +3036,7 @@ std::string RandomStagesText()
 }
 
 // The card's rows: the pick in effect.
-SelectCard MyCharacterCard(const RoomsView& rooms)
-{
+SelectCard MyCharacterCard(const RoomsView& rooms) {
     const Choices& c = g_my.saved;
     SelectCard card;
     card.player = LocalPlayerName();
@@ -3110,8 +3050,7 @@ SelectCard MyCharacterCard(const RoomsView& rooms)
     const int slot = std::max(0, CostumeSlot(c.chara, c.costume));
     if (eleven) {
         for (const char* label : {"Costume", "Color", "V-Skill", "V-Trigger"}) card.rows.push_back({label, "Random"});
-    }
-    else {
+    } else {
         card.rows.push_back({"Costume", g_tables.costumeNames[c.chara][slot]});
         SelectCard::Row color{"Color", ColorLabel(c.color)};
         const auto swatch = SwatchOf(c.chara, slot, c.color);
@@ -3138,31 +3077,30 @@ SelectCard MyCharacterCard(const RoomsView& rooms)
     const std::string loads = eleven ? "ELEVEN" : card.charaName;
     double seconds = 0;
     switch (PreloadStatus(UnpackCode(o.pick.character), o.pick.costume, &seconds)) {
-    case 2:
-        card.status = loads + " is ready";
-        card.statusRight = "ready";
-        card.progress = 1;
-        card.done = true;
-        break;
-    case 1:
-        // No progress to read from the asset queue: a bar on the time a
-        // character takes (about 14 s on a test PC, CPU-bound), held short
-        // of the end.
-        card.status = "Loading " + loads + "...";
-        card.statusRight = "loading";
-        card.progress = static_cast<float>(std::min(0.9, seconds / 15.0));
-        break;
-    case 0:
-        card.status = loads + " loads shortly";
-        card.progress = 0;
-        break;
-    default: card.status = loads + " loads with the match"; break;
+        case 2:
+            card.status = loads + " is ready";
+            card.statusRight = "ready";
+            card.progress = 1;
+            card.done = true;
+            break;
+        case 1:
+            // No progress to read from the asset queue: a bar on the time a
+            // character takes (about 14 s on a test PC, CPU-bound), held short
+            // of the end.
+            card.status = "Loading " + loads + "...";
+            card.statusRight = "loading";
+            card.progress = static_cast<float>(std::min(0.9, seconds / 15.0));
+            break;
+        case 0:
+            card.status = loads + " loads shortly";
+            card.progress = 0;
+            break;
+        default: card.status = loads + " loads with the match"; break;
     }
     return card;
 }
 
-void ApplyMyCharacterInput(const SelectInput& in)
-{
+void ApplyMyCharacterInput(const SelectInput& in) {
     Choices& c = g_choices;
     if (in.cancel) return CloseMyCharacter(true, "kept");
     if (in.done) return CloseMyCharacter(false, "saved");
@@ -3193,8 +3131,7 @@ void ApplyMyCharacterInput(const SelectInput& in)
         // Auto, 0, 1, ... 8, around (as Polarity settings).
         const int n = kMaxDelaySetting + 2;
         g_my.delaySetting = static_cast<int8_t>(((g_my.delaySetting + 1 + in.delta) % n + n) % n - 1);
-    }
-    else if (in.row >= 0 && in.delta) StepRow(c, in.row, in.delta);
+    } else if (in.row >= 0 && in.delta) StepRow(c, in.row, in.delta);
     if (in.stage >= 0) {
         const int count = static_cast<int>(g_tables.stages.size());
         c.stage = in.stage < count ? 2 + in.stage : 1;
@@ -3209,8 +3146,7 @@ void ApplyMyCharacterInput(const SelectInput& in)
     }
 }
 
-void DrawMyCharacter(const RoomsView& rooms, bool takeInput)
-{
+void DrawMyCharacter(const RoomsView& rooms, bool takeInput) {
     // A table calling this player (or a set on its way) needs the room
     // screen: what was last confirmed is played.
     bool called = false;
@@ -3258,8 +3194,7 @@ int g_hubScreen = -1; // what DrawHubScreens drew: 0 the hub, 1 the room browser
 // The hub and the screens it leads to. Where one screen gives way to
 // another (the hub, the room browser, a room, settings, My character) the
 // new one fades in quickly over the stage, which stays.
-void DrawHubFrame(bool takeInput)
-{
+void DrawHubFrame(bool takeInput) {
     constexpr double kFadeSeconds = 0.16;
     static int shown = -1;
     static double changedAt = -1;
@@ -3282,8 +3217,7 @@ void DrawHubFrame(bool takeInput)
 // What the tables play for this player (My character's pick, else the
 // profile's favorite, as the room shows): its character, V-Skill and
 // V-Trigger (from 1); Eleven's are random.
-CardPick TablePick(const NetplayOptions& o, const std::string& favorite)
-{
+CardPick TablePick(const NetplayOptions& o, const std::string& favorite) {
     CardPick p;
     if (o.hasPick) {
         const bool eleven = IsElevenSetup(o.pick);
@@ -3307,8 +3241,7 @@ CardPick TablePick(const NetplayOptions& o, const std::string& favorite)
 // The your-turn card's V-Skill or V-Trigger (from 1; 0 unchanged): into the
 // pick the tables play (made from the profile's favorite when there was
 // none), saved, and to the driver for the match about to start.
-void SetTableSkills(int vskill, int vtrigger)
-{
+void SetTableSkills(int vskill, int vtrigger) {
     InitChoices();
     if (!g_choices.initialised) return;
     Choices& c = g_choices;
@@ -3325,8 +3258,7 @@ void SetTableSkills(int vskill, int vtrigger)
         c.vtrigger = now.pick.vtrigger + 1;
         c.variant = now.pick.variation;
         c.comment = now.pick.comment;
-    }
-    else {
+    } else {
         ApplyProfileFavorite(c);
     }
     if (vskill > 0) c.vskill = vskill;
@@ -3357,8 +3289,8 @@ bool g_nameChanged = false;
 // The room creation form's table rules (Customize Tables), for the room it
 // asked for: sent once the new room's screen is up (QueueTableRules).
 std::vector<std::string> g_createRules;
-void OpenHubRooms(const NetplayOptions& o)
-{
+
+void OpenHubRooms(const NetplayOptions& o) {
     g_nameSeen = LocalPlayerName();
     g_nameChanged = false;
     RoomsOpen(o.server, g_nameSeen, o.server == kDefaultServer ? kDefaultServerAlsoPort : o.serverAlsoPort, o.keeperKey);
@@ -3366,6 +3298,7 @@ void OpenHubRooms(const NetplayOptions& o)
 
 // Leaving a watched replay: the Battle Log again once the menus are back.
 std::atomic<bool> g_reopenLog{false};
+
 // Watching a replay from the Battle Log: the screen stays (no input) while
 // the replay preloads and jumps, as a match's select screen does, until the
 // jump switches to the battle scene; then black (kLaunchToBlack, held
@@ -3376,11 +3309,11 @@ struct LogLaunch {
     uint64_t switchesAt = 0;
     double since = 0, blackFrom = -1;
 };
+
 LogLaunch g_logLaunch;
 constexpr double kLaunchToBlack = 0.3, kLaunchBlackHeld = 0.6, kLaunchGiveUp = 45;
 
-std::string StageLabelOf(uint16_t stage)
-{
+std::string StageLabelOf(uint16_t stage) {
     const std::string code = StageCode(stage);
     for (size_t i = 0; i < g_tables.stages.size(); i++) {
         if (g_tables.stages[i] == code) return i < g_tables.stageLabels.size() ? g_tables.stageLabels[i] : "";
@@ -3393,8 +3326,7 @@ std::string StageLabelOf(uint16_t stage)
     return "";
 }
 
-void DrawHubScreens(bool takeInput)
-{
+void DrawHubScreens(bool takeInput) {
     NetplayOptions& o = NetOptions();
     if (g_roomsWhenReady && g_tables.loaded) {
         g_roomsWhenReady = false;
@@ -3420,7 +3352,7 @@ void DrawHubScreens(bool takeInput)
         }
     }
     const RoomsView rooms = RoomsSnapshot();
-    g_hubScreen = SettingsScreenOpen()                     ? 3
+    g_hubScreen = SettingsScreenOpen()                    ? 3
                   : g_myCharacterOpen                     ? 4
                   : rooms.state == RoomsView::State::Room ? 2
                   : RoomsScreenOpen()                     ? 1
@@ -3438,8 +3370,7 @@ void DrawHubScreens(bool takeInput)
             Log("hub: the rooms server again (%s)", o.server.c_str());
             OpenHubRooms(o);
         }
-    }
-    else failedSince = 0;
+    } else failedSince = 0;
     // The browser with its server gone can do nothing: back to the hub,
     // which says why (and opens the rooms again once they answer).
     if (RoomsScreenOpen() && !SettingsScreenOpen() && rooms.state == RoomsView::State::Failed) {
@@ -3470,7 +3401,9 @@ void DrawHubScreens(bool takeInput)
     live.player = LocalPlayerName();
     live.server = o.server == kDefaultServer ? "Public server" : o.server;
     using S = RoomsView::State;
-    live.serverState = rooms.state == S::Off ? 0 : rooms.state == S::Connecting ? 1 : rooms.state == S::Failed ? 3 : 2;
+    live.serverState = rooms.state == S::Off ? 0 : rooms.state == S::Connecting ? 1
+                                               : rooms.state == S::Failed       ? 3
+                                                                                : 2;
     live.version = g_build;
     // The tile's strip: live state only (what it is for is the hint's).
     if (rooms.state == S::Failed) live.roomsState = "Can't connect";
@@ -3503,7 +3436,8 @@ void DrawHubScreens(bool takeInput)
     // profile's favorite.
     // Eleven shows as Eleven: the fighter it rolled stays hidden from
     // everyone (as in the game) until the match loads.
-    RoomsSetCharacter(!o.hasPick ? live.offlineChara : IsElevenSetup(o.pick) ? std::string("ELV") : UnpackCode(o.pick.character));
+    RoomsSetCharacter(!o.hasPick ? live.offlineChara : IsElevenSetup(o.pick) ? std::string("ELV")
+                                                                             : UnpackCode(o.pick.character));
     // Its V-Skill and V-Trigger, for the others' your-turn cards.
     const CardPick tablePick = TablePick(o, live.offlineChara);
     if (tablePick.editable) RoomsSetSkills(tablePick.vskill, tablePick.vtrigger);
@@ -3621,7 +3555,8 @@ void DrawHubScreens(bool takeInput)
             h.linked = h.session && nv.seats[0].present && nv.seats[1].present && nv.phase != P::Hosting && nv.phase != P::Joining &&
                        nv.phase != P::Connecting;
             h.pingMs = nv.link.samples ? nv.link.pingMs : nv.linkPingMs;
-            h.path = nv.linkPath == NetView::Path::Direct ? 1 : nv.linkPath == NetView::Path::Relayed ? 2 : 0;
+            h.path = nv.linkPath == NetView::Path::Direct ? 1 : nv.linkPath == NetView::Path::Relayed ? 2
+                                                                                                      : 0;
             h.preloaded[0] = h.linked && nv.seats[0].preloaded;
             h.preloaded[1] = h.linked && nv.seats[1].preloaded;
             h.jumping = h.session && (nv.phase == P::Jumping || nv.phase == P::Loading || nv.phase == P::Running);
@@ -3647,8 +3582,7 @@ void DrawHubScreens(bool takeInput)
             using P = NetView::Phase;
             if (nv.spectator && (nv.phase == P::Jumping || nv.phase == P::Loading || nv.phase == P::Running)) {
                 Log("overlay: the room screen's watch toggle ignored while the watched match is on");
-            }
-            else {
+            } else {
                 RoomsWatch(in.watch);
                 if (in.watch < 0) g_watchTable = -1;
             }
@@ -3688,73 +3622,70 @@ void DrawHubScreens(bool takeInput)
         return;
     }
     switch (DrawHub(fonts, live, takeInput)) {
-    case HubAction::PlayOffline:
-        CloseHub();
-        RoomsClose();
-        break;
-    case HubAction::CustomRooms:
-        // Only the latest client plays there: a check first unless one ended
-        // in the last 5 minutes (the modal waits for it, then opens them).
-        if (UpdateCheckIfStale(5 * 60 * 1000)) {
-            ShowRoomsProblem();
+        case HubAction::PlayOffline:
+            CloseHub();
+            RoomsClose();
+            break;
+        case HubAction::CustomRooms:
+            // Only the latest client plays there: a check first unless one ended
+            // in the last 5 minutes (the modal waits for it, then opens them).
+            if (UpdateCheckIfStale(5 * 60 * 1000)) {
+                ShowRoomsProblem();
+                break;
+            }
+            // Before the game's lists are read (a few seconds after launch) it
+            // opens once they are.
+            if (!g_tables.loaded) {
+                g_roomsWhenReady = true;
+                break;
+            }
+            RoomsClearNotice();
+            OpenRoomsScreen();
+            break;
+        case HubAction::Settings:
+            OpenSettingsScreen();
+            break;
+        case HubAction::BattleLog:
+            OpenBattleLog();
+            break;
+        case HubAction::MyCharacter:
+            // Before the game's lists are read (a few seconds after launch): not yet.
+            if (g_tables.loaded) OpenMyCharacter();
+            break;
+        case HubAction::UpdateInstall:
+            g_restartError.clear();
+            UpdateInstall(); // nothing if it is downloading or installed already
+            break;
+        case HubAction::UpdateRestart: {
+            std::string error;
+            if (!RestartGame(g_window, &error)) g_restartError = error;
             break;
         }
-        // Before the game's lists are read (a few seconds after launch) it
-        // opens once they are.
-        if (!g_tables.loaded) {
-            g_roomsWhenReady = true;
+        case HubAction::UpdateRetry:
+            UpdateCheck();
             break;
-        }
-        RoomsClearNotice();
-        OpenRoomsScreen();
-        break;
-    case HubAction::Settings:
-        OpenSettingsScreen();
-        break;
-    case HubAction::BattleLog:
-        OpenBattleLog();
-        break;
-    case HubAction::MyCharacter:
-        // Before the game's lists are read (a few seconds after launch): not yet.
-        if (g_tables.loaded) OpenMyCharacter();
-        break;
-    case HubAction::UpdateInstall:
-        g_restartError.clear();
-        UpdateInstall(); // nothing if it is downloading or installed already
-        break;
-    case HubAction::UpdateRestart: {
-        std::string error;
-        if (!RestartGame(g_window, &error)) g_restartError = error;
-        break;
-    }
-    case HubAction::UpdateRetry:
-        UpdateCheck();
-        break;
-    case HubAction::RetryRooms:
-        Log("hub: the rooms server again, asked for (%s)", o.server.c_str());
-        OpenHubRooms(o);
-        break;
-    case HubAction::None:
-        break;
+        case HubAction::RetryRooms:
+            Log("hub: the rooms server again, asked for (%s)", o.server.c_str());
+            OpenHubRooms(o);
+            break;
+        case HubAction::None:
+            break;
     }
 }
 
 // On the game's menus, with the panel closed and no session: a hint at the
 // top center of how to open online play.
-bool OnMenuScreen()
-{
+bool OnMenuScreen() {
     const std::string scene = CurrentScene();
     return !scene.empty() && scene != "BootState" && scene != "InitialState" && scene.find("Battle") == std::string::npos;
 }
 
-void DrawMenuHint()
-{
+void DrawMenuHint() {
     DrawMenuNote(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold});
 }
 
 // The Debug tab's previews, each window on its own.
-void DrawPreviews()
-{
+void DrawPreviews() {
     std::string words;
     {
         std::lock_guard lock(g_previewMutex);
@@ -3779,8 +3710,7 @@ void DrawPreviews()
         else if (w == "fade") {
             p.hud = true;
             p.fadeAt = GetTickCount64();
-        }
-        else if (w == "off") p.hud = p.strip = p.desync = p.side[0] = p.side[1] = false;
+        } else if (w == "off") p.hud = p.strip = p.desync = p.side[0] = p.side[1] = false;
     }
     if (g_sampleToasts) {
         g_sampleToasts = false;
@@ -3806,8 +3736,7 @@ void DrawPreviews()
     g_previewing = false;
 }
 
-void Draw(IDXGISwapChain* swapChain)
-{
+void Draw(IDXGISwapChain* swapChain) {
     if (swapChain != g_swapChain && !SetUp(swapChain)) return;
     std::vector<Message> input;
     {
@@ -3858,8 +3787,7 @@ void Draw(IDXGISwapChain* swapChain)
     if (phase != NetView::Phase::Idle) {
         LoadTables();
         InitChoices();
-    }
-    else if (OnMenuScreen()) {
+    } else if (OnMenuScreen()) {
         LoadTables();
     }
     // On the way to a session (the panel open at the menus, hosting,
@@ -3912,9 +3840,8 @@ void Draw(IDXGISwapChain* swapChain)
     static bool delaySet = false;
     if (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) {
         delaySet = false;
-    }
-    else if (!delaySet && phase == NetView::Phase::Lobby && PreferredDelay(view) >= 0 && g_choices.initialised &&
-             !view.spectator && !view.scripted && !view.setPlay) {
+    } else if (!delaySet && phase == NetView::Phase::Lobby && PreferredDelay(view) >= 0 && g_choices.initialised &&
+               !view.spectator && !view.scripted && !view.setPlay) {
         delaySet = true;
         const int delay = PreferredDelay(view);
         g_choices.delay = delay;
@@ -4018,12 +3945,10 @@ void Draw(IDXGISwapChain* swapChain)
         holding = true;
         switchesAtJump = BattleSceneSwitches();
         blackFrom = -1;
-    }
-    else if (holding && phase == NetView::Phase::Jumping && BattleSceneSwitches() != switchesAtJump) {
+    } else if (holding && phase == NetView::Phase::Jumping && BattleSceneSwitches() != switchesAtJump) {
         holding = false;
         blackFrom = now;
-    }
-    else if (holding && phase != NetView::Phase::Jumping) {
+    } else if (holding && phase != NetView::Phase::Jumping) {
         holding = false; // no switch seen (left, or a jump another way): it fades out
     }
     const bool toBlack = blackFrom >= 0 && now - blackFrom < kToBlack + kBlackHeld;
@@ -4090,8 +4015,7 @@ void Draw(IDXGISwapChain* swapChain)
         if (RoomsSnapshot().state == RoomsView::State::Room) {
             OpenHub();
             g_backToRooms = false;
-        }
-        else if (g_backToRooms) {
+        } else if (g_backToRooms) {
             OpenHub();
             OpenRoomsScreen();
             g_backToRooms = false;
@@ -4102,8 +4026,7 @@ void Draw(IDXGISwapChain* swapChain)
     if (g_benchLaunch.active) DrawBenchmarkLaunch(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold});
     if (preview) {
         DrawSelectPreview(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold});
-    }
-    else if (session) {
+    } else if (session) {
         const bool inMatch = phase == NetView::Phase::Running || phase == NetView::Phase::PostMatch;
         if (inMatch) DrawPlayerBars(view);
         else if (!sides && liveAlpha <= 0 && !HubOpen()) DrawStrip(view);
@@ -4179,8 +4102,7 @@ void Draw(IDXGISwapChain* swapChain)
                 const uint64_t id = view.matches[wi.watch].id;
                 Log("overlay: watch panel: game %d", wi.watch + 1);
                 Act([id] { NetWatchMatch(id); });
-            }
-            else if (wi.watch == -1) {
+            } else if (wi.watch == -1) {
                 Log("overlay: watch panel: the current game");
                 Act([] { NetWatchMatch(0); });
             }
@@ -4222,8 +4144,7 @@ void Draw(IDXGISwapChain* swapChain)
 // Draws the overlay into the back buffer, then presents with `next`.
 void TakeScreenshot(IDXGISwapChain* swapChain); // below: the shot command
 
-HRESULT DrawAndPresent(PresentFn next, IDXGISwapChain* self, UINT syncInterval, UINT flags)
-{
+HRESULT DrawAndPresent(PresentFn next, IDXGISwapChain* self, UINT syncInterval, UINT flags) {
     if (Stopping() || (flags & DXGI_PRESENT_TEST)) return next(self, syncInterval, flags);
     SaveQueuedTextures();
     CreatePakTextures();
@@ -4267,7 +4188,8 @@ HRESULT DrawAndPresent(PresentFn next, IDXGISwapChain* self, UINT syncInterval, 
     g_gameSyncInterval = syncInterval;
     g_gamePresentFlags = flags;
     // The frame-drop log (hitch.h), for the frame that ends here.
-    if (frameMicros) hitch::FramePresented(frameMicros, g_inMatch ? "match" : HubOpen() ? "menus" : nullptr);
+    if (frameMicros) hitch::FramePresented(frameMicros, g_inMatch ? "match" : HubOpen() ? "menus"
+                                                                                        : nullptr);
     return result;
 }
 
@@ -4277,8 +4199,7 @@ std::mutex g_shotMutex;
 std::string g_shotPath; // asked for, taken on the next Present
 int g_shotScale = 1;
 
-std::wstring Widen(const std::string& s)
-{
+std::wstring Widen(const std::string& s) {
     if (s.empty()) return {};
     const int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
     std::wstring w(n, L'\0');
@@ -4287,8 +4208,7 @@ std::wstring Widen(const std::string& s)
 }
 
 // The back buffer as it is about to be presented, as RGB (1/scale size).
-bool ReadBack(IDXGISwapChain* swapChain, int scale, int* outW, int* outH, std::vector<uint8_t>* outRgb)
-{
+bool ReadBack(IDXGISwapChain* swapChain, int scale, int* outW, int* outH, std::vector<uint8_t>* outRgb) {
     ID3D11Texture2D* back = nullptr;
     if (FAILED(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&back))) || !back) {
         Log("overlay: screenshot: no back buffer");
@@ -4382,8 +4302,7 @@ bool ReadBack(IDXGISwapChain* swapChain, int scale, int* outW, int* outH, std::v
 }
 
 // Writes a PNG aside and renames it into place (a reader never sees half a file).
-bool WritePng(const std::string& path, int w, int h, const std::vector<uint8_t>& rgb)
-{
+bool WritePng(const std::string& path, int w, int h, const std::vector<uint8_t>& rgb) {
     const std::vector<uint8_t> png = EncodePng(w, h, rgb.data());
     std::wstring full = Widen(path);
     const bool absolute = full.size() > 1 && (full[1] == L':' || full[0] == L'\\' || full[0] == L'/');
@@ -4420,12 +4339,12 @@ struct BurstFrame {
     int w, h;
     std::vector<uint8_t> rgb;
 };
+
 std::string g_burstDir;
 int g_burstLeft = 0, g_burstScale = 2, g_burstIndex = 0;
 std::vector<BurstFrame> g_burstFrames;
 
-void TakeBurstFrame(IDXGISwapChain* swapChain)
-{
+void TakeBurstFrame(IDXGISwapChain* swapChain) {
     std::string dir;
     {
         std::lock_guard lock(g_shotMutex);
@@ -4459,8 +4378,7 @@ void TakeBurstFrame(IDXGISwapChain* swapChain)
     }).detach();
 }
 
-void TakeScreenshot(IDXGISwapChain* swapChain)
-{
+void TakeScreenshot(IDXGISwapChain* swapChain) {
     TakeBurstFrame(swapChain);
     std::string path;
     int scale = 1;
@@ -4476,9 +4394,7 @@ void TakeScreenshot(IDXGISwapChain* swapChain)
     if (WritePng(path, w, h, rgb)) Log("overlay: screenshot %s (%dx%d)", path.c_str(), w, h);
 }
 
-
-bool WriteTableSlot(void** slot, void* value)
-{
+bool WriteTableSlot(void** slot, void* value) {
     DWORD old = 0;
     if (!VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &old)) return false;
     InterlockedExchangePointer(slot, value);
@@ -4486,8 +4402,7 @@ bool WriteTableSlot(void** slot, void* value)
     return true;
 }
 
-HRESULT STDMETHODCALLTYPE TablePresentDetour(IDXGISwapChain* self, UINT syncInterval, UINT flags)
-{
+HRESULT STDMETHODCALLTYPE TablePresentDetour(IDXGISwapChain* self, UINT syncInterval, UINT flags) {
     HookGuard guard;
     t_inTablePresent = true;
     const HRESULT result = DrawAndPresent(g_tablePresentNext, self, syncInterval, flags);
@@ -4497,8 +4412,7 @@ HRESULT STDMETHODCALLTYPE TablePresentDetour(IDXGISwapChain* self, UINT syncInte
 
 // The first Present of the game's swap chain: from then on its table entry
 // draws the overlay (the code hook only passes frames on).
-void HookPresentTable(IDXGISwapChain* self)
-{
+void HookPresentTable(IDXGISwapChain* self) {
     void** slot = *reinterpret_cast<void***>(self) + kPresentSlot;
     if (g_tablePresentSlot || *slot == reinterpret_cast<void*>(&TablePresentDetour)) return;
     g_tablePresentNext = static_cast<PresentFn>(*slot);
@@ -4510,8 +4424,7 @@ void HookPresentTable(IDXGISwapChain* self)
     Log("overlay: drawn from the swap chain's table, ahead of capture tools");
 }
 
-HRESULT STDMETHODCALLTYPE PresentDetour(IDXGISwapChain* self, UINT syncInterval, UINT flags)
-{
+HRESULT STDMETHODCALLTYPE PresentDetour(IDXGISwapChain* self, UINT syncInterval, UINT flags) {
     HookGuard guard;
     if (t_inTablePresent) return g_origPresent(self, syncInterval, flags);
     if (!Stopping()) HookPresentTable(self);
@@ -4519,8 +4432,7 @@ HRESULT STDMETHODCALLTYPE PresentDetour(IDXGISwapChain* self, UINT syncInterval,
 }
 
 HRESULT STDMETHODCALLTYPE ResizeBuffersDetour(IDXGISwapChain* self, UINT count, UINT width, UINT height, DXGI_FORMAT format,
-                                              UINT flags)
-{
+                                              UINT flags) {
     HookGuard guard;
     // The back buffer goes away: our view of it must be gone first.
     if (self == g_swapChain) ReleaseTarget();
@@ -4529,8 +4441,7 @@ HRESULT STDMETHODCALLTYPE ResizeBuffersDetour(IDXGISwapChain* self, UINT count, 
 
 // Present and ResizeBuffers addresses, from a throwaway device and swap chain
 // on a hidden window.
-bool FindSwapChainFunctions()
-{
+bool FindSwapChainFunctions() {
     WNDCLASSEXW wc{sizeof(wc)};
     wc.lpfnWndProc = DefWindowProcW;
     wc.hInstance = GetModuleHandleW(nullptr);
@@ -4567,8 +4478,7 @@ bool FindSwapChainFunctions()
 } // namespace
 
 // The game's main window, once it is visible.
-HWND GameWindow()
-{
+HWND GameWindow() {
     HWND found = nullptr;
     EnumWindows(
         [](HWND w, LPARAM param) -> BOOL {
@@ -4584,8 +4494,7 @@ HWND GameWindow()
     return found;
 }
 
-void InstallPresentHooks()
-{
+void InstallPresentHooks() {
     if (!FindSwapChainFunctions()) {
         Log("overlay: no D3D11 swap chain functions");
         return;
@@ -4598,8 +4507,7 @@ void InstallPresentHooks()
     Log("overlay %s (F1 or Back + Start)", ok ? "installed" : "NOT installed");
 }
 
-bool InstallOverlay(const std::wstring& panelPath)
-{
+bool InstallOverlay(const std::wstring& panelPath) {
     g_panelPath = panelPath;
     // Finding Present takes a D3D11 device and swap chain of our own. Made
     // while the game was creating its device (the mod starts alongside it),
@@ -4623,20 +4531,17 @@ bool InstallOverlay(const std::wstring& panelPath)
     return true;
 }
 
-void UnhookPresentTable()
-{
+void UnhookPresentTable() {
     if (!g_tablePresentSlot) return;
     if (*g_tablePresentSlot == reinterpret_cast<void*>(&TablePresentDetour)) {
         WriteTableSlot(g_tablePresentSlot, reinterpret_cast<void*>(g_tablePresentNext));
-    }
-    else {
+    } else {
         Log("overlay: the swap chain's table entry was replaced after ours; left as it is");
     }
     g_tablePresentSlot = nullptr;
 }
 
-void ShutdownOverlay()
-{
+void ShutdownOverlay() {
     g_visible = false;
     ReleaseImGui();
 }
@@ -4645,8 +4550,7 @@ void RequestSelectPreview(int phase, bool spectator) { g_selectRequest = phase +
 
 void ReloadOverlayChoices() { g_reloadChoices = true; }
 
-void RequestShotBurst(const std::string& dir, int frames, int scale)
-{
+void RequestShotBurst(const std::string& dir, int frames, int scale) {
     std::lock_guard lock(g_shotMutex);
     g_burstDir = dir;
     g_burstScale = std::clamp(scale, 1, 4);
@@ -4654,34 +4558,29 @@ void RequestShotBurst(const std::string& dir, int frames, int scale)
     g_burstFrames.clear();
 }
 
-void RequestScreenshot(const std::string& path, int scale)
-{
+void RequestScreenshot(const std::string& path, int scale) {
     std::lock_guard lock(g_shotMutex);
     g_shotPath = path;
     g_shotScale = std::clamp(scale, 1, 4);
 }
 
-void ShowLastBenchmarkResult()
-{
+void ShowLastBenchmarkResult() {
     OpenHub();
     OpenSettingsScreen("benchlast");
     OpenBenchmarkModal(true);
 }
 
-void SetOverlayVisible(bool visible)
-{
+void SetOverlayVisible(bool visible) {
     if (g_visible.exchange(visible) != visible) Log("overlay %s", visible ? "shown" : "hidden");
 }
 
-void ToggleOverlay()
-{
+void ToggleOverlay() {
     // Not over a session's select screen: B there leaves (its own dialog).
     if (!g_visible && g_selectLive) return;
     SetOverlayVisible(!g_visible);
 }
 
-void SetOverlayTexture(void* srv, uint32_t width, uint32_t height, const std::string& label)
-{
+void SetOverlayTexture(void* srv, uint32_t width, uint32_t height, const std::string& label) {
     std::lock_guard lock(g_textureMutex);
     if (g_texture) g_texture->Release();
     g_texture = static_cast<ID3D11ShaderResourceView*>(srv);
@@ -4690,24 +4589,21 @@ void SetOverlayTexture(void* srv, uint32_t width, uint32_t height, const std::st
     g_textureLabel = label;
 }
 
-bool OverlayVisible()
-{
+bool OverlayVisible() {
     return g_visible;
 }
 
 namespace {
 
 // The mod's screens take the input now.
-bool ScreensTakeInput()
-{
+bool ScreensTakeInput() {
     return g_visible || g_voting || g_watchHold || g_selectLive || SelectPreviewOpen() || HubOpen();
 }
 
 // Any pad button, key or mouse button down: the pads as the XInput hook last
 // saw them, the pads the game reads past XInput (DirectInput, Steam Input),
 // and the keyboard and mouse.
-bool AnyInputDown()
-{
+bool AnyInputDown() {
     for (const PadState& pad : g_pads) {
         if (pad.buttons) return true;
     }
@@ -4731,8 +4627,7 @@ std::atomic<ULONGLONG> g_releaseHoldFrom{0};
 
 } // namespace
 
-bool OverlayTakesInput()
-{
+bool OverlayTakesInput() {
     if (ScreensTakeInput()) {
         g_releaseHold = true;
         g_releaseHoldFrom = GetTickCount64();
@@ -4744,16 +4639,14 @@ bool OverlayTakesInput()
     return false;
 }
 
-void SetVsync(bool on)
-{
+void SetVsync(bool on) {
     g_noVsync = !on;
     Log("overlay: vsync %s", on ? "on (the game's own)" : "off (present with sync interval 0)");
 }
 
 bool VsyncOn() { return !g_noVsync; }
 
-std::string VsyncInfo()
-{
+std::string VsyncInfo() {
     // The time in Present since the last call, per frame.
     static int64_t lastMicros = 0, lastFrames = 0;
     const int64_t micros = g_presentMicros, frames = g_presentFrames;
@@ -4772,29 +4665,24 @@ std::string VsyncInfo()
     return line;
 }
 
-void PreviewOverlay(const std::string& words)
-{
+void PreviewOverlay(const std::string& words) {
     std::lock_guard lock(g_previewMutex);
     g_previewWords += " " + words;
 }
 
-void SetOverlayBuild(const std::string& version)
-{
+void SetOverlayBuild(const std::string& version) {
     g_build = version;
 }
 
-void SetMigratedNotice()
-{
+void SetMigratedNotice() {
     g_migrated = true;
 }
 
-float RenderFps()
-{
+float RenderFps() {
     return g_fps;
 }
 
-bool OverlayWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
-{
+bool OverlayWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_KEYDOWN && wp == VK_F1 && !(lp & (1 << 30))) { // not on key repeat: Back + Start
         g_chordKey = true;
         return true;
@@ -4816,8 +4704,7 @@ bool OverlayWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
     return OverlayTakesInput() && (keyboard || mouse);
 }
 
-void OverlayPad(unsigned user, const XINPUT_GAMEPAD& pad)
-{
+void OverlayPad(unsigned user, const XINPUT_GAMEPAD& pad) {
     if (user >= XUSER_MAX_COUNT) return;
     g_xinputAt = GetTickCount64();
     g_pads[user].buttons = pad.wButtons;

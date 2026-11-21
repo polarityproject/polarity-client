@@ -7,28 +7,24 @@
 namespace sfv::battlelog {
 namespace {
 
-std::string Lower(std::string s)
-{
+std::string Lower(std::string s) {
     for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return s;
 }
 
-bool Newer(const Entry& a, const Entry& b)
-{
+bool Newer(const Entry& a, const Entry& b) {
     if (a.header.createdUnix != b.header.createdUnix) return a.header.createdUnix > b.header.createdUnix;
     return a.path > b.path;
 }
 
 } // namespace
 
-std::string NameOf(const Entry& e, int side)
-{
+std::string NameOf(const Entry& e, int side) {
     const std::string& n = e.header.summary.names[side & 1];
     return n.empty() ? (side == 0 ? "P1" : "P2") : n;
 }
 
-int MySide(const Entry& e, const std::string& myName)
-{
+int MySide(const Entry& e, const std::string& myName) {
     if (!myName.empty()) {
         const bool p1 = Lower(e.header.summary.names[0]) == Lower(myName);
         const bool p2 = Lower(e.header.summary.names[1]) == Lower(myName);
@@ -37,8 +33,7 @@ int MySide(const Entry& e, const std::string& myName)
     return e.header.localPlayer == 1 ? 1 : 0;
 }
 
-std::vector<Entry> Merge(std::vector<Entry> entries, const std::string& myName)
-{
+std::vector<Entry> Merge(std::vector<Entry> entries, const std::string& myName) {
     std::sort(entries.begin(), entries.end(), Newer);
     std::vector<Entry> out;
     std::map<uint64_t, size_t> byId;
@@ -59,8 +54,7 @@ std::vector<Entry> Merge(std::vector<Entry> entries, const std::string& myName)
     return out;
 }
 
-bool Passes(const Entry& e, const Filter& f, const std::string& myName)
-{
+bool Passes(const Entry& e, const Filter& f, const std::string& myName) {
     const int me = MySide(e, myName);
     if (f.mine && e.header.setup.players[me].character != f.mine) return false;
     if (f.theirs && e.header.setup.players[1 - me].character != f.theirs) return false;
@@ -68,8 +62,7 @@ bool Passes(const Entry& e, const Filter& f, const std::string& myName)
     return true;
 }
 
-std::vector<Set> GroupSets(const std::vector<const Entry*>& entries)
-{
+std::vector<Set> GroupSets(const std::vector<const Entry*>& entries) {
     std::vector<Set> sets;
     std::map<uint64_t, size_t> byKey;
     for (const Entry* e : entries) {
@@ -98,8 +91,7 @@ std::vector<Set> GroupSets(const std::vector<const Entry*>& entries)
         s.rule = first.setRule;
         if (last.present && last.setGame) {
             for (int i = 0; i < kNumPlayers; i++) s.wins[i] = last.setWins[i];
-        }
-        else {
+        } else {
             // No set score kept: the matches won in these games.
             for (int i = 0; i < kNumPlayers; i++) s.wins[i] = 0;
             for (const Entry* g : s.games) {
@@ -110,8 +102,7 @@ std::vector<Set> GroupSets(const std::vector<const Entry*>& entries)
     return sets;
 }
 
-std::vector<std::pair<uint32_t, int>> Characters(const std::vector<Entry>& entries, const std::string& myName, bool theirs)
-{
+std::vector<std::pair<uint32_t, int>> Characters(const std::vector<Entry>& entries, const std::string& myName, bool theirs) {
     std::map<uint32_t, int> counts;
     for (const Entry& e : entries) {
         const int side = MySide(e, myName) ^ (theirs ? 1 : 0);
@@ -122,8 +113,7 @@ std::vector<std::pair<uint32_t, int>> Characters(const std::vector<Entry>& entri
     return out;
 }
 
-std::vector<std::pair<std::string, int>> Opponents(const std::vector<Entry>& entries, const std::string& myName)
-{
+std::vector<std::pair<std::string, int>> Opponents(const std::vector<Entry>& entries, const std::string& myName) {
     std::map<std::string, std::pair<std::string, int>> counts; // by lower case: shown name, count
     for (const Entry& e : entries) {
         const std::string name = NameOf(e, 1 - MySide(e, myName));

@@ -26,31 +26,28 @@ namespace {
 
 struct Range {
     uintptr_t lo = 0, hi = 0;
+
     bool Has(uintptr_t p) const { return p >= lo && p < hi; }
 };
 
-Range ModuleRange(HMODULE m)
-{
+Range ModuleRange(HMODULE m) {
     if (!m) return {};
     const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(m);
     const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(reinterpret_cast<const uint8_t*>(m) + dos->e_lfanew);
     return {reinterpret_cast<uintptr_t>(m), reinterpret_cast<uintptr_t>(m) + nt->OptionalHeader.SizeOfImage};
 }
 
-uintptr_t VtableOf(const void* p)
-{
+uintptr_t VtableOf(const void* p) {
     if (!p || !IsReadable(p, 8)) return 0;
     return *static_cast<const uintptr_t*>(p);
 }
 
-const void* PointerAt(const void* base, size_t offset)
-{
+const void* PointerAt(const void* base, size_t offset) {
     const auto* at = static_cast<const uint8_t*>(base) + offset;
     return IsReadable(at, 8) ? *reinterpret_cast<const void* const*>(at) : nullptr;
 }
 
-std::string Lower(std::string s)
-{
+std::string Lower(std::string s) {
     for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return s;
 }
@@ -60,8 +57,7 @@ std::atomic<uintptr_t> g_srvVtable{0};
 
 } // namespace
 
-void NoteShaderResourceViewKind(void* d3dDevice)
-{
+void NoteShaderResourceViewKind(void* d3dDevice) {
     auto* device = static_cast<ID3D11Device*>(d3dDevice);
     if (!device || g_srvVtable) return;
     D3D11_TEXTURE2D_DESC desc{};
@@ -78,21 +74,18 @@ void NoteShaderResourceViewKind(void* d3dDevice)
         g_srvVtable = VtableOf(srv);
         Log("textures: shader resource views have vtable %p%s", reinterpret_cast<void*>(g_srvVtable.load()),
             proxy::RunningOnWine() ? " (Wine: only those are taken)" : "");
-    }
-    else {
+    } else {
         Log("textures: cannot make a shader resource view to recognize the game's");
     }
     if (srv) srv->Release();
     if (texture) texture->Release();
 }
 
-int64_t TextureClockMs()
-{
+int64_t TextureClockMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-void LogTextures(const std::string& filter, int limit)
-{
+void LogTextures(const std::string& filter, int limit) {
     if (!ue4::EnsureObjects(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)))) return;
     const std::string needle = Lower(filter);
     int shown = 0, total = 0;
@@ -108,14 +101,12 @@ void LogTextures(const std::string& filter, int limit)
     Log("textures: %d of %d loaded Texture2D objects match '%s'", std::min(shown, limit), total, filter.c_str());
 }
 
-const void* FindOrLoadTexture(const std::string& nameOrPath)
-{
+const void* FindOrLoadTexture(const std::string& nameOrPath) {
     if (nameOrPath.find('/') != std::string::npos) return LoadAsset("Texture2D", nameOrPath);
     return ue4::FindObject(nameOrPath, "Texture2D");
 }
 
-TextureView ViewOfTexture(const void* texture, bool quiet)
-{
+TextureView ViewOfTexture(const void* texture, bool quiet) {
     TextureView out;
     if (!texture) return out;
     // The texture's render resource and its RHI texture are native objects
@@ -180,47 +171,69 @@ struct PendingSave {
     ID3D11ShaderResourceView* srv;
     std::string name;
 };
+
 std::mutex g_saveMutex;
 std::vector<PendingSave> g_saves;
 
 // Bytes per 4x4 block (BC formats) or per pixel; 0: not written.
-uint32_t BlockBytes(DXGI_FORMAT f, bool* compressed)
-{
+uint32_t BlockBytes(DXGI_FORMAT f, bool* compressed) {
     *compressed = true;
     switch (f) {
-    case DXGI_FORMAT_BC1_TYPELESS: case DXGI_FORMAT_BC1_UNORM: case DXGI_FORMAT_BC1_UNORM_SRGB:
-    case DXGI_FORMAT_BC4_TYPELESS: case DXGI_FORMAT_BC4_UNORM: case DXGI_FORMAT_BC4_SNORM:
-        return 8;
-    case DXGI_FORMAT_BC2_TYPELESS: case DXGI_FORMAT_BC2_UNORM: case DXGI_FORMAT_BC2_UNORM_SRGB:
-    case DXGI_FORMAT_BC3_TYPELESS: case DXGI_FORMAT_BC3_UNORM: case DXGI_FORMAT_BC3_UNORM_SRGB:
-    case DXGI_FORMAT_BC5_TYPELESS: case DXGI_FORMAT_BC5_UNORM: case DXGI_FORMAT_BC5_SNORM:
-    case DXGI_FORMAT_BC7_TYPELESS: case DXGI_FORMAT_BC7_UNORM: case DXGI_FORMAT_BC7_UNORM_SRGB:
-        return 16;
-    case DXGI_FORMAT_R8G8B8A8_TYPELESS: case DXGI_FORMAT_R8G8B8A8_UNORM: case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
-    case DXGI_FORMAT_B8G8R8A8_TYPELESS: case DXGI_FORMAT_B8G8R8A8_UNORM: case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
-    case DXGI_FORMAT_B8G8R8X8_TYPELESS: case DXGI_FORMAT_B8G8R8X8_UNORM: case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB:
-        *compressed = false;
-        return 4;
-    default:
-        return 0;
+        case DXGI_FORMAT_BC1_TYPELESS:
+        case DXGI_FORMAT_BC1_UNORM:
+        case DXGI_FORMAT_BC1_UNORM_SRGB:
+        case DXGI_FORMAT_BC4_TYPELESS:
+        case DXGI_FORMAT_BC4_UNORM:
+        case DXGI_FORMAT_BC4_SNORM:
+            return 8;
+        case DXGI_FORMAT_BC2_TYPELESS:
+        case DXGI_FORMAT_BC2_UNORM:
+        case DXGI_FORMAT_BC2_UNORM_SRGB:
+        case DXGI_FORMAT_BC3_TYPELESS:
+        case DXGI_FORMAT_BC3_UNORM:
+        case DXGI_FORMAT_BC3_UNORM_SRGB:
+        case DXGI_FORMAT_BC5_TYPELESS:
+        case DXGI_FORMAT_BC5_UNORM:
+        case DXGI_FORMAT_BC5_SNORM:
+        case DXGI_FORMAT_BC7_TYPELESS:
+        case DXGI_FORMAT_BC7_UNORM:
+        case DXGI_FORMAT_BC7_UNORM_SRGB:
+            return 16;
+        case DXGI_FORMAT_R8G8B8A8_TYPELESS:
+        case DXGI_FORMAT_R8G8B8A8_UNORM:
+        case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+        case DXGI_FORMAT_B8G8R8A8_TYPELESS:
+        case DXGI_FORMAT_B8G8R8A8_UNORM:
+        case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+        case DXGI_FORMAT_B8G8R8X8_TYPELESS:
+        case DXGI_FORMAT_B8G8R8X8_UNORM:
+        case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB:
+            *compressed = false;
+            return 4;
+        default:
+            return 0;
     }
 }
 
 // The legacy four-character code for BC1-BC3 (readers know those best), else
 // 0 and a DX10 header.
-uint32_t FourCc(DXGI_FORMAT f)
-{
+uint32_t FourCc(DXGI_FORMAT f) {
     auto cc = [](const char* s) { return uint32_t(s[0]) | uint32_t(s[1]) << 8 | uint32_t(s[2]) << 16 | uint32_t(s[3]) << 24; };
     switch (f) {
-    case DXGI_FORMAT_BC1_TYPELESS: case DXGI_FORMAT_BC1_UNORM: case DXGI_FORMAT_BC1_UNORM_SRGB: return cc("DXT1");
-    case DXGI_FORMAT_BC2_TYPELESS: case DXGI_FORMAT_BC2_UNORM: case DXGI_FORMAT_BC2_UNORM_SRGB: return cc("DXT3");
-    case DXGI_FORMAT_BC3_TYPELESS: case DXGI_FORMAT_BC3_UNORM: case DXGI_FORMAT_BC3_UNORM_SRGB: return cc("DXT5");
-    default: return 0;
+        case DXGI_FORMAT_BC1_TYPELESS:
+        case DXGI_FORMAT_BC1_UNORM:
+        case DXGI_FORMAT_BC1_UNORM_SRGB: return cc("DXT1");
+        case DXGI_FORMAT_BC2_TYPELESS:
+        case DXGI_FORMAT_BC2_UNORM:
+        case DXGI_FORMAT_BC2_UNORM_SRGB: return cc("DXT3");
+        case DXGI_FORMAT_BC3_TYPELESS:
+        case DXGI_FORMAT_BC3_UNORM:
+        case DXGI_FORMAT_BC3_UNORM_SRGB: return cc("DXT5");
+        default: return 0;
     }
 }
 
-void SaveOne(ID3D11ShaderResourceView* srv, const std::string& name)
-{
+void SaveOne(ID3D11ShaderResourceView* srv, const std::string& name) {
     ID3D11Resource* resource = nullptr;
     srv->GetResource(&resource);
     ID3D11Texture2D* texture = nullptr;
@@ -249,16 +262,13 @@ void SaveOne(ID3D11ShaderResourceView* srv, const std::string& name)
     D3D11_MAPPED_SUBRESOURCE mapped{};
     if (!unit) {
         Log("savetex %s: format %d not written", name.c_str(), int(desc.Format));
-    }
-    else if (FAILED(device->CreateTexture2D(&copyDesc, nullptr, &staging))) {
+    } else if (FAILED(device->CreateTexture2D(&copyDesc, nullptr, &staging))) {
         Log("savetex %s: no staging texture", name.c_str());
-    }
-    else {
+    } else {
         context->CopySubresourceRegion(staging, 0, 0, 0, 0, texture, 0, nullptr);
         if (FAILED(context->Map(staging, 0, D3D11_MAP_READ, 0, &mapped))) {
             Log("savetex %s: cannot map the copy", name.c_str());
-        }
-        else {
+        } else {
             const uint32_t rows = compressed ? (desc.Height + 3) / 4 : desc.Height;
             const uint32_t rowBytes = compressed ? (desc.Width + 3) / 4 * unit : desc.Width * unit;
             // DDS: magic, 124-byte header, (DX10 header), top mip.
@@ -282,9 +292,8 @@ void SaveOne(ID3D11ShaderResourceView* srv, const std::string& name)
                 h[23] = 0x0000FF00;
                 h[24] = bgr ? 0x000000FF : 0x00FF0000;
                 h[25] = 0xFF000000;
-            }
-            else {
-                h[19] = 0x4; // a four-character code
+            } else {
+                h[19] = 0x4;                          // a four-character code
                 h[20] = fourCc ? fourCc : 0x30315844; // "DX10"
             }
             h[26] = 0x1000; // caps: texture
@@ -298,8 +307,7 @@ void SaveOne(ID3D11ShaderResourceView* srv, const std::string& name)
                 for (uint32_t y = 0; y < rows; y++) std::fwrite(static_cast<uint8_t*>(mapped.pData) + size_t(y) * mapped.RowPitch, 1, rowBytes, f);
                 std::fclose(f);
                 Log("savetex %s: %ux%u format %d -> %s", name.c_str(), desc.Width, desc.Height, int(desc.Format), path.c_str());
-            }
-            else {
+            } else {
                 Log("savetex %s: cannot write %s", name.c_str(), path.c_str());
             }
             context->Unmap(staging, 0);
@@ -313,14 +321,12 @@ void SaveOne(ID3D11ShaderResourceView* srv, const std::string& name)
 
 } // namespace
 
-void SaveTextureLater(void* srv, const std::string& name)
-{
+void SaveTextureLater(void* srv, const std::string& name) {
     std::lock_guard lock(g_saveMutex);
     g_saves.push_back({static_cast<ID3D11ShaderResourceView*>(srv), name});
 }
 
-void SaveQueuedTextures()
-{
+void SaveQueuedTextures() {
     std::vector<PendingSave> saves;
     {
         std::lock_guard lock(g_saveMutex);

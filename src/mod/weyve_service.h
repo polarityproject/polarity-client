@@ -28,11 +28,14 @@ struct WeyveMember {
 
 // The room as last polled: a copy, consistent in itself.
 struct WeyveRoomView {
-    enum class Server { Connecting, Connected, Failed, Lost };
+    enum class Server { Connecting,
+                        Connected,
+                        Failed,
+                        Lost };
     Server server = Server::Connecting;
     std::string serverText; // "host:port"
     uint32_t self = 0;
-    std::string room;       // the code; empty when not in a room
+    std::string room; // the code; empty when not in a room
     uint32_t host = 0;
     std::vector<WeyveMember> members; // ourselves included
     std::map<std::string, std::string> data;
@@ -49,11 +52,24 @@ struct WeyveListedRoom {
 
 // Room happenings, in order, for the session driver.
 struct WeyveEvent {
-    enum class Type { RoomJoined, RoomError, PeerJoined, PeerLeft, Removed, ServerLost, Chat, HostChanged, RoomList };
+    enum class Type { RoomJoined,
+                      RoomError,
+                      PeerJoined,
+                      PeerLeft,
+                      Removed,
+                      ServerLost,
+                      Chat,
+                      HostChanged,
+                      RoomList };
     Type type = Type::RoomJoined;
     uint32_t peer = 0; // also: who chatted (Chat), the new host (HostChanged)
     std::string text;  // the room code (RoomJoined), what failed (RoomError, ServerLost), the message (Chat)
-    enum class Error { None, NoSuchRoom, Closed, Banned, RateLimited, Other };
+    enum class Error { None,
+                       NoSuchRoom,
+                       Closed,
+                       Banned,
+                       RateLimited,
+                       Other };
     Error error = Error::None; // RoomError
 };
 
@@ -87,7 +103,10 @@ public:
     bool PeerLinked(uint32_t id); // a direct P2P link is up
     // How a member's link travels, from its selected ICE candidate pair
     // (third_party/weyvelength.patch): peer to peer, or relayed through TURN.
-    enum class LinkPath { None, Unknown, Direct, Relayed };
+    enum class LinkPath { None,
+                          Unknown,
+                          Direct,
+                          Relayed };
     LinkPath PeerPath(uint32_t id);
     // The first TURN server the rooms server handed out ("turn.cloudflare.com");
     // empty without one.

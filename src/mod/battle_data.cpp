@@ -30,8 +30,7 @@ namespace {
 constexpr size_t kResourceData = 0x28, kResourceSize = 0x30;
 const char* const kMoveDataClasses[] = {"KWBAC", "KWBCM", "KWBCH"};
 
-std::string Join(const std::vector<std::string>& items, const char* sep, size_t max = 8)
-{
+std::string Join(const std::vector<std::string>& items, const char* sep, size_t max = 8) {
     std::string out;
     for (size_t i = 0; i < items.size() && i < max; i++) out += (i ? sep : "") + items[i];
     if (items.size() > max) out += std::string(sep) + "and " + std::to_string(items.size() - max) + " more";
@@ -44,8 +43,7 @@ struct StockEntry {
 };
 
 // data/battle_data.txt: "<key> <size> <hash hex>" per line, '#' comments.
-const std::map<std::string, StockEntry>& StockTable()
-{
+const std::map<std::string, StockEntry>& StockTable() {
     static const std::map<std::string, StockEntry> table = [] {
         std::map<std::string, StockEntry> t;
         std::istringstream in(std::string(reinterpret_cast<const char*>(kStockBattleData), sizeof(kStockBattleData)));
@@ -72,8 +70,7 @@ struct Loaded {
 };
 
 // The battle's move data objects now (the classes' default objects left out).
-std::vector<Loaded> ReadLoaded()
-{
+std::vector<Loaded> ReadLoaded() {
     std::vector<Loaded> out;
     if (!ue4::EnsureObjects(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)))) return out;
     ue4::ForEachObject([&](const void* object) {
@@ -99,13 +96,11 @@ DataCheck g_last;
 
 } // namespace
 
-bool ModScan::BattleData() const
-{
+bool ModScan::BattleData() const {
     return std::any_of(paks.begin(), paks.end(), [](const ModPak& p) { return p.Battle() || !p.readable; });
 }
 
-std::string ModScan::Text() const
-{
+std::string ModScan::Text() const {
     if (paks.empty()) return "no mod paks";
     std::vector<std::string> parts;
     for (const ModPak& p : paks) {
@@ -123,8 +118,7 @@ std::string ModScan::Text() const
     return std::to_string(paks.size()) + " mod pak" + (paks.size() == 1 ? "" : "s") + ": " + Join(parts, " | ", 12);
 }
 
-std::string ModScan::Short() const
-{
+std::string ModScan::Short() const {
     if (paks.empty()) return "none";
     std::set<std::string> characters;
     int battle = 0;
@@ -140,8 +134,7 @@ std::string ModScan::Short() const
     return s;
 }
 
-const ModScan& ScanModPaks()
-{
+const ModScan& ScanModPaks() {
     static const ModScan scan = [] {
         ModScan s;
         for (const std::wstring& full : OtherPaks()) {
@@ -169,8 +162,7 @@ const ModScan& ScanModPaks()
     return scan;
 }
 
-std::string DataCheck::Text() const
-{
+std::string DataCheck::Text() const {
     if (!done) return "not checked";
     if (files == 0) return "no move data loaded";
     char sumText[24];
@@ -183,15 +175,13 @@ std::string DataCheck::Text() const
     return s;
 }
 
-std::string DataCheck::Characters() const
-{
+std::string DataCheck::Characters() const {
     std::set<std::string> c;
     for (const std::string& k : changed) c.insert(k.substr(0, k.find('/')));
     return Join(std::vector<std::string>(c.begin(), c.end()), ", ", 20);
 }
 
-DataCheck CheckLoadedBattleData()
-{
+DataCheck CheckLoadedBattleData() {
     DataCheck c;
     const auto& table = StockTable();
     c.table = !table.empty();
@@ -210,8 +200,7 @@ DataCheck CheckLoadedBattleData()
     return c;
 }
 
-void CheckBattleDataSoon(const char* why)
-{
+void CheckBattleDataSoon(const char* why) {
     const std::string reason = why ? why : "";
     std::thread([reason] {
         ThreadGuard running;
@@ -224,14 +213,12 @@ void CheckBattleDataSoon(const char* why)
     }).detach();
 }
 
-DataCheck LastDataCheck()
-{
+DataCheck LastDataCheck() {
     std::lock_guard lock(g_mutex);
     return g_last;
 }
 
-void DumpLoadedBattleData()
-{
+void DumpLoadedBattleData() {
     const std::vector<Loaded> loaded = ReadLoaded();
     const std::wstring dir = DataDir() + L"\\research";
     EnsureDirectory(dir);

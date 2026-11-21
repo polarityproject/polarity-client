@@ -9,8 +9,7 @@ namespace sfv {
 
 namespace {
 
-std::vector<RegionMismatch> Compare(const uint64_t* expected, const uint64_t* actual, size_t count)
-{
+std::vector<RegionMismatch> Compare(const uint64_t* expected, const uint64_t* actual, size_t count) {
     std::vector<RegionMismatch> out;
     for (size_t i = 0; i < count; i++) {
         if (expected[i] != actual[i]) out.push_back({i, expected[i], actual[i]});
@@ -18,8 +17,7 @@ std::vector<RegionMismatch> Compare(const uint64_t* expected, const uint64_t* ac
     return out;
 }
 
-std::vector<uint8_t> Capture(const std::vector<StateRegion>& regions)
-{
+std::vector<uint8_t> Capture(const std::vector<StateRegion>& regions) {
     std::vector<uint8_t> bytes(StateSize(regions));
     SaveRegions(regions, bytes.data());
     return bytes;
@@ -27,20 +25,18 @@ std::vector<uint8_t> Capture(const std::vector<StateRegion>& regions)
 
 } // namespace
 
-const char* ToString(VerifyResult::Status status)
-{
+const char* ToString(VerifyResult::Status status) {
     switch (status) {
-    case VerifyResult::Status::Match: return "match";
-    case VerifyResult::Status::SetupMismatch: return "setup mismatch";
-    case VerifyResult::Status::Diverged: return "diverged";
-    case VerifyResult::Status::StressMismatch: return "rollback stress mismatch";
-    case VerifyResult::Status::Unsupported: return "unsupported";
+        case VerifyResult::Status::Match: return "match";
+        case VerifyResult::Status::SetupMismatch: return "setup mismatch";
+        case VerifyResult::Status::Diverged: return "diverged";
+        case VerifyResult::Status::StressMismatch: return "rollback stress mismatch";
+        case VerifyResult::Status::Unsupported: return "unsupported";
     }
     return "?";
 }
 
-VerifyResult VerifyReplay(IGame& game, const ReplayFile& replay, const VerifyOptions& options)
-{
+VerifyResult VerifyReplay(IGame& game, const ReplayFile& replay, const VerifyOptions& options) {
     VerifyResult result;
     auto unsupported = [&](std::string msg) {
         result.status = VerifyResult::Status::Unsupported;

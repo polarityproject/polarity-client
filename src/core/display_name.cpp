@@ -8,11 +8,13 @@ namespace {
 
 // The next code point of UTF-8 text from `i` (advanced past it); a malformed
 // byte reads as U+FFFD, one byte.
-uint32_t Next(const std::string& s, size_t& i)
-{
+uint32_t Next(const std::string& s, size_t& i) {
     const auto b = [&](size_t k) { return static_cast<unsigned char>(s[k]); };
     const unsigned char c = b(i);
-    int extra = c < 0x80 ? 0 : (c & 0xE0) == 0xC0 ? 1 : (c & 0xF0) == 0xE0 ? 2 : (c & 0xF8) == 0xF0 ? 3 : -1;
+    int extra = c < 0x80 ? 0 : (c & 0xE0) == 0xC0 ? 1
+                           : (c & 0xF0) == 0xE0   ? 2
+                           : (c & 0xF8) == 0xF0   ? 3
+                                                  : -1;
     if (extra < 0 || i + extra >= s.size() + (extra ? 0 : 1)) {
         i++;
         return 0xFFFD;
@@ -29,21 +31,17 @@ uint32_t Next(const std::string& s, size_t& i)
     return cp;
 }
 
-void Append(std::string& out, uint32_t cp)
-{
+void Append(std::string& out, uint32_t cp) {
     if (cp < 0x80) {
         out += static_cast<char>(cp);
-    }
-    else if (cp < 0x800) {
+    } else if (cp < 0x800) {
         out += static_cast<char>(0xC0 | cp >> 6);
         out += static_cast<char>(0x80 | (cp & 0x3F));
-    }
-    else if (cp < 0x10000) {
+    } else if (cp < 0x10000) {
         out += static_cast<char>(0xE0 | cp >> 12);
         out += static_cast<char>(0x80 | (cp >> 6 & 0x3F));
         out += static_cast<char>(0x80 | (cp & 0x3F));
-    }
-    else {
+    } else {
         out += static_cast<char>(0xF0 | cp >> 18);
         out += static_cast<char>(0x80 | (cp >> 12 & 0x3F));
         out += static_cast<char>(0x80 | (cp >> 6 & 0x3F));
@@ -51,8 +49,7 @@ void Append(std::string& out, uint32_t cp)
     }
 }
 
-bool Stripped(uint32_t cp)
-{
+bool Stripped(uint32_t cp) {
     return (cp >= 0x2300 && cp <= 0x23FF) ||   // Miscellaneous Technical (watch, hourglass...)
            (cp >= 0x2600 && cp <= 0x27BF) ||   // Miscellaneous Symbols, Dingbats
            (cp >= 0x2B00 && cp <= 0x2BFF) ||   // Miscellaneous Symbols and Arrows (stars, squares)
@@ -65,8 +62,7 @@ bool Stripped(uint32_t cp)
 // A mathematical alphanumeric (U+1D400..U+1D7FF) as a plain letter or digit,
 // or 0. The letters run in 52-letter styles (A-Z then a-z) from U+1D400 to
 // U+1D6A3; the digits in 10-digit styles from U+1D7CE.
-uint32_t PlainLetter(uint32_t cp)
-{
+uint32_t PlainLetter(uint32_t cp) {
     if (cp >= 0x1D400 && cp <= 0x1D6A3) {
         const uint32_t k = (cp - 0x1D400) % 52;
         return k < 26 ? 'A' + k : 'a' + (k - 26);
@@ -77,8 +73,7 @@ uint32_t PlainLetter(uint32_t cp)
 
 } // namespace
 
-std::string DisplayName(const std::string& name)
-{
+std::string DisplayName(const std::string& name) {
     std::string out;
     bool space = false;
     for (size_t i = 0; i < name.size();) {

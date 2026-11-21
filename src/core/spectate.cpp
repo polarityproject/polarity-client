@@ -10,13 +10,11 @@ namespace sfv {
 
 SpectatorPlayback::SpectatorPlayback(IGame& game, SpectateConfig config) : game_(game), config_(std::move(config)) {}
 
-void SpectatorPlayback::Log(const std::string& msg) const
-{
+void SpectatorPlayback::Log(const std::string& msg) const {
     if (config_.log) config_.log(msg);
 }
 
-bool SpectatorPlayback::Start(std::string* error)
-{
+bool SpectatorPlayback::Start(std::string* error) {
     if (!game_.BeginMatch(config_.setup)) {
         if (error) *error = "the game cannot start the match setup";
         return false;
@@ -41,8 +39,7 @@ bool SpectatorPlayback::Start(std::string* error)
     return true;
 }
 
-void SpectatorPlayback::Add(int first, const std::vector<FrameInputs>& inputs, const std::vector<uint32_t>& checksums)
-{
+void SpectatorPlayback::Add(int first, const std::vector<FrameInputs>& inputs, const std::vector<uint32_t>& checksums) {
     for (size_t i = 0; i < inputs.size(); i++) {
         const int frame = first + static_cast<int>(i);
         if (frame < received_) continue;
@@ -65,8 +62,7 @@ void SpectatorPlayback::Add(int first, const std::vector<FrameInputs>& inputs, c
     }
 }
 
-void SpectatorPlayback::Play()
-{
+void SpectatorPlayback::Play() {
     const int frame = next_;
     game_.Advance(inputs_[frame], false);
     const auto& regions = game_.Regions();
@@ -86,8 +82,7 @@ void SpectatorPlayback::Play()
     // Runs of differing frames (the first few), for the log.
     if (differs && runStart_ < 0) {
         runStart_ = frame;
-    }
-    else if (!differs && runStart_ >= 0) {
+    } else if (!differs && runStart_ >= 0) {
         if (runsLogged_++ < 10) {
             Log("checksums differed in frames " + std::to_string(runStart_) + "-" + std::to_string(frame - 1));
         }
@@ -96,8 +91,7 @@ void SpectatorPlayback::Play()
     next_++;
 }
 
-void SpectatorPlayback::Update()
-{
+void SpectatorPlayback::Update() {
     using std::chrono::duration_cast;
     using std::chrono::milliseconds;
     const int delay = std::max(1, config_.delayFrames);
@@ -141,8 +135,7 @@ void SpectatorPlayback::Update()
         notesLogged_++;
         Log("low on frames at frame " + std::to_string(next_) + " (" + std::to_string(buffered) + " in hand, the last came " +
             std::to_string(msSince(lastArrival_)) + " ms ago): slowing a little");
-    }
-    else if (!holdEvery_ && was && note) {
+    } else if (!holdEvery_ && was && note) {
         notesLogged_++;
         Log("full speed again at frame " + std::to_string(next_) + " (" + std::to_string(buffered) + " in hand, " + std::to_string(held_) +
             " frames held so far)");
@@ -155,8 +148,7 @@ void SpectatorPlayback::Update()
     Play();
 }
 
-ReplayFile SpectatorPlayback::Recording() const
-{
+ReplayFile SpectatorPlayback::Recording() const {
     ReplayFile copy = recording_;
     copy.finalThrough = copy.FrameCount() - 1;
     return copy;

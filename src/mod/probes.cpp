@@ -67,8 +67,7 @@ struct ProbeState {
 
 ProbeState g;
 
-bool Pressed(int vk)
-{
+bool Pressed(int vk) {
     bool foreground = false;
     if (HWND w = RealForegroundWindow()) {
         DWORD pid = 0;
@@ -83,8 +82,7 @@ bool Pressed(int vk)
 
 // Runs at the start of a battle tick, before the game opens this tick's frame:
 // the state is the end state of the previous tick and nothing is mid-update.
-void HandleHotkeys()
-{
+void HandleHotkeys() {
     const auto& regions = g.game->Regions();
     const GameRequest request = TakeGameRequest();
     const GameCommand cmd = request.command;
@@ -93,8 +91,7 @@ void HandleHotkeys()
         if (request.arg0 >= 0 && size_t(request.arg0) < regions.size() &&
             size_t(request.arg1) + request.arg2 <= regions[request.arg0].size) {
             ArmWatch(0, regions[request.arg0].ptr + request.arg1, request.arg2, g.image.base);
-        }
-        else {
+        } else {
             Log("watch: no region %d with offset 0x%x", request.arg0, request.arg1);
         }
     }
@@ -127,8 +124,7 @@ void HandleHotkeys()
             LoadRegions(regions, g.copySave.data());
             g.game->OnStateLoaded(static_cast<int>(g.copySaveTick));
             Log("F9: restored the copy from tick %llu", static_cast<unsigned long long>(g.copySaveTick));
-        }
-        else {
+        } else {
             Log("F9: no copy for this battle's layout");
         }
     }
@@ -143,8 +139,7 @@ void HandleHotkeys()
     }
 }
 
-void LogSummary(uint8_t* unit)
-{
+void LogSummary(uint8_t* unit) {
     const auto inv = g.game->Inspect();
     Log("tick %llu: enabled=%u open=%u flags=%u/%u interval=%d/%d lastId=%d:%d | ring %llu, current %d:%d | "
         "since last: %llu BeginFrame, %llu Store, %llu Restore",
@@ -159,8 +154,7 @@ void LogSummary(uint8_t* unit)
         static_cast<unsigned long long>(g.stores.exchange(0)), static_cast<unsigned long long>(g.restores.exchange(0)));
 }
 
-uint64_t PreDetour(uint8_t* unit, void* a2, void* a3, void* a4)
-{
+uint64_t PreDetour(uint8_t* unit, void* a2, void* a3, void* a4) {
     HookGuard guard;
     // Float results depend on the SSE control word (rounding, flush-to-zero,
     // denormals-are-zero). Overlays and drivers injected into the process can
@@ -216,22 +210,19 @@ uint64_t PreDetour(uint8_t* unit, void* a2, void* a3, void* a4)
     return result;
 }
 
-int BeginFrameDetour(uint8_t* manager, const game::FrameId* id)
-{
+int BeginFrameDetour(uint8_t* manager, const game::FrameId* id) {
     HookGuard guard;
     if (g.beginFrames++ < 3) Log("BeginFrame(%p, %d:%d)", manager, id->lo, id->hi);
     return g.origBeginFrame(manager, id);
 }
 
-void StoreDetour(uint8_t* manager, int group)
-{
+void StoreDetour(uint8_t* manager, int group) {
     HookGuard guard;
     g.stores++;
     g.origStore(manager, group);
 }
 
-int RestoreDetour(uint8_t* manager, const game::FrameId* id, int discardNewer)
-{
+int RestoreDetour(uint8_t* manager, const game::FrameId* id, int discardNewer) {
     HookGuard guard;
     g.restores++;
     const int ok = g.origRestore(manager, id, discardNewer);
@@ -239,8 +230,8 @@ int RestoreDetour(uint8_t* manager, const game::FrameId* id, int discardNewer)
     return ok;
 }
 
-template <typename Fn> bool Hook(const GameImage& image, const game::CodeSite& site, Fn detour, Fn* original)
-{
+template <typename Fn>
+bool Hook(const GameImage& image, const game::CodeSite& site, Fn detour, Fn* original) {
     void* target = image.At<void*>(site.rva);
     const MH_STATUS st = MH_CreateHook(target, reinterpret_cast<void*>(detour), reinterpret_cast<void**>(original));
     if (st != MH_OK) {
@@ -253,8 +244,7 @@ template <typename Fn> bool Hook(const GameImage& image, const game::CodeSite& s
 } // namespace
 
 bool InstallProbes(const GameImage& image, const Config& config, SfvGame* game, StateMap* stateMap,
-                   const std::wstring& stateMapPath)
-{
+                   const std::wstring& stateMapPath) {
     g.config = config;
     g.image = image;
     g.game = game;

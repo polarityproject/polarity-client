@@ -23,11 +23,11 @@ namespace sfv::mod {
 namespace {
 
 constexpr DWORD kTimeoutMs = 15000;
-constexpr uint64_t kMaxFileBytes = 16ull << 20;          // the server's limit
-constexpr int64_t kMaxAgeSeconds = 14 * 24 * 3600;       // older reports stay home
-constexpr int64_t kNoLogAfterSeconds = 30 * 60;          // a report of this run without its match log
-constexpr auto kFirstLook = std::chrono::seconds(30);    // after the mod's start
-constexpr auto kRetryEvery = std::chrono::minutes(5);    // while something is left to send
+constexpr uint64_t kMaxFileBytes = 16ull << 20;       // the server's limit
+constexpr int64_t kMaxAgeSeconds = 14 * 24 * 3600;    // older reports stay home
+constexpr int64_t kNoLogAfterSeconds = 30 * 60;       // a report of this run without its match log
+constexpr auto kFirstLook = std::chrono::seconds(30); // after the mod's start
+constexpr auto kRetryEvery = std::chrono::minutes(5); // while something is left to send
 
 std::mutex g_mutex;
 std::wstring g_dir;
@@ -40,13 +40,12 @@ std::atomic<bool> g_again{false}; // asked while a round ran: one more after it
 std::atomic<bool> g_left{false};  // the last round left something to send
 std::atomic<bool> g_match{false}; // a match runs: no retries meanwhile
 std::atomic<int> g_sent{0};
-int64_t g_started = 0;            // the mod's start, seconds since 1601
+int64_t g_started = 0; // the mod's start, seconds since 1601
 
 std::wstring Wide(const std::string& s) { return std::wstring(s.begin(), s.end()); }
 
 // The name's ASCII (the mod's own report names are; anything else is not one).
-bool Ascii(const std::wstring& w, std::string* out)
-{
+bool Ascii(const std::wstring& w, std::string* out) {
     out->clear();
     for (wchar_t c : w) {
         if (c >= 128) return false;
@@ -55,8 +54,7 @@ bool Ascii(const std::wstring& w, std::string* out)
     return true;
 }
 
-bool ReadFile(const std::wstring& path, std::vector<uint8_t>* out)
-{
+bool ReadFile(const std::wstring& path, std::vector<uint8_t>* out) {
     FILE* f = _wfopen(path.c_str(), L"rb");
     if (!f) return false;
     out->clear();
@@ -68,8 +66,7 @@ bool ReadFile(const std::wstring& path, std::vector<uint8_t>* out)
 }
 
 // POST `body` to `url`; the HTTP status, or 0 when the server was not reached.
-DWORD Post(const std::string& url, const std::vector<uint8_t>& body, std::string* error)
-{
+DWORD Post(const std::string& url, const std::vector<uint8_t>& body, std::string* error) {
     const std::wstring wurl = Wide(url);
     URL_COMPONENTS parts{};
     parts.dwStructSize = sizeof(parts);
@@ -99,12 +96,10 @@ DWORD Post(const std::string& url, const std::vector<uint8_t>& body, std::string
             DWORD size = sizeof(status);
             WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX,
                                 &status, &size, WINHTTP_NO_HEADER_INDEX);
-        }
-        else {
+        } else {
             *error = "cannot reach " + url + " (error " + std::to_string(GetLastError()) + ")";
         }
-    }
-    else {
+    } else {
         *error = "cannot open " + url;
     }
     if (request) WinHttpCloseHandle(request);
@@ -123,8 +118,7 @@ struct Side {
 int64_t Seconds(const FILETIME& t) { return static_cast<int64_t>((uint64_t(t.dwHighDateTime) << 32 | t.dwLowDateTime) / 10000000); }
 
 // "<...>_<match id>_<p1|p2|spec>[_desync].<sfvr|log>" -> "<match id>_<side>".
-bool SideKey(const std::string& name, std::string* key, bool* desync, bool* log)
-{
+bool SideKey(const std::string& name, std::string* key, bool* desync, bool* log) {
     const size_t dot = name.rfind('.');
     if (dot == std::string::npos) return false;
     const std::string ext = name.substr(dot + 1);
@@ -149,14 +143,14 @@ bool SideKey(const std::string& name, std::string* key, bool* desync, bool* log)
 }
 
 // "<date>_<time>_crash_<id>.<log|dmp>" (crash_report.h).
-bool CrashName(const std::string& name)
-{
+bool CrashName(const std::string& name) {
     if (name.size() != 38 || (name.compare(34, 4, ".log") != 0 && name.compare(34, 4, ".dmp") != 0)) return false;
     if (name.compare(19, 7, "_crash_") != 0) return false;
     for (size_t i = 0; i < 19; i++) {
         const char c = name[i];
         const bool digit = c >= '0' && c <= '9';
-        if (i == 4 || i == 7 || i == 13 || i == 16 ? c != '-' : i == 10 ? c != '_' : !digit) return false;
+        if (i == 4 || i == 7 || i == 13 || i == 16 ? c != '-' : i == 10 ? c != '_'
+                                                                        : !digit) return false;
     }
     for (size_t i = 26; i < 34; i++) {
         const char c = name[i];
@@ -167,8 +161,7 @@ bool CrashName(const std::string& name)
 
 // File names, one a line: uploaded.txt (sent) and kept.txt (made while
 // uploads were off: never sent, KeepReportLocal).
-std::set<std::string> NameList(const std::wstring& dir, const wchar_t* list)
-{
+std::set<std::string> NameList(const std::wstring& dir, const wchar_t* list) {
     std::set<std::string> names;
     FILE* f = _wfopen((dir + L"\\" + list).c_str(), L"r");
     if (!f) return names;
@@ -182,8 +175,7 @@ std::set<std::string> NameList(const std::wstring& dir, const wchar_t* list)
     return names;
 }
 
-void AddName(const std::wstring& dir, const wchar_t* list, const std::string& name)
-{
+void AddName(const std::wstring& dir, const wchar_t* list, const std::string& name) {
     FILE* f = _wfopen((dir + L"\\" + list).c_str(), L"a");
     if (!f) return;
     std::fprintf(f, "%s\n", name.c_str());
@@ -191,13 +183,15 @@ void AddName(const std::wstring& dir, const wchar_t* list, const std::string& na
 }
 
 std::set<std::string> SentList(const std::wstring& dir) { return NameList(dir, L"uploaded.txt"); }
+
 void MarkSent(const std::wstring& dir, const std::string& name) { AddName(dir, L"uploaded.txt", name); }
 
-enum class Sent { Now, Refused, Later };
+enum class Sent { Now,
+                  Refused,
+                  Later };
 
 // One file of `dir` to the server's `path` ("reports", "crashes").
-Sent SendFile(const std::string& url, const char* path, const std::wstring& dir, const std::string& name)
-{
+Sent SendFile(const std::string& url, const char* path, const std::wstring& dir, const std::string& name) {
     std::vector<uint8_t> body;
     if (!ReadFile(dir + L"\\" + Wide(name), &body)) return Sent::Refused;
     std::string error;
@@ -218,8 +212,7 @@ Sent SendFile(const std::string& url, const char* path, const std::wstring& dir,
 }
 
 // The crash reports (crash_report.h), each report's .log and .dmp.
-bool SendCrashes(const std::string& url)
-{
+bool SendCrashes(const std::string& url) {
     const std::wstring dir = CrashesDir();
     std::vector<std::string> names;
     WIN32_FIND_DATAW fd;
@@ -250,8 +243,7 @@ bool SendCrashes(const std::string& url)
 
 // Sends every side that is ready; false when the server could not take more
 // (not reached, busy): the rest waits for the next round.
-bool SendRound()
-{
+bool SendRound() {
     std::string url;
     {
         std::lock_guard lock(g_mutex);
@@ -308,8 +300,7 @@ bool SendRound()
     return SendCrashes(url) && !waiting;
 }
 
-void Round()
-{
+void Round() {
     if (g_busy.exchange(true)) {
         g_again = true;
         return;
@@ -326,8 +317,7 @@ void Round()
 
 } // namespace
 
-void InstallReportUploads(const std::wstring& reportDir, const std::string& url, const std::string& modVersion, bool on)
-{
+void InstallReportUploads(const std::wstring& reportDir, const std::string& url, const std::string& modVersion, bool on) {
     g_dir = reportDir;
     g_version = modVersion;
     g_on = on;
@@ -361,8 +351,7 @@ void InstallReportUploads(const std::wstring& reportDir, const std::string& url,
 
 void KeepReportLocal(const std::wstring& dir, const std::string& name) { AddName(dir, L"kept.txt", name); }
 
-void SetReportUploads(bool on)
-{
+void SetReportUploads(bool on) {
     NoteRunUploads(on);
     if (g_on.exchange(on) == on) return;
     Log("reports: desync reports %s", on ? "are sent" : "are not sent");
@@ -377,8 +366,7 @@ bool ReportUploadsOn() { return g_on; }
 
 int ReportsSent() { return g_sent; }
 
-void SetReportUrl(const std::string& url)
-{
+void SetReportUrl(const std::string& url) {
     std::string u = url.empty() ? g_configured : url;
     while (!u.empty() && u.back() == '/') u.pop_back();
     std::lock_guard lock(g_mutex);

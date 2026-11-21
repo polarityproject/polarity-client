@@ -40,7 +40,19 @@
 
 namespace sfv::mod {
 
-enum class GameCommand { None, Save, Load, RingSave, RingLoad, Layout, SyncTest, Watch, WatchAddr, WatchReport, Unwatch, Stress, LearnNoise };
+enum class GameCommand { None,
+                         Save,
+                         Load,
+                         RingSave,
+                         RingLoad,
+                         Layout,
+                         SyncTest,
+                         Watch,
+                         WatchAddr,
+                         WatchReport,
+                         Unwatch,
+                         Stress,
+                         LearnNoise };
 
 struct GameRequest {
     GameCommand command = GameCommand::None;

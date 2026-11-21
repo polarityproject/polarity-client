@@ -42,8 +42,8 @@ enum class UiSound : uint8_t {
 
 // Which of the game's sets the common sounds come from.
 enum class UiSoundSet : uint8_t {
-    Menu,      // the game's sub-menus: Polarity's screens
-    MainMenu,  // the main menu's: the hub
+    Menu,       // the game's sub-menus: Polarity's screens
+    MainMenu,   // the main menu's: the hub
     CharaSelect // character select's: the select screen
 };
 

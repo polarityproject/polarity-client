@@ -26,13 +26,14 @@ void PaceLead(float ahead);
 void PaceFrame();
 
 struct PaceStats {
-    int paced = 0;     // frames the pacer handled
-    int late = 0;      // stretched frames that reached it past their deadline already (no wait)
-    int resets = 0;    // frames after a hitch (over 100 ms since the last), not paced
-    int stretched = 0; // frames with a stretch
+    int paced = 0;         // frames the pacer handled
+    int late = 0;          // stretched frames that reached it past their deadline already (no wait)
+    int resets = 0;        // frames after a hitch (over 100 ms since the last), not paced
+    int stretched = 0;     // frames with a stretch
     double stretchSum = 0; // their stretch, summed (fractions)
     double waitedMs = 0;   // time spent waiting
 };
+
 // The figures since the last call (the netplay pace log).
 PaceStats TakePaceStats();
 

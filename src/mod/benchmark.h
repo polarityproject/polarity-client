@@ -18,14 +18,14 @@ struct BenchmarkResult {
     int frames = 0;       // presented frames measured
     double seconds = 0;
     double averageFps = 0;
-    double lowFps = 0;      // the 1% low
+    double lowFps = 0; // the 1% low
     double slowestMs = 0;
-    int slowFrames = 0;     // frames over 20 ms (a frame late; 16-18 ms is pacing jitter)
-    double rollbackMs = 0;  // per frame: the driver's ticks and rollbacks
-    double gameMs = 0;      // the game's battle frame besides
-    double drawMs = 0;      // the overlay and Present
-    uint64_t when = 0;      // unix time
-    std::string version;    // Polarity's
+    int slowFrames = 0;    // frames over 20 ms (a frame late; 16-18 ms is pacing jitter)
+    double rollbackMs = 0; // per frame: the driver's ticks and rollbacks
+    double gameMs = 0;     // the game's battle frame besides
+    double drawMs = 0;     // the overlay and Present
+    uint64_t when = 0;     // unix time
+    std::string version;   // Polarity's
     // The install's battle data (battle_data.h), when the run ended:
     // mods: "none", or "<paks>[,<n>-battle][:<characters>]" (ModScan::Short);
     // data: "stock", "changed:<characters>", "unknown" (this build has no
@@ -41,8 +41,11 @@ struct BenchmarkResult {
     std::string differ;
     int straightFrames = 0, resimFrames = 0;
     std::string regions, session, dump;
+
     bool DataChanged() const { return data.rfind("changed:", 0) == 0; }
+
     bool ModsChangeBattle() const { return mods.find("-battle") != std::string::npos; }
+
     bool Pass() const { return valid && matched && averageFps >= 59.0; }
 };
 
@@ -62,7 +65,7 @@ struct CapturedRun {
     std::vector<int64_t> micros, net, battle, draw;
     bool matched = true;
     int firstDiffer = -1;
-    bool stopped = false; // the player stopped it
+    bool stopped = false;                    // the player stopped it
     int straightFirst = -1, resimFirst = -1; // the first frame of each kind of difference
     int straightFrames = 0, resimFrames = 0;
     std::string regions; // the first resimulated frame's differing regions, comma-separated

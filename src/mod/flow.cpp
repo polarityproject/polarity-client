@@ -36,18 +36,14 @@ uint8_t* BattleContext(uint8_t* task);
 namespace {
 
 constexpr game::CodeSite kChangeSceneState{
-    "SceneManager::ChangeSceneState", 0x584B70,
-    {0x48, 0x85, 0xD2, 0x0F, 0x84, 0x99, 0x01, 0x00, 0x00, 0x48, 0x89, 0x5C, 0x24, 0x20, 0x48, 0x89}};
+    "SceneManager::ChangeSceneState", 0x584B70, {0x48, 0x85, 0xD2, 0x0F, 0x84, 0x99, 0x01, 0x00, 0x00, 0x48, 0x89, 0x5C, 0x24, 0x20, 0x48, 0x89}};
 constexpr game::CodeSite kLaunchNextGameScene{
-    "LaunchNextGameScene", 0x56C100,
-    {0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x33, 0xC0, 0x48, 0x8B, 0xF9, 0x48}};
+    "LaunchNextGameScene", 0x56C100, {0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x30, 0x33, 0xC0, 0x48, 0x8B, 0xF9, 0x48}};
 
 constexpr game::CodeSite kSetupStep{
-    "BattleSetupLoader::Step", 0x714BD0,
-    {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57}};
+    "BattleSetupLoader::Step", 0x714BD0, {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57}};
 constexpr game::CodeSite kSetupStep0Call{
-    "BattleSetupLoader::Step0Call", 0x69ADA0,
-    {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48}};
+    "BattleSetupLoader::Step0Call", 0x69ADA0, {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48}};
 
 constexpr uint32_t kEngineGlobal = 0x3D878C8; // engine; +0x1E0 KiwiGameSingleton
 constexpr uint32_t kSingleton = 0x1E0;
@@ -58,7 +54,7 @@ constexpr uint32_t kSingleton = 0x1E0;
 constexpr uint32_t kSingletonBattleFlow = 0xB8;
 constexpr uint32_t kBattleFlowLoader = 0x10;
 constexpr uint32_t kLoaderPhase = 0x8;
-constexpr int kLoaderStartDelay = 30; // frames
+constexpr int kLoaderStartDelay = 30;          // frames
 constexpr uint32_t kLoaderStepDone = 0x710E40; // bool (loader, step): step done and its loading finished
 constexpr int kStageWaitFrames = 60 * 30;
 // From outside Versus: frames to wait for the battle setup state to create
@@ -77,24 +73,21 @@ constexpr int kSceneSettleFrames = 60;
 // Frames to wait for a battle loader to start after the switch.
 constexpr int kLoaderWaitFrames = 60 * 20;
 constexpr uint32_t kSingletonStageTable = 0x68; // KWStageEntryDataAsset; entries at +0x28 (TArray)
-constexpr size_t kStageEntrySize = 0x50;         // five FStrings: code, then level/asset paths
+constexpr size_t kStageEntrySize = 0x50;        // five FStrings: code, then level/asset paths
 
 // The battle's task call thunk: closure { fn, int32 this-adjust, object }.
 constexpr game::CodeSite kTaskThunk{
-    "BattleTask::CallThunk", 0x4C1D10,
-    {0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0xC1, 0x48, 0x63, 0x49, 0x08, 0x48, 0x03, 0x48, 0x10, 0xFF}};
+    "BattleTask::CallThunk", 0x4C1D10, {0x48, 0x83, 0xEC, 0x28, 0x48, 0x8B, 0xC1, 0x48, 0x63, 0x49, 0x08, 0x48, 0x03, 0x48, 0x10, 0xFF}};
 
 // A battle node's event handler (the round counters' node): sees the round
 // flow events (code at event+0xC; 1 starts the fight).
 constexpr game::CodeSite kRoundEvent{
-    "BattleNode::OnEvent", 0x4818C0,
-    {0x40, 0x55, 0x53, 0x41, 0x56, 0x48, 0x8D, 0xAC, 0x24, 0xC0, 0xFE, 0xFF, 0xFF, 0x48, 0x81, 0xEC}};
+    "BattleNode::OnEvent", 0x4818C0, {0x40, 0x55, 0x53, 0x41, 0x56, 0x48, 0x8D, 0xAC, 0x24, 0xC0, 0xFE, 0xFF, 0xFF, 0x48, 0x81, 0xEC}};
 
 // The scene manager's actor tick (this, delta seconds): once per frame in
 // every scene, also while loading. Runs the game-thread queue.
 constexpr game::CodeSite kSceneTick{
-    "GameScene::Tick", 0x5C9A90,
-    {0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57}};
+    "GameScene::Tick", 0x5C9A90, {0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57}};
 
 // Battle flow reset (flow): drops the loader and registers the step objects
 // again. Leaving the main menu calls it (its exit, a few frames after the
@@ -106,8 +99,7 @@ constexpr game::CodeSite kSceneTick{
 // and starts loading that character's asset paths (built by rva 0x68D2B0)
 // there. Battle creation (rva 0x6A45E0) requests every player's character.
 constexpr game::CodeSite kCharaCacheRequest{
-    "CharaCache::Request", 0x6A4880,
-    {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57}};
+    "CharaCache::Request", 0x6A4880, {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x57}};
 constexpr uint32_t kCharaCache = 0x68CEA0;
 constexpr uint32_t kCacheSlotsInUse = 0x1D0; // TArray<Slot*>
 constexpr uint32_t kCacheSlotsFree = 0x1E0;  // TArray<Slot*>
@@ -133,8 +125,7 @@ constexpr uint32_t kQueueStart = 0x69C500;
 constexpr int kQueueLoadBattle = 3;
 
 constexpr game::CodeSite kFlowReset{
-    "BattleFlow::Reset", 0x71A790,
-    {0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x55}};
+    "BattleFlow::Reset", 0x71A790, {0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x55}};
 
 using ChangeSceneStateFn = void (*)(void* self, const void* stateClass, void* param);
 using LaunchFn = uint64_t (*)(void* self, void* a2, void* a3);
@@ -179,12 +170,13 @@ std::atomic<int> g_roundCallPhase{-1};
 // The match is over (after its last KO): the win screens that follow take
 // their input from the pads, not from the battle. 13: the results screen.
 constexpr int32_t kResults = 13;
+
 bool MatchOver(int32_t code) { return code == 11 || code == 12; }
 
-bool EndsFight(int32_t code)
-{
+bool EndsFight(int32_t code) {
     return (code >= 1 && code <= 5) || (code >= 7 && code <= 12);
 }
+
 struct RoundFlow {
     int32_t inFight;
     int32_t lastCode;
@@ -199,6 +191,7 @@ struct RoundFlow {
     uint32_t ticks;             // driven ticks run: keys the round's end copies (BeginDrivenTick)
     int32_t unused[2];
 };
+
 static_assert(sizeof(RoundFlow) == kRoundFlowStateSize);
 alignas(16) RoundFlow g_roundFlow{};
 // The round director: a battle task object whose state (+0xF8) says whether
@@ -231,8 +224,7 @@ std::atomic<uint8_t*> g_phaseMachine{nullptr};
 // with the stop bit set. In state 2 it only sets the bit again if it is off.
 // Every call copies +0x11128.. out to the battle.
 constexpr game::CodeSite kRoundDirectorCheck{
-    "RoundDirector::Check", 0x485240,
-    {0x48, 0x89, 0x4C, 0x24, 0x08, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41}};
+    "RoundDirector::Check", 0x485240, {0x48, 0x89, 0x4C, 0x24, 0x08, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41}};
 constexpr uint32_t kDirectorRecord = 0xF8;
 constexpr uint32_t kDirectorTimers = 0x110C4;
 constexpr uint32_t kDirectorCounts = 0x11128;
@@ -259,8 +251,7 @@ DirectorCheckFn g_origDirectorCheck = nullptr;
 // mirror match with identical inputs). One handler at a time: the counts are
 // the same everywhere.
 constexpr game::CodeSite kRoundHitTally{
-    "RoundDirector::OnHitEvent", 0x482010,
-    {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x55}};
+    "RoundDirector::OnHitEvent", 0x482010, {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x55}};
 using HitTallyFn = uint64_t (*)(uint8_t*, void*, void*, void*);
 HitTallyFn g_origHitTally = nullptr;
 std::recursive_mutex g_hitTallyMutex;
@@ -272,14 +263,14 @@ std::atomic<bool> g_resultsHeld{false};
 
 // The director as last seen by its task, if it still looks like one (the
 // pointer outlives its battle until the next director task runs).
-uint8_t* LiveRoundDirector()
-{
+uint8_t* LiveRoundDirector() {
     uint8_t* d = g_roundDirector;
     if (!d || !IsReadable(d + 0xE8, 0x18)) return nullptr;
     if (*reinterpret_cast<const uintptr_t*>(d + 0xE8) != g_base + kRoundDirectorVtable) return nullptr;
     if (*reinterpret_cast<uint8_t* const*>(d + 0xF0) != d) return nullptr;
     return d;
 }
+
 std::atomic<int> g_taskCensus{0}; // calls still to record
 std::mutex g_censusMutex;
 std::vector<std::pair<uintptr_t, uintptr_t>> g_census; // (fn, object)
@@ -291,10 +282,9 @@ std::mutex g_sceneMutex;
 std::string g_lastScene;
 
 std::atomic<uint64_t> g_sceneChangedAt{0}; // queue run (about a frame) of the last scene change
-std::atomic<uint64_t> g_battleSwitches{0};  // jumps switched to the battle scene (BattleSceneSwitches)
+std::atomic<uint64_t> g_battleSwitches{0}; // jumps switched to the battle scene (BattleSceneSwitches)
 
-void RememberScene(const std::string& stateClassName)
-{
+void RememberScene(const std::string& stateClassName) {
     // A held results screen belongs to the battle being left.
     g_holdResults = false;
     g_resultsHeld = false;
@@ -304,11 +294,11 @@ void RememberScene(const std::string& stateClassName)
     g_sceneChangedAt = g_pumps.load();
 }
 
-std::string LastScene()
-{
+std::string LastScene() {
     std::lock_guard lock(g_sceneMutex);
     return g_lastScene;
 }
+
 std::mutex g_stageMutex;
 std::string g_pendingStage;
 // The stage code the last jump's stage request carried (the pending stage,
@@ -318,8 +308,7 @@ std::string g_jumpStage;
 std::mutex g_taskMutex;
 std::deque<std::function<void()>> g_tasks;
 
-void Remember(const std::string& line)
-{
+void Remember(const std::string& line) {
     std::lock_guard lock(g_mutex);
     g_history.push_back(line);
     if (g_history.size() > 64) g_history.erase(g_history.begin());
@@ -327,8 +316,7 @@ void Remember(const std::string& line)
 
 void TraceSceneSteps(const std::string& name);
 
-void FlowResetDetour(void* flow)
-{
+void FlowResetDetour(void* flow) {
     HookGuard guard;
     g_origFlowReset(flow);
     if (g_loaderAfterReset.exchange(false)) {
@@ -343,8 +331,7 @@ uint64_t CharaCacheRequestDetour(void* cache, const void* code, int costume, int
 void PreloadTick();
 extern std::atomic<bool> g_preloading;
 
-void SceneTickDetour(void* self, float deltaSeconds)
-{
+void SceneTickDetour(void* self, float deltaSeconds) {
     HookGuard guard;
     g_origSceneTick(self, deltaSeconds);
     g_sceneTicks++;
@@ -353,8 +340,7 @@ void SceneTickDetour(void* self, float deltaSeconds)
     if (g_sceneTicks % 30 == 0) PreloadTick();
 }
 
-void ChangeDetour(void* self, const void* stateClass, void* param)
-{
+void ChangeDetour(void* self, const void* stateClass, void* param) {
     HookGuard guard;
     const std::string line = "ChangeSceneState " + ue4::ObjectName(stateClass) + " on " + ue4::Describe(self) +
                              " param " + ue4::Describe(param);
@@ -372,8 +358,7 @@ void ChangeDetour(void* self, const void* stateClass, void* param)
 // frames): logs the steps of the state just entered, until the next change.
 std::atomic<int> g_sceneGeneration{0};
 
-void TraceStep(int generation, const std::string& name, uint8_t* state, uintptr_t lastStep, int frame)
-{
+void TraceStep(int generation, const std::string& name, uint8_t* state, uintptr_t lastStep, int frame) {
     if (generation != g_sceneGeneration || Stopping() || frame > 60 * 120) return;
     if (!state) {
         if (!ue4::EnsureObjects(g_base)) return;
@@ -391,14 +376,12 @@ void TraceStep(int generation, const std::string& name, uint8_t* state, uintptr_
     RunOnGameThreadAfter(1, [=] { TraceStep(generation, name, state, step, frame + 1); });
 }
 
-void TraceSceneSteps(const std::string& name)
-{
+void TraceSceneSteps(const std::string& name) {
     const int generation = ++g_sceneGeneration;
     RunOnGameThreadAfter(1, [=] { TraceStep(generation, name, nullptr, 0, 0); });
 }
 
-uint64_t LaunchDetour(void* self, void* a2, void* a3)
-{
+uint64_t LaunchDetour(void* self, void* a2, void* a3) {
     HookGuard guard;
     const std::string line = "LaunchNextGameScene on " + ue4::Describe(self) + " (" + ue4::Describe(a2) + ")";
     Log("flow: %s (this %p a2 %p a3 %p)", line.c_str(), self, a2, a3);
@@ -406,16 +389,14 @@ uint64_t LaunchDetour(void* self, void* a2, void* a3)
     return g_origLaunch(self, a2, a3);
 }
 
-uint64_t StepDetour(void* self, int step, uint8_t force)
-{
+uint64_t StepDetour(void* self, int step, uint8_t force) {
     HookGuard guard;
     Log("flow: setup step %d (force %d) on %s (%p)", step, force, ue4::Describe(self).c_str(), self);
     LogStack("setup step", g_base);
     return g_origStep(self, step, force);
 }
 
-uint64_t Step0Detour(void* self, void* data, uint8_t a, uint8_t b)
-{
+uint64_t Step0Detour(void* self, void* data, uint8_t a, uint8_t b) {
     HookGuard guard;
     std::string text;
     uint64_t words[6] = {};
@@ -447,8 +428,7 @@ std::mutex g_burstOnMutex;
 int g_burstOnCode = -1, g_burstOnFrames = 0, g_burstOnScale = 4, g_burstOnLeft = 0, g_burstOnIndex = 0;
 std::string g_burstOnDir;
 
-uint64_t EventDetour(void* node, void* event, void* a3, void* a4)
-{
+uint64_t EventDetour(void* node, void* event, void* a3, void* a4) {
     if (event && IsReadable(static_cast<uint8_t*>(event), 0x10)) {
         const int code = *reinterpret_cast<const int32_t*>(static_cast<uint8_t*>(event) + 0xC);
         const uintptr_t vtable = *static_cast<const uintptr_t*>(event);
@@ -500,17 +480,19 @@ uint64_t EventDetour(void* node, void* event, void* a3, void* a4)
 constexpr uintptr_t kPhaseMachineVtable = 0x2C5F838;
 constexpr uint32_t kMachineFields = 0x120; // current object, reference block, index, requested, parameter, flag
 constexpr size_t kMachineFieldsSize = 0x20;
-constexpr uint32_t kPhaseTimerDestroy = 0x50; // the timer block at +0x48: +0x08 destroy (argument)
-constexpr uint32_t kPhaseTimerClone = 0x58;   // +0x10 clone (argument) -> a new argument
+constexpr uint32_t kPhaseTimerDestroy = 0x50;  // the timer block at +0x48: +0x08 destroy (argument)
+constexpr uint32_t kPhaseTimerClone = 0x58;    // +0x10 clone (argument) -> a new argument
 constexpr uint32_t kPhaseTimerArgument = 0x60; // +0x18 the bound argument: a 16-byte closure on the heap
-constexpr uint32_t kPhaseTimerCall = 0x68;    // +0x20 call (argument)
+constexpr uint32_t kPhaseTimerCall = 0x68;     // +0x20 call (argument)
 constexpr size_t kMaxPhases = 24;
 constexpr size_t kPhaseRing = 64; // ticks kept (more than any rollback reaches)
+
 struct PhaseCopy {
     uint8_t bytes[0xC0];
     uint8_t argument[16];
     bool hasArgument;
 };
+
 // The game's battle input recorder (global at rva 0x39DA0D0, 0x79580 bytes,
 // outside the snapshot): its last message (+0x8), per-round records (+0x18)
 // and 4 slots of 0xD0 from +0xE0 (a state: 1 or 2 while recording, 0 after
@@ -521,6 +503,7 @@ struct PhaseCopy {
 // and the replayed frames counted differently (stress replay, 2026-10-28).
 constexpr uint32_t kRecorderGlobal = 0x39DA0D0;
 constexpr size_t kRecorderHead = 0x420;
+
 struct MachineCopy {
     uint32_t tick;
     bool valid;
@@ -533,7 +516,9 @@ struct MachineCopy {
     uint8_t koWait[0x48];
     void* koWaitHeld; // the wait's reference block this copy holds a reference to (HoldRef), or null
 };
+
 std::vector<MachineCopy> g_phaseRing(kPhaseRing);
+
 // The phase machine and the round director as they were at the freeze (tick
 // 0): the ring has copies only after a driven tick ran the director, and the
 // snapshot's round flow has no director copy before then. A rollback that
@@ -549,6 +534,7 @@ struct FreezeCopy {
     int32_t directorCounts[5];
     MachineCopy machine;
 };
+
 FreezeCopy g_freeze{};
 // The round's end waits (the round-end phase's timer, rva 0x40BC00, on rva
 // 0x2F2E90) until an object's mode (+0x104) is 6 or 7, then for its one-tick
@@ -589,46 +575,46 @@ constexpr uint8_t kSharedAssignBytes[16] = {0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 
                                             0xEC, 0x20, 0x48, 0x8B, 0x32, 0x48, 0x8B, 0xF9};
 using SharedAssignFn = void (*)(void** slot, void* const* block);
 SharedAssignFn g_sharedAssign = nullptr;
-std::atomic<DWORD> g_gameThread{0}; // the thread that runs the driven ticks
+std::atomic<DWORD> g_gameThread{0};                              // the thread that runs the driven ticks
 int g_waitRefBacks = 0, g_waitRefEmptied = 0, g_waitRefLeft = 0; // loads that put the pointer back, per battle
-uint8_t* g_koWait = nullptr; // the newest such object
+uint8_t* g_koWait = nullptr;                                     // the newest such object
 std::atomic<bool> g_koWaitRollback{true};
 int g_koWaitLogs = 0;
 std::atomic<bool> g_roundEndRollback{false}; // on: no hold; the copies and the journal below instead
 int g_phaseRestoreSkips = 0;                 // pointer words not put back (logged a few times)
 
 // The round over's writes outside the snapshot (battle context offsets).
-constexpr uint32_t kRoundCount = 0x1904;     // +0x1904 the round's time, +0x1908 rounds recorded (at most 7)
+constexpr uint32_t kRoundCount = 0x1904; // +0x1904 the round's time, +0x1908 rounds recorded (at most 7)
 constexpr size_t kRoundCountSize = 0x0C;
-constexpr uint32_t kRoundHistory = 0x1910;   // 7 records of 0x10FC8
+constexpr uint32_t kRoundHistory = 0x1910; // 7 records of 0x10FC8
 constexpr size_t kRoundRecord = 0x10FC8;
-constexpr uint32_t kLastRecord = 0x787AC;    // the latest round's record
+constexpr uint32_t kLastRecord = 0x787AC; // the latest round's record
 // +0x78788..+0x78797 the results the round over writes (+0x78798, the
 // director's timers, is a snapshot region of its own: an undo must not
 // write it back; +0x787B0.. are flags it only reads).
 constexpr uint32_t kRoundResult = 0x78788;
 constexpr size_t kRoundResultSize = 0x10;
+
 struct RoundOverUndo {
     uint32_t tick;
     uint8_t* context;
     uint8_t* slot;
     std::vector<uint8_t> count, slotBytes, lastRecord, result;
 };
+
 std::vector<RoundOverUndo> g_roundOverJournal;
 RoundOverUndo g_roundOverPending; // filled before a director tick that may end the round
 
 // Ticks counted by the mod in the round flow region: in the snapshot, the
 // same on both machines. (The battle frame's +0x1B8 counts the ticks of one
 // update, not of the battle.)
-uint32_t TickNow()
-{
+uint32_t TickNow() {
     return g_roundFlow.ticks;
 }
 
 std::atomic<bool> g_testEmptyStage{false};
 
-uint8_t* LivePhaseMachine()
-{
+uint8_t* LivePhaseMachine() {
     uint8_t* m = g_phaseMachine;
     if (!m || !IsReadable(m, 0x140)) return nullptr;
     return *reinterpret_cast<const uintptr_t*>(m) == g_base + kPhaseMachineVtable ? m : nullptr;
@@ -636,16 +622,15 @@ uint8_t* LivePhaseMachine()
 
 // The phase objects: 0xC0 bytes for the classes in the allocator's 192-byte
 // bin (the round's end, ids 11 and 16), 0xA0 for the rest (160-byte bin).
-size_t PhaseSize(const uint8_t* phase)
-{
+size_t PhaseSize(const uint8_t* phase) {
     const uintptr_t vtable = *reinterpret_cast<const uintptr_t*>(phase) - g_base;
     return vtable == 0x2C6A668 || vtable == 0x2C6A878 || vtable == 0x2C6AA18 ? 0xC0 : 0xA0;
 }
 
-template <typename T> T Field(const uint8_t* p, uint32_t off) { return *reinterpret_cast<const T*>(p + off); }
+template <typename T>
+T Field(const uint8_t* p, uint32_t off) { return *reinterpret_cast<const T*>(p + off); }
 
-uint8_t* LiveKoWait()
-{
+uint8_t* LiveKoWait() {
     uint8_t* w = g_koWaitRollback ? g_koWait : nullptr;
     if (!w || !IsReadable(w, kKoWaitState + kKoWaitStateSize)) return nullptr;
     return *reinterpret_cast<const uintptr_t*>(w) == g_base + kKoWaitVtable ? w : nullptr;
@@ -653,8 +638,7 @@ uint8_t* LiveKoWait()
 
 // `*slot` to `block` through the game's assign: a reference taken on the new
 // block, the old one's let go of. Without the assign nothing is held.
-void HoldRef(void** slot, void* block)
-{
+void HoldRef(void** slot, void* block) {
     if (*slot == block) return;
     if (g_sharedAssign) g_sharedAssign(slot, &block);
     else *slot = nullptr;
@@ -662,8 +646,7 @@ void HoldRef(void** slot, void* block)
 
 // A copy's reference let go of: at once on the game thread, else posted to
 // it (letting go of the last one destroys the object).
-void ReleaseHeld(MachineCopy& c)
-{
+void ReleaseHeld(MachineCopy& c) {
     void* block = c.koWaitHeld;
     if (!block) return;
     c.koWaitHeld = nullptr;
@@ -676,29 +659,25 @@ void ReleaseHeld(MachineCopy& c)
 }
 
 // The ring's copies dropped, with their references.
-void ForgetCopies()
-{
+void ForgetCopies() {
     for (MachineCopy& c : g_phaseRing) {
         c.valid = false;
         ReleaseHeld(c);
     }
 }
 
-uint8_t* LiveRecorder()
-{
+uint8_t* LiveRecorder() {
     auto* recorder = *reinterpret_cast<uint8_t* const*>(g_base + kRecorderGlobal);
     return recorder && IsReadable(recorder, kRecorderHead) ? recorder : nullptr;
 }
 
-bool TimerSet(const uint8_t* phase)
-{
+bool TimerSet(const uint8_t* phase) {
     return Field<uintptr_t>(phase, kPhaseTimerDestroy) && Field<uintptr_t>(phase, kPhaseTimerCall) &&
            Field<uintptr_t>(phase, kPhaseTimerArgument);
 }
 
 // The phase vector: (object, reference block) pairs.
-int PhaseVector(const uint8_t* m, uint8_t* const** begin)
-{
+int PhaseVector(const uint8_t* m, uint8_t* const** begin) {
     auto* b = Field<uint8_t* const*>(m, 0xF8);
     auto* e = Field<uint8_t* const*>(m, 0x100);
     const int count = b && e > b ? static_cast<int>((e - b) / 2) : 0;
@@ -709,8 +688,7 @@ int PhaseVector(const uint8_t* m, uint8_t* const** begin)
 
 // The phase machine, its phases, the recorder's head and the round end
 // wait, as they are now, into `c` (valid only when all were read).
-bool CaptureMachine(MachineCopy& c, uint32_t tick)
-{
+bool CaptureMachine(MachineCopy& c, uint32_t tick) {
     c.valid = false;
     const uint8_t* m = LivePhaseMachine();
     uint8_t* const* phases = nullptr;
@@ -743,8 +721,7 @@ bool CaptureMachine(MachineCopy& c, uint32_t tick)
     return true;
 }
 
-void CapturePhases()
-{
+void CapturePhases() {
     const uint32_t tick = TickNow();
     if (!CaptureMachine(g_phaseRing[tick % kPhaseRing], tick)) return;
     const uint8_t* wait = LiveKoWait();
@@ -769,8 +746,7 @@ void CapturePhases()
 }
 
 // The game image's extent, from its PE header (for telling its addresses).
-uintptr_t ImageEnd()
-{
+uintptr_t ImageEnd() {
     static uintptr_t end = 0;
     if (!end && g_base) {
         const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(g_base);
@@ -792,16 +768,14 @@ std::atomic<bool> g_legacyPointerTest{false}; // research (`ptrtest old`): any m
 // a tick late, 182 frames after the KO (0.4.0 6176a044, 0.4.1 6cf317c6).
 // Such a word is a pointer only when it points into the game image or at an
 // object whose first word is one of its vtables.
-bool LooksLikePointer(uint64_t v)
-{
+bool LooksLikePointer(uint64_t v) {
     if (v < 0x10000 || v >= 0x800000000000ull || (v & 7) != 0 || !IsReadable(reinterpret_cast<const void*>(v), 8)) return false;
     if ((v >> 32) || g_legacyPointerTest) return true;
     return InImage(v) || InImage(*reinterpret_cast<const uint64_t*>(v));
 }
 
 // Puts a phase object back as it was in the copy.
-void RestorePhase(uint8_t* phase, const PhaseCopy& saved)
-{
+void RestorePhase(uint8_t* phase, const PhaseCopy& saved) {
     const size_t size = PhaseSize(phase);
     const auto* liveArgument = Field<const uint8_t*>(phase, kPhaseTimerArgument);
     const bool liveTimer = TimerSet(phase) && IsReadable(liveArgument, 16);
@@ -844,8 +818,7 @@ void RestorePhase(uint8_t* phase, const PhaseCopy& saved)
 
 // Puts the phase machine, its phases, the round end wait and the recorder's
 // head back as `c` has them.
-void RestoreMachine(const MachineCopy& c)
-{
+void RestoreMachine(const MachineCopy& c) {
     uint8_t* m = LivePhaseMachine();
     uint8_t* const* phases = nullptr;
     const int count = m ? PhaseVector(m, &phases) : 0;
@@ -893,8 +866,7 @@ void RestoreMachine(const MachineCopy& c)
                         Field<void*>(c.koWait, kKoWaitObject - kKoWaitState), want,
                         want ? Field<int32_t>(static_cast<const uint8_t*>(want), 8) : 0, have, c.tick);
                 }
-            }
-            else if (want != have) {
+            } else if (want != have) {
                 g_waitRefLeft++;
                 static int s_kept = 0;
                 if (s_kept++ < 3) Log("flow: round end wait's object left as it is by a load (no reference kept for it)");
@@ -914,15 +886,13 @@ void RestoreMachine(const MachineCopy& c)
     }
 }
 
-void RestorePhases(uint32_t tick)
-{
+void RestorePhases(uint32_t tick) {
     const MachineCopy& c = g_phaseRing[tick % kPhaseRing];
     if (c.valid && c.tick == tick) RestoreMachine(c);
 }
 
 // Before a director tick that may end the round: what the round over writes.
-void PrepareRoundOverUndo(uint8_t* director)
-{
+void PrepareRoundOverUndo(uint8_t* director) {
     RoundOverUndo& u = g_roundOverPending;
     u.context = BattleContext(director);
     if (!u.context || !IsReadable(u.context + kRoundHistory, kLastRecord + kRoundRecord - kRoundHistory) ||
@@ -941,8 +911,7 @@ void PrepareRoundOverUndo(uint8_t* director)
     u.result.assign(u.context + kRoundResult, u.context + kRoundResult + kRoundResultSize);
 }
 
-void UndoRoundOvers(uint32_t tick)
-{
+void UndoRoundOvers(uint32_t tick) {
     while (!g_roundOverJournal.empty() && g_roundOverJournal.back().tick > tick) {
         const RoundOverUndo& u = g_roundOverJournal.back();
         std::memcpy(u.context + kRoundCount, u.count.data(), u.count.size());
@@ -965,8 +934,7 @@ void UndoRoundOvers(uint32_t tick)
 // keyframe from before a KO, loaded after it, ended the round on its first
 // tick (the Battle Log's restarts after a round's end; LAR vs NCL frame 6840).
 // The battle context of the live battle, or null when it cannot be read.
-uint8_t* RoundContextNow()
-{
+uint8_t* RoundContextNow() {
     uint8_t* d = LiveRoundDirector();
     uint8_t* context = d ? BattleContext(d) : nullptr;
     if (!context || !IsReadable(context + kRoundCount, kRoundResult + kRoundResultSize - kRoundCount) ||
@@ -975,17 +943,18 @@ uint8_t* RoundContextNow()
     }
     return context;
 }
+
 constexpr size_t kRoundHistoryPart = kRoundResult + kRoundResultSize - kRoundCount;
 constexpr size_t kRoundHistoryBytes = kRoundHistoryPart + kRoundRecord;
 constexpr size_t kRoundChunk = 4096; // keyframes share unchanged chunks of it
+
 // Both parts, one after the other, into `out` (kRoundHistoryBytes); and back.
-void CopyRoundHistory(const uint8_t* context, uint8_t* out)
-{
+void CopyRoundHistory(const uint8_t* context, uint8_t* out) {
     std::memcpy(out, context + kRoundCount, kRoundHistoryPart);
     std::memcpy(out + kRoundHistoryPart, context + kLastRecord, kRoundRecord);
 }
-void PutRoundHistory(uint8_t* context, const uint8_t* in)
-{
+
+void PutRoundHistory(uint8_t* context, const uint8_t* in) {
     std::memcpy(context + kRoundCount, in, kRoundHistoryPart);
     std::memcpy(context + kLastRecord, in + kRoundHistoryPart, kRoundRecord);
 }
@@ -1032,16 +1001,17 @@ const std::vector<uintptr_t> kLeanResimTasks = {0x80000000u | 0x2C63BB8, 0x80000
                                                 0x3E3490, 0x4D6B40, 0x37D1B0};
 std::vector<uintptr_t> g_resimSkip = kLeanResimTasks;
 std::atomic<bool> g_resimSkipAny{true};
+
 struct TaskCost {
     uint64_t ticks = 0, calls = 0;
     uintptr_t object = 0;
 };
+
 std::map<uint64_t, TaskCost> g_taskCosts; // phase << 32 | task function rva (or 0x80000000 | class vtable rva)
 
 // The thunk passes its other arguments (rdx, r8, r9, xmm) on to the task:
 // take and forward them untouched, and record only after the call.
-uint64_t TaskThunkDetour(void* closure, void* a2, void* a3, void* a4)
-{
+uint64_t TaskThunkDetour(void* closure, void* a2, void* a3, void* a4) {
     {
         const auto* c = static_cast<const uint8_t*>(closure);
         if (*reinterpret_cast<const uintptr_t*>(c) == g_base + kPhaseMachineTask) {
@@ -1107,8 +1077,7 @@ uint64_t TaskThunkDetour(void* closure, void* a2, void* a3, void* a4)
         cost.ticks += b.QuadPart - a.QuadPart;
         cost.calls++;
         if (!cost.object) cost.object = *reinterpret_cast<const uintptr_t*>(c + 0x10) + *reinterpret_cast<const int32_t*>(c + 8);
-    }
-    else {
+    } else {
         result = g_origThunk(closure, a2, a3, a4);
     }
     if (g_taskCensus > 0) {
@@ -1124,8 +1093,7 @@ uint64_t TaskThunkDetour(void* closure, void* a2, void* a3, void* a4)
 
 int g_otherDirectors = 0;
 
-uint64_t HitTallyDetour(uint8_t* self, void* event, void* a3, void* a4)
-{
+uint64_t HitTallyDetour(uint8_t* self, void* event, void* a3, void* a4) {
     HookGuard guard;
     std::unique_lock lock(g_hitTallyMutex, std::try_to_lock);
     if (!lock.owns_lock()) {
@@ -1138,8 +1106,7 @@ uint64_t HitTallyDetour(uint8_t* self, void* event, void* a3, void* a4)
     return g_origHitTally(self, event, a3, a4);
 }
 
-void DirectorCheckDetour(uint8_t* director)
-{
+void DirectorCheckDetour(uint8_t* director) {
     HookGuard guard;
     // While a session runs the ticks, the check runs after each of them
     // (RunRoundDirector), not per rendered frame.
@@ -1153,8 +1120,7 @@ void DirectorCheckDetour(uint8_t* director)
     g_origDirectorCheck(director);
 }
 
-bool Hook(const GameImage& image, const game::CodeSite& site, void* detour, void** original)
-{
+bool Hook(const GameImage& image, const game::CodeSite& site, void* detour, void** original) {
     void* target = image.At<void*>(site.rva);
     if (std::memcmp(target, site.bytes, sizeof(site.bytes)) != 0) {
         Log("flow: signature mismatch at %s", site.name);
@@ -1163,12 +1129,11 @@ bool Hook(const GameImage& image, const game::CodeSite& site, void* detour, void
     return MH_CreateHook(target, detour, original) == MH_OK && MH_EnableHook(target) == MH_OK;
 }
 
-constexpr game::CodeSite kKoWaitCtorSite{"round end wait object", kKoWaitCtor,
-    {0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0xE8, 0x42, 0x45, 0xF2, 0xFF, 0xC7, 0x83}};
+constexpr game::CodeSite kKoWaitCtorSite{"round end wait object", kKoWaitCtor, {0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0xE8, 0x42, 0x45, 0xF2, 0xFF, 0xC7, 0x83}};
 using KoWaitCtorFn = void* (*)(uint8_t*);
 KoWaitCtorFn g_origKoWaitCtor = nullptr;
-void* KoWaitCtorDetour(uint8_t* self)
-{
+
+void* KoWaitCtorDetour(uint8_t* self) {
     void* r = g_origKoWaitCtor(self);
     g_koWait = self;
     return r;
@@ -1176,14 +1141,12 @@ void* KoWaitCtorDetour(uint8_t* self)
 
 } // namespace
 
-void SetLegacyPointerTest(bool on)
-{
+void SetLegacyPointerTest(bool on) {
     g_legacyPointerTest = on;
     Log("flow: phase restores take %s for pointers", on ? "any mapped aligned word (as before 2026-11-13)" : "only image addresses, objects with image vtables and 64-bit addresses");
 }
 
-void SetBurstOnEvent(int code, const std::string& dir, int frames, int scale, int count)
-{
+void SetBurstOnEvent(int code, const std::string& dir, int frames, int scale, int count) {
     std::lock_guard lock(g_burstOnMutex);
     g_burstOnCode = code;
     g_burstOnDir = dir;
@@ -1194,14 +1157,12 @@ void SetBurstOnEvent(int code, const std::string& dir, int frames, int scale, in
     Log("flow: a %d-frame burst into %s-N on each of the next %d flow events %d", frames, dir.c_str(), count, code);
 }
 
-void SetKoWaitRollback(bool on)
-{
+void SetKoWaitRollback(bool on) {
     g_koWaitRollback = on;
     Log("flow: the round end wait's mode %s", on ? "is put back by loads" : "stays as it is on loads (as before 2026-11-08)");
 }
 
-bool InstallFlowProbes(const GameImage& image)
-{
+bool InstallFlowProbes(const GameImage& image) {
     g_base = image.base;
     // Walking the image for the name and object tables takes seconds.
     std::thread([image] {
@@ -1227,8 +1188,7 @@ bool InstallFlowProbes(const GameImage& image)
     }
     if (std::memcmp(reinterpret_cast<const void*>(g_base + kSharedAssign), kSharedAssignBytes, sizeof(kSharedAssignBytes)) == 0) {
         g_sharedAssign = reinterpret_cast<SharedAssignFn>(g_base + kSharedAssign);
-    }
-    else {
+    } else {
         Log("flow: the game's shared pointer assign is not at rva 0x%X: the round end wait's object is not put back by loads", kSharedAssign);
     }
     if (!Hook(image, kRoundHitTally, reinterpret_cast<void*>(&HitTallyDetour), reinterpret_cast<void**>(&g_origHitTally))) {
@@ -1246,15 +1206,16 @@ std::string FStringText(const uint8_t* fstring);
 // A UE4 FString over our own characters, for the game to read (never to
 // keep or free).
 struct FStringArg {
-    explicit FStringArg(const std::wstring& text) : chars(text)
-    {
+    explicit FStringArg(const std::wstring& text) : chars(text) {
         data = chars.c_str();
         num = max = static_cast<int32_t>(chars.size() + 1);
     }
+
     std::wstring chars;
     const wchar_t* data;
     int32_t num;
     int32_t max;
+
     const void* Get() const { return &data; }
 };
 
@@ -1267,8 +1228,7 @@ bool g_cacheArgsSeen = false;
 
 std::wstring WideOf(const std::string& text) { return std::wstring(text.begin(), text.end()); }
 
-uint64_t CharaCacheRequestDetour(void* cache, const void* code, int costume, int color, const void* x, int y)
-{
+uint64_t CharaCacheRequestDetour(void* cache, const void* code, int costume, int color, const void* x, int y) {
     HookGuard guard;
     const std::string xText = FStringText(static_cast<const uint8_t*>(x));
     {
@@ -1284,8 +1244,7 @@ uint64_t CharaCacheRequestDetour(void* cache, const void* code, int costume, int
     return g_origCacheRequest(cache, code, costume, color, x, y);
 }
 
-std::string FStringText(const uint8_t* fstring)
-{
+std::string FStringText(const uint8_t* fstring) {
     const wchar_t* data = nullptr;
     int32_t num = 0;
     if (!IsReadable(fstring, 16)) return "";
@@ -1309,8 +1268,7 @@ void WaitForStageThenSwitch(void* manager, void* stateClass, uint8_t* loader, in
 void StartLoaderWhenReady(int frames, uint8_t* seen, int seenAt);
 void JumpOnGameThread(int generation, int setupFrames);
 
-void RunOnGameThreadAfter(int frames, std::function<void()> task)
-{
+void RunOnGameThreadAfter(int frames, std::function<void()> task) {
     if (frames <= 0) {
         RunOnGameThread(std::move(task));
         return;
@@ -1318,22 +1276,19 @@ void RunOnGameThreadAfter(int frames, std::function<void()> task)
     RunOnGameThread([frames, task = std::move(task)]() mutable { RunOnGameThreadAfter(frames - 1, std::move(task)); });
 }
 
-void RunOnGameThread(std::function<void()> task)
-{
+void RunOnGameThread(std::function<void()> task) {
     std::lock_guard lock(g_taskMutex);
     g_tasks.push_back(std::move(task));
 }
 
-std::string PumpStats()
-{
+std::string PumpStats() {
     char buf[96];
     std::snprintf(buf, sizeof(buf), "scene ticks %llu, queue runs %llu", static_cast<unsigned long long>(g_sceneTicks.load()),
                   static_cast<unsigned long long>(g_pumps.load()));
     return buf;
 }
 
-void PumpGameThread()
-{
+void PumpGameThread() {
     // Called from the scene tick and from the pad poll; one run per frame
     // (both come within a few ms of each other).
     LARGE_INTEGER now, freq;
@@ -1352,16 +1307,15 @@ void PumpGameThread()
     for (auto& t : tasks) t();
 }
 
-bool RoundCallRunning()
-{
+bool RoundCallRunning() {
     const int phase = g_roundCallPhase;
     if (const uint8_t* m = phase >= 0 ? LivePhaseMachine() : nullptr) return Field<int32_t>(m, 0x130) == phase;
     return g_roundCall;
 }
+
 uint32_t RoundEndEvents() { return g_roundEnds; }
 
-bool RoundInFight()
-{
+bool RoundInFight() {
     if (!g_roundFlow.inFight) return false;
     // From the KO on (before the round's end event), as the director sees it.
     const uint8_t* d = LiveRoundDirector();
@@ -1369,8 +1323,7 @@ bool RoundInFight()
     return state != kDirectorStopped && state != kDirectorRoundOver;
 }
 
-void MatchStopToDirector(uint8_t* battleFrame)
-{
+void MatchStopToDirector(uint8_t* battleFrame) {
     const uint8_t* d = LiveRoundDirector();
     if (!d || !battleFrame) return;
     const bool stopped = *reinterpret_cast<const int32_t*>(d + kDirectorState) == kDirectorStopped;
@@ -1380,16 +1333,14 @@ void MatchStopToDirector(uint8_t* battleFrame)
     // As 0x4D5DE0 does: on sets the first word, off clears both.
     if (stopped) {
         flags[0] |= kStopBit;
-    }
-    else {
+    } else {
         flags[0] &= ~kStopBit;
         flags[1] &= ~kStopBit;
     }
     Log("flow: stop bit %s after a load, as the round director has it", stopped ? "set" : "cleared");
 }
 
-void SetRoundDirectorPerTick(bool on, bool roundEndRollback)
-{
+void SetRoundDirectorPerTick(bool on, bool roundEndRollback) {
     if (g_waitRefBacks || g_waitRefEmptied || g_waitRefLeft) {
         Log("flow: round end wait's object put back by loads: %d times to a kept object, %d to none, %d left as it was",
             g_waitRefBacks, g_waitRefEmptied, g_waitRefLeft);
@@ -1422,8 +1373,7 @@ void SetRoundDirectorPerTick(bool on, bool roundEndRollback)
 
 namespace {
 // A load to the freeze: the director and the machine back as they were then.
-void RestoreFreeze()
-{
+void RestoreFreeze() {
     if (!g_freeze.valid || TickNow() != 0) return;
     if (uint8_t* d = g_freeze.hasDirector ? LiveRoundDirector() : nullptr) {
         const int32_t before = *reinterpret_cast<const int32_t*>(d + kDirectorState);
@@ -1441,19 +1391,16 @@ void RestoreFreeze()
 }
 } // namespace
 
-void BeginDrivenTick()
-{
+void BeginDrivenTick() {
     if (g_directorPerTick) g_roundFlow.ticks++;
     g_gameThread = GetCurrentThreadId();
 }
 
-uint32_t DrivenTicks()
-{
+uint32_t DrivenTicks() {
     return g_roundFlow.ticks;
 }
 
-void RunRoundDirector()
-{
+void RunRoundDirector() {
     uint8_t* d = LiveRoundDirector();
     if (!d || !g_directorPerTick) return;
     t_directorFromTick = true;
@@ -1469,8 +1416,7 @@ void RunRoundDirector()
     f.stopTicks = koStop ? f.stopTicks + 1 : 0;
 }
 
-void RoundDirectorFromSnapshot()
-{
+void RoundDirectorFromSnapshot() {
     const RoundFlow& f = g_roundFlow;
     uint8_t* d = LiveRoundDirector();
     if (!d) return;
@@ -1496,10 +1442,10 @@ void RoundDirectorFromSnapshot()
 
 namespace {
 using Chunks = std::vector<std::shared_ptr<const std::vector<uint8_t>>>;
+
 // `size` bytes from `src` in kRoundChunk pieces, each shared with `before`'s
 // piece while the same.
-void SaveChunks(const uint8_t* src, size_t size, const Chunks* before, Chunks* out)
-{
+void SaveChunks(const uint8_t* src, size_t size, const Chunks* before, Chunks* out) {
     const size_t chunks = (size + kRoundChunk - 1) / kRoundChunk;
     const bool samePlan = before && before->size() == chunks;
     out->assign(chunks, nullptr);
@@ -1510,8 +1456,8 @@ void SaveChunks(const uint8_t* src, size_t size, const Chunks* before, Chunks* o
         else (*out)[i] = std::make_shared<const std::vector<uint8_t>>(src + at, src + at + n);
     }
 }
-bool PutChunks(const Chunks& chunks, uint8_t* dst, size_t size)
-{
+
+bool PutChunks(const Chunks& chunks, uint8_t* dst, size_t size) {
     size_t at = 0;
     for (const auto& c : chunks) {
         if (!c || at + c->size() > size) return false;
@@ -1527,8 +1473,7 @@ bool PutChunks(const Chunks& chunks, uint8_t* dst, size_t size)
 }
 } // namespace
 
-bool SaveOutsideState(OutsideState* out, const OutsideState* previous)
-{
+bool SaveOutsideState(OutsideState* out, const OutsideState* previous) {
     out->machine.assign(sizeof(MachineCopy), 0);
     auto* c = reinterpret_cast<MachineCopy*>(out->machine.data());
     if (!CaptureMachine(*c, TickNow())) {
@@ -1570,8 +1515,7 @@ ExecFn g_tracedOrig = nullptr;
 std::string g_tracedName;
 std::atomic<int> g_traceCalls{0};
 
-void TraceDetour(void* context, void* stack, void* result)
-{
+void TraceDetour(void* context, void* stack, void* result) {
     if (g_traceCalls++ < 200) {
         const uintptr_t from = reinterpret_cast<uintptr_t>(_ReturnAddress()) - g_base;
         Log("functrace: %s on %s (tick %u), from rva 0x%llX", g_tracedName.c_str(), ue4::Describe(context).c_str(), TickNow(),
@@ -1581,8 +1525,7 @@ void TraceDetour(void* context, void* stack, void* result)
 }
 
 // The code pointers in a UFunction (its native thunk among them).
-std::vector<std::pair<size_t, uintptr_t>> CodePointers(const uint8_t* fn)
-{
+std::vector<std::pair<size_t, uintptr_t>> CodePointers(const uint8_t* fn) {
     std::vector<std::pair<size_t, uintptr_t>> out;
     for (size_t at = 0x30; at < 0x140; at += 8) {
         if (!IsReadable(fn + at, 8)) break;
@@ -1593,8 +1536,7 @@ std::vector<std::pair<size_t, uintptr_t>> CodePointers(const uint8_t* fn)
 }
 } // namespace
 
-void LogFunction(const std::string& name)
-{
+void LogFunction(const std::string& name) {
     if (!ue4::EnsureObjects(g_base)) return Log("ufunc: no object array");
     int found = 0;
     // "*Class": every function of that class.
@@ -1615,8 +1557,7 @@ void LogFunction(const std::string& name)
     if (!found) Log("ufunc: no function %s", name.c_str());
 }
 
-void LogObjectsNamed(const std::string& name, bool dump)
-{
+void LogObjectsNamed(const std::string& name, bool dump) {
     if (!ue4::EnsureObjects(g_base)) return Log("uobj: no object array");
     int found = 0;
     ue4::ForEachObject([&](const void* object) {
@@ -1642,8 +1583,7 @@ void LogObjectsNamed(const std::string& name, bool dump)
     if (!found) Log("uobj: nothing named %s", name.c_str());
 }
 
-void TraceFunction(const std::string& name, const std::string& owner, uint32_t offset)
-{
+void TraceFunction(const std::string& name, const std::string& owner, uint32_t offset) {
     if (g_tracedOrig) return Log("functrace: %s is traced already (one at a time)", g_tracedName.c_str());
     if (!ue4::EnsureObjects(g_base)) return Log("functrace: no object array");
     void* target = nullptr;
@@ -1664,8 +1604,7 @@ void TraceFunction(const std::string& name, const std::string& owner, uint32_t o
     Log("functrace: tracing %s (native rva 0x%llX)", g_tracedName.c_str(), static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(target) - g_base));
 }
 
-void LogRoundInfo()
-{
+void LogRoundInfo() {
     uint8_t* d = LiveRoundDirector();
     uint8_t* context = d ? BattleContext(d) : nullptr;
     if (!context || !IsReadable(context + 0x1820, kRoundResult + kRoundResultSize - 0x1820)) {
@@ -1692,8 +1631,7 @@ void LogRoundInfo()
     Log("roundinfo: last record: %s", words(context + kLastRecord, 0x80).c_str());
 }
 
-bool ReadRoundResults(std::vector<RoundResult>* rounds, uint8_t wins[2])
-{
+bool ReadRoundResults(std::vector<RoundResult>* rounds, uint8_t wins[2]) {
     // The round history (research `roundinfo`, 2026-11-09): +0x1908 the
     // rounds recorded; each round's record (0x10FC8 bytes from +0x1910) has
     // the side that won it at +4 (0 or 1; anything else: a draw).
@@ -1713,8 +1651,7 @@ bool ReadRoundResults(std::vector<RoundResult>* rounds, uint8_t wins[2])
     return true;
 }
 
-void RestoreOutsideState(const OutsideState& s)
-{
+void RestoreOutsideState(const OutsideState& s) {
     const RoundFlow& rf = g_roundFlow;
     if (uint8_t* d = LiveRoundDirector(); d && s.director.size() == sizeof(rf.director) + sizeof(rf.directorTimers) + sizeof(rf.directorCounts)) {
         const uint8_t* p = s.director.data();
@@ -1732,8 +1669,7 @@ void RestoreOutsideState(const OutsideState& s)
     g_roundOverJournal.clear();
 }
 
-uint32_t PresentationStart(uint32_t p1, uint32_t p2)
-{
+uint32_t PresentationStart(uint32_t p1, uint32_t p2) {
     constexpr uint32_t kGameStart = 0x4000; // the game's Start bit (core/game.h kStart)
     constexpr int kStartTicks = 10;         // as a short press
     constexpr int kUiStartMs = 150;
@@ -1767,25 +1703,22 @@ uint32_t PresentationStart(uint32_t p1, uint32_t p2)
 
 bool MatchDecided() { return MatchOver(g_roundFlow.lastCode) || g_roundFlow.lastCode == kResults; }
 
-void SetHoldResults(bool hold)
-{
+void SetHoldResults(bool hold) {
     g_holdResults = hold;
     if (!hold) g_resultsHeld = false;
 }
 
 bool ResultsHeld() { return g_resultsHeld; }
 
-uint8_t* RoundFlowState()
-{
+uint8_t* RoundFlowState() {
     return reinterpret_cast<uint8_t*>(&g_roundFlow);
 }
 
 uint8_t* RoundDirector() { return LiveRoundDirector(); }
 
-void ResetRoundFlow()
-{
+void ResetRoundFlow() {
     g_roundFlow = {};
-    g_roundCall = false;       // a battle left during its round call
+    g_roundCall = false; // a battle left during its round call
     g_roundCallPhase = -1;
     g_roundDirector = nullptr; // the old battle's; its task points to the new one
 }
@@ -1793,8 +1726,7 @@ void ResetRoundFlow()
 namespace {
 
 // The asset manager's load queue, or nullptr.
-uint8_t* AssetQueue()
-{
+uint8_t* AssetQueue() {
     auto* manager = *reinterpret_cast<uint8_t**>(g_base + kAssetManager);
     if (!manager || manager == reinterpret_cast<uint8_t*>(-1)) return nullptr;
     return *reinterpret_cast<uint8_t**>(manager + kAssetManagerQueue);
@@ -1803,8 +1735,7 @@ uint8_t* AssetQueue()
 // The character's versions (oldest first) from the game's version data:
 // singleton +0x60, per character (rva 0x57F030) +0x80, a list of 0x18-byte
 // entries (+0x28, count +0x30) starting with the version.
-std::vector<int> VersionsOf(const std::string& code)
-{
+std::vector<int> VersionsOf(const std::string& code) {
     std::vector<int> out;
     uint8_t* singleton = reinterpret_cast<uint8_t* (*)()>(g_base + kKiwiSingleton)();
     void* versions = singleton ? *reinterpret_cast<void**>(singleton + kSingletonVersions) : nullptr;
@@ -1820,8 +1751,7 @@ std::vector<int> VersionsOf(const std::string& code)
 }
 
 // The version a battle resolves -1 to (rva 0x56B360): the latest.
-int LatestVersion(const std::string& code)
-{
+int LatestVersion(const std::string& code) {
     int version = -1;
     uint8_t* singleton = reinterpret_cast<uint8_t* (*)()>(g_base + kKiwiSingleton)();
     void* versions = singleton ? *reinterpret_cast<void**>(singleton + kSingletonVersions) : nullptr;
@@ -1837,12 +1767,52 @@ int LatestVersion(const std::string& code)
 // versions (42, 43) as their latest, though their game files were the same
 // as everyone's (RIP, 2026-11-03).
 const std::map<std::string, int> kFinalVersions = {
-    {"RYU", 60}, {"CNL", 61}, {"KEN", 61}, {"KRN", 60}, {"ZGF", 61}, {"DSM", 61}, {"NSH", 61}, {"BLR", 61},
-    {"JRI", 61}, {"BRD", 60}, {"RMK", 60}, {"RSD", 60}, {"FAN", 60}, {"LAR", 60}, {"NCL", 61}, {"CMY", 60},
-    {"GUL", 60}, {"IBK", 61}, {"BSN", 60}, {"URN", 60}, {"ALX", 61}, {"NDK", 60}, {"VEG", 60}, {"Z20", 61},
-    {"Z21", 61}, {"Z22", 61}, {"Z23", 61}, {"Z24", 60}, {"Z25", 61}, {"Z26", 60}, {"Z27", 61}, {"Z28", 60},
-    {"Z29", 61}, {"Z30", 61}, {"Z31", 60}, {"Z32", 60}, {"Z33", 60}, {"Z34", 60}, {"Z35", 61}, {"Z36", 62},
-    {"Z37", 61}, {"Z38", 60}, {"Z39", 60}, {"Z40", 60}, {"Z41", 61}, {"Z42", 61},
+    {"RYU", 60},
+    {"CNL", 61},
+    {"KEN", 61},
+    {"KRN", 60},
+    {"ZGF", 61},
+    {"DSM", 61},
+    {"NSH", 61},
+    {"BLR", 61},
+    {"JRI", 61},
+    {"BRD", 60},
+    {"RMK", 60},
+    {"RSD", 60},
+    {"FAN", 60},
+    {"LAR", 60},
+    {"NCL", 61},
+    {"CMY", 60},
+    {"GUL", 60},
+    {"IBK", 61},
+    {"BSN", 60},
+    {"URN", 60},
+    {"ALX", 61},
+    {"NDK", 60},
+    {"VEG", 60},
+    {"Z20", 61},
+    {"Z21", 61},
+    {"Z22", 61},
+    {"Z23", 61},
+    {"Z24", 60},
+    {"Z25", 61},
+    {"Z26", 60},
+    {"Z27", 61},
+    {"Z28", 60},
+    {"Z29", 61},
+    {"Z30", 61},
+    {"Z31", 60},
+    {"Z32", 60},
+    {"Z33", 60},
+    {"Z34", 60},
+    {"Z35", 61},
+    {"Z36", 62},
+    {"Z37", 61},
+    {"Z38", 60},
+    {"Z39", 60},
+    {"Z40", 60},
+    {"Z41", 61},
+    {"Z42", 61},
 };
 
 // This game's version lists, read once on the game thread when its
@@ -1853,8 +1823,7 @@ std::map<std::string, std::vector<int>> g_localVersions;
 std::atomic<bool> g_localVersionsRead{false};
 std::string g_localVersionsText = "not read yet";
 
-void ReadLocalVersions()
-{
+void ReadLocalVersions() {
     if (CharaCount() <= 0 || LatestVersion("RYU") < 0) return;
     std::map<std::string, std::vector<int>> lists;
     for (int i = 0; i < CharaCount(); i++) {
@@ -1883,16 +1852,14 @@ void ReadLocalVersions()
 
 // The version a match plays: the setup's, else the final game's when this
 // game has it, else this game's latest.
-int MatchVersion(const std::string& code, int version)
-{
+int MatchVersion(const std::string& code, int version) {
     if (version >= 0) return version;
     const int final = FinalCharaVersion(code);
     return final >= 0 && HasCharaVersion(code, final) ? final : LatestVersion(code);
 }
 
 // Whether the character cache has a slot for exactly this character.
-bool InCharaCache(const std::string& code, int costume, int version, int y)
-{
+bool InCharaCache(const std::string& code, int costume, int version, int y) {
     const auto* cache = reinterpret_cast<const uint8_t* (*)()>(g_base + kCharaCache)();
     if (!cache) return false;
     const auto slots = *reinterpret_cast<uint8_t* const* const*>(cache + kCacheSlotsInUse);
@@ -1907,25 +1874,24 @@ bool InCharaCache(const std::string& code, int costume, int version, int y)
     return false;
 }
 
-std::atomic<bool> g_preloading{false};       // a preload holds the asset queue
-std::atomic<uint64_t> g_jumpRequestedAt{0};  // queue run (≈ frame) of the last jump request
+std::atomic<bool> g_preloading{false};      // a preload holds the asset queue
+std::atomic<uint64_t> g_jumpRequestedAt{0}; // queue run (≈ frame) of the last jump request
 std::mutex g_preloadMutex;
 std::function<std::vector<PreloadPick>()> g_preloadSource;
-std::string g_preloadSeen;                   // the source's picks as last seen
-uint64_t g_preloadSeenAt = 0;                // ... since this queue run
-std::map<std::string, int> g_preloadTries;   // per character key, preloads started
-std::atomic<bool> g_preloadsDone{false};     // every pick of the source is in the cache (or tried enough)
-std::string g_preloadsDoneFor;               // ... the picks that was checked for (PreloadsDoneFor)
-std::map<std::string, int> g_preloadStatus;  // per "code/costume" of the source: PreloadStatus's 2, 0 or -1
-std::string g_preloadingKey;                 // the preload running now ("code/costume")
+std::string g_preloadSeen;                  // the source's picks as last seen
+uint64_t g_preloadSeenAt = 0;               // ... since this queue run
+std::map<std::string, int> g_preloadTries;  // per character key, preloads started
+std::atomic<bool> g_preloadsDone{false};    // every pick of the source is in the cache (or tried enough)
+std::string g_preloadsDoneFor;              // ... the picks that was checked for (PreloadsDoneFor)
+std::map<std::string, int> g_preloadStatus; // per "code/costume" of the source: PreloadStatus's 2, 0 or -1
+std::string g_preloadingKey;                // the preload running now ("code/costume")
 std::chrono::steady_clock::time_point g_preloadingSince;
-constexpr int kPreloadStableFrames = 60;     // picks unchanged this long before preloading
-constexpr int kPreloadMaxTries = 2;          // per key, so one that never stays cached is not loaded forever
+constexpr int kPreloadStableFrames = 60; // picks unchanged this long before preloading
+constexpr int kPreloadMaxTries = 2;      // per key, so one that never stays cached is not loaded forever
 
 // The cache's other arguments: what battle creation passed last (the stage
 // code and -1 in Versus), or the same defaults before any battle.
-void CacheArgs(std::wstring* x, int* y)
-{
+void CacheArgs(std::wstring* x, int* y) {
     std::lock_guard lock(g_cacheArgsMutex);
     *x = g_cacheArgsSeen ? g_cacheX : L"S25";
     *y = g_cacheArgsSeen ? g_cacheY : -1;
@@ -1935,8 +1901,7 @@ void CacheArgs(std::wstring* x, int* y)
 // setup step 2 does (rva 0x69BC20), then, once the queue is idle, asks the
 // character cache for it so it stays loaded (the cache only holds what is
 // loaded). False if the queue is busy.
-bool StartPreload(const std::string& code, int costume, int setupVersion, const char* why)
-{
+bool StartPreload(const std::string& code, int costume, int setupVersion, const char* why) {
     uint8_t* queue = AssetQueue();
     if (!queue || g_preloading || *reinterpret_cast<int32_t*>(queue + kQueueState) != 0) return false;
     std::wstring x;
@@ -1961,10 +1926,10 @@ bool StartPreload(const std::string& code, int costume, int setupVersion, const 
             queue, codeArg.Get(), costume, version, xArg.Get(), y);
     }
     reinterpret_cast<void (*)(void*, int)>(g_base + kQueueStart)(queue, kQueueLoadBattle);
+
     struct Waiter {
         static void Step(std::string code, int costume, int version, std::wstring x, int y, uint8_t* queue,
-                         std::chrono::steady_clock::time_point started, int frames)
-        {
+                         std::chrono::steady_clock::time_point started, int frames) {
             if (*reinterpret_cast<int32_t*>(queue + kQueueState) != 0 && frames < 60 * 60) {
                 RunOnGameThreadAfter(1, [=] { Step(code, costume, version, x, y, queue, started, frames + 1); });
                 return;
@@ -1984,6 +1949,7 @@ bool StartPreload(const std::string& code, int costume, int setupVersion, const 
             g_preloading = false;
         }
     };
+
     Waiter::Step(code, costume, version, x, y, queue, std::chrono::steady_clock::now(), 0);
     return true;
 }
@@ -1991,8 +1957,7 @@ bool StartPreload(const std::string& code, int costume, int setupVersion, const 
 // From the scene tick: preloads the source's picks at the main menu once
 // they have not changed for a moment, one at a time, never while a jump is
 // on its way.
-void PreloadTick()
-{
+void PreloadTick() {
     // The source runs outside g_preloadMutex: it takes the netplay driver's
     // lock, and the driver's thread asks PreloadsDoneFor while holding that
     // one. Called under it, the two waited on each other (a host's game froze
@@ -2018,7 +1983,8 @@ void PreloadTick()
             const std::string key = p.code + "/" + std::to_string(p.costume);
             const bool cached = !p.code.empty() && InCharaCache(p.code, p.costume, MatchVersion(p.code, p.version), y);
             const bool tried = g_preloadTries[key] >= kPreloadMaxTries;
-            status[key] = cached ? 2 : tried ? -1 : 0;
+            status[key] = cached ? 2 : tried ? -1
+                                             : 0;
             done = done && (p.code.empty() || cached || tried);
         }
         // Preloads run at the main menu only. In the lobby over a held results
@@ -2073,22 +2039,19 @@ void PreloadTick()
 
 } // namespace
 
-void SetPreloadSource(std::function<std::vector<PreloadPick>()> source)
-{
+void SetPreloadSource(std::function<std::vector<PreloadPick>()> source) {
     std::lock_guard lock(g_preloadMutex);
     g_preloadSource = std::move(source);
 }
 
 bool PreloadsDone() { return g_preloadsDone; }
 
-bool PreloadsDoneFor(const std::string& picks)
-{
+bool PreloadsDoneFor(const std::string& picks) {
     std::lock_guard lock(g_preloadMutex);
     return g_preloadsDone && g_preloadsDoneFor == picks;
 }
 
-int PreloadStatus(const std::string& code, int costume, double* seconds)
-{
+int PreloadStatus(const std::string& code, int costume, double* seconds) {
     const std::string key = code + "/" + std::to_string(costume);
     std::lock_guard lock(g_preloadMutex);
     *seconds = 0;
@@ -2100,20 +2063,17 @@ int PreloadStatus(const std::string& code, int costume, double* seconds)
     return it == g_preloadStatus.end() ? -1 : it->second;
 }
 
-void PreloadCharacter(const std::string& code, int costume)
-{
+void PreloadCharacter(const std::string& code, int costume) {
     RunOnGameThread([code, costume] {
         if (!StartPreload(code, costume, -1, "command")) Log("flow: preload %s: the asset queue is busy", code.c_str());
     });
 }
 
-void PreloadCharacters(std::vector<PreloadPick> picks, std::function<void()> then)
-{
+void PreloadCharacters(std::vector<PreloadPick> picks, std::function<void()> then) {
     // One at a time (a preload holds the asset queue), each once the queue
     // is free, then `then`: a jump made only then cannot start between two.
     struct Chain {
-        static void Step(std::vector<PreloadPick> picks, size_t next, std::function<void()> then, int frames)
-        {
+        static void Step(std::vector<PreloadPick> picks, size_t next, std::function<void()> then, int frames) {
             if (next == picks.size() && !g_preloading) {
                 if (then) then();
                 return;
@@ -2132,11 +2092,11 @@ void PreloadCharacters(std::vector<PreloadPick> picks, std::function<void()> the
             RunOnGameThreadAfter(1, [=] { Step(picks, next, then, frames + 1); });
         }
     };
+
     RunOnGameThread([picks = std::move(picks), then = std::move(then)] { Chain::Step(picks, 0, then, 0); });
 }
 
-void LogCharaVersions()
-{
+void LogCharaVersions() {
     RunOnGameThread([] {
         for (int i = 0; i < CharaCount(); i++) {
             const std::string code = CharaCode(i);
@@ -2150,14 +2110,12 @@ void LogCharaVersions()
 
 int LatestCharaVersion(const std::string& code) { return LatestVersion(code); }
 
-int FinalCharaVersion(const std::string& code)
-{
+int FinalCharaVersion(const std::string& code) {
     const auto it = kFinalVersions.find(code);
     return it == kFinalVersions.end() ? -1 : it->second;
 }
 
-bool HasCharaVersion(const std::string& code, int version)
-{
+bool HasCharaVersion(const std::string& code, int version) {
     if (version < 0 || !g_localVersionsRead) return true;
     std::lock_guard lock(g_localVersionsMutex);
     const auto it = g_localVersions.find(code);
@@ -2165,15 +2123,13 @@ bool HasCharaVersion(const std::string& code, int version)
     return std::find(it->second.begin(), it->second.end(), version) != it->second.end();
 }
 
-int NewestLocalVersion(const std::string& code)
-{
+int NewestLocalVersion(const std::string& code) {
     std::lock_guard lock(g_localVersionsMutex);
     const auto it = g_localVersions.find(code);
     return it == g_localVersions.end() || it->second.empty() ? -1 : it->second.back();
 }
 
-std::string CharaVersionsText()
-{
+std::string CharaVersionsText() {
     std::lock_guard lock(g_localVersionsMutex);
     return g_localVersionsText;
 }
@@ -2190,8 +2146,7 @@ constexpr uint32_t kOptionVoiceMode = 0x40;
 constexpr uint32_t kOptionCharaVoices = 0xC0;
 std::atomic<int> g_voiceOverride{-1};
 
-const uint8_t* OptionSettings()
-{
+const uint8_t* OptionSettings() {
     static const void* found = nullptr;
     if (found && ue4::ObjectName(found) == "OptionSettingsSave") return static_cast<const uint8_t*>(found);
     found = nullptr;
@@ -2206,8 +2161,7 @@ const uint8_t* OptionSettings()
 
 } // namespace
 
-int VoiceLanguageFor(const std::string& code)
-{
+int VoiceLanguageFor(const std::string& code) {
     if (const int forced = g_voiceOverride; forced >= 0) return forced;
     const uint8_t* options = OptionSettings();
     if (!options || !IsReadable(options + kOptionVoiceMode, kOptionCharaVoices + 0x10 - kOptionVoiceMode)) return -1;
@@ -2225,8 +2179,7 @@ int VoiceLanguageFor(const std::string& code)
 
 void SetVoiceLanguageOverride(int language) { g_voiceOverride = language; }
 
-void LogCharaCache()
-{
+void LogCharaCache() {
     RunOnGameThread([] {
         const auto* cache = reinterpret_cast<const uint8_t* (*)()>(g_base + kCharaCache)();
         if (!cache) return;
@@ -2244,20 +2197,17 @@ void LogCharaCache()
     });
 }
 
-void SetPendingStage(const std::string& code)
-{
+void SetPendingStage(const std::string& code) {
     std::lock_guard lock(g_stageMutex);
     g_pendingStage = code;
 }
 
-std::string PendingStage()
-{
+std::string PendingStage() {
     std::lock_guard lock(g_stageMutex);
     return g_pendingStage;
 }
 
-std::string JumpStageCode()
-{
+std::string JumpStageCode() {
     std::lock_guard lock(g_stageMutex);
     return g_jumpStage;
 }
@@ -2265,16 +2215,15 @@ std::string JumpStageCode()
 std::atomic<int> g_jumpGeneration{0};
 std::atomic<int> g_jumpRetries{0};
 constexpr int kJumpRetries = 5;
-void CancelBattleJump()
-{
+
+void CancelBattleJump() {
     // Each step of a jump checks its generation (JumpOnGameThread,
     // WaitForStageThenSwitch).
     g_jumpGeneration++;
     Log("flow: jump to battle called off");
 }
 
-void ReturnToMainMenu(int delayFrames)
-{
+void ReturnToMainMenu(int delayFrames) {
     const int generation = g_jumpGeneration;
     RunOnGameThreadAfter(delayFrames, [generation] {
         if (generation != g_jumpGeneration) return; // a new battle is on its way
@@ -2290,8 +2239,7 @@ std::string CurrentScene() { return LastScene(); }
 
 uint64_t BattleSceneSwitches() { return g_battleSwitches; }
 
-void JumpToBattle()
-{
+void JumpToBattle() {
     // Netplay and replays set what is played first. A bare jump (`battlenow`,
     // the panel's Battle now) plays Ryu against Ken in local Versus: the
     // defaults a jump builds are not Versus (infinite time, P2 a CPU), and
@@ -2328,8 +2276,7 @@ namespace {
 
 // A class (or other long-lived object) by name, looked up once: a lookup
 // walks every object (about 130k), far too slow to repeat every frame.
-void* CachedObject(const std::string& name, const std::string& className)
-{
+void* CachedObject(const std::string& name, const std::string& className) {
     static std::mutex mutex;
     static std::map<std::string, void*> cache;
     std::lock_guard lock(mutex);
@@ -2341,8 +2288,7 @@ void* CachedObject(const std::string& name, const std::string& className)
     return object;
 }
 
-uint8_t* BattleFlow()
-{
+uint8_t* BattleFlow() {
     if (!g_base) return nullptr;
     const auto engine = *reinterpret_cast<uint8_t* const*>(g_base + kEngineGlobal);
     uint8_t* singleton = engine ? *reinterpret_cast<uint8_t* const*>(engine + kSingleton) : nullptr;
@@ -2352,8 +2298,7 @@ uint8_t* BattleFlow()
     return flow && IsReadable(flow, 0x20) ? flow : nullptr;
 }
 
-uint8_t* BattleLoader()
-{
+uint8_t* BattleLoader() {
     if (!g_base) return nullptr;
     const auto engine = *reinterpret_cast<uint8_t* const*>(g_base + kEngineGlobal);
     uint8_t* singleton = engine ? *reinterpret_cast<uint8_t* const*>(engine + kSingleton) : nullptr;
@@ -2370,8 +2315,7 @@ uint8_t* BattleLoader()
 // jump switched to Versus battle setup (0: not switched). Each step goes on
 // only while `generation` is the latest jump's: a newer jump or
 // CancelBattleJump ends it, whichever step it waits in.
-void JumpOnGameThread(int generation, int setupFrames)
-{
+void JumpOnGameThread(int generation, int setupFrames) {
     if (generation != g_jumpGeneration) {
         Log("flow: jump to battle cancelled (another jump came or it was called off)");
         return;
@@ -2480,8 +2424,7 @@ void JumpOnGameThread(int generation, int setupFrames)
                 auto* chars = *reinterpret_cast<wchar_t* const*>(request + 0x10);
                 for (int i = 0; i < 3; i++) chars[i] = static_cast<wchar_t>(stage[i]);
                 Log("flow: stage %s -> %s", before.c_str(), stage.c_str());
-            }
-            else if (request && stage.size() == 3 && IsReadable(request + 0x10, 16)) {
+            } else if (request && stage.size() == 3 && IsReadable(request + 0x10, 16)) {
                 for (int i = 0; i < 3; i++) lent[i] = static_cast<wchar_t>(stage[i]);
                 lent[3] = 0;
                 std::memcpy(saved, request + 0x10, 16);
@@ -2492,8 +2435,7 @@ void JumpOnGameThread(int generation, int setupFrames)
                 std::memcpy(request + 0x1C, &count, 4);
                 lentTo = request;
                 Log("flow: stage request '%s' -> %s for this request", before.c_str(), stage.c_str());
-            }
-            else {
+            } else {
                 Log("flow: cannot set the stage (request '%s')", before.c_str());
             }
         }
@@ -2519,8 +2461,7 @@ void JumpOnGameThread(int generation, int setupFrames)
     }
 }
 
-void ChangeScene(const std::string& stateClassName, const std::string& paramName)
-{
+void ChangeScene(const std::string& stateClassName, const std::string& paramName) {
     RunOnGameThread([stateClassName, paramName] {
         void* stateClass = CachedObject(stateClassName, "Class");
         void* param = paramName.empty() ? nullptr : CachedObject(paramName, "");
@@ -2538,8 +2479,7 @@ void ChangeScene(const std::string& stateClassName, const std::string& paramName
     });
 }
 
-void WaitForStageThenSwitch(void* manager, void* stateClass, uint8_t* loader, int frames, uint64_t sceneAt, int generation)
-{
+void WaitForStageThenSwitch(void* manager, void* stateClass, uint8_t* loader, int frames, uint64_t sceneAt, int generation) {
     // A scene change while the stage loads (a session left and went back to
     // the menu, the loader kept) or a newer jump: this one is not wanted any
     // more. A 0.4.1 spectator stopped watching 0.3 s into a set's next jump;
@@ -2586,8 +2526,7 @@ void WaitForStageThenSwitch(void* manager, void* stateClass, uint8_t* loader, in
 // Starts the battle loader once the battle state has run a few frames with it
 // (started in the same frame, its stage request never completes). The loader
 // may be replaced meanwhile (flow reset): whichever is current counts.
-void StartLoaderWhenReady(int frames, uint8_t* seen, int seenAt)
-{
+void StartLoaderWhenReady(int frames, uint8_t* seen, int seenAt) {
     uint8_t* loader = BattleLoader();
     if (loader != seen) {
         seen = loader;
@@ -2596,8 +2535,7 @@ void StartLoaderWhenReady(int frames, uint8_t* seen, int seenAt)
     if (!loader || frames - seenAt < kLoaderStartDelay) {
         if (frames < kLoaderWaitFrames) {
             RunOnGameThreadAfter(1, [=] { StartLoaderWhenReady(frames + 1, seen, seenAt); });
-        }
-        else {
+        } else {
             g_loaderAfterReset = false;
             Log("flow: no battle loader to start after %d frames", frames);
         }
@@ -2610,11 +2548,9 @@ void StartLoaderWhenReady(int frames, uint8_t* seen, int seenAt)
     *phase = 1;
 }
 
-
 namespace {
 
-const uint8_t* StageEntries(int* count)
-{
+const uint8_t* StageEntries(int* count) {
     // Checked step by step: while the game starts, these point at memory that
     // is not set up yet (and before the flow probes are installed g_base is 0).
     if (!g_base) return nullptr;
@@ -2630,22 +2566,19 @@ const uint8_t* StageEntries(int* count)
 
 } // namespace
 
-int StageCount()
-{
+int StageCount() {
     int count = 0;
     return StageEntries(&count) ? count : 0;
 }
 
-std::string StageCode(int index)
-{
+std::string StageCode(int index) {
     int count = 0;
     const uint8_t* entries = StageEntries(&count);
     if (!entries || index < 0 || index >= count) return "";
     return FStringText(entries + index * kStageEntrySize);
 }
 
-bool IsPlayableStage(int index)
-{
+bool IsPlayableStage(int index) {
     int count = 0;
     const uint8_t* entries = StageEntries(&count);
     if (!entries || index < 0 || index >= count) return false;
@@ -2665,8 +2598,7 @@ std::mutex g_arrangeMutex;
 std::map<int, std::vector<int>> g_arrange; // base stage -> its settings' stages
 bool g_arrangeRead = false;
 
-const std::map<int, std::vector<int>>& StageArrange()
-{
+const std::map<int, std::vector<int>>& StageArrange() {
     std::lock_guard lock(g_arrangeMutex);
     if (g_arrangeRead || !g_base || !ue4::EnsureObjects(g_base)) return g_arrange;
     const auto* asset = static_cast<const uint8_t*>(ue4::FindObject("DA_StageArrange", "KWStageArrangeDataAsset"));
@@ -2688,23 +2620,20 @@ const std::map<int, std::vector<int>>& StageArrange()
 
 } // namespace
 
-std::vector<int> StageSettings(int base)
-{
+std::vector<int> StageSettings(int base) {
     const auto& arrange = StageArrange();
     const auto it = arrange.find(base);
     return it == arrange.end() ? std::vector<int>{} : it->second;
 }
 
-int StageSettingBase(int index)
-{
+int StageSettingBase(int index) {
     for (const auto& [base, settings] : StageArrange()) {
         if (std::find(settings.begin(), settings.end(), index) != settings.end()) return base;
     }
     return -1;
 }
 
-bool IsMenuStage(int index)
-{
+bool IsMenuStage(int index) {
     if (!IsPlayableStage(index) || StageSettingBase(index) >= 0) return false;
     // A stage of its own: its own personal data (story variants such as IN1
     // or NY1 reuse their base stage's) and a name (RND is random select;
@@ -2715,15 +2644,13 @@ bool IsMenuStage(int index)
     return code != "RND" && FStringText(e + 0x20).find("/" + code + "/") != std::string::npos && !StageName(index).empty();
 }
 
-bool IsSelectableStage(int index)
-{
+bool IsSelectableStage(int index) {
     if (IsMenuStage(index)) return true;
     const int base = StageSettingBase(index);
     return base >= 0 && IsMenuStage(base) && IsPlayableStage(index);
 }
 
-int RandomStage(uint64_t roll, bool ownedOnly, const std::vector<std::string>& off)
-{
+int RandomStage(uint64_t roll, bool ownedOnly, const std::vector<std::string>& off) {
     std::vector<RandomStageChoice> stages;
     for (int i = 0; i < StageCount(); i++) {
         if (!IsSelectableStage(i) || (ownedOnly && !OwnsEntitlement(StageAvailableCode(i)))) continue;
@@ -2740,12 +2667,11 @@ namespace {
 // (KWCharaEntryInfo: CharaCode FString +0x0, CostumeDatas TArray +0x50).
 constexpr size_t kCharaEntrySize = 0xE8;
 constexpr uint32_t kCharaCostumes = 0x50;
-constexpr uint32_t kCharaPersonalData = 0x18;  // KWCharaPersonalDataAsset*
+constexpr uint32_t kCharaPersonalData = 0x18;   // KWCharaPersonalDataAsset*
 constexpr uint32_t kPersonalEnglishName = 0x50; // FText
 std::atomic<int> g_charaTableOffset{-1};
 
-const uint8_t* CharaEntries(int* count)
-{
+const uint8_t* CharaEntries(int* count) {
     if (!g_base) return nullptr;
     auto* engine = *reinterpret_cast<uint8_t* const*>(g_base + kEngineGlobal);
     uint8_t* singleton = engine && IsReadable(engine + kSingleton, 8) ? *reinterpret_cast<uint8_t* const*>(engine + kSingleton) : nullptr;
@@ -2768,22 +2694,19 @@ const uint8_t* CharaEntries(int* count)
 
 } // namespace
 
-int CharaCount()
-{
+int CharaCount() {
     int count = 0;
     return CharaEntries(&count) ? count : 0;
 }
 
-std::string CharaCode(int index)
-{
+std::string CharaCode(int index) {
     int count = 0;
     const uint8_t* entries = CharaEntries(&count);
     if (!entries || index < 0 || index >= count) return "";
     return FStringText(entries + index * kCharaEntrySize);
 }
 
-std::string CharaName(int index)
-{
+std::string CharaName(int index) {
     // KWCharaEntryInfo +0x18 PersonalData (KWCharaPersonalDataAsset),
     // EnglishName (FText) at +0x50; an FText starts with a pointer to its
     // display string (FString).
@@ -2801,8 +2724,7 @@ std::string CharaName(int index)
 // colours its colour preview asset (KWCharaCostumeColorPreviewDataAsset,
 // PreviewColorList +0x28, PreviewSpecialColorList +0x38) lists; then the
 // sponsored costume table and the general story costume table rows.
-void LogCharaCostumes(const std::string& code)
-{
+void LogCharaCostumes(const std::string& code) {
     if (!ue4::EnsureObjects(g_base)) return;
     std::map<std::string, std::pair<int, int>> previews;
     std::vector<const uint8_t*> sponsored, general;
@@ -2882,8 +2804,7 @@ void LogCharaCostumes(const std::string& code)
     Log("costumes: no character %s", code.c_str());
 }
 
-int CharaCostumeCount(int index)
-{
+int CharaCostumeCount(int index) {
     int count = 0;
     const uint8_t* entries = CharaEntries(&count);
     if (!entries || index < 0 || index >= count) return 0;
@@ -2900,11 +2821,10 @@ constexpr uint32_t kDoesPackageExist = 0x11EE840;
 constexpr uint8_t kDoesPackageExistBytes[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74,
                                               0x24, 0x10, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x55};
 
-bool PackageExists(const std::string& path)
-{
+bool PackageExists(const std::string& path) {
     using ExistsFn = bool (*)(const void* name, const void* guid, void* filename);
     static const bool ok = g_base && std::memcmp(reinterpret_cast<const void*>(g_base + kDoesPackageExist),
-                                                  kDoesPackageExistBytes, sizeof(kDoesPackageExistBytes)) == 0;
+                                                 kDoesPackageExistBytes, sizeof(kDoesPackageExistBytes)) == 0;
     if (!ok) return false;
     const FStringArg name(std::wstring(path.begin(), path.end()));
     return reinterpret_cast<ExistsFn>(g_base + kDoesPackageExist)(name.Get(), nullptr, nullptr);
@@ -2912,8 +2832,7 @@ bool PackageExists(const std::string& path)
 
 } // namespace
 
-uint8_t CostumeVariants(int index, int costume)
-{
+uint8_t CostumeVariants(int index, int costume) {
     // What the menus give for buttons held at load. Most set the costume's
     // dress state 1, which plays one of two kinds of variant: a dress state
     // asset next to its battle data
@@ -2956,15 +2875,13 @@ uint8_t CostumeVariants(int index, int costume)
     return variants;
 }
 
-const char* SpecialVariantName(const std::string& code)
-{
+const char* SpecialVariantName(const std::string& code) {
     if (code == "URN") return "Thong";
     if (code == "Z41") return "Helmet off";
     return nullptr;
 }
 
-std::string VariantLabel(const std::string& code, uint8_t variation)
-{
+std::string VariantLabel(const std::string& code, uint8_t variation) {
     const char* special = SpecialVariantName(code);
     const bool dress = variation & kVariantDress, other = (variation & kVariantSpecial) && special;
     if (dress && other) return std::string("Variant + ") + special;
@@ -2984,8 +2901,7 @@ std::map<std::string, int> g_previewColors;
 std::map<std::string, const uint8_t*> g_previewAssets; // the same assets, by name
 bool g_previewsRead = false;
 
-int PreviewColors(const std::string& name)
-{
+int PreviewColors(const std::string& name) {
     std::lock_guard lock(g_previewMutex);
     if (!g_previewsRead && ue4::EnsureObjects(g_base)) {
         g_previewsRead = true;
@@ -3004,8 +2920,7 @@ int PreviewColors(const std::string& name)
 
 } // namespace
 
-int CostumeColorCount(int index, int costume)
-{
+int CostumeColorCount(int index, int costume) {
     int count = 0;
     const uint8_t* entries = CharaEntries(&count);
     if (!entries || index < 0 || index >= count) return 0;
@@ -3020,8 +2935,7 @@ int CostumeColorCount(int index, int costume)
     return colors > 0 ? colors : 2;
 }
 
-CostumeSwatches CostumeSwatchColors(int index, int costume)
-{
+CostumeSwatches CostumeSwatchColors(int index, int costume) {
     // KWCharaCostumeColorPreviewDataAsset: PreviewColorList +0x28 and
     // PreviewSpecialColorList +0x38, TArrays of {FColor Color1, Color2}
     // (BGRA bytes, so 0xAARRGGBB read as one word).
@@ -3050,8 +2964,7 @@ CostumeSwatches CostumeSwatchColors(int index, int costume)
     return out;
 }
 
-int CostumeInFolder(int index, const std::string& folder)
-{
+int CostumeInFolder(int index, const std::string& folder) {
     int count = 0;
     const uint8_t* entries = CharaEntries(&count);
     if (!entries || index < 0 || index >= count) return -1;
@@ -3065,8 +2978,7 @@ int CostumeInFolder(int index, const std::string& folder)
     return -1;
 }
 
-bool ElevenStandIn(uint32_t roll, std::string* code, int* costume)
-{
+bool ElevenStandIn(uint32_t roll, std::string* code, int* costume) {
     std::vector<std::pair<std::string, int>> fighters;
     for (int i = 0; i < CharaCount(); i++) {
         // Fighters only (random select and dummies have a handful of costumes).
@@ -3081,8 +2993,7 @@ bool ElevenStandIn(uint32_t roll, std::string* code, int* costume)
     return true;
 }
 
-int CharaIndex(const std::string& code)
-{
+int CharaIndex(const std::string& code) {
     for (int i = 0; i < CharaCount(); i++) {
         if (CharaCode(i) == code) return i;
     }
@@ -3092,8 +3003,7 @@ int CharaIndex(const std::string& code)
 namespace {
 
 // An FText (as used here) starts with a pointer to its display string.
-std::string FTextText(const uint8_t* text)
-{
+std::string FTextText(const uint8_t* text) {
     if (!text || !IsReadable(text, 8)) return "";
     const uint8_t* display = *reinterpret_cast<const uint8_t* const*>(text);
     return display ? FStringText(display) : "";
@@ -3103,8 +3013,7 @@ std::string FTextText(const uint8_t* text)
 
 // One property's value in a struct as text (research): ints, floats,
 // bytes, bools, names, strings and texts; the type for anything else.
-std::string PropertyText(const uint8_t* property, const uint8_t* data)
-{
+std::string PropertyText(const uint8_t* property, const uint8_t* data) {
     const std::string type = ue4::ObjectName(ue4::ClassOf(property));
     const uint8_t* p = data + *reinterpret_cast<const int32_t*>(property + 0x4C);
     char buf[64];
@@ -3125,8 +3034,7 @@ std::string PropertyText(const uint8_t* property, const uint8_t* data)
 namespace {
 
 // The offset of a row struct's property by name, or -1.
-int PropertyOffset(const uint8_t* rowStruct, const char* name)
-{
+int PropertyOffset(const uint8_t* rowStruct, const char* name) {
     const uint8_t* f = rowStruct ? *reinterpret_cast<const uint8_t* const*>(rowStruct + 0x38) : nullptr;
     for (int k = 0; f && k < 60 && IsReadable(f, 0x50); k++) {
         if (ue4::ObjectName(f) == name) return *reinterpret_cast<const int32_t*>(f + 0x4C);
@@ -3144,8 +3052,7 @@ std::mutex g_specMutex;
 std::map<int, std::map<int, CostumeSpec>> g_specs;
 bool g_specsRead = false;
 
-void ReadCharaSpecs()
-{
+void ReadCharaSpecs() {
     if (g_specsRead || !g_base) return;
     if (!ue4::EnsureObjects(g_base)) {
         Log("flow: CharaSpec: no object list yet");
@@ -3196,8 +3103,7 @@ std::map<int, std::string> g_comments;
 bool g_commentsRead = false;
 uint64_t g_commentsTriedAt = 0;
 
-void ReadLoungeComments()
-{
+void ReadLoungeComments() {
     if (g_commentsRead || !g_base) return;
     const uint64_t now = GetTickCount64();
     if (g_commentsTriedAt && now - g_commentsTriedAt < 2000) return;
@@ -3228,8 +3134,7 @@ void ReadLoungeComments()
 
 std::atomic<bool> g_commentsReading{false};
 
-std::string LoungeCommentText(int id)
-{
+std::string LoungeCommentText(int id) {
     // Asked for while drawing (the room titles): finding the table walks the
     // game's objects (a frame of 100 ms or more, again every 2 s until the
     // table is there), so that is done on a thread of its own; until then
@@ -3254,8 +3159,7 @@ std::string LoungeCommentText(int id)
     return std::string();
 }
 
-void LogAllVariants()
-{
+void LogAllVariants() {
     int count = 0;
     const uint8_t* entries = CharaEntries(&count);
     int total = 0;
@@ -3302,8 +3206,7 @@ constexpr uint32_t kStaticLoadObject = 0x1242910;
 constexpr uint8_t kStaticLoadObjectBytes[] = {0x4C, 0x8B, 0xDC, 0x55, 0x53, 0x49, 0x8D, 0xAB,
                                               0x18, 0xFE, 0xFF, 0xFF, 0x48, 0x81, 0xEC, 0xD8};
 
-std::string Utf8Of(const uint8_t* fstring)
-{
+std::string Utf8Of(const uint8_t* fstring) {
     const auto* data = *reinterpret_cast<const wchar_t* const*>(fstring);
     const int n = *reinterpret_cast<const int32_t*>(fstring + 8);
     if (!data || n <= 1) return "";
@@ -3315,8 +3218,7 @@ std::string Utf8Of(const uint8_t* fstring)
 
 } // namespace
 
-void* LoadAsset(const std::string& className, const std::string& path)
-{
+void* LoadAsset(const std::string& className, const std::string& path) {
     if (!g_base || std::memcmp(reinterpret_cast<const void*>(g_base + kStaticLoadObject), kStaticLoadObjectBytes,
                                sizeof(kStaticLoadObjectBytes)) != 0) {
         Log("flow: StaticLoadObject not where expected");
@@ -3340,8 +3242,7 @@ void* LoadAsset(const std::string& className, const std::string& path)
 
 namespace {
 
-void LogPresetsOf(int index)
-{
+void LogPresetsOf(int index) {
     using LoadFn = void* (*)(const void* cls, void* outer, const wchar_t* name, const wchar_t* file, uint32_t flags, void* sandbox, bool reconcile);
     static const void* presetClass = ue4::FindObject("KWMaterialPresetDataAsset", "Class");
     int count = 0;
@@ -3379,8 +3280,7 @@ void LogPresetsOf(int index)
     }
 }
 
-void LogPresetsFrom(int index, std::string code)
-{
+void LogPresetsFrom(int index, std::string code) {
     int count = 0;
     if (!CharaEntries(&count)) return;
     for (; index < count; index++) {
@@ -3396,8 +3296,7 @@ void LogPresetsFrom(int index, std::string code)
 
 } // namespace
 
-void LogCostumePresets(const std::string& code)
-{
+void LogCostumePresets(const std::string& code) {
     if (!g_base || std::memcmp(reinterpret_cast<const void*>(g_base + kStaticLoadObject), kStaticLoadObjectBytes,
                                sizeof(kStaticLoadObjectBytes)) != 0) {
         Log("presets: StaticLoadObject not where expected");
@@ -3406,8 +3305,7 @@ void LogCostumePresets(const std::string& code)
     RunOnGameThread([code] { LogPresetsFrom(0, code); });
 }
 
-std::map<int, CostumeSpec> CharaCostumeSpecs(int index)
-{
+std::map<int, CostumeSpec> CharaCostumeSpecs(int index) {
     int count = 0;
     const uint8_t* entries = CharaEntries(&count);
     if (!entries || index < 0 || index >= count) return {};
@@ -3423,8 +3321,7 @@ std::map<int, CostumeSpec> CharaCostumeSpecs(int index)
     return it == g_specs.end() ? std::map<int, CostumeSpec>{} : it->second;
 }
 
-void LogDataTable(const std::string& name, const std::string& filter, int limit)
-{
+void LogDataTable(const std::string& name, const std::string& filter, int limit) {
     // UDataTable: RowStruct +0x28, RowMap (TMap<FName, uint8*>) from +0x30;
     // its elements (0x18 bytes: FName, row, hash links) at +0x40, count +0x48.
     if (!ue4::EnsureObjects(g_base)) return;
@@ -3454,8 +3351,7 @@ void LogDataTable(const std::string& name, const std::string& filter, int limit)
     }
 }
 
-std::string StageAvailableCode(int index)
-{
+std::string StageAvailableCode(int index) {
     // StageSpec (DA_Spec; KWStageSpec rows): StageId is the stage's index.
     static std::mutex m;
     static std::map<int, std::string> codes;
@@ -3491,8 +3387,7 @@ std::atomic<int> g_stageNamesState{0}; // 0 not asked, 1 loading, 2 done
 
 } // namespace
 
-bool StageNamesReady()
-{
+bool StageNamesReady() {
     int expected = 0;
     if (g_stageNamesState.compare_exchange_strong(expected, 1)) {
         RunOnGameThread([] {
@@ -3527,8 +3422,7 @@ bool StageNamesReady()
     return g_stageNamesState == 2;
 }
 
-std::string StageName(int index)
-{
+std::string StageName(int index) {
     // The stage entry's third string is its KWStagePersonalDataAsset
     // ("/Game/Stage/CHN/DA_CHN_Personal.DA_CHN_Personal"); Name (FText) at
     // +0x28. The assets are collected once (a walk of every object); those
@@ -3556,8 +3450,7 @@ std::string StageName(int index)
     return loaded == g_loadedNames.end() ? "" : loaded->second;
 }
 
-std::vector<std::string> SkillNames(const std::string& charaCode, bool vtrigger)
-{
+std::vector<std::string> SkillNames(const std::string& charaCode, bool vtrigger) {
     // DA_VSkillNameAsset / DA_VTriggerNameAsset (KWVersionDataAsset):
     // VersionCharaInfo at +0x28, entries of 0x20 (charaName FString +0x0,
     // TextID TArray<FText> +0x10, FText 0x28 bytes).
@@ -3578,8 +3471,7 @@ std::vector<std::string> SkillNames(const std::string& charaCode, bool vtrigger)
     return names;
 }
 
-std::vector<std::string> VCommentNames(const std::string& charaCode)
-{
+std::vector<std::string> VCommentNames(const std::string& charaCode) {
     // KWSubtitleDataAsset DA_<code>_Subtitle: FixedVCommentLocalizeIds at
     // +0x48, a TArray<FText> (0x28 bytes each). Only the character's own
     // battle data loads it, so load it here when the menus have not.
@@ -3609,16 +3501,14 @@ std::vector<std::string> VCommentNames(const std::string& charaCode)
     return names;
 }
 
-int StageIndex(const std::string& code)
-{
+int StageIndex(const std::string& code) {
     for (int i = 0; i < StageCount(); i++) {
         if (StageCode(i) == code) return i;
     }
     return -1;
 }
 
-void LogStageTable()
-{
+void LogStageTable() {
     int count = 0;
     const uint8_t* entries = StageEntries(&count);
     if (!entries) {
@@ -3633,8 +3523,7 @@ void LogStageTable()
     }
 }
 
-void LogWorldContext()
-{
+void LogWorldContext() {
     RunOnGameThread([] {
         auto* engine = *reinterpret_cast<uint8_t* const*>(g_base + kEngineGlobal);
         if (!engine) return;
@@ -3657,14 +3546,12 @@ void LogWorldContext()
 
 int SchedulerPhaseNow() { return g_schedPhase; }
 
-void SetSchedulerPhase(int phase, bool replaying)
-{
+void SetSchedulerPhase(int phase, bool replaying) {
     g_schedPhase = phase;
     g_schedReplaying = replaying;
 }
 
-void SetSoundRollback(bool on)
-{
+void SetSoundRollback(bool on) {
     g_soundRollback = on;
     Log("sound: the game's own rollback of sounds %s", on ? "on (resimulated ticks' repeats are not played again)"
                                                           : "off (resimulated ticks play their sounds again)");
@@ -3674,8 +3561,7 @@ bool SoundRollbackOn() { return g_soundRollback; }
 
 std::vector<uintptr_t> DefaultLeanResimTasks() { return kLeanResimTasks; }
 
-void SetResimTaskSkip(std::vector<uintptr_t> rvas)
-{
+void SetResimTaskSkip(std::vector<uintptr_t> rvas) {
     std::lock_guard lock(g_resimSkipMutex);
     g_resimSkip = std::move(rvas);
     g_resimSkipAny = !g_resimSkip.empty();
@@ -3684,8 +3570,7 @@ void SetResimTaskSkip(std::vector<uintptr_t> rvas)
     Log("resimtasks: replayed ticks leave out %zu tasks in phases 4 and 8:%s", g_resimSkip.size(), text.c_str());
 }
 
-void SetTaskProfiling(bool on, uint64_t ticks)
-{
+void SetTaskProfiling(bool on, uint64_t ticks) {
     if (on) {
         RunOnGameThread([] { g_taskCosts.clear(); });
         g_taskProfiling = true;
@@ -3718,8 +3603,7 @@ void SetTaskProfiling(bool on, uint64_t ticks)
     });
 }
 
-void TaskCensus(int calls)
-{
+void TaskCensus(int calls) {
     {
         std::lock_guard lock(g_censusMutex);
         g_census.clear();
@@ -3759,23 +3643,20 @@ void TaskCensus(int calls)
 
 std::function<std::string(const void*)> g_regionOf;
 
-void SetRegionLookup(std::function<std::string(const void*)> lookup)
-{
+void SetRegionLookup(std::function<std::string(const void*)> lookup) {
     g_regionOf = std::move(lookup);
 }
 
 // The big battle object the phases and the director reach through their
 // task's +0xE8 (rva 0x307F90 locks a weak pointer there and returns +0x110).
-uint8_t* BattleContext(uint8_t* task)
-{
+uint8_t* BattleContext(uint8_t* task) {
     using GetFn = uint8_t* (*)(uint8_t*);
     return reinterpret_cast<GetFn>(g_base + 0x307F90)(task + 0xE8);
 }
 
 void TestEmptyStageRequest() { g_testEmptyStage = true; }
 
-std::string RoundEndState()
-{
+std::string RoundEndState() {
     char buf[160];
     const uint8_t* d = LiveRoundDirector();
     const uint8_t* m = LivePhaseMachine();
@@ -3795,8 +3676,7 @@ std::string RoundEndState()
 
 uint8_t* PhaseMachineObject() { return LivePhaseMachine(); }
 
-void LogPhaseMachine()
-{
+void LogPhaseMachine() {
     uint8_t* m = g_phaseMachine;
     if (!m || !IsReadable(m, 0x140)) {
         Log("phases: no phase machine seen yet (it is known once a battle ticks)");
@@ -3839,8 +3719,7 @@ void LogPhaseMachine()
     }
 }
 
-std::string FlowHistory()
-{
+std::string FlowHistory() {
     std::lock_guard lock(g_mutex);
     std::string s;
     for (const auto& l : g_history) s += l + " | ";

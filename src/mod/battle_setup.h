@@ -20,14 +20,14 @@
 namespace sfv::mod {
 
 namespace battledata {
-constexpr uint32_t kMode = 0x00;    // int, 1 = local Versus (3 when a jump builds the data from defaults)
-constexpr uint32_t kRounds = 0x04;  // int
+constexpr uint32_t kMode = 0x00;   // int, 1 = local Versus (3 when a jump builds the data from defaults)
+constexpr uint32_t kRounds = 0x04; // int
 // int, the match's round count (KWBattleSetting's DefaultBattleSpec.Rounds,
 // copied in at rva 0x7C43F5; 3 in local Versus). Each hit's damage gauge
 // gain is divided by it (rva 0x36D423). The setting is save data, so a game
 // left on another count (1 on two testers' machines) keeps it.
 constexpr uint32_t kSpecRounds = 0x08;
-constexpr uint32_t kTimer = 0x0C;   // int, frames (99 s = 5940)
+constexpr uint32_t kTimer = 0x0C;      // int, frames (99 s = 5940)
 constexpr uint32_t kVersusFlag = 0x40; // int, 1 in local Versus, 0 in the defaults
 // int, the stage's index in the game's stage table (flow.cpp StageIndex).
 // This block is also the battle situation's data (situation:: below), and
@@ -47,7 +47,7 @@ constexpr size_t kStageNameSize = 16;
 constexpr uint32_t kCharaCode = 0x90; // char[4] + wchar_t[4], e.g. "KEN"
 constexpr uint32_t kCharaVersion = 0x9C;
 constexpr uint32_t kCostume = 0xB0;
-constexpr uint32_t kColor = 0xB4; // 0-based
+constexpr uint32_t kColor = 0xB4;   // 0-based
 constexpr uint32_t kComment = 0xD4; // -1 = Auto
 constexpr uint32_t kVariation = 0xD8;
 constexpr uint32_t kVTrigger = 0xDC;

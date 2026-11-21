@@ -23,8 +23,7 @@ struct Copy {
     size_t at; // in the buffer
 };
 
-void Capture(const std::vector<Copy>& objects, std::vector<uint8_t>& buffer)
-{
+void Capture(const std::vector<Copy>& objects, std::vector<uint8_t>& buffer) {
     for (const Copy& c : objects) {
         SIZE_T got = 0;
         if (!ReadProcessMemory(GetCurrentProcess(), c.object, &buffer[c.at], c.size, &got) || got != c.size) {
@@ -34,8 +33,7 @@ void Capture(const std::vector<Copy>& objects, std::vector<uint8_t>& buffer)
 }
 
 // Committed private read-write pages of the process (4 KB each).
-std::vector<uintptr_t> WritablePages()
-{
+std::vector<uintptr_t> WritablePages() {
     std::vector<uintptr_t> pages;
     ULONG_PTR stackLow = 0, stackHigh = 0;
     GetCurrentThreadStackLimits(&stackLow, &stackHigh);
@@ -56,8 +54,7 @@ std::vector<uintptr_t> WritablePages()
     return pages;
 }
 
-void HashPages(const std::vector<uintptr_t>& pages, std::vector<uint64_t>& out)
-{
+void HashPages(const std::vector<uintptr_t>& pages, std::vector<uint64_t>& out) {
     out.resize(pages.size());
     std::vector<uint8_t> buf(4096);
     for (size_t i = 0; i < pages.size(); i++) {
@@ -68,8 +65,7 @@ void HashPages(const std::vector<uintptr_t>& pages, std::vector<uint64_t>& out)
     }
 }
 
-void CopyPages(const std::vector<uintptr_t>& pages, std::vector<uint8_t>& out)
-{
+void CopyPages(const std::vector<uintptr_t>& pages, std::vector<uint8_t>& out) {
     out.assign(pages.size() * 4096, 0);
     for (size_t i = 0; i < pages.size(); i++) {
         SIZE_T got = 0;
@@ -83,8 +79,7 @@ struct ObjectRange {
 };
 
 // The UObject (from the object array) whose memory holds `address`, or null.
-const void* OwnerOf(const std::vector<ObjectRange>& objects, uintptr_t address)
-{
+const void* OwnerOf(const std::vector<ObjectRange>& objects, uintptr_t address) {
     auto it = std::upper_bound(objects.begin(), objects.end(), address,
                                [](uintptr_t a, const ObjectRange& r) { return a < r.lo; });
     if (it == objects.begin()) return nullptr;
@@ -98,8 +93,7 @@ class PageProbe : public IFrameDriver {
 public:
     explicit PageProbe(int ticks) : ticks_(ticks) {}
 
-    bool OnFrame(SfvGame& game) override
-    {
+    bool OnFrame(SfvGame& game) override {
         SetFrameDriver(nullptr);
         Run(game);
         delete this;
@@ -107,15 +101,13 @@ public:
     }
 
 private:
-    void TicksAndBack(SfvGame& game, const std::vector<StateRegion>& regions, std::vector<uint8_t>& state)
-    {
+    void TicksAndBack(SfvGame& game, const std::vector<StateRegion>& regions, std::vector<uint8_t>& state) {
         for (int i = 0; i < ticks_; i++) game.Advance(FrameInputs{}, false);
         LoadRegions(regions, state.data());
         game.OnStateLoaded(0);
     }
 
-    void Run(SfvGame& game)
-    {
+    void Run(SfvGame& game) {
         game.RefreshRegions();
         const auto& regions = game.Regions();
         if (regions.empty() || !game.CanRunTicks()) {
@@ -179,8 +171,7 @@ class OutsideProbe : public IFrameDriver {
 public:
     explicit OutsideProbe(int ticks) : ticks_(ticks) {}
 
-    bool OnFrame(SfvGame& game) override
-    {
+    bool OnFrame(SfvGame& game) override {
         SetFrameDriver(nullptr);
         Run(game);
         delete this;
@@ -188,8 +179,7 @@ public:
     }
 
 private:
-    void Run(SfvGame& game)
-    {
+    void Run(SfvGame& game) {
         game.RefreshRegions();
         const auto& regions = game.Regions();
         if (regions.empty() || !game.CanRunTicks()) {
@@ -229,6 +219,7 @@ private:
             size_t index;
             int words;
         };
+
         std::vector<Hit> hits;
         for (size_t i = 0; i < objects.size(); i++) {
             const Copy& c = objects[i];
@@ -275,8 +266,7 @@ private:
 
 } // namespace
 
-void RequestOutsideProbe(SfvGame* game, int ticks, bool allMemory)
-{
+void RequestOutsideProbe(SfvGame* game, int ticks, bool allMemory) {
     (void)game;
     if (CurrentFrameDriver()) {
         Log("outside: a frame driver (netplay?) is running; leave first");

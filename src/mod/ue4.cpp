@@ -34,27 +34,24 @@ constexpr int kItemChunk = 64 * 1024;
 // read (its object array grows while a battle loads on another thread), so
 // a check before the copy is not enough (a host crashed in ForEachObject
 // that way, 2026-10-30).
-bool CopyGuarded(void* out, const void* p, size_t size)
-{
+bool CopyGuarded(void* out, const void* p, size_t size) {
     CrashGuardEnter(); // a fault here is expected, not a crash
     __try {
         std::memcpy(out, p, size);
         CrashGuardLeave();
         return true;
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
         CrashGuardLeave();
         return false;
     }
 }
 
-template <typename T> bool Read(const void* p, T* out)
-{
+template <typename T>
+bool Read(const void* p, T* out) {
     return p && CopyGuarded(out, p, sizeof(T));
 }
 
-std::string EntryText(const void* entry)
-{
+std::string EntryText(const void* entry) {
     if (!entry || !IsReadable(entry, kEntryText + 2)) return "";
     int32_t index = 0;
     std::memcpy(&index, entry, 4);
@@ -73,8 +70,7 @@ std::string EntryText(const void* entry)
     return out;
 }
 
-bool LooksLikeNames(const void* candidate)
-{
+bool LooksLikeNames(const void* candidate) {
     // `candidate` is in the image's own data, readable: test the value it
     // holds cheaply before following it.
     const void* const* chunks = *static_cast<const void* const* const*>(candidate);
@@ -88,16 +84,14 @@ bool LooksLikeNames(const void* candidate)
     return EntryText(e0) == "None" && EntryText(e1) == "ByteProperty";
 }
 
-const void* ItemObject(const uint8_t* items, size_t stride, int i)
-{
+const void* ItemObject(const uint8_t* items, size_t stride, int i) {
     const void* object = nullptr;
     Read(items + i * stride, &object);
     return object;
 }
 
 // The object array as it is now: items, their stride and count.
-bool CurrentItems(const uint8_t** items, size_t* stride, int* count)
-{
+bool CurrentItems(const uint8_t** items, size_t* stride, int* count) {
     if (g_objectsArray) {
         const uint8_t* data = nullptr;
         int32_t num = 0;
@@ -115,8 +109,7 @@ bool CurrentItems(const uint8_t** items, size_t* stride, int* count)
     return true;
 }
 
-bool CheckItems(const uint8_t* items, size_t stride, int count)
-{
+bool CheckItems(const uint8_t* items, size_t stride, int count) {
     for (int i = 0; i < count; i++) {
         const void* object = ItemObject(items, stride, i);
         int32_t index = -1;
@@ -127,8 +120,7 @@ bool CheckItems(const uint8_t* items, size_t stride, int count)
 
 } // namespace
 
-bool LocateObjectsFrom(const void* knownObject)
-{
+bool LocateObjectsFrom(const void* knownObject) {
     int32_t index = -1;
     if (!knownObject || !Read(static_cast<const uint8_t*>(knownObject) + 0xC, &index) || index < 8) return false;
     const uint64_t value = reinterpret_cast<uint64_t>(knownObject);
@@ -154,8 +146,7 @@ bool LocateObjectsFrom(const void* knownObject)
                         if (index < kItemChunk) {
                             // Prefer the chunk table if something points at this array.
                             g_items = items;
-                        }
-                        else {
+                        } else {
                             g_items = items; // only chunk N known; FindObject sees that chunk
                         }
                         Log("ue4: objects at %p (item stride 0x%zx), found from %s", static_cast<const void*>(items), stride,
@@ -172,8 +163,7 @@ bool LocateObjectsFrom(const void* knownObject)
     return false;
 }
 
-bool Init(const GameImage& image)
-{
+bool Init(const GameImage& image) {
     // Where this build keeps it (the image is verified at load); the scan
     // below is for anything else and takes seconds.
     if (LooksLikeNames(reinterpret_cast<const void*>(image.base + kKnownNamesRva))) {
@@ -203,8 +193,7 @@ bool Init(const GameImage& image)
 
 bool Ready() { return g_ready; }
 
-std::string NameText(int32_t index)
-{
+std::string NameText(int32_t index) {
     if (!g_chunks || index < 0) return "";
     const void* const* chunk = nullptr;
     if (!Read(g_chunks + index / kChunkSize, &chunk) || !chunk) return "";
@@ -213,8 +202,7 @@ std::string NameText(int32_t index)
     return EntryText(entry);
 }
 
-std::string ObjectName(const void* object)
-{
+std::string ObjectName(const void* object) {
     int32_t name[2] = {};
     if (!object || !Read(static_cast<const uint8_t*>(object) + 0x18, &name)) return "?";
     std::string s = NameText(name[0]);
@@ -222,23 +210,20 @@ std::string ObjectName(const void* object)
     return s;
 }
 
-const void* ClassOf(const void* object)
-{
+const void* ClassOf(const void* object) {
     const void* cls = nullptr;
     if (!object || !Read(static_cast<const uint8_t*>(object) + 0x10, &cls)) return nullptr;
     return cls;
 }
 
-const void* SuperOf(const void* structObject)
-{
+const void* SuperOf(const void* structObject) {
     // UStruct: UField (UObject 0x28 + Next 8) then SuperStruct at +0x30.
     const void* super = nullptr;
     if (!structObject || !Read(static_cast<const uint8_t*>(structObject) + 0x30, &super)) return nullptr;
     return super;
 }
 
-void* FindObject(const std::string& name, const std::string& className)
-{
+void* FindObject(const std::string& name, const std::string& className) {
     void* found = nullptr;
     ForEachObject([&](const void* object) {
         if (found || ObjectName(object) != name) return;
@@ -248,8 +233,7 @@ void* FindObject(const std::string& name, const std::string& className)
     return found;
 }
 
-bool EnsureObjects(uintptr_t imageBase)
-{
+bool EnsureObjects(uintptr_t imageBase) {
     const uint8_t* items = nullptr;
     size_t stride = 0;
     int count = 0;
@@ -260,8 +244,7 @@ bool EnsureObjects(uintptr_t imageBase)
     return LocateObjectsFrom(singleton);
 }
 
-void ForEachObject(const std::function<void(const void* object)>& visit)
-{
+void ForEachObject(const std::function<void(const void* object)>& visit) {
     const uint8_t* items = nullptr;
     size_t stride = 0;
     int count = 0;
@@ -281,23 +264,20 @@ void ForEachObject(const std::function<void(const void* object)>& visit)
     }
 }
 
-size_t ObjectSize(const void* object)
-{
+size_t ObjectSize(const void* object) {
     const void* cls = ClassOf(object);
     int32_t size = 0;
     if (!cls || !Read(static_cast<const uint8_t*>(cls) + 0x40, &size) || size < 0x28 || size > (1 << 20)) return 0;
     return static_cast<size_t>(size);
 }
 
-const void* OuterOf(const void* object)
-{
+const void* OuterOf(const void* object) {
     const void* outer = nullptr;
     if (!object || !Read(static_cast<const uint8_t*>(object) + 0x20, &outer)) return nullptr;
     return outer;
 }
 
-std::string Describe(const void* object)
-{
+std::string Describe(const void* object) {
     if (!object) return "null";
     return ObjectName(ClassOf(object)) + " " + ObjectName(object);
 }

@@ -9,16 +9,14 @@ namespace sfv {
 
 namespace {
 
-void Put32(std::vector<uint8_t>& out, uint32_t v)
-{
+void Put32(std::vector<uint8_t>& out, uint32_t v) {
     out.push_back(static_cast<uint8_t>(v >> 24));
     out.push_back(static_cast<uint8_t>(v >> 16));
     out.push_back(static_cast<uint8_t>(v >> 8));
     out.push_back(static_cast<uint8_t>(v));
 }
 
-void Chunk(std::vector<uint8_t>& out, const char (&type)[5], const std::vector<uint8_t>& data)
-{
+void Chunk(std::vector<uint8_t>& out, const char (&type)[5], const std::vector<uint8_t>& data) {
     Put32(out, static_cast<uint32_t>(data.size()));
     const size_t at = out.size();
     out.insert(out.end(), type, type + 4);
@@ -28,8 +26,7 @@ void Chunk(std::vector<uint8_t>& out, const char (&type)[5], const std::vector<u
 
 } // namespace
 
-std::vector<uint8_t> EncodePng(int width, int height, const uint8_t* rgb)
-{
+std::vector<uint8_t> EncodePng(int width, int height, const uint8_t* rgb) {
     std::vector<uint8_t> out = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
     std::vector<uint8_t> ihdr;
     Put32(ihdr, static_cast<uint32_t>(width));

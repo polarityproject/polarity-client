@@ -23,6 +23,7 @@ namespace {
 class NoTransport : public ITransport {
 public:
     void Send(uint64_t, const uint8_t*, size_t) override {}
+
     bool Receive(Packet&) override { return false; }
 };
 
@@ -31,12 +32,10 @@ std::wstring g_noisePath;
 class StressDriver : public IFrameDriver {
 public:
     StressDriver(int frames, int distance, uint64_t seed, bool learn)
-        : frames_(frames), distance_(distance), seed_(seed), learn_(learn)
-    {
+        : frames_(frames), distance_(distance), seed_(seed), learn_(learn) {
     }
 
-    bool OnFrame(SfvGame& game) override
-    {
+    bool OnFrame(SfvGame& game) override {
         if (!session_) {
             NetplayConfig nc;
             nc.stressCheckDistance = static_cast<unsigned char>(distance_);
@@ -85,18 +84,19 @@ public:
     }
 
 private:
-    void DrivePads(int frame)
-    {
+    void DrivePads(int frame) {
         for (int p = 0; p < 2; p++) {
             const uint64_t key[3] = {seed_, static_cast<uint64_t>(p), static_cast<uint64_t>(frame / 5)};
             const uint64_t h = Hash64(key, sizeof(key));
             uint16_t b = 0;
             switch (h % 8) {
-            case 0: case 1: b |= XINPUT_GAMEPAD_DPAD_RIGHT; break;
-            case 2: case 3: b |= XINPUT_GAMEPAD_DPAD_LEFT; break;
-            case 4: b |= XINPUT_GAMEPAD_DPAD_DOWN; break;
-            case 5: b |= XINPUT_GAMEPAD_DPAD_UP; break;
-            default: break;
+                case 0:
+                case 1: b |= XINPUT_GAMEPAD_DPAD_RIGHT; break;
+                case 2:
+                case 3: b |= XINPUT_GAMEPAD_DPAD_LEFT; break;
+                case 4: b |= XINPUT_GAMEPAD_DPAD_DOWN; break;
+                case 5: b |= XINPUT_GAMEPAD_DPAD_UP; break;
+                default: break;
             }
             static const uint16_t kAttack[] = {XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y, XINPUT_GAMEPAD_RIGHT_SHOULDER,
                                                XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B};
@@ -107,8 +107,7 @@ private:
 
     // Noise is a few isolated words; a real divergence spreads into many. Only
     // frames that differ in a few words are learned, the rest fail the run.
-    void LearnPending(SfvGame& game)
-    {
+    void LearnPending(SfvGame& game) {
         if (pending_.empty()) return;
         std::map<int, int> perFrame;
         for (const auto& d : pending_) perFrame[d.frame]++;
@@ -127,8 +126,7 @@ private:
         }
     }
 
-    void Finish(SfvGame& game)
-    {
+    void Finish(SfvGame& game) {
         SetRoundDirectorPerTick(false, false);
         SetScriptedPad(0, false);
         SetScriptedPad(1, false);
@@ -141,7 +139,9 @@ private:
             const int desyncs = session_->DesyncCount();
             Log("stress: %s, %d frames, distance %d, %d loads, %d regions (%zu bytes), %d desync events, %d differing "
                 "words, %.1f ms per frame",
-                learn_ ? (rejected_ ? "LEARNED WITH REJECTS" : "LEARNED") : desyncs == 0 ? "PASS" : "FAIL", frame_, distance_, loads, int(game.Regions().size()),
+                learn_ ? (rejected_ ? "LEARNED WITH REJECTS" : "LEARNED") : desyncs == 0 ? "PASS"
+                                                                                         : "FAIL",
+                frame_, distance_, loads, int(game.Regions().size()),
                 StateSize(game.Regions()), desyncs, diffWords_, frame_ ? double(ms) / frame_ : 0.0);
             if (learn_) {
                 const bool saved = !g_noisePath.empty() && game.SaveNoise(g_noisePath);
@@ -164,10 +164,12 @@ private:
     int diffWords_ = 0;
     int learned_ = 0;
     int rejected_ = 0;
+
     struct Diff {
         int frame;
         size_t region, offset;
     };
+
     std::vector<Diff> pending_;
     static constexpr int kMaxNoiseWordsPerFrame = 16;
     NoTransport transport_;
@@ -179,13 +181,13 @@ private:
 
 void SetNoisePath(const std::wstring& path) { g_noisePath = path; }
 
-void RequestStressTest(int frames, int distance, uint64_t seed, bool learnNoise)
-{
+void RequestStressTest(int frames, int distance, uint64_t seed, bool learnNoise) {
     if (CurrentFrameDriver()) {
         Log("stress: another driver is active");
         return;
     }
-    distance = distance < 1 ? 1 : distance > 30 ? 30 : distance;
+    distance = distance < 1 ? 1 : distance > 30 ? 30
+                                                : distance;
     Log("stress: %d frames, distance %d, seed %llu", frames, distance, static_cast<unsigned long long>(seed));
     SetFrameDriver(new StressDriver(frames, distance, seed, learnNoise));
 }

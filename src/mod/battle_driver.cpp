@@ -54,12 +54,10 @@ std::atomic<DWORD> g_frameThread{0};
 // is in the snapshot: the battle's tick count and her current level. Both
 // games, and a resimulation, then draw the same.
 constexpr game::CodeSite kRoseSoulPick{
-    "Rose soul level pick", 0x3AD7E0,
-    {0x40, 0x55, 0x53, 0x56, 0x48, 0x8D, 0x6C, 0x24, 0xB9, 0x48, 0x81, 0xEC, 0xA0, 0x00, 0x00, 0x00}};
+    "Rose soul level pick", 0x3AD7E0, {0x40, 0x55, 0x53, 0x56, 0x48, 0x8D, 0x6C, 0x24, 0xB9, 0x48, 0x81, 0xEC, 0xA0, 0x00, 0x00, 0x00}};
 // The random stream's draw: state = state * 0x19660D + 0x3C6EF35F at +0x8.
 constexpr game::CodeSite kRandomStreamDraw{
-    "random stream draw", 0x32B2B0,
-    {0x69, 0x41, 0x08, 0x0D, 0x66, 0x19, 0x00, 0x05, 0x5F, 0xF3, 0x6E, 0x3C, 0x89, 0x41, 0x08, 0xC1}};
+    "random stream draw", 0x32B2B0, {0x69, 0x41, 0x08, 0x0D, 0x66, 0x19, 0x00, 0x05, 0x5F, 0xF3, 0x6E, 0x3C, 0x89, 0x41, 0x08, 0xC1}};
 // A second random state, one global word (rva 0x3966540) drawn by inlined
 // copies of the same step in eight functions: the range pick at rva 0x391C30
 // and seven weighted picks next to it, reached through a table of selector
@@ -75,17 +73,14 @@ constexpr uint32_t kGlobalRandomState = 0x3966540;
 constexpr uint8_t kPickPrologue[16] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74,
                                        0x24, 0x20, 0x57, 0x48, 0x83, 0xEC, 0x40, 0x48};
 constexpr game::CodeSite kGlobalPicks[] = {
-    {"global random range pick", 0x391C30,
-     {0x69, 0x05, 0x06, 0x49, 0x5D, 0x03, 0x0D, 0x66, 0x19, 0x00, 0x2B, 0xCA, 0x44, 0x8B, 0xC2, 0x33}},
+    {"global random range pick", 0x391C30, {0x69, 0x05, 0x06, 0x49, 0x5D, 0x03, 0x0D, 0x66, 0x19, 0x00, 0x2B, 0xCA, 0x44, 0x8B, 0xC2, 0x33}},
     {"global random weighted pick 1", 0x3954F0, {}},
     {"global random weighted pick 2", 0x3956A0, {}},
     {"global random weighted pick 3", 0x395860, {}},
-    {"global random pick of 21", 0x395AD0,
-     {0x41, 0xC7, 0x40, 0x1C, 0x00, 0x00, 0x00, 0x00, 0x69, 0x0D, 0x5E, 0x0A, 0x5D, 0x03, 0x0D, 0x66}},
+    {"global random pick of 21", 0x395AD0, {0x41, 0xC7, 0x40, 0x1C, 0x00, 0x00, 0x00, 0x00, 0x69, 0x0D, 0x5E, 0x0A, 0x5D, 0x03, 0x0D, 0x66}},
     {"global random weighted pick 4", 0x395B20, {}},
     {"global random weighted pick 5", 0x395D00, {}},
-    {"global random pick of 4", 0x395EB0,
-     {0x69, 0x05, 0x86, 0x06, 0x5D, 0x03, 0x0D, 0x66, 0x19, 0x00, 0x05, 0x5F, 0xF3, 0x6E, 0x3C, 0x89}},
+    {"global random pick of 4", 0x395EB0, {0x69, 0x05, 0x86, 0x06, 0x5D, 0x03, 0x0D, 0x66, 0x19, 0x00, 0x05, 0x5F, 0xF3, 0x6E, 0x3C, 0x89}},
 };
 constexpr uint32_t kBattleTicks = 0x1B8; // int, in the battle frame's state (battleframe::kStateBegin..)
 constexpr uint32_t kRoseSoulLevel = 0x444;
@@ -99,8 +94,7 @@ std::atomic<uint8_t*> g_battleFrame{nullptr};
 thread_local bool t_picking = false;
 thread_local uint32_t t_pickSeed = 0;
 
-uint64_t PickDetour(uint8_t* entity, void* a2, void* a3, void* a4)
-{
+uint64_t PickDetour(uint8_t* entity, void* a2, void* a3, void* a4) {
     HookGuard guard;
     const uint8_t* frame = g_battleFrame;
     const uint32_t ticks = frame ? *reinterpret_cast<const uint32_t*>(frame + kBattleTicks) : 0;
@@ -111,11 +105,10 @@ uint64_t PickDetour(uint8_t* entity, void* a2, void* a3, void* a4)
     return result;
 }
 
-std::atomic<int> g_drawLog{0}; // research: draws left to log (`drawlog <count>`)
+std::atomic<int> g_drawLog{0};                          // research: draws left to log (`drawlog <count>`)
 std::atomic<uint32_t> g_drawLogFrom{1}, g_drawLogTo{0}; // research: driven ticks whose draws are all logged
 
-bool InDrawLogTicks()
-{
+bool InDrawLogTicks() {
     const uint32_t t = DrivenTicks();
     return t >= g_drawLogFrom && t <= g_drawLogTo;
 }
@@ -137,8 +130,7 @@ constexpr uint32_t kStreamInOwner = 0xC40;
 constexpr uint32_t kOwnerVtable = 0x2C521F8; // rva; the fighters' and helpers' class
 constexpr uint32_t kOwnerSlot = 0xF8;        // 0..3: P1, P2, then the helpers
 
-uint32_t Mix(uint64_t x)
-{
+uint32_t Mix(uint64_t x) {
     x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull; // splitmix64's mix
     x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
     return static_cast<uint32_t>(x ^ (x >> 31));
@@ -151,11 +143,11 @@ struct TickCount {
     uintptr_t key;
     uint32_t count;
 };
+
 TickCount g_tickCounts[64];
 int g_tickCountUsed = 0;
 
-uint32_t NextInTick(uintptr_t key)
-{
+uint32_t NextInTick(uintptr_t key) {
     for (int i = 0; i < g_tickCountUsed; i++) {
         if (g_tickCounts[i].key == key) return g_tickCounts[i].count++;
     }
@@ -166,8 +158,7 @@ uint32_t NextInTick(uintptr_t key)
 
 // The slot of the object that holds the stream, or -1 when the stream is not
 // a fighter's or helper's.
-int64_t OwnerSlot(const uint8_t* stream)
-{
+int64_t OwnerSlot(const uint8_t* stream) {
     CrashGuardEnter(); // a fault here is expected, not a crash
     __try {
         const uint8_t* owner = stream - kStreamInOwner;
@@ -175,15 +166,13 @@ int64_t OwnerSlot(const uint8_t* stream)
         if (*reinterpret_cast<const uintptr_t*>(owner) - g_imageBase == kOwnerVtable) slot = *reinterpret_cast<const uint32_t*>(owner + kOwnerSlot);
         CrashGuardLeave();
         return slot;
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
         CrashGuardLeave();
         return -1;
     }
 }
 
-uint32_t TickDrawState(const uint8_t* stream, uintptr_t site)
-{
+uint32_t TickDrawState(const uint8_t* stream, uintptr_t site) {
     // Another object's stream (the battle camera's shake, a Rose mirror
     // match) by the draw's call site (an rva) and its count there in the
     // tick: by the order of all such draws, effects that a rollback loses
@@ -201,8 +190,7 @@ uint32_t* g_globalRandom = nullptr; // kGlobalRandomState, once the picks are ho
 using GlobalPickFn = uint64_t (*)(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4);
 GlobalPickFn g_origGlobalPicks[std::size(kGlobalPicks)] = {};
 
-void SeedGlobalPick(uintptr_t site)
-{
+void SeedGlobalPick(uintptr_t site) {
     // The site as an rva: the same in every process.
     const uint32_t pick = NextInTick(site);
     const uint64_t key = static_cast<uint64_t>(site - g_imageBase) << 16 | pick;
@@ -216,21 +204,18 @@ void SeedGlobalPick(uintptr_t site)
 }
 
 template <int I>
-uint64_t GlobalPickDetour(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4)
-{
+uint64_t GlobalPickDetour(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4) {
     HookGuard guard;
     if (g_inDriver && g_globalRandom) SeedGlobalPick(reinterpret_cast<uintptr_t>(_ReturnAddress()));
     return g_origGlobalPicks[I](a1, a2, a3, a4);
 }
 
 template <size_t... I>
-std::array<void*, sizeof...(I)> GlobalPickDetours(std::index_sequence<I...>)
-{
+std::array<void*, sizeof...(I)> GlobalPickDetours(std::index_sequence<I...>) {
     return {reinterpret_cast<void*>(&GlobalPickDetour<I>)...};
 }
 
-uint32_t DrawDetour(uint8_t* stream)
-{
+uint32_t DrawDetour(uint8_t* stream) {
     HookGuard guard;
     if (t_picking) *reinterpret_cast<uint32_t*>(stream + kStreamState) = t_pickSeed;
     else if (g_inDriver) *reinterpret_cast<uint32_t*>(stream + kStreamState) = TickDrawState(stream, reinterpret_cast<uintptr_t>(_ReturnAddress()));
@@ -254,8 +239,7 @@ uint32_t DrawDetour(uint8_t* stream)
     return g_origDraw(stream);
 }
 
-void BattleFrameDetour(uint8_t* battleFrame)
-{
+void BattleFrameDetour(uint8_t* battleFrame) {
     HookGuard guard;
     g_battleFrame = battleFrame;
     g_game->OnBattleFrame(battleFrame);
@@ -291,8 +275,7 @@ void BattleFrameDetour(uint8_t* battleFrame)
 
 int g_strayRecords = 0;
 
-uint64_t RecordFrameDetour(uint8_t* inputUnit, void* a2, void* a3, void* a4)
-{
+uint64_t RecordFrameDetour(uint8_t* inputUnit, void* a2, void* a3, void* a4) {
     HookGuard guard;
     // With a driver in charge, inputs are recorded only by the ticks it runs.
     // A call from anywhere else would record a local, unsynchronised input
@@ -315,8 +298,7 @@ uint64_t RecordFrameDetour(uint8_t* inputUnit, void* a2, void* a3, void* a4)
 // Every add is still logged. A stub saves the caller's r13 and r14 (still the
 // caller's on entry) before the detour runs.
 constexpr game::CodeSite kGaugeAdd{
-    "damage gauge add", 0x346A20,
-    {0x44, 0x89, 0x4C, 0x24, 0x20, 0x44, 0x89, 0x44, 0x24, 0x18, 0x55, 0x56, 0x57, 0x48, 0x83, 0xEC}};
+    "damage gauge add", 0x346A20, {0x44, 0x89, 0x4C, 0x24, 0x20, 0x44, 0x89, 0x44, 0x24, 0x18, 0x55, 0x56, 0x57, 0x48, 0x83, 0xEC}};
 constexpr uintptr_t kGaugeAddFromHit = 0x36D47D; // the return address of the hit's call
 constexpr int kGaugeLogsPerBattle = 400;
 using GaugeAddFn = int* (*)(uint8_t* gauge, int* out, int amount, int flags);
@@ -324,8 +306,7 @@ GaugeAddFn g_origGaugeAdd = nullptr;
 uint64_t g_gaugeR13 = 0, g_gaugeR14 = 0; // the caller's, from the stub (game thread only)
 int g_gaugeLogs = 0, g_gaugeBattle = -1;
 
-int* GaugeAddDetour(uint8_t* gauge, int* out, int amount, int flags)
-{
+int* GaugeAddDetour(uint8_t* gauge, int* out, int amount, int flags) {
     const uintptr_t from = reinterpret_cast<uintptr_t>(_ReturnAddress()) - g_imageBase;
     const int32_t damage = static_cast<int32_t>(g_gaugeR14);
     int32_t before[3] = {}, vitality[2] = {};
@@ -348,8 +329,7 @@ int* GaugeAddDetour(uint8_t* gauge, int* out, int amount, int flags)
             // The move's divisor, from the rest: 1000 / max vitality * damage / amount.
             const double divisor = amount && vitality[1] ? 1000.0 / (vitality[1] / unit) * (damage / unit) / (amount / unit) : 0;
             std::snprintf(cause, sizeof(cause), "for damage %.2f (divisor %.2f)", damage / unit, divisor);
-        }
-        else {
+        } else {
             std::snprintf(cause, sizeof(cause), "from rva 0x%llX", static_cast<unsigned long long>(from));
         }
         Log("gauge: tick %u%s, vitality %.0f/%.0f, add %.3f (flags %d) %s, now %.2f/%.0f level %d (was %.2f level %d)",
@@ -361,8 +341,7 @@ int* GaugeAddDetour(uint8_t* gauge, int* out, int amount, int flags)
 
 // mov rax, &g_gaugeR14; mov [rax], r14; mov rax, &g_gaugeR13; mov [rax], r13;
 // mov rax, GaugeAddDetour; jmp rax (rax is free on a function's entry).
-void* MakeGaugeStub()
-{
+void* MakeGaugeStub() {
     auto* code = static_cast<uint8_t*>(VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
     if (!code) return nullptr;
     uint8_t* p = code;
@@ -391,15 +370,13 @@ void* MakeGaugeStub()
 // frame's pose. Logs the next `count` calls in driven ticks (from one caller,
 // by the rva its call returns to, when given).
 constexpr game::CodeSite kBonePosition{
-    "fighter bone position", 0x3919D0,
-    {0x48, 0x89, 0x5C, 0x24, 0x20, 0x57, 0x48, 0x83, 0xEC, 0x70, 0x48, 0x8B, 0x05, 0x9F, 0x08, 0x63}};
+    "fighter bone position", 0x3919D0, {0x48, 0x89, 0x5C, 0x24, 0x20, 0x57, 0x48, 0x83, 0xEC, 0x70, 0x48, 0x8B, 0x05, 0x9F, 0x08, 0x63}};
 using BonePositionFn = void (*)(uint8_t* fighter, const void* bone, float* out, int flag);
 BonePositionFn g_origBonePosition = nullptr;
 std::atomic<int> g_boneLog{0};
 std::atomic<uintptr_t> g_boneLogFrom{0};
 
-void BonePositionDetour(uint8_t* fighter, const void* bone, float* out, int flag)
-{
+void BonePositionDetour(uint8_t* fighter, const void* bone, float* out, int flag) {
     g_origBonePosition(fighter, bone, out, flag);
     if (g_boneLog <= 0 || !g_inDriver) return;
     const uintptr_t from = reinterpret_cast<uintptr_t>(_ReturnAddress()) - g_imageBase;
@@ -420,8 +397,7 @@ void BonePositionDetour(uint8_t* fighter, const void* bone, float* out, int flag
 // requests: the driven tick and whether it was a resimulation, the thread,
 // and the caller; the first ones outside driven ticks with their stacks.
 constexpr game::CodeSite kCuePlay{
-    "CriWare cue play request", 0xEE7F10,
-    {0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x55, 0x57, 0x41, 0x56, 0x48, 0x8B}};
+    "CriWare cue play request", 0xEE7F10, {0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x55, 0x57, 0x41, 0x56, 0x48, 0x8B}};
 using CuePlayFn = uint64_t (*)(void* player, int sheet, int cue, int a, int b);
 CuePlayFn g_origCuePlay = nullptr;
 std::atomic<int> g_soundLog{0};
@@ -433,13 +409,12 @@ std::atomic<int> g_soundStacks{0};
 // playback in the player's table and stops just that one (stable in the
 // 2026-11-08 sound tests, docs/sound-dedupe-stop.patch).
 constexpr game::CodeSite kCueStop{
-    "CriWare playback stop request", 0xEE8710,
-    {0x40, 0x57, 0x48, 0x83, 0xEC, 0x40, 0x48, 0x83, 0x39, 0x00, 0x48, 0x8B, 0xF9, 0x0F, 0x84, 0xEA}};
+    "CriWare playback stop request", 0xEE8710, {0x40, 0x57, 0x48, 0x83, 0xEC, 0x40, 0x48, 0x83, 0x39, 0x00, 0x48, 0x8B, 0xF9, 0x0F, 0x84, 0xEA}};
 using CueStopFn = void (*)(void* player, int handle, bool withoutRelease);
 CueStopFn g_cueStop = nullptr;
 // The sound capture (BeginSoundCapture): the sounds asked for meanwhile.
 std::mutex g_captureMutex;
-std::atomic<bool> g_capturing{false}; // read unlocked: battle job threads ask for sounds too
+std::atomic<bool> g_capturing{false};          // read unlocked: battle job threads ask for sounds too
 std::vector<std::pair<void*, int>> g_captured; // player, handle
 thread_local bool t_captureExempt = false;
 constexpr int kAmbienceSheet = 58;
@@ -450,8 +425,7 @@ constexpr size_t kBattleSoundsKept = 16384;
 std::atomic<bool> g_recordBattle{false};
 std::vector<std::pair<void*, int>> g_battleSounds; // player, handle (under g_captureMutex)
 
-uint64_t CuePlayDetour(void* player, int sheet, int cue, int a, int b)
-{
+uint64_t CuePlayDetour(void* player, int sheet, int cue, int a, int b) {
     // Sheet 58 is the stage's ambience (a loop started at the battle's start
     // and again at each round's set-up): a landing keeps it, as it is meant
     // to go on (stopped, the paused bed went from rms 0.0085 to 0.0018).
@@ -480,8 +454,7 @@ uint64_t CuePlayDetour(void* player, int sheet, int cue, int a, int b)
     return handle;
 }
 
-bool Hook(const GameImage& image, const game::CodeSite& site, void* detour, void** original)
-{
+bool Hook(const GameImage& image, const game::CodeSite& site, void* detour, void** original) {
     void* target = image.At<void*>(site.rva);
     if (std::memcmp(target, site.bytes, sizeof(site.bytes)) != 0) {
         Log("battle driver: signature mismatch at %s", site.name);
@@ -497,8 +470,7 @@ bool Hook(const GameImage& image, const game::CodeSite& site, void* detour, void
 
 } // namespace
 
-void SetMatchDrawSeed(uint64_t seed)
-{
+void SetMatchDrawSeed(uint64_t seed) {
     g_drawSeed = seed;
 }
 
@@ -514,12 +486,9 @@ SrandFn g_srand = nullptr;
 // in driven ticks, normal and replayed apart: the update's start (rva
 // 0x4DC2D0), scheduler phases 1, 2, 4 and 8 (rva 0x4CD890) and the tick
 // proper (rva 0x4D2850). Logged every 600 driven ticks.
-constexpr game::CodeSite kUpdateStart{"battle update start", 0x4DC2D0,
-    {0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x28, 0x4C, 0x8B, 0xF1, 0x48, 0x8B, 0x49, 0x18, 0x48}};
-constexpr game::CodeSite kSchedulerPhase{"scheduler phase", 0x4CD890,
-    {0x4C, 0x8B, 0xDC, 0x53, 0x57, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x48, 0x8B, 0x05, 0xDE, 0x49}};
-constexpr game::CodeSite kTickProper{"battle tick", 0x4D2850,
-    {0x83, 0xB9, 0x90, 0x01, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xC1, 0x74, 0x0C, 0x83, 0xB9, 0x94, 0x01}};
+constexpr game::CodeSite kUpdateStart{"battle update start", 0x4DC2D0, {0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x28, 0x4C, 0x8B, 0xF1, 0x48, 0x8B, 0x49, 0x18, 0x48}};
+constexpr game::CodeSite kSchedulerPhase{"scheduler phase", 0x4CD890, {0x4C, 0x8B, 0xDC, 0x53, 0x57, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x48, 0x8B, 0x05, 0xDE, 0x49}};
+constexpr game::CodeSite kTickProper{"battle tick", 0x4D2850, {0x83, 0xB9, 0x90, 0x01, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xC1, 0x74, 0x0C, 0x83, 0xB9, 0x94, 0x01}};
 using UpdateStartFn = uint64_t (*)(void*);
 using PhaseFn = uint64_t (*)(void* scheduler, int phase);
 using TickProperFn = uint64_t (*)(void* battleFrame);
@@ -532,14 +501,22 @@ std::atomic<bool> g_phaseTiming{false};
 // does for all but its last tick when it runs several; the newest tick of
 // the frame runs them.
 std::atomic<bool> g_skipResimPresentation{false};
-enum PhasePart { kPartStart, kPart1, kPart2, kPart4, kPart8, kPartTick, kPartCount };
+
+enum PhasePart { kPartStart,
+                 kPart1,
+                 kPart2,
+                 kPart4,
+                 kPart8,
+                 kPartTick,
+                 kPartCount };
+
 const char* const kPartNames[kPartCount] = {"start", "phase 1", "phase 2", "phase 4", "phase 8", "tick"};
 uint64_t g_partTicks[2][kPartCount] = {}; // [replayed][part], performance counter ticks
 uint64_t g_partCalls[2] = {};             // driven ticks counted, [replayed]
 uint64_t g_profiledTicks = 0;             // driven ticks since timing started (task profile)
 
-template <typename F> uint64_t Timed(PhasePart part, F call)
-{
+template <typename F>
+uint64_t Timed(PhasePart part, F call) {
     if (!g_phaseTiming || !g_inDriver) return call();
     LARGE_INTEGER a, b;
     QueryPerformanceCounter(&a);
@@ -549,10 +526,14 @@ template <typename F> uint64_t Timed(PhasePart part, F call)
     return r;
 }
 
-uint64_t UpdateStartDetour(void* frame) { return Timed(kPartStart, [&] { return g_origUpdateStart(frame); }); }
-uint64_t PhaseDetour(void* scheduler, int phase)
-{
-    const PhasePart part = phase == 1 ? kPart1 : phase == 2 ? kPart2 : phase == 4 ? kPart4 : kPart8;
+uint64_t UpdateStartDetour(void* frame) {
+    return Timed(kPartStart, [&] { return g_origUpdateStart(frame); });
+}
+
+uint64_t PhaseDetour(void* scheduler, int phase) {
+    const PhasePart part = phase == 1 ? kPart1 : phase == 2 ? kPart2
+                                             : phase == 4   ? kPart4
+                                                            : kPart8;
     if (phase != 1 && phase != 2 && phase != 4 && phase != 8) return g_origPhase(scheduler, phase);
     if (g_skipResimPresentation && g_inDriver && g_replayingTick && (phase == 4 || phase == 8)) return 0;
     if (g_inDriver) SetSchedulerPhase(phase, g_replayingTick);
@@ -560,7 +541,10 @@ uint64_t PhaseDetour(void* scheduler, int phase)
     SetSchedulerPhase(0);
     return r;
 }
-uint64_t TickProperDetour(void* frame) { return Timed(kPartTick, [&] { return g_origTickProper(frame); }); }
+
+uint64_t TickProperDetour(void* frame) {
+    return Timed(kPartTick, [&] { return g_origTickProper(frame); });
+}
 
 // The battle's jobs. A scheduler phase (rva 0x4CD890) queues each of its
 // tasks as a job on one global queue (rva 0x3A750E0) and runs them with
@@ -579,11 +563,9 @@ uint64_t TickProperDetour(void* frame) { return Timed(kPartTick, [&] { return g_
 // apart for thousands of frames). The ticks the mod drives run their jobs in
 // order on the game thread: one order on every PC, at the same cost
 // (phasecost: 434-483 us per tick serial against 459-537 parallel).
-constexpr game::CodeSite kJobRunner{"battle job runner", 0x4CD420,
-    {0x48, 0x89, 0x6C, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x41, 0x54, 0x41, 0x56, 0x41, 0x57}};
+constexpr game::CodeSite kJobRunner{"battle job runner", 0x4CD420, {0x48, 0x89, 0x6C, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x41, 0x54, 0x41, 0x56, 0x41, 0x57}};
 // The phase's end: rcx = the queue (from the global), edx = 1, call the runner.
-constexpr game::CodeSite kPhaseRunsQueue{"phase runs the job queue", 0x4CDA89,
-    {0x48, 0x8B, 0x0D, 0x50, 0x76, 0x5A, 0x03, 0xBA, 0x01, 0x00, 0x00, 0x00, 0xE8, 0x86, 0xF9, 0xFF}};
+constexpr game::CodeSite kPhaseRunsQueue{"phase runs the job queue", 0x4CDA89, {0x48, 0x8B, 0x0D, 0x50, 0x76, 0x5A, 0x03, 0xBA, 0x01, 0x00, 0x00, 0x00, 0xE8, 0x86, 0xF9, 0xFF}};
 // In the runner: cmp dword ptr [rdi+0x74], ebp (0); jne (the threaded path).
 constexpr uint32_t kRunnerModeTest = 0x4CD46B;
 constexpr uint8_t kRunnerModeTestBytes[] = {0x39, 0x6F, 0x74, 0x0F, 0x85};
@@ -602,8 +584,7 @@ std::atomic<int> g_jobOrderLogs{0};
 // order: key (priority, registration), group, the task's function and object,
 // and where the object sits from the fighters' actors (P1 on the left at a
 // battle's start).
-void LogJobOrder(uint8_t* queue)
-{
+void LogJobOrder(uint8_t* queue) {
     std::vector<std::pair<uint8_t*, int>> fighters; // actor owner, side
     for (const StateRegion& r : g_game->Regions()) {
         if (r.size != actor::kRegionSize || !IsReadable(r.ptr - actor::kVtableAt, 8)) continue;
@@ -650,8 +631,7 @@ void LogJobOrder(uint8_t* queue)
     }
 }
 
-uint64_t JobRunnerDetour(uint8_t* queue, int mode)
-{
+uint64_t JobRunnerDetour(uint8_t* queue, int mode) {
     if (!g_inDriver || !queue || !g_jobQueue || queue != *g_jobQueue) return g_origJobRunner(queue, mode);
     if (g_jobOrderLogs > 0) {
         g_jobOrderLogs--;
@@ -666,8 +646,7 @@ uint64_t JobRunnerDetour(uint8_t* queue, int mode)
     return r;
 }
 
-void CountPhaseTick()
-{
+void CountPhaseTick() {
     if (!g_phaseTiming) return;
     g_partCalls[g_replayingTick ? 1 : 0]++;
     g_profiledTicks++;
@@ -691,47 +670,40 @@ void CountPhaseTick()
     std::memset(g_partCalls, 0, sizeof(g_partCalls));
 }
 
-void SeedTickRandom()
-{
+void SeedTickRandom() {
     g_tickCountUsed = 0;
     if (g_srand) g_srand(Mix(g_drawSeed ^ (static_cast<uint64_t>(DrivenTicks()) << 32 | 0x52414E44u)));
 }
 
-void LogGameInputs(int ticks)
-{
+void LogGameInputs(int ticks) {
     if (g_game) g_game->inputLog = ticks;
     Log("inputlog: the game's per-pad values for the next %d ticks, on change", ticks);
 }
 
-void LogRandomDrawsInTicks(uint32_t from, uint32_t to)
-{
+void LogRandomDrawsInTicks(uint32_t from, uint32_t to) {
     g_drawLogFrom = from;
     g_drawLogTo = to;
     Log("draw: logging every draw in driven ticks %u..%u", from, to);
 }
 
-void LogStartProbe()
-{
+void LogStartProbe() {
     if (g_game) g_game->LogStartProbe("asked");
 }
 
-void LogBonePositions(int count, uintptr_t from)
-{
+void LogBonePositions(int count, uintptr_t from) {
     g_boneLog = count;
     g_boneLogFrom = from;
     Log("bone: logging the next %d bone positions asked for in driven ticks (from rva 0x%llX)", count,
         static_cast<unsigned long long>(from));
 }
 
-void BeginSoundCapture()
-{
+void BeginSoundCapture() {
     std::lock_guard lock(g_captureMutex);
     g_captured.clear();
     g_capturing = g_cueStop != nullptr;
 }
 
-int StopCapturedSounds()
-{
+int StopCapturedSounds() {
     std::vector<std::pair<void*, int>> captured;
     {
         std::lock_guard lock(g_captureMutex);
@@ -745,15 +717,13 @@ int StopCapturedSounds()
 
 void SetSoundCaptureExempt(bool exempt) { t_captureExempt = exempt; }
 
-void RecordBattleSounds(bool on)
-{
+void RecordBattleSounds(bool on) {
     std::lock_guard lock(g_captureMutex);
     g_recordBattle = on;
     g_battleSounds.clear();
 }
 
-int StopBattleSounds()
-{
+int StopBattleSounds() {
     std::vector<std::pair<void*, int>> sounds, captured;
     {
         std::lock_guard lock(g_captureMutex);
@@ -775,33 +745,28 @@ int StopBattleSounds()
     return static_cast<int>(sounds.size());
 }
 
-size_t SoundCaptureMark()
-{
+size_t SoundCaptureMark() {
     std::lock_guard lock(g_captureMutex);
     return g_captured.size();
 }
 
-void KeepCapturedFrom(size_t mark)
-{
+void KeepCapturedFrom(size_t mark) {
     std::lock_guard lock(g_captureMutex);
     if (mark < g_captured.size()) g_captured.resize(mark);
 }
 
-void LogSoundPlays(int count)
-{
+void LogSoundPlays(int count) {
     g_soundLog = count;
     g_soundStacks = 6;
     Log("sound: logging the next %d cue plays (the first 6 with stacks)", count);
 }
 
-void LogRandomDraws(int count)
-{
+void LogRandomDraws(int count) {
     g_drawLog = count;
     Log("draw: logging the next %d draws in driven ticks", count);
 }
 
-bool InstallBattleDriver(const GameImage& image, SfvGame* game)
-{
+bool InstallBattleDriver(const GameImage& image, SfvGame* game) {
     g_game = game;
     SetRegionLookup([game](const void* p) -> std::string {
         for (const StateRegion& r : game->Regions()) {
@@ -845,8 +810,7 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game)
         if (std::memcmp(phaseEnd, kPhaseRunsQueue.bytes, sizeof(kPhaseRunsQueue.bytes)) != 0 ||
             std::memcmp(modeTest, kRunnerModeTestBytes, sizeof(kRunnerModeTestBytes)) != 0) {
             Log("battle driver: signature mismatch at %s: the battle's jobs run on its threads as they come", kPhaseRunsQueue.name);
-        }
-        else {
+        } else {
             g_jobQueue = image.At<uint8_t* const*>(kJobQueueGlobal);
             if (!Hook(image, kJobRunner, reinterpret_cast<void*>(&JobRunnerDetour), reinterpret_cast<void**>(&g_origJobRunner))) {
                 g_jobQueue = nullptr;
@@ -859,11 +823,9 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game)
     }
     if (!Hook(image, kCuePlay, reinterpret_cast<void*>(&CuePlayDetour), reinterpret_cast<void**>(&g_origCuePlay))) {
         Log("battle driver: soundlog unavailable");
-    }
-    else if (void* stop = image.At<void*>(kCueStop.rva); std::memcmp(stop, kCueStop.bytes, sizeof(kCueStop.bytes)) == 0) {
+    } else if (void* stop = image.At<void*>(kCueStop.rva); std::memcmp(stop, kCueStop.bytes, sizeof(kCueStop.bytes)) == 0) {
         g_cueStop = reinterpret_cast<CueStopFn>(stop);
-    }
-    else {
+    } else {
         Log("battle driver: signature mismatch at %s: sounds from muted runs may be heard after", kCueStop.name);
     }
     void* gaugeStub = MakeGaugeStub();
@@ -878,16 +840,14 @@ bool InstallBattleDriver(const GameImage& image, SfvGame* game)
 
 void SetFrameDriver(IFrameDriver* driver) { g_driver = driver; }
 
-void SetReplayingTick(bool replaying)
-{
+void SetReplayingTick(bool replaying) {
     g_replayingTick = replaying;
     CountPhaseTick();
 }
 
 bool InReplayedTick() { return g_inDriver && g_replayingTick; }
 
-void SetSerialJobs(bool on)
-{
+void SetSerialJobs(bool on) {
     g_serialJobs = on;
     Log("battle driver: driven ticks run the battle's jobs %s%s", on ? "in order on the game thread" : "on its threads as they come",
         g_jobQueue ? "" : " (the job runner is not hooked: always on its threads)");
@@ -895,28 +855,24 @@ void SetSerialJobs(bool on)
 
 bool SerialJobs() { return g_serialJobs && g_jobQueue; }
 
-void LogJobOrderNext(int calls)
-{
+void LogJobOrderNext(int calls) {
     g_jobOrderLogs = calls;
     Log("joborder: the next %d driven job runs", calls);
 }
 
-void SetResimPresentationSkip(bool on)
-{
+void SetResimPresentationSkip(bool on) {
     g_skipResimPresentation = on;
     Log("resimskip: replayed ticks %s scheduler phases 4 and 8", on ? "leave out" : "run");
 }
 
-void SetPhaseTiming(bool on)
-{
+void SetPhaseTiming(bool on) {
     g_phaseTiming = on;
     SetTaskProfiling(on, g_profiledTicks);
     g_profiledTicks = 0;
     Log("phasecost: %s", on ? "timing the battle update's parts" : "off");
 }
 
-void DetachFrameDriver()
-{
+void DetachFrameDriver() {
     g_driver = nullptr;
     // A frame that read the driver before runs to its end (on the game
     // thread itself there is nothing to wait for).
@@ -931,8 +887,7 @@ void DetachFrameDriver()
 
 IFrameDriver* CurrentFrameDriver() { return g_driver; }
 
-std::string RegionOwner(const void* region)
-{
+std::string RegionOwner(const void* region) {
     // The nearest word at or before the region that points at a vtable in
     // the game's .rdata (whose first entry points into .text).
     const uintptr_t base = g_imageBase ? g_imageBase : reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
@@ -957,15 +912,13 @@ std::string RegionOwner(const void* region)
 // region whose owner (RegionOwner) has that vtable (names shift between runs).
 const StateRegion* FindRegion(const std::string& name);
 
-void WatchRegionNamed(const std::string& name, size_t offset, int length)
-{
+void WatchRegionNamed(const std::string& name, size_t offset, int length) {
     const StateRegion* r = FindRegion(name);
     if (!r || offset + length > r->size) return Log("watchname: no region %s with +0x%zx", name.c_str(), offset);
     Log("watchname: %s +0x%zx (%d bytes): %s", name.c_str(), offset, length, ArmWatch(2, r->ptr + offset, length, g_imageBase) ? "armed" : "not armed");
 }
 
-const StateRegion* FindRegion(const std::string& name)
-{
+const StateRegion* FindRegion(const std::string& name) {
     if (!g_game) return nullptr;
     const size_t dot = name.find('.');
     if (name.size() > 1 && name[0] == 'v' && dot != std::string::npos) {
@@ -982,8 +935,7 @@ const StateRegion* FindRegion(const std::string& name)
     return nullptr;
 }
 
-void FindInRegions(const std::string& kind, const std::string& a, const std::string& b)
-{
+void FindInRegions(const std::string& kind, const std::string& a, const std::string& b) {
     if (!g_game) return;
     // The match: a float (within 1e-4), an int32, or a pointer into [lo, hi).
     uintptr_t lo = 0, hi = 0;
@@ -994,8 +946,7 @@ void FindInRegions(const std::string& kind, const std::string& a, const std::str
         lo = *reinterpret_cast<const uintptr_t*>(static_cast<uint8_t*>(object) + 0x28);
         hi = lo + *reinterpret_cast<const uint32_t*>(static_cast<uint8_t*>(object) + 0x30);
         Log("rfind: %s data at %p..%p", a.c_str(), reinterpret_cast<void*>(lo), reinterpret_cast<void*>(hi));
-    }
-    else if (kind == "near") {
+    } else if (kind == "near") {
         // Pointers into that region or the 0x1000 bytes before it (its owner object).
         const StateRegion* r = FindRegion(a);
         if (!r) return Log("rfind: no region %s", a.c_str());
@@ -1026,8 +977,7 @@ void FindInRegions(const std::string& kind, const std::string& a, const std::str
     (void)b;
 }
 
-void DumpMoveFile(const std::string& name)
-{
+void DumpMoveFile(const std::string& name) {
     // A loaded move file (KWBAC/KWBCH/KWBCM: +0x28 its bytes, +0x30 count) to Polarity\research.
     void* object = ue4::EnsureObjects(g_imageBase) ? ue4::FindObject(name, "") : nullptr;
     if (!object || !IsReadable(static_cast<uint8_t*>(object) + 0x28, 0x10)) return Log("dumpbac: no %s", name.c_str());
@@ -1048,14 +998,17 @@ void DumpMoveFile(const std::string& name)
 }
 
 namespace {
-struct MoveFileRange { std::string name; uintptr_t lo = 0, hi = 0; };
+struct MoveFileRange {
+    std::string name;
+    uintptr_t lo = 0, hi = 0;
+};
+
 std::vector<MoveFileRange> g_moveFiles;
 std::atomic<int> g_actorLog{0};
 const uint8_t* g_cameraManager = nullptr; // research: the drawn PlayerCameraManager
 } // namespace
 
-void RefreshActorObjects()
-{
+void RefreshActorObjects() {
     g_moveFiles.clear();
     if (ue4::EnsureObjects(g_imageBase)) {
         ue4::ForEachObject([](const void* object) {
@@ -1078,16 +1031,14 @@ void RefreshActorObjects()
     });
 }
 
-void LogActors(int ticks)
-{
+void LogActors(int ticks) {
     RefreshActorObjects();
     g_actorLog = ticks;
     Log("actorlog: %zu move files, camera %s, the next %d ticks", g_moveFiles.size(),
         g_cameraManager ? ue4::Describe(g_cameraManager).c_str() : "none", ticks);
 }
 
-void ActorLogTick()
-{
+void ActorLogTick() {
     // Each actor (fighters: owner vtable rva 0x2C4F220, effects: 0x2C6E6D8,
     // 0x18 before their 15808-byte region R): R+0 its script runner
     // (+0x40 script, +0x48 index, +0x4C frame 16.16), R-0x40 its position
@@ -1131,17 +1082,20 @@ namespace {
 // Research (`cinelog 1|0`): the fighters' cinematics and scripts per tick,
 // and the drawn camera per rendered frame while one plays.
 std::atomic<int> g_cineLog{0}; // 1: changes and cinematics, 2: every tick and frame
-struct CineSeen { uint32_t script = ~0u, cine = ~0u; };
+
+struct CineSeen {
+    uint32_t script = ~0u, cine = ~0u;
+};
+
 CineSeen g_cineSeen[4];
-int g_cineAfter = 0;      // rendered frames to keep logging the camera after a cinematic
-float g_cineCam[7] = {};  // the last camera logged
+int g_cineAfter = 0;     // rendered frames to keep logging the camera after a cinematic
+float g_cineCam[7] = {}; // the last camera logged
 } // namespace
 
 // A script's name from its move file's tables (the header sfvfile reads:
 // '#BAC', u16 tables at +12, their offsets from u32 +16; a table: i16,
 // u16 count, u32 scripts, u32 names, each from the table).
-std::string ScriptName(uintptr_t script)
-{
+std::string ScriptName(uintptr_t script) {
     for (const MoveFileRange& m : g_moveFiles) {
         if (script < m.lo || script >= m.hi || m.hi - m.lo < 24) continue;
         const auto* b = reinterpret_cast<const uint8_t*>(m.lo);
@@ -1170,22 +1124,28 @@ std::string ScriptName(uintptr_t script)
     return "?";
 }
 
-void LogCinematics(int mode)
-{
+void LogCinematics(int mode) {
     // The move files and the camera are looked up again once a battle has them.
     for (CineSeen& s : g_cineSeen) s = {};
     g_cineAfter = 0;
     g_cineLog = mode;
     Log("cinelog: %s", mode >= 2 ? "every tick's fighters, every frame's camera"
-                       : mode ? "the fighters' cinematics and scripts per tick, the camera per frame while one plays" : "off");
+                       : mode    ? "the fighters' cinematics and scripts per tick, the camera per frame while one plays"
+                                 : "off");
 }
 
-void CineLogTick()
-{
+void CineLogTick() {
     if (!g_cineLog || !g_game) return;
+
     // Every fighter region (the two in play and the spares), in the regions'
     // order: during a throw both may stand on one side.
-    struct Fighter { const char* name; uint32_t side, script, cine; float frame, speed, x, y; uintptr_t scriptPtr; };
+    struct Fighter {
+        const char* name;
+        uint32_t side, script, cine;
+        float frame, speed, x, y;
+        uintptr_t scriptPtr;
+    };
+
     Fighter f[4] = {};
     int found = 0;
     for (const StateRegion& r : g_game->Regions()) {
@@ -1239,8 +1199,7 @@ void CineLogTick()
     Log("cinelog tick %u%s%s", DrivenTicks(), g_inDriver && g_replayingTick ? " replayed" : "", line.c_str());
 }
 
-void CineLogFrame()
-{
+void CineLogFrame() {
     if (!g_cineLog || !g_cameraManager || !IsReadable(g_cameraManager + 0x370, 0x1C)) return;
     bool cine = g_cineLog >= 2;
     for (const CineSeen& s : g_cineSeen) cine |= s.cine == 1;
@@ -1260,14 +1219,18 @@ namespace {
 // object whose class name holds the text ("Camera" by default), at each tick
 // end (replayed or not) and each rendered frame, for driven ticks from..to,
 // to Polarity\research\camtrace.bin.
-struct TracedObject { const uint8_t* p; size_t size; std::string name; };
+struct TracedObject {
+    const uint8_t* p;
+    size_t size;
+    std::string name;
+};
+
 std::vector<TracedObject> g_camObjects;
 FILE* g_camFile = nullptr;
 uint32_t g_camFrom = 0, g_camTo = 0;
 } // namespace
 
-void TraceCameraObjects(uint32_t from, uint32_t to, const std::string& text)
-{
+void TraceCameraObjects(uint32_t from, uint32_t to, const std::string& text) {
     if (g_camFile) std::fclose(g_camFile), g_camFile = nullptr;
     g_camObjects.clear();
     if (!ue4::EnsureObjects(g_imageBase)) return Log("camtrace: no object table");
@@ -1305,8 +1268,7 @@ void TraceCameraObjects(uint32_t from, uint32_t to, const std::string& text)
 }
 
 // kind: 0 a tick (1 when replayed), 2 a rendered frame.
-void CamTraceRecord(int kind)
-{
+void CamTraceRecord(int kind) {
     if (!g_camFile) return;
     if (kind == 0 && g_inDriver && g_replayingTick) kind = 1;
     const uint32_t tick = DrivenTicks();
@@ -1341,8 +1303,7 @@ std::vector<std::vector<uint8_t>> g_ftracePrev;
 uint32_t g_ftraceTick = 0;
 } // namespace
 
-void TraceRegions(int ticks)
-{
+void TraceRegions(int ticks) {
     if (g_ftraceFile) std::fclose(g_ftraceFile), g_ftraceFile = nullptr;
     g_ftracePrev.clear();
     g_ftraceTick = 0;
@@ -1373,8 +1334,7 @@ void TraceRegions(int ticks)
     Log("ftrace: %u regions, the next %d ticks", n, ticks);
 }
 
-void FtraceTick()
-{
+void FtraceTick() {
     if (g_ftrace <= 0 || !g_game || !g_ftraceFile) return;
     const auto& regions = g_game->Regions();
     if (regions.size() != g_ftracePrev.size()) return;
@@ -1427,20 +1387,18 @@ void FtraceTick()
     }
 }
 
-void SetBattleFreeze(bool on)
-{
+void SetBattleFreeze(bool on) {
     // A driver that runs no ticks: the battle holds its frame, drawn on.
     struct Freeze : IFrameDriver {
         bool OnFrame(SfvGame&) override { return true; }
     };
+
     static Freeze freeze;
     SetFrameDriver(on ? &freeze : nullptr);
     Log("freeze: %s", on ? "on" : "off");
 }
 
-
-void CompareRegions(const std::string& a, const std::string& b, long long from, long long to)
-{
+void CompareRegions(const std::string& a, const std::string& b, long long from, long long to) {
     // The u32 words that differ between two regions' memory, from..to
     // relative to each (negative: their owner objects).
     if (!g_game) return;
@@ -1457,8 +1415,7 @@ void CompareRegions(const std::string& a, const std::string& b, long long from, 
     Log("rcmp: %d hits", hits);
 }
 
-void DumpRegion(const std::string& name, const std::string& tag)
-{
+void DumpRegion(const std::string& name, const std::string& tag) {
     // A region's bytes (and the 0x40 before it) to Polarity\research\<tag>.bin.
     const StateRegion* r = FindRegion(name);
     if (!r || !IsReadable(r->ptr - 0x40, r->size + 0x40)) return Log("rdump: no region %s", name.c_str());
@@ -1475,8 +1432,7 @@ void DumpRegion(const std::string& name, const std::string& tag)
     }
 }
 
-void PeekRegion(const std::string& name, long long offset, int qwords)
-{
+void PeekRegion(const std::string& name, long long offset, int qwords) {
     // Words at region `name` + offset (negative: the owner object before it).
     if (!g_game) return;
     if (const StateRegion* found = FindRegion(name)) {
@@ -1488,7 +1444,10 @@ void PeekRegion(const std::string& name, long long offset, int qwords)
             std::string note;
             for (const StateRegion& o : g_game->Regions()) {
                 const auto at = static_cast<long long>(v - reinterpret_cast<uintptr_t>(o.ptr));
-                if (at >= -0x2000 && at < static_cast<long long>(o.size)) { note = " = " + o.name + (at < 0 ? " -" : " +") + std::to_string(at < 0 ? -at : at); break; }
+                if (at >= -0x2000 && at < static_cast<long long>(o.size)) {
+                    note = " = " + o.name + (at < 0 ? " -" : " +") + std::to_string(at < 0 ? -at : at);
+                    break;
+                }
             }
             if (note.empty() && v >= g_imageBase && v < g_imageBase + 0x5000000) {
                 char b[32];
@@ -1502,8 +1461,7 @@ void PeekRegion(const std::string& name, long long offset, int qwords)
     Log("rpeek: no region %s", name.c_str());
 }
 
-void ScanForPointers(const std::string& from, size_t before, size_t after, const std::string& to)
-{
+void ScanForPointers(const std::string& from, size_t before, size_t after, const std::string& to) {
     // Memory around region `from` (its owner object) holding pointers to
     // region `to`'s owner (the 0x1000 bytes before it) or into it.
     if (!g_game) return;
@@ -1514,7 +1472,10 @@ void ScanForPointers(const std::string& from, size_t before, size_t after, const
     const uint8_t* end = f->ptr + f->size + after;
     int hits = 0;
     for (const uint8_t* p = begin; p + 8 <= end && hits < 40; p += 8) {
-        if (!IsReadable(p, 8)) { p = reinterpret_cast<const uint8_t*>((reinterpret_cast<uintptr_t>(p) | 0xFFF)) - 7; continue; }
+        if (!IsReadable(p, 8)) {
+            p = reinterpret_cast<const uint8_t*>((reinterpret_cast<uintptr_t>(p) | 0xFFF)) - 7;
+            continue;
+        }
         const uintptr_t v = *reinterpret_cast<const uintptr_t*>(p);
         if (v < lo || v >= hi) continue;
         hits++;
@@ -1524,16 +1485,14 @@ void ScanForPointers(const std::string& from, size_t before, size_t after, const
     Log("ptrscan: %d hits", hits);
 }
 
-void SnapRegions()
-{
+void SnapRegions() {
     g_regionSnap.clear();
     if (!g_game) return;
     for (const StateRegion& r : g_game->Regions()) g_regionSnap[r.name].assign(r.ptr, r.ptr + r.size);
     Log("rsnap: %zu regions", g_regionSnap.size());
 }
 
-void DiffRegions(const std::string& mode, const std::string& prefix)
-{
+void DiffRegions(const std::string& mode, const std::string& prefix) {
     // side: words that went 1.0 <-> -1.0, or 0 <-> 1 (u32 or byte); all: every changed u32 (first 200).
     if (!g_game) return;
     int hits = 0;
@@ -1562,8 +1521,7 @@ void DiffRegions(const std::string& mode, const std::string& prefix)
     Log("rdiff: %d hits", hits);
 }
 
-void LogRegionsOfSize(size_t size)
-{
+void LogRegionsOfSize(size_t size) {
     if (!g_game) return;
     if (size == 0) {
         // Every region by its owner (vtable and offset): which sizes, how many.

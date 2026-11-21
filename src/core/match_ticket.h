@@ -24,9 +24,9 @@ enum class AfterMatch : uint8_t {
 };
 
 struct MatchTicket {
-    bool host = false;      // creates the match room and plays P1
-    std::string roomCode;   // the match room (joiners and spectators)
-    bool spectate = false;  // joins to watch
+    bool host = false;     // creates the match room and plays P1
+    std::string roomCode;  // the match room (joiners and spectators)
+    bool spectate = false; // joins to watch
     // Watching a table (M5): from the set's first game (the host's oldest kept
     // match), not the one being played; each game follows the last.
     bool watchFromFirst = false;

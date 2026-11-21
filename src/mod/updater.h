@@ -26,8 +26,8 @@ constexpr const char* kDefaultUpdateUrl = "https://polaritymod.link/update.json"
 
 struct UpdateView {
     enum class State {
-        Off,         // no site set, or no signing key in this build
-        Idle,        // not checked yet
+        Off,  // no site set, or no signing key in this build
+        Idle, // not checked yet
         Checking,
         UpToDate,
         Available,   // `latest` is newer: the player may install it
@@ -36,11 +36,11 @@ struct UpdateView {
         Failed,      // `message` says why; checking again is allowed
     };
     State state = State::Off;
-    std::string current;    // this build's version
-    std::string latest;     // the site's
+    std::string current; // this build's version
+    std::string latest;  // the site's
     std::string published;
     std::string notes;
-    std::string message;    // what failed, or why updates are off
+    std::string message; // what failed, or why updates are off
     std::string url;
     uint64_t done = 0, total = 0;
     int64_t checkedAtMs = -1; // GetTickCount64 when the last check ended (any outcome); -1 never

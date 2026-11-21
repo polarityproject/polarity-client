@@ -78,15 +78,16 @@ uint32_t ControlReplay(ReplayControl c, int arg = 0);
 // before a round's call; keyframe loads across round ends.
 void SetReplayExperiment(const std::string& what, bool on);
 void SetReplayExperimentValue(const std::string& what, int value);
+
 struct ReplayView {
     bool active = false;
     bool paused = false;
     bool seeking = false;
     bool opening = false; // running the intro to round 1's call: black until the call
-    int frame = 0;  // on screen
-    int frames = 0; // in the recording
-    int round = 0;  // 1 from the first round's FIGHT; 0 before it
-    int callRound = 0; // 1 from the first round's call ("ROUND 1"); 0 before it
+    int frame = 0;        // on screen
+    int frames = 0;       // in the recording
+    int round = 0;        // 1 from the first round's FIGHT; 0 before it
+    int callRound = 0;    // 1 from the first round's call ("ROUND 1"); 0 before it
     int fast = 0;
     // The earliest frame a step back reaches: one a keyframe of this round
     // loads (going back further restarts the battle, which steps never do).
@@ -118,10 +119,11 @@ struct ReplayView {
     // (0: before the first; -1: it matches so far). A recording from a build
     // that computes battles differently (a missed sim version bump).
     int outOfSync = -1;
-    int seeks = 0;      // keyframe loads (testing)
+    int seeks = 0;          // keyframe loads (testing)
     bool benchmark = false; // the benchmark's run (benchmark.h), not a viewed replay
     std::string title;
 };
+
 ReplayView ReplayViewNow();
 // Game thread, inside a viewed replay's tick: the recording frame the tick
 // plays, and whether the state it starts from (after the frame before) is in
@@ -140,6 +142,5 @@ bool RequestBenchmark(const std::string& path);
 void SetReplayLatch(int latch);
 // Research: frames a mispredict replay rolls back to whatever the guess (empty: none).
 void SetForcedRollbacks(std::vector<int> frames, uint32_t guessXor);
-
 
 } // namespace sfv::mod

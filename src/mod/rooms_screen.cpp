@@ -35,19 +35,20 @@ constexpr int kKeys = 32;
 constexpr float kRowPitch = 92, kRowH = 84, kListTop = 274;
 constexpr int kRowsInView = 6;
 
-enum Focus { kCreate = -2, kCode = -1 };
+enum Focus { kCreate = -2,
+             kCode = -1 };
 
 struct State {
-    int focus = kCreate;    // kCreate, kCode, or a public room's index
-    bool inPanel = false;   // working in the right panel (the form's rows, the keypad)
-    int formRow = 0;        // the form's row (FormRows)
+    int focus = kCreate;  // kCreate, kCode, or a public room's index
+    bool inPanel = false; // working in the right panel (the form's rows, the keypad)
+    int formRow = 0;      // the form's row (FormRows)
     keeper::RoomSettings settings;
-    int title = 0;          // the offered title (keeper::TitleId)
-    int chara[2] = {0, 3};  // its characters, when it names them (keeper::CharacterCode)
+    int title = 0;         // the offered title (keeper::TitleId)
+    int chara[2] = {0, 3}; // its characters, when it names them (keeper::CharacterCode)
     std::string code;
-    int key = 0;            // the keypad's cursor
-    float scroll = 0;       // the list's first row shown (rows)
-    std::string lastCode;   // the code a failed join was for
+    int key = 0;          // the keypad's cursor
+    float scroll = 0;     // the list's first row shown (rows)
+    std::string lastCode; // the code a failed join was for
     // Customize Tables: each table's rules (as many as the form's tables),
     // the editor open over the form, and the rules as it opened (its B).
     TableRulesEditor rules;
@@ -59,8 +60,7 @@ std::atomic<bool> g_open{false};
 
 ImU32 Alpha(ImU32 c, int a) { return (c & ~IM_COL32_A_MASK) | (static_cast<ImU32>(a) << IM_COL32_A_SHIFT); }
 
-std::string OpenSeatsText(const keeper::ListedRoom& r, ImU32* col)
-{
+std::string OpenSeatsText(const keeper::ListedRoom& r, ImU32* col) {
     if (r.members >= keeper::kRoomCap) {
         *col = kRed;
         return "Full";
@@ -73,8 +73,7 @@ std::string OpenSeatsText(const keeper::ListedRoom& r, ImU32* col)
     return "Queues only";
 }
 
-std::string FirstTo(const std::string& rulesText)
-{
+std::string FirstTo(const std::string& rulesText) {
     Rules rules;
     if (!ParseRules(rulesText, &rules)) return "";
     return "first to " + std::to_string(rules.firstTo);
@@ -84,8 +83,7 @@ std::string Plural(int n, const char* one, const char* many) { return std::to_st
 
 } // namespace
 
-float FitText(ImDrawList* d, ImFont* f, float size, float minSize, float maxW, ImVec2 at, ImU32 c, std::string t, float align, bool stage)
-{
+float FitText(ImDrawList* d, ImFont* f, float size, float minSize, float maxW, ImVec2 at, ImU32 c, std::string t, float align, bool stage) {
     float s = size;
     while (s > minSize && TextW(f, s, t) > maxW) s -= 1;
     if (TextW(f, s, t) > maxW) {
@@ -107,10 +105,14 @@ namespace {
 
 // The form's rows: the title, its characters when it names them, then
 // visibility, tables and their rules (Customize Tables).
-enum FormRow { kRowTitle, kRowChara1, kRowChara2, kRowVisibility, kRowTables, kRowRules };
+enum FormRow { kRowTitle,
+               kRowChara1,
+               kRowChara2,
+               kRowVisibility,
+               kRowTables,
+               kRowRules };
 
-std::vector<FormRow> FormRows()
-{
+std::vector<FormRow> FormRows() {
     std::vector<FormRow> rows = {kRowTitle};
     const int n = keeper::TitleCharacters(keeper::TitleId(g.title));
     if (n > 0) rows.push_back(kRowChara1);
@@ -122,16 +124,14 @@ std::vector<FormRow> FormRows()
 }
 
 // One rules entry per table of the form (new ones at the defaults).
-void SizeRules()
-{
+void SizeRules() {
     g.rules.rules.resize(static_cast<size_t>(std::clamp(g.settings.tables, 1, keeper::kMaxTables)), Rules{});
     g.rules.table = std::clamp(g.rules.table, 0, static_cast<int>(g.rules.rules.size()) - 1);
 }
 
 // The Table rules row: the defaults on every table, one set of rules on all,
 // or how many tables differ from the defaults.
-std::string RulesSummary()
-{
+std::string RulesSummary() {
     SizeRules();
     int changed = 0;
     bool same = true;
@@ -145,8 +145,7 @@ std::string RulesSummary()
     return "Customized (" + Plural(changed, "table", "tables") + ")";
 }
 
-void OpenRulesEditor()
-{
+void OpenRulesEditor() {
     SizeRules();
     g.rulesBefore = g.rules.rules;
     g.rules.row = 0;
@@ -154,22 +153,19 @@ void OpenRulesEditor()
 }
 
 // The settings' title from the form's choices.
-void SyncTitle()
-{
+void SyncTitle() {
     keeper::RoomTitle t;
     t.id = keeper::TitleId(g.title);
     for (int i = 0; i < keeper::TitleCharacters(t.id); i++) t.chara[i] = keeper::CharacterCode(g.chara[i]);
     g.settings.title = t;
 }
 
-void StepRow(FormRow row, int dir)
-{
+void StepRow(FormRow row, int dir) {
     if (row == kRowTitle) g.title = (g.title + dir + keeper::kTitleCount) % keeper::kTitleCount;
     else if (row == kRowChara1 || row == kRowChara2) {
         int& c = g.chara[row == kRowChara1 ? 0 : 1];
         c = (c + dir + keeper::kCharacterCount) % keeper::kCharacterCount;
-    }
-    else if (row == kRowVisibility) g.settings.isPublic = !g.settings.isPublic;
+    } else if (row == kRowVisibility) g.settings.isPublic = !g.settings.isPublic;
     else if (row == kRowTables) g.settings.tables = std::clamp(g.settings.tables + dir, 1, keeper::kMaxTables);
     else return; // Table rules: A opens them
     SyncTitle();
@@ -179,14 +175,12 @@ void StepRow(FormRow row, int dir)
 // An action row (Create a room, Join with a code): its glyph and its name,
 // nothing under it (the hint at the bottom says what it does). A glass pane,
 // solid gold with the focus.
-void ActionRow(ImDrawList* d, const HubFonts& f, float y, const char* glyph, const char* title, const char* text, bool on)
-{
+void ActionRow(ImDrawList* d, const HubFonts& f, float y, const char* glyph, const char* title, const char* text, bool on) {
     (void)text;
     if (on) {
         DropShadow(d, 48, y, 868, y + 72, 6, 18, 0.32f, true);
         Control(d, 48, y, 868, y + 72, true);
-    }
-    else Pane(d, 48, y, 868, y + 72);
+    } else Pane(d, 48, y, 868, y + 72);
     const ImU32 ink = on ? look::kInk : kGold;
     d->AddCircle(g_v.P(90, y + 36), g_v.L(20), ink, 32, g_v.L(2));
     Text(d, f.bold ? f.bold : f.strong, g_v.L(24), g_v.P(90, y + 21), ink, glyph, 0.5f);
@@ -194,14 +188,12 @@ void ActionRow(ImDrawList* d, const HubFonts& f, float y, const char* glyph, con
 }
 
 // A public room: a glass pane, solid gold with the focus (its text in ink).
-void RoomRow(ImDrawList* d, const HubFonts& f, float y, const keeper::ListedRoom& r, bool on)
-{
+void RoomRow(ImDrawList* d, const HubFonts& f, float y, const keeper::ListedRoom& r, bool on) {
     const bool full = r.members >= keeper::kRoomCap;
     if (on) {
         DropShadow(d, 48, y, 868, y + kRowH, 6, 18, 0.32f, true);
         Control(d, 48, y, 868, y + kRowH, true);
-    }
-    else Pane(d, 48, y, 868, y + kRowH);
+    } else Pane(d, 48, y, 868, y + kRowH);
     const int fade = full && !on ? 158 : 255;
     const ImU32 title = on ? look::kInk : Alpha(kCream, fade), sub = on ? look::kInkSoft : Alpha(kMuted, fade);
     FitText(d, f.display, 21, 15, 400, g_v.P(68, y + 15), title, RoomTitleText(r.title, r.owner));
@@ -232,20 +224,17 @@ void RoomRow(ImDrawList* d, const HubFonts& f, float y, const keeper::ListedRoom
 }
 
 // The right column: a glass pane with a dark strip for its kicker.
-void PanelFrame(ImDrawList* d)
-{
+void PanelFrame(ImDrawList* d) {
     Pane(d, 892, 80, 1552, 832);
     Strip(d, 894, 82, 1550, 124, false);
 }
 
 // The panel's kicker, in its strip.
-void Kicker(ImDrawList* d, const HubFonts& f, const char* kicker, ImU32 col = kGold)
-{
+void Kicker(ImDrawList* d, const HubFonts& f, const char* kicker, ImU32 col = kGold) {
     Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(918, 94), col, kicker);
 }
 
-void RoomPanel(ImDrawList* d, const HubFonts& f, const keeper::ListedRoom& r, const keeper::RoomDetail* detail)
-{
+void RoomPanel(ImDrawList* d, const HubFonts& f, const keeper::ListedRoom& r, const keeper::RoomDetail* detail) {
     const bool full = r.members >= keeper::kRoomCap;
     Kicker(d, f, full ? "FULL \xC2\xB7 16 OF 16" : "PUBLIC ROOM", full ? kRed : kGold);
     Text(d, f.body, g_v.L(17), g_v.P(1526, 95), kSoft, r.code, 1);
@@ -264,7 +253,8 @@ void RoomPanel(ImDrawList* d, const HubFonts& f, const keeper::ListedRoom& r, co
     for (int t = 0; t < shown; t++) {
         Control(d, 918, y, 1526, y + 52, false);
         Text(d, f.display, g_v.L(17), g_v.P(935, y + 16), kCream, "TABLE " + std::to_string(t + 1));
-        const std::string text = detail && t < static_cast<int>(detail->tables.size()) ? detail->tables[t] : t == 0 ? r.rules : "";
+        const std::string text = detail && t < static_cast<int>(detail->tables.size()) ? detail->tables[t] : t == 0 ? r.rules
+                                                                                                                    : "";
         Rules rules;
         if (ParseRules(text, &rules)) {
             std::string line = DescribeRules(rules);
@@ -310,15 +300,16 @@ void RoomPanel(ImDrawList* d, const HubFonts& f, const keeper::ListedRoom& r, co
     }
 }
 
-void CreatePanel(ImDrawList* d, const HubFonts& f, bool active, int* clickedRow, int* clickedStep)
-{
+void CreatePanel(ImDrawList* d, const HubFonts& f, bool active, int* clickedRow, int* clickedStep) {
     Kicker(d, f, "NEW ROOM");
     Text(d, f.display, g_v.L(28), g_v.P(918, 138), kCream, "Create a room");
     const std::vector<FormRow> rows = FormRows();
     auto label = [](FormRow row) {
-        return row == kRowTitle ? "Title" : row == kRowChara1 ? "Character 1" : row == kRowChara2 ? "Character 2" : row == kRowVisibility ? "Visibility"
-               : row == kRowTables                                                                                   ? "Tables"
-                                                                                                                      : "Table rules";
+        return row == kRowTitle ? "Title" : row == kRowChara1   ? "Character 1"
+                                        : row == kRowChara2     ? "Character 2"
+                                        : row == kRowVisibility ? "Visibility"
+                                        : row == kRowTables     ? "Tables"
+                                                                : "Table rules";
     };
     auto value = [](FormRow row) -> std::string {
         if (row == kRowTitle) return g.title == 0 ? std::string("No title") : RoomTitleText(g.settings.title, "");
@@ -361,8 +352,7 @@ void CreatePanel(ImDrawList* d, const HubFonts& f, bool active, int* clickedRow,
     Text(d, f.body, g_v.L(17), g_v.P(918, below + 35), kMuted, "Up to 16 players. Table rules can change in the room too.");
 }
 
-void CodePanel(ImDrawList* d, const HubFonts& f, bool active, const std::string& notice, int* clickedKey)
-{
+void CodePanel(ImDrawList* d, const HubFonts& f, bool active, const std::string& notice, int* clickedKey) {
     Kicker(d, f, "ROOM CODE");
     Text(d, f.display, g_v.L(28), g_v.P(918, 138), kCream, "Join with a code");
     const float slotW = (608 - 50) / 6.0f;
@@ -387,7 +377,8 @@ void CodePanel(ImDrawList* d, const HubFonts& f, bool active, const std::string&
         const ImVec2 a = g_v.P(918, 324), b = g_v.P(1526, 470);
         d->AddRectFilled(a, b, look::kControl);
         d->AddRect(a, b, line, 0, 0, g_v.L(2));
-        Text(d, f.strong, g_v.L(16), g_v.P(944, 346), line, full ? "ROOM FULL" : version ? "OTHER VERSION" : "NO SUCH ROOM");
+        Text(d, f.strong, g_v.L(16), g_v.P(944, 346), line, full ? "ROOM FULL" : version ? "OTHER VERSION"
+                                                                                         : "NO SUCH ROOM");
         const std::string code = g.lastCode.empty() ? g.code : g.lastCode;
         const bool hide = StreamerMode() || code.empty(); // no code to show: the plain wording
         Text(d, f.display, g_v.L(26), g_v.P(944, 374), kCream,
@@ -411,8 +402,7 @@ void CodePanel(ImDrawList* d, const HubFonts& f, bool active, const std::string&
     }
 }
 
-void WaitPanel(ImDrawList* d, const HubFonts& f, const char* kicker, const std::string& title, const std::string& text)
-{
+void WaitPanel(ImDrawList* d, const HubFonts& f, const char* kicker, const std::string& title, const std::string& text) {
     Kicker(d, f, kicker);
     Text(d, f.display, g_v.L(28), g_v.P(918, 138), kCream, title);
     Text(d, f.body, g_v.L(17), g_v.P(918, 190), kSoft, text);
@@ -424,8 +414,7 @@ void WaitPanel(ImDrawList* d, const HubFonts& f, const char* kicker, const std::
 
 } // namespace
 
-void DrawFace(ImDrawList* d, const std::string& chara, float x, float y, float w, float h)
-{
+void DrawFace(ImDrawList* d, const std::string& chara, float x, float y, float w, float h) {
     // The character's grid icon (CharaSelectIconLeft: 116 x 144, its art a
     // strip 62 wide that leans 27.1 px over its 140, the select screen's
     // kArtLeft) in a frame leaning at the same angle, so the picture is
@@ -449,8 +438,7 @@ void DrawFace(ImDrawList* d, const std::string& chara, float x, float y, float w
     }
 }
 
-std::string RoomTitleText(const keeper::RoomTitle& title, const std::string& owner)
-{
+std::string RoomTitleText(const keeper::RoomTitle& title, const std::string& owner) {
     if (title.id == 0 || !keeper::ValidTitle(title)) return owner.empty() ? std::string("Room") : owner + "'s room";
     std::string s = LoungeCommentText(title.id);
     if (s.empty()) s = keeper::TitleTemplate(title.id);
@@ -462,8 +450,7 @@ std::string RoomTitleText(const keeper::RoomTitle& title, const std::string& own
     return s;
 }
 
-float DrawFlag(ImDrawList* d, ImFont* tagFont, const std::string& country, float x, float y, float h, float alpha)
-{
+float DrawFlag(ImDrawList* d, ImFont* tagFont, const std::string& country, float x, float y, float h, float alpha) {
     if (country.size() != 2) return 0;
     const float w = h * kFlagAspect;
     const ImU32 edge = Rgba(0, 0, 0, static_cast<int>(150 * alpha));
@@ -490,18 +477,17 @@ std::atomic<bool> g_streamerMode{false};
 }
 
 void SetStreamerMode(bool on) { g_streamerMode = on; }
+
 bool StreamerMode() { return g_streamerMode; }
 
-float DrawHiddenCode(ImDrawList* d, float x, float y, float size, ImU32 col)
-{
+float DrawHiddenCode(ImDrawList* d, float x, float y, float size, ImU32 col) {
     // Six dots where the code's six letters would be.
     const float r = size * 0.16f, step = size * 0.5f;
     for (int i = 0; d && i < 6; i++) d->AddCircleFilled(g_v.P(x + r + i * step, y + size * 0.62f), g_v.L(r), col, 12);
     return 5 * step + 2 * r;
 }
 
-void DrawCrown(ImDrawList* d, float x, float y, float scale, ImU32 col)
-{
+void DrawCrown(ImDrawList* d, float x, float y, float scale, ImU32 col) {
     // The mock-up's crown, 16 x 12, its baseline at `y`.
     static const ImVec2 kPts[] = {{1, 11}, {2, 3}, {6, 7}, {8, 1}, {10, 7}, {14, 3}, {15, 11}};
     ImVec2 pts[7];
@@ -509,31 +495,27 @@ void DrawCrown(ImDrawList* d, float x, float y, float scale, ImU32 col)
     d->AddConcavePolyFilled(pts, 7, col);
 }
 
-void DrawPerson(ImDrawList* d, float x, float y, float size, ImU32 col)
-{
+void DrawPerson(ImDrawList* d, float x, float y, float size, ImU32 col) {
     const float k = size / 16.0f;
     d->AddCircleFilled(g_v.P(x + 8 * k, y - 8 + 4.5f * k), g_v.L(3.5f * k), col);
     d->PathArcTo(g_v.P(x + 8 * k, y - 8 + 16 * k), g_v.L(7 * k), IM_PI, IM_PI * 2, 16);
     d->PathFillConvex(col);
 }
 
-void OpenRoomsScreen()
-{
+void OpenRoomsScreen() {
     if (!g_open.exchange(true)) {
         g.inPanel = false;
         Log("rooms screen: open");
     }
 }
 
-void CloseRoomsScreen()
-{
+void CloseRoomsScreen() {
     if (g_open.exchange(false)) Log("rooms screen: closed");
 }
 
 bool RoomsScreenOpen() { return g_open; }
 
-void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomsScreenInput* in)
-{
+void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomsScreenInput* in) {
     *in = RoomsScreenInput{};
     if (!g_open || !f.display || !f.strong || !f.body) return;
     BeginScreen();
@@ -554,11 +536,12 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     if (g.rulesOpen && (busy || g.focus != kCreate)) g.rulesOpen = false;
     if (g.rulesOpen) {
         StepTableRules(g.rules);
-    }
-    else if (!busy) {
+    } else if (!busy) {
         if (!g.inPanel) {
-            if (Up()) g.focus = g.focus == kCode ? kCreate : g.focus == 0 ? kCode : std::max<int>(kCreate, g.focus - 1);
-            if (Down()) g.focus = g.focus == kCreate ? kCode : g.focus == kCode ? (count ? 0 : kCode) : std::min(count - 1, g.focus + 1);
+            if (Up()) g.focus = g.focus == kCode ? kCreate : g.focus == 0 ? kCode
+                                                                          : std::max<int>(kCreate, g.focus - 1);
+            if (Down()) g.focus = g.focus == kCreate ? kCode : g.focus == kCode ? (count ? 0 : kCode)
+                                                                                : std::min(count - 1, g.focus + 1);
             if (g.focus == kCreate && (Left() || Right())) {
                 // The focused form row changes from the list too (the name first).
                 const int dir = ImGui::IsKeyPressed(ImGuiKey_LeftArrow) || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadLeft) ||
@@ -568,14 +551,12 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
                 StepRow(FormRows()[std::min<size_t>(g.formRow, FormRows().size() - 1)], dir);
             }
             if (g.focus == kCode && Right() && !failed) g.inPanel = true;
-        }
-        else if (g.focus == kCreate) {
+        } else if (g.focus == kCreate) {
             if (Up()) g.formRow = std::max(0, g.formRow - 1);
             if (Down()) g.formRow = std::min(static_cast<int>(FormRows().size()) - 1, g.formRow + 1);
             const bool left = Left(), right = !left && Right();
             if (left || right) StepRow(FormRows()[g.formRow], left ? -1 : 1);
-        }
-        else if (g.focus == kCode && !failed) {
+        } else if (g.focus == kCode && !failed) {
             if (Left()) g.key = g.key % kKeyCols == 0 ? g.key : g.key - 1;
             if (Right()) g.key = std::min(kKeys - 1, g.key % kKeyCols == kKeyCols - 1 ? g.key : g.key + 1);
             if (Up()) g.key = g.key >= kKeyCols ? g.key - kKeyCols : g.key;
@@ -625,7 +606,8 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     StageText(d, f.display, 40, 48, 22, Rgba(255, 255, 255), "CUSTOM ROOMS");
     const std::string summary = v.keeper ? Plural(v.summary.publicRooms, "public room", "public rooms") + " \xC2\xB7 " +
                                                Plural(v.summary.players, "player", "players")
-                                         : v.state == S::Failed ? "Can't reach the rooms server" : "Custom Rooms are unavailable right now";
+                                : v.state == S::Failed ? "Can't reach the rooms server"
+                                                       : "Custom Rooms are unavailable right now";
     StageText(d, f.body, 20, 48 + TextW(f.display, 40, "CUSTOM ROOMS") + 28, 39, kCream, summary);
     ActionRow(d, f, 80, "+", "CREATE A ROOM", "Public or private, 1 to 8 tables", g.focus == kCreate);
     ActionRow(d, f, 160, "#", "JOIN WITH A CODE", "For private rooms, or a code from a friend", g.focus == kCode);
@@ -652,21 +634,16 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     int formRow = -1, formStep = -1, key = -1;
     if (v.state == S::Creating) {
         WaitPanel(d, f, "NEW ROOM", "Creating your room", "You go straight in once it's ready.");
-    }
-    else if (v.state == S::Joining) {
+    } else if (v.state == S::Joining) {
         WaitPanel(d, f, "JOINING", "Joining the room", "One moment.");
-    }
-    else if (v.state == S::Room) {
+    } else if (v.state == S::Room) {
         WaitPanel(d, f, "IN A ROOM", StreamerMode() ? std::string("Your room") : "Room " + WeyveService::DisplayCode(v.room),
                   "Opening the room.");
-    }
-    else if (g.focus == kCreate) {
+    } else if (g.focus == kCreate) {
         CreatePanel(d, f, g.inPanel, &formRow, &formStep);
-    }
-    else if (g.focus == kCode) {
+    } else if (g.focus == kCode) {
         CodePanel(d, f, g.inPanel, failed ? v.notice : "", &key);
-    }
-    else if (g.focus >= 0 && g.focus < count) {
+    } else if (g.focus >= 0 && g.focus < count) {
         RoomPanel(d, f, rooms[g.focus], v.peek.code == rooms[g.focus].code ? &v.peek : nullptr);
     }
     if (formRow >= 0 && !g.rulesOpen) {
@@ -675,8 +652,7 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
         g.formRow = formRow;
         if (formStep >= 0) {
             StepRow(FormRows()[g.formRow], formStep == 0 ? -1 : 1);
-        }
-        else if (FormRows()[g.formRow] == kRowRules) OpenRulesEditor();
+        } else if (FormRows()[g.formRow] == kRowRules) OpenRulesEditor();
     }
 
     // ---- the stripe, and the buttons ----
@@ -686,14 +662,12 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     const bool roomFull = g.focus >= 0 && g.focus < count && rooms[g.focus].members >= keeper::kRoomCap;
     if (busy || v.state == S::Room) {
         text = v.state == S::Creating ? "Creating your room..." : "Joining the room...";
-    }
-    else if (!v.otherBuild.empty() && !v.keeper) {
+    } else if (!v.otherBuild.empty() && !v.keeper) {
         lead = "UPDATE NEEDED";
         leadCol = kRed;
         text = "Custom Rooms need a different Polarity version. Check for updates in Polarity settings.";
         prompts = {{"button_start", "Polarity settings"}, {"button_b", "Back"}};
-    }
-    else if (!v.keeper && (g.focus == kCreate || g.focus >= 0)) {
+    } else if (!v.keeper && (g.focus == kCreate || g.focus >= 0)) {
         lead = v.state == S::Failed ? "CANNOT CONNECT" : "OFFLINE";
         leadCol = v.state == S::Failed ? kRed : kMuted;
         text = v.state == S::Failed ? "Can't reach the rooms server. Check your connection, or the server in Polarity settings."
@@ -701,26 +675,24 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
         prompts = {};
         if (v.state == S::Failed) prompts.push_back({"button_start", "Polarity settings"});
         prompts.push_back({"button_b", "Back"});
-    }
-    else if (g.focus == kCreate) {
+    } else if (g.focus == kCreate) {
         if (!v.notice.empty() && v.notice != "No room on that code" && v.notice != "Room full" && !versionNotice) {
             // The notice is about the room just left (the owner's removal) or
             // about a room that was asked for.
-            lead = v.notice.rfind("Removed", 0) == 0 ? "REMOVED" : v.notice.rfind("Cannot join", 0) == 0 ? "NOT JOINED" : "NOT MADE";
+            lead = v.notice.rfind("Removed", 0) == 0 ? "REMOVED" : v.notice.rfind("Cannot join", 0) == 0 ? "NOT JOINED"
+                                                                                                         : "NOT MADE";
             leadCol = kRed;
             text = v.notice;
-        }
-        else if (!count && g.formRow == 0) {
+        } else if (!count && g.formRow == 0) {
             lead = "NO PUBLIC ROOMS";
             leadCol = kMuted;
             text = "Create one, or join with a code.";
-        }
-        else {
+        } else {
             const FormRow row = FormRows()[std::min<size_t>(g.formRow, FormRows().size() - 1)];
-            text = !g.inPanel ? ""
-                   : row == kRowTitle ? "Titles come from the game's Battle Lounge comments."
-                   : row == kRowChara1 ? "The character you play."
-                   : row == kRowChara2 ? "The character you want to face."
+            text = !g.inPanel              ? ""
+                   : row == kRowTitle      ? "Titles come from the game's Battle Lounge comments."
+                   : row == kRowChara1     ? "The character you play."
+                   : row == kRowChara2     ? "The character you want to face."
                    : row == kRowVisibility ? ""
                    : row == kRowTables     ? "With 8 tables, all 16 players can play at once."
                                            : "First to, rounds, timer and rotation, for each table.";
@@ -728,21 +700,18 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
         prompts = {{"button_start", "Create"}, {"button_b", "Back"}};
         if (!g.inPanel) prompts.insert(prompts.begin(), {"button_a", "Change"});
         else if (FormRows()[std::min<size_t>(g.formRow, FormRows().size() - 1)] == kRowRules) prompts.insert(prompts.begin(), {"button_a", "Customize Tables"});
-    }
-    else if (g.focus == kCode) {
+    } else if (g.focus == kCode) {
         if (failed) prompts = {{"button_a", "Try again"}, {"button_b", "Back"}};
         else {
             text = "Enter the room code.";
             prompts = {{"button_a", "Type"}, {"button_x", "Delete"}, {"button_y", "Paste"}, {"button_start", "Join"}, {"button_b", "Back"}};
         }
-    }
-    else if (roomFull) {
+    } else if (roomFull) {
         lead = "ROOM FULL";
         leadCol = kRed;
         text = "Try again when someone leaves.";
         prompts = {{"button_b", "Back"}};
-    }
-    else if (g.focus >= 0) {
+    } else if (g.focus >= 0) {
         text = rooms[g.focus].openSeats ? "There are open seats." : "All seats are taken. You can still queue or watch.";
         prompts = {{"button_a", "Join"}, {"button_b", "Back"}};
     }
@@ -759,8 +728,7 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
             g.rules.rules = g.rulesBefore;
             g.rulesOpen = false;
         }
-    }
-    else if (!busy && v.state != S::Room) {
+    } else if (!busy && v.state != S::Room) {
         const bool typingCode = g.focus == kCode && g.inPanel && !failed;
         const bool a = Confirm(), b = Back() || (typingCode && Pressed({ImGuiKey_Escape}, false));
         const bool start = Pressed({ImGuiKey_GamepadStart}, false) ||
@@ -769,34 +737,29 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
         const bool y = Pressed({ImGuiKey_GamepadFaceUp}, false);
         if (!v.keeper && start && (v.state == S::Failed || !v.otherBuild.empty())) {
             in->settings_ = true;
-        }
-        else if (g.focus == kCreate) {
+        } else if (g.focus == kCreate) {
             if (start && v.keeper) {
                 in->create = true;
                 in->settings = g.settings;
                 SizeRules();
                 for (const Rules& r : g.rules.rules) in->tableRules.push_back(FormatRules(r));
-            }
-            else if (a && !g.inPanel) g.inPanel = true;
+            } else if (a && !g.inPanel) g.inPanel = true;
             else if (a && FormRows()[std::min<size_t>(g.formRow, FormRows().size() - 1)] == kRowRules) OpenRulesEditor();
             else if (b) {
                 if (g.inPanel) g.inPanel = false;
                 else in->back = true;
             }
-        }
-        else if (g.focus == kCode) {
+        } else if (g.focus == kCode) {
             if (failed) {
                 if (a) {
                     in->clearNotice = true;
                     g.code = g.lastCode;
                     g.inPanel = true;
-                }
-                else if (b) {
+                } else if (b) {
                     in->clearNotice = true;
                     g.inPanel = false;
                 }
-            }
-            else {
+            } else {
                 if (key >= 0) {
                     g.key = key;
                     g.inPanel = true;
@@ -818,12 +781,10 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
                     else in->back = true;
                 }
             }
-        }
-        else if (g.focus >= 0 && g.focus < count) {
+        } else if (g.focus >= 0 && g.focus < count) {
             if (a && !roomFull) in->join = rooms[g.focus].code;
             if (b) in->back = true;
-        }
-        else if (b) {
+        } else if (b) {
             in->back = true;
         }
     }

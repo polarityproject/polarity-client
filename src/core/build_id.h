@@ -16,8 +16,7 @@
 namespace sfv {
 
 // The number after "<key>-" in a build id's parts, or -1.
-inline int BuildIdNumber(const std::string& id, const char* key)
-{
+inline int BuildIdNumber(const std::string& id, const char* key) {
     const std::string tag = std::string("/") + key + "-";
     const size_t at = id.find(tag);
     if (at == std::string::npos) return -1;
@@ -26,8 +25,7 @@ inline int BuildIdNumber(const std::string& id, const char* key)
 
 inline int BuildAdapterVersion(const std::string& id) { return BuildIdNumber(id, "adapter"); }
 
-inline int BuildSimVersion(const std::string& id)
-{
+inline int BuildSimVersion(const std::string& id) {
     const int sim = BuildIdNumber(id, "sim");
     return sim >= 0 ? sim : BuildAdapterVersion(id);
 }
@@ -36,8 +34,7 @@ inline int BuildSimVersion(const std::string& id)
 inline std::string BuildExe(const std::string& id) { return id.substr(0, id.find('/')); }
 
 // Whether a recording made on `recorded` plays on `live`.
-inline bool ReplayCompatible(const std::string& recorded, const std::string& live)
-{
+inline bool ReplayCompatible(const std::string& recorded, const std::string& live) {
     const int sim = BuildSimVersion(recorded);
     return sim > 0 && sim == BuildSimVersion(live) && BuildExe(recorded) == BuildExe(live);
 }

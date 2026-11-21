@@ -22,8 +22,7 @@ void SaveRegions(const std::vector<StateRegion>& regions, uint8_t* dst);
 void LoadRegions(const std::vector<StateRegion>& regions, const uint8_t* src);
 
 // True when the 8-byte word holding byte `offset` is masked out.
-inline bool IsIgnored(const std::vector<uint8_t>& ignore, size_t offset)
-{
+inline bool IsIgnored(const std::vector<uint8_t>& ignore, size_t offset) {
     const size_t word = offset / 8;
     return word / 8 < ignore.size() && (ignore[word / 8] >> (word % 8)) & 1;
 }

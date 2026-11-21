@@ -24,8 +24,7 @@ struct Site {
 };
 
 // The callers of the trapping code, unwound from its context.
-void UnwindFrom(CONTEXT c, uintptr_t* out)
-{
+void UnwindFrom(CONTEXT c, uintptr_t* out) {
     for (int i = 0; i < kStackDepth; i++) {
         DWORD64 imageBase = 0;
         PRUNTIME_FUNCTION fn = RtlLookupFunctionEntry(c.Rip, &imageBase, nullptr);
@@ -33,8 +32,7 @@ void UnwindFrom(CONTEXT c, uintptr_t* out)
             PVOID handlerData = nullptr;
             DWORD64 establisher = 0;
             RtlVirtualUnwind(UNW_FLAG_NHANDLER, imageBase, c.Rip, fn, &c, &handlerData, &establisher, nullptr);
-        }
-        else {
+        } else {
             c.Rip = *reinterpret_cast<DWORD64*>(c.Rsp);
             c.Rsp += 8;
         }
@@ -48,10 +46,9 @@ std::atomic<uint64_t> g_dropped{0};
 uintptr_t g_imageBase = 0;
 PVOID g_handler = nullptr;
 std::atomic<uint64_t> g_armed{0}; // DR7 bits we set; 0 once disarmed
-uint64_t g_everArmed = 0;        // DR7 bits we ever set
+uint64_t g_everArmed = 0;         // DR7 bits we ever set
 
-void Record(uintptr_t rip, const CONTEXT& ctx)
-{
+void Record(uintptr_t rip, const CONTEXT& ctx) {
     for (auto& s : g_sites) {
         uintptr_t cur = s.rip.load();
         if (cur == rip) {
@@ -74,8 +71,7 @@ void Record(uintptr_t rip, const CONTEXT& ctx)
     g_dropped++;
 }
 
-LONG CALLBACK Handler(EXCEPTION_POINTERS* info)
-{
+LONG CALLBACK Handler(EXCEPTION_POINTERS* info) {
     if (info->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP) return EXCEPTION_CONTINUE_SEARCH;
     CONTEXT* ctx = info->ContextRecord;
     if (!(ctx->Dr6 & 0xF)) return EXCEPTION_CONTINUE_SEARCH;
@@ -89,8 +85,8 @@ LONG CALLBACK Handler(EXCEPTION_POINTERS* info)
 }
 
 // Applies `update` to the debug registers of every other thread.
-template <typename F> int ForEachThread(F update)
-{
+template <typename F>
+int ForEachThread(F update) {
     const DWORD pid = GetCurrentProcessId(), self = GetCurrentThreadId();
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     if (snap == INVALID_HANDLE_VALUE) return 0;
@@ -117,17 +113,16 @@ template <typename F> int ForEachThread(F update)
 
 } // namespace
 
-bool ArmWatch(int slot, const void* address, int length, uintptr_t imageBase, bool readsToo)
-{
+bool ArmWatch(int slot, const void* address, int length, uintptr_t imageBase, bool readsToo) {
     if (slot < 0 || slot > 3) return false;
     // DR7 length encoding: 1 -> 00, 2 -> 01, 8 -> 10, 4 -> 11. Address must be aligned to it.
     uint64_t len;
     switch (length) {
-    case 1: len = 0; break;
-    case 2: len = 1; break;
-    case 4: len = 3; break;
-    case 8: len = 2; break;
-    default: return false;
+        case 1: len = 0; break;
+        case 2: len = 1; break;
+        case 4: len = 3; break;
+        case 8: len = 2; break;
+        default: return false;
     }
     const auto addr = reinterpret_cast<uintptr_t>(address);
     if (addr % length) {
@@ -155,15 +150,13 @@ bool ArmWatch(int slot, const void* address, int length, uintptr_t imageBase, bo
     return threads > 0;
 }
 
-void DisarmWatches()
-{
+void DisarmWatches() {
     const uint64_t armed = g_armed.exchange(0);
     if (armed) ForEachThread([&](CONTEXT& ctx) { ctx.Dr7 &= ~armed; });
     // The handler stays installed: a thread may already be dispatching a trap.
 }
 
-void RemoveWatchHandler()
-{
+void RemoveWatchHandler() {
     DisarmWatches();
     if (!g_handler) return;
     // Give in-flight traps time to reach the handler before it goes away.
@@ -172,8 +165,7 @@ void RemoveWatchHandler()
     g_handler = nullptr;
 }
 
-void WatchReport()
-{
+void WatchReport() {
     int n = 0;
     for (const auto& s : g_sites) {
         const uintptr_t rip = s.rip;

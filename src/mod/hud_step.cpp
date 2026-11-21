@@ -38,8 +38,7 @@ std::vector<std::pair<uint8_t*, bool>> g_players; // this battle's Announce (tru
 
 } // namespace
 
-bool InstallHudStep(const GameImage& image)
-{
+bool InstallHudStep(const GameImage& image) {
     g_base = image.base;
     g_ok = std::memcmp(image.At<const uint8_t*>(kAdvanceSite), kAdvanceBytes, sizeof(kAdvanceBytes)) == 0 &&
            std::memcmp(image.At<const uint8_t*>(kPauseSite), kPauseBytes, sizeof(kPauseBytes)) == 0;
@@ -47,8 +46,7 @@ bool InstallHudStep(const GameImage& image)
     return g_ok;
 }
 
-void FindHudMovies()
-{
+void FindHudMovies() {
     g_players.clear();
     if (!g_ok || !ue4::EnsureObjects(g_base)) return;
     ue4::ForEachObject([](const void* object) {
@@ -69,8 +67,7 @@ namespace {
 uint64_t g_steps = 0, g_stepTicks = 0; // StepHudMovies calls and their time (QPC), since the last report
 } // namespace
 
-std::string HudStepReport()
-{
+std::string HudStepReport() {
     LARGE_INTEGER f;
     QueryPerformanceFrequency(&f);
     char b[96];
@@ -79,21 +76,22 @@ std::string HudStepReport()
     return b;
 }
 
-void StepHudMovies(float seconds)
-{
+void StepHudMovies(float seconds) {
     if (!g_ok || !g_on) return;
     LARGE_INTEGER t0, t1;
     QueryPerformanceCounter(&t0);
+
     struct Count {
         LARGE_INTEGER& t0;
         LARGE_INTEGER& t1;
-        ~Count()
-        {
+
+        ~Count() {
             QueryPerformanceCounter(&t1);
             g_steps++;
             g_stepTicks += t1.QuadPart - t0.QuadPart;
         }
     } count{t0, t1};
+
     const int mode = g_on;
     for (const auto& [p, announce] : g_players) {
         if (mode == 2 && !announce) continue;
@@ -113,10 +111,10 @@ void StepHudMovies(float seconds)
     }
 }
 
-void SetHudStep(int mode)
-{
+void SetHudStep(int mode) {
     g_on = mode;
-    Log("hudstep: %s", mode == 2 ? "Announce only" : mode ? "replay runs keep the HUD's movies in step" : "off");
+    Log("hudstep: %s", mode == 2 ? "Announce only" : mode ? "replay runs keep the HUD's movies in step"
+                                                          : "off");
 }
 
 bool HudStepOn() { return g_on != 0; }

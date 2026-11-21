@@ -14,8 +14,7 @@
 namespace sfv::proxy {
 
 // True when `word` is one whole argument of `line`, space- or tab-separated.
-inline bool HasArgument(const wchar_t* line, const wchar_t* word)
-{
+inline bool HasArgument(const wchar_t* line, const wchar_t* word) {
     if (!line) return false;
     const int n = lstrlenW(word);
     const int length = lstrlenW(line);
@@ -27,14 +26,12 @@ inline bool HasArgument(const wchar_t* line, const wchar_t* word)
     return false;
 }
 
-inline bool StartedByEmber()
-{
+inline bool StartedByEmber() {
     // The DLL check covers an Ember that renames its flag but not its DLL.
     return HasArgument(GetCommandLineW(), L"-sfve_loader=launcher") || GetModuleHandleW(L"sfv_ember.dll");
 }
 
-inline bool LoadsPolarity(const wchar_t* ini)
-{
+inline bool LoadsPolarity(const wchar_t* ini) {
     if (StartedByEmber()) return false;
     wchar_t load[16];
     GetPrivateProfileStringW(L"loader", L"load", L"polarity", load, 16, ini);

@@ -22,13 +22,14 @@
 namespace sfv::mod {
 
 struct ModPak {
-    std::string name;  // under Content\Paks ("~mods\x.pak")
+    std::string name; // under Content\Paks ("~mods\x.pak")
     bool readable = false;
     std::string error; // why not
     size_t files = 0;
     std::vector<std::string> moveData;  // "JRI (061)": characters whose move data it replaces
     std::vector<std::string> stageData; // characters whose stage transition data it replaces
     bool cpuAi = false;                 // only the CPU's (not in a match between players)
+
     bool Battle() const { return !moveData.empty() || !stageData.empty(); }
 };
 
@@ -38,17 +39,20 @@ struct ModScan {
     std::string Text() const;  // for logs and reports
     std::string Short() const; // for the benchmark's line ("2 mod paks, 1 changes battle data: JRI")
 };
+
 // Read once (the first call reads the paks' indexes: a few ms each).
 const ModScan& ScanModPaks();
 
 struct DataCheck {
     bool done = false;
-    bool table = false;                // this build has the game's own hashes
-    int files = 0, known = 0;          // move data files loaded; those the table has
-    std::vector<std::string> changed;  // keys ("KEN/061/BAC_KEN") whose bytes are not the game's own
-    std::vector<std::string> unknown;  // keys the table lacks (a newer game version, a mod's added file)
-    uint64_t sum = 0;                  // of every file's hash: the same on two PCs with the same data
+    bool table = false;               // this build has the game's own hashes
+    int files = 0, known = 0;         // move data files loaded; those the table has
+    std::vector<std::string> changed; // keys ("KEN/061/BAC_KEN") whose bytes are not the game's own
+    std::vector<std::string> unknown; // keys the table lacks (a newer game version, a mod's added file)
+    uint64_t sum = 0;                 // of every file's hash: the same on two PCs with the same data
+
     bool Stock() const { return done && changed.empty(); }
+
     std::string Text() const;
     std::string Characters() const; // the changed files' characters ("KEN, CMN")
 };

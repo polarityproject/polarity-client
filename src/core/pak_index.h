@@ -33,16 +33,18 @@ bool ParsePakIndex(const uint8_t* bytes, size_t size, uint64_t fileSize, uint64_
 
 // What a game file is to a battle.
 enum class BattleFileKind {
-    Other,       // models, textures, animation, sound, UI: how it looks and sounds
-    MoveData,    // Chara/<C>/BattleResource/<v>/BAC_ (and _eff), BCM_, BCH_, DA_<C>_BattleResource
-    StageData,   // Chara/<C>/DataAsset/StageData/DA_<C>_Stage_<S>: a stage transition KO's data
-    CpuAi,       // Chara/<C>/BattleResource/<v>/BAI_: only the CPU uses it
+    Other,     // models, textures, animation, sound, UI: how it looks and sounds
+    MoveData,  // Chara/<C>/BattleResource/<v>/BAC_ (and _eff), BCM_, BCH_, DA_<C>_BattleResource
+    StageData, // Chara/<C>/DataAsset/StageData/DA_<C>_Stage_<S>: a stage transition KO's data
+    CpuAi,     // Chara/<C>/BattleResource/<v>/BAI_: only the CPU uses it
 };
+
 struct BattleFile {
     BattleFileKind kind = BattleFileKind::Other;
     std::string character; // "KEN", "CMN" (shared by all)
     std::string version;   // "061" (move data only)
 };
+
 BattleFile ClassifyGamePath(const std::string& path);
 
 // The mod's package-like key of a move data file ("KEN/061/BAC_KEN"), as a

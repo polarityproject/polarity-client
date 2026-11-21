@@ -25,6 +25,7 @@ private:
         int frame = -1;
         std::vector<uint8_t> bytes;
     };
+
     std::vector<Entry> entries_;
 };
 

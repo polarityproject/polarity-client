@@ -24,8 +24,8 @@ struct Reader {
     size_t at;
     bool ok = true;
 
-    template <typename T> T Get()
-    {
+    template <typename T>
+    T Get() {
         T v{};
         if (at + sizeof(T) > size) {
             ok = false;
@@ -37,8 +37,7 @@ struct Reader {
     }
 };
 
-TexFormat FormatOf(const std::string& name)
-{
+TexFormat FormatOf(const std::string& name) {
     if (name == "PF_B8G8R8A8") return TexFormat::Bgra8;
     if (name == "PF_DXT1") return TexFormat::Bc1;
     if (name == "PF_DXT5") return TexFormat::Bc3;
@@ -52,8 +51,7 @@ TexFormat FormatOf(const std::string& name)
 // int32s. False when they do not add up. The offsets of data at the end of
 // the file count from where the package's bulk data starts, which is the
 // end of the file less all of it.
-bool ReadMips(const uint8_t* data, size_t size, size_t at, TexPackage* p, bool cookedFlag, int zFields, std::string* error)
-{
+bool ReadMips(const uint8_t* data, size_t size, size_t at, TexPackage* p, bool cookedFlag, int zFields, std::string* error) {
     Reader r{data, size, at};
     const int32_t firstMip = r.Get<int32_t>();
     const int32_t count = r.Get<int32_t>();
@@ -149,33 +147,30 @@ bool ReadMips(const uint8_t* data, size_t size, size_t at, TexPackage* p, bool c
 
 } // namespace
 
-const char* TexFormatName(TexFormat f)
-{
+const char* TexFormatName(TexFormat f) {
     switch (f) {
-    case TexFormat::Bgra8: return "BGRA8";
-    case TexFormat::Bc1: return "BC1";
-    case TexFormat::Bc3: return "BC3";
-    case TexFormat::Bc5: return "BC5";
-    case TexFormat::Rgb10A2: return "RGB10A2";
-    default: return "unknown";
+        case TexFormat::Bgra8: return "BGRA8";
+        case TexFormat::Bc1: return "BC1";
+        case TexFormat::Bc3: return "BC3";
+        case TexFormat::Bc5: return "BC5";
+        case TexFormat::Rgb10A2: return "RGB10A2";
+        default: return "unknown";
     }
 }
 
-size_t TexBytes(TexFormat f, uint32_t width, uint32_t height)
-{
+size_t TexBytes(TexFormat f, uint32_t width, uint32_t height) {
     const size_t blocks = size_t((width + 3) / 4) * ((height + 3) / 4);
     switch (f) {
-    case TexFormat::Bgra8:
-    case TexFormat::Rgb10A2: return size_t(width) * height * 4;
-    case TexFormat::Bc1: return blocks * 8;
-    case TexFormat::Bc3:
-    case TexFormat::Bc5: return blocks * 16;
-    default: return 0;
+        case TexFormat::Bgra8:
+        case TexFormat::Rgb10A2: return size_t(width) * height * 4;
+        case TexFormat::Bc1: return blocks * 8;
+        case TexFormat::Bc3:
+        case TexFormat::Bc5: return blocks * 16;
+        default: return 0;
     }
 }
 
-bool ParseTexturePackage(const uint8_t* data, size_t size, TexPackage* out, std::string* error)
-{
+bool ParseTexturePackage(const uint8_t* data, size_t size, TexPackage* out, std::string* error) {
     std::string why = "no texture platform data";
     // Every "PF_" that is an FString with a plausible header before it (the
     // name table has the same strings, without one).
@@ -212,8 +207,7 @@ bool ParseTexturePackage(const uint8_t* data, size_t size, TexPackage* out, std:
     return false;
 }
 
-const TexMip* PickMip(const TexPackage& package, uint32_t maxSide)
-{
+const TexMip* PickMip(const TexPackage& package, uint32_t maxSide) {
     if (package.mips.empty()) return nullptr;
     const TexMip* best = &package.mips.front();
     if (maxSide == 0) return best;
@@ -223,8 +217,7 @@ const TexMip* PickMip(const TexPackage& package, uint32_t maxSide)
     return best;
 }
 
-std::vector<uint8_t> ShrinkBgra(const uint8_t* bgra, uint32_t width, uint32_t height, uint32_t outWidth, uint32_t outHeight)
-{
+std::vector<uint8_t> ShrinkBgra(const uint8_t* bgra, uint32_t width, uint32_t height, uint32_t outWidth, uint32_t outHeight) {
     std::vector<uint8_t> out(size_t(outWidth) * outHeight * 4);
     for (uint32_t oy = 0; oy < outHeight; oy++) {
         const uint32_t y0 = static_cast<uint32_t>(uint64_t(oy) * height / outHeight);
@@ -248,8 +241,7 @@ std::vector<uint8_t> ShrinkBgra(const uint8_t* bgra, uint32_t width, uint32_t he
                 q[0] = static_cast<uint8_t>((b + a / 2) / a);
                 q[1] = static_cast<uint8_t>((g + a / 2) / a);
                 q[2] = static_cast<uint8_t>((r + a / 2) / a);
-            }
-            else {
+            } else {
                 q[0] = q[1] = q[2] = 0;
             }
             q[3] = static_cast<uint8_t>((a + n / 2) / n);
@@ -261,8 +253,7 @@ std::vector<uint8_t> ShrinkBgra(const uint8_t* bgra, uint32_t width, uint32_t he
 namespace {
 
 // A 565 colour as B, G, R.
-void Color565(uint16_t c, int* bgr)
-{
+void Color565(uint16_t c, int* bgr) {
     const int r = c >> 11 & 31, g = c >> 5 & 63, b = c & 31;
     bgr[0] = b << 3 | b >> 2;
     bgr[1] = g << 2 | g >> 4;
@@ -271,8 +262,7 @@ void Color565(uint16_t c, int* bgr)
 
 // One BC1 colour block into a 4x4 of BGRA; `fourAlways`: BC3's colour
 // half (always four colours, no clear one).
-void ColorBlock(const uint8_t* b, bool fourAlways, uint8_t (*px)[4])
-{
+void ColorBlock(const uint8_t* b, bool fourAlways, uint8_t (*px)[4]) {
     uint16_t c0, c1;
     std::memcpy(&c0, b, 2);
     std::memcpy(&c1, b + 2, 2);
@@ -285,8 +275,7 @@ void ColorBlock(const uint8_t* b, bool fourAlways, uint8_t (*px)[4])
         if (four) {
             p[2][k] = (2 * p[0][k] + p[1][k] + 1) / 3;
             p[3][k] = (p[0][k] + 2 * p[1][k] + 1) / 3;
-        }
-        else {
+        } else {
             p[2][k] = (p[0][k] + p[1][k]) / 2;
             p[3][k] = 0;
         }
@@ -302,8 +291,7 @@ void ColorBlock(const uint8_t* b, bool fourAlways, uint8_t (*px)[4])
 
 } // namespace
 
-bool DecodeBc(TexFormat format, const uint8_t* blocks, size_t size, uint32_t width, uint32_t height, std::vector<uint8_t>* bgra)
-{
+bool DecodeBc(TexFormat format, const uint8_t* blocks, size_t size, uint32_t width, uint32_t height, std::vector<uint8_t>* bgra) {
     if (format != TexFormat::Bc1 && format != TexFormat::Bc3) return false;
     if (size < TexBytes(format, width, height)) return false;
     const size_t step = format == TexFormat::Bc1 ? 8 : 16;
@@ -315,16 +303,14 @@ bool DecodeBc(TexFormat format, const uint8_t* blocks, size_t size, uint32_t wid
             const uint8_t* b = blocks + (size_t(by) * bw + bx) * step;
             if (format == TexFormat::Bc1) {
                 ColorBlock(b, false, px);
-            }
-            else {
+            } else {
                 ColorBlock(b + 8, true, px);
                 // The alpha half: two ends, then 3-bit indices for the 16 pixels.
                 const int a0 = b[0], a1 = b[1];
                 int a[8] = {a0, a1};
                 if (a0 > a1) {
                     for (int i = 1; i < 7; i++) a[i + 1] = ((7 - i) * a0 + i * a1 + 3) / 7;
-                }
-                else {
+                } else {
                     for (int i = 1; i < 5; i++) a[i + 1] = ((5 - i) * a0 + i * a1 + 2) / 5;
                     a[6] = 0;
                     a[7] = 255;
@@ -342,8 +328,7 @@ bool DecodeBc(TexFormat format, const uint8_t* blocks, size_t size, uint32_t wid
     return true;
 }
 
-void BlurBgra(std::vector<uint8_t>& bgra, uint32_t width, uint32_t height, float sigma)
-{
+void BlurBgra(std::vector<uint8_t>& bgra, uint32_t width, uint32_t height, float sigma) {
     if (sigma <= 0 || width == 0 || height == 0) return;
     const int r = std::max(1, static_cast<int>(std::ceil(sigma * 3)));
     std::vector<float> kernel(size_t(2 * r + 1));
@@ -385,8 +370,7 @@ void BlurBgra(std::vector<uint8_t>& bgra, uint32_t width, uint32_t height, float
     }
 }
 
-void SaturateBgra(std::vector<uint8_t>& bgra, float amount)
-{
+void SaturateBgra(std::vector<uint8_t>& bgra, float amount) {
     if (amount == 1) return;
     for (size_t i = 0; i + 4 <= bgra.size(); i += 4) {
         const float v[3] = {float(bgra[i]), float(bgra[i + 1]), float(bgra[i + 2])}; // B, G, R
@@ -395,8 +379,7 @@ void SaturateBgra(std::vector<uint8_t>& bgra, float amount)
     }
 }
 
-std::vector<uint8_t> PadBgra(const std::vector<uint8_t>& bgra, uint32_t width, uint32_t height, uint32_t pad)
-{
+std::vector<uint8_t> PadBgra(const std::vector<uint8_t>& bgra, uint32_t width, uint32_t height, uint32_t pad) {
     const uint32_t w = width + 2 * pad, h = height + 2 * pad;
     std::vector<uint8_t> out(size_t(w) * h * 4, 0);
     for (uint32_t y = 0; y < height; y++) {
@@ -405,8 +388,7 @@ std::vector<uint8_t> PadBgra(const std::vector<uint8_t>& bgra, uint32_t width, u
     return out;
 }
 
-std::vector<uint8_t> NoiseBgra(uint32_t side, uint32_t seed)
-{
+std::vector<uint8_t> NoiseBgra(uint32_t side, uint32_t seed) {
     std::vector<uint8_t> out(size_t(side) * side * 4);
     uint32_t s = seed ? seed : 0x9E3779B9u;
     for (size_t i = 0; i < size_t(side) * side; i++) {
@@ -424,8 +406,7 @@ std::vector<uint8_t> NoiseBgra(uint32_t side, uint32_t seed)
 }
 
 bool MipImage(const uint8_t* data, size_t size, const TexPackage& package, const TexMip& mip, uint32_t maxSide,
-              TexImage* out, std::string* error, const TexLook& look)
-{
+              TexImage* out, std::string* error, const TexLook& look) {
     if (mip.offset + mip.size > size) {
         if (error) *error = "the mip is not in the data";
         return false;
@@ -441,8 +422,7 @@ bool MipImage(const uint8_t* data, size_t size, const TexPackage& package, const
             return false;
         }
         bytes = bgra.data();
-    }
-    else if (package.format != TexFormat::Bgra8 && package.format != TexFormat::Rgb10A2) {
+    } else if (package.format != TexFormat::Bgra8 && package.format != TexFormat::Rgb10A2) {
         if (look.Any()) {
             if (error) *error = "this format cannot be blurred";
             return false;
@@ -472,8 +452,7 @@ bool MipImage(const uint8_t* data, size_t size, const TexPackage& package, const
         image.bytes = ShrinkBgra(bytes, mip.width, mip.height, w, h);
         image.width = w;
         image.height = h;
-    }
-    else {
+    } else {
         image.bytes.assign(bytes, bytes + size_t(mip.width) * mip.height * 4);
     }
     if (look.shadow) {

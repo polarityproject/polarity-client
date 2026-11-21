@@ -36,19 +36,19 @@
 namespace sfv::mod {
 
 struct RoomScreenInput {
-    bool leave = false;       // confirmed
-    std::string chat;         // a message to send
-    bool copiedCode = false;  // the code went to the clipboard
+    bool leave = false;      // confirmed
+    std::string chat;        // a message to send
+    bool copiedCode = false; // the code went to the clipboard
     // A table request (rooms_client.h RoomsTable): "seat", "stand", "queue",
     // "unqueue", "ready", "decline", "rules", "kick".
     std::string request;
     std::vector<std::string> args;
-    int delay = -1;           // with "ready": the input delay chosen for this match
-    bool myCharacter = false; // Y
-    bool training = false;    // LB: wait in Training (seated or queued)
-    bool clearNotice = false; // the table notice read
-    bool cancelHandoff = false; // B on the connecting modal: out of this set before it began
-    int watch = -2;             // X on a table: watch it (M5); -1 stop watching; -2 nothing
+    int delay = -1;               // with "ready": the input delay chosen for this match
+    bool myCharacter = false;     // Y
+    bool training = false;        // LB: wait in Training (seated or queued)
+    bool clearNotice = false;     // the table notice read
+    bool cancelHandoff = false;   // B on the connecting modal: out of this set before it began
+    int watch = -2;               // X on a table: watch it (M5); -1 stop watching; -2 nothing
     int vskill = 0, vtrigger = 0; // the card: a V-Skill or V-Trigger chosen (from 1); 0 unchanged
 };
 
@@ -59,6 +59,7 @@ struct TableRulesEditor {
     std::vector<Rules> rules; // one a table
     int table = 0, row = 0;
 };
+
 // One frame's input: LB and RB the table, up and down the row, left and
 // right its value. Render thread, inside an ImGui frame.
 void StepTableRules(TableRulesEditor& e);
@@ -80,6 +81,7 @@ struct CardPick {
     int vskill = 1, vtrigger = 1;
     bool editable = false;
 };
+
 void SetCardPick(const CardPick& pick);
 // Each character's V-Skill and V-Trigger names (the game's), by code.
 void SetSkillNames(std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::string>>> names);
@@ -96,6 +98,7 @@ struct TableHandoff {
     bool jumping = false;   // the match is loading
     int played = 0;         // games of the set played so far
 };
+
 void SetTableHandoff(const TableHandoff& handoff);
 
 void ResetRoomScreen(); // a new room: dialogs shut, nothing typed, nobody muted

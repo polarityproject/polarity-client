@@ -15,8 +15,7 @@ namespace sfv::mod {
 
 namespace {
 
-std::string Ascii(const std::wstring& w)
-{
+std::string Ascii(const std::wstring& w) {
     std::string s;
     for (wchar_t c : w) s += c < 128 ? static_cast<char>(c) : '?';
     return s;
@@ -26,8 +25,7 @@ std::string Ascii(const std::wstring& w)
 // file without a BOM in the system's code page, which mangles UTF-8 (what
 // Notepad saves). A UTF-16 file (BOM) works too. "" when missing; `found`
 // says whether the key is there.
-std::string ReadUtf8(const std::wstring& path, const std::string& section, const std::string& key, bool* found = nullptr)
-{
+std::string ReadUtf8(const std::wstring& path, const std::string& section, const std::string& key, bool* found = nullptr) {
     if (found) *found = false;
     HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
     if (f == INVALID_HANDLE_VALUE) return "";
@@ -42,8 +40,7 @@ std::string ReadUtf8(const std::wstring& path, const std::string& section, const
         std::string u(static_cast<size_t>(n), '\0');
         WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()), u.data(), n, nullptr, nullptr);
         bytes = u;
-    }
-    else if (bytes.size() >= 3 && bytes.compare(0, 3, "\xEF\xBB\xBF") == 0) {
+    } else if (bytes.size() >= 3 && bytes.compare(0, 3, "\xEF\xBB\xBF") == 0) {
         bytes.erase(0, 3);
     }
     auto trim = [](std::string s) {
@@ -72,22 +69,19 @@ std::string ReadUtf8(const std::wstring& path, const std::string& section, const
     return "";
 }
 
-std::string FromHex(const std::string& hex)
-{
+std::string FromHex(const std::string& hex) {
     std::string out;
     for (size_t i = 0; i + 1 < hex.size(); i += 2) out += static_cast<char>(std::strtol(hex.substr(i, 2).c_str(), nullptr, 16));
     return out;
 }
 
-std::wstring ReadString(const std::wstring& path, const wchar_t* section, const wchar_t* key, const wchar_t* def)
-{
+std::wstring ReadString(const std::wstring& path, const wchar_t* section, const wchar_t* key, const wchar_t* def) {
     wchar_t buf[1024];
     GetPrivateProfileStringW(section, key, def, buf, static_cast<DWORD>(std::size(buf)), path.c_str());
     return buf;
 }
 
-int ReadInt(const std::wstring& path, const wchar_t* section, const wchar_t* key, int def)
-{
+int ReadInt(const std::wstring& path, const wchar_t* section, const wchar_t* key, int def) {
     return static_cast<int>(GetPrivateProfileIntW(section, key, def, path.c_str()));
 }
 
@@ -98,16 +92,14 @@ namespace {
 // The public server before 0.3.0 (159.69.32.141, kept up for 0.2.x only): a
 // choice of it saved then means the public one, which is the rooms VPS now
 // (kDefaultServer).
-bool IsOldPublicServer(const std::string& server)
-{
+bool IsOldPublicServer(const std::string& server) {
     return server == "159.69.32.141" || server.rfind("159.69.32.141:", 0) == 0;
 }
 
 // The player's choices in [netplay]: pick (with its variant), stage, input delay,
 // own frame rate in the HUD; from the panel also name and spectators. With onlyPresent (the overlay's file) a missing key keeps the value
 // read before.
-void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPresent)
-{
+void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPresent) {
     const wchar_t* kAbsent = L"\x01";
     auto has = [&](const wchar_t* key) { return !onlyPresent || ReadString(path, L"netplay", key, kAbsent) != kAbsent; };
     if (has(L"input_delay")) n.inputDelay = static_cast<uint8_t>(ReadInt(path, L"netplay", L"input_delay", 2));
@@ -117,8 +109,7 @@ void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPr
         const std::wstring v = ReadString(path, L"netplay", L"fixed_delay", L"auto");
         const bool frames = !v.empty() && v[0] >= L'0' && v[0] <= L'9';
         n.delaySetting = frames ? static_cast<int8_t>(std::clamp(_wtoi(v.c_str()), 0, kMaxDelaySetting)) : kDelayAuto;
-    }
-    else if (has(L"delay_setting")) {
+    } else if (has(L"delay_setting")) {
         const int old = ReadInt(path, L"netplay", L"delay_setting", 0);
         n.delaySetting = old >= 1 && old <= kMaxDelaySetting ? static_cast<int8_t>(old) : kDelayAuto;
     }
@@ -177,21 +168,18 @@ void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPr
     if (has(L"word_filter")) n.wordFilter = ReadInt(path, L"netplay", L"word_filter", 1) != 0;
 }
 
-void Write(const std::wstring& path, const wchar_t* key, const std::string& value)
-{
+void Write(const std::wstring& path, const wchar_t* key, const std::string& value) {
     const std::wstring wide(value.begin(), value.end());
     WritePrivateProfileStringW(L"netplay", key, wide.c_str(), path.c_str());
 }
 
 } // namespace
 
-void SaveRandomStagesOff(const std::wstring& path, const std::vector<std::string>& off)
-{
+void SaveRandomStagesOff(const std::wstring& path, const std::vector<std::string>& off) {
     Write(path, L"random_stages_off", FormatStageMask(off));
 }
 
-void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const std::string& stage)
-{
+void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const std::string& stage) {
     Write(path, L"character", n.hasPick ? UnpackCode(n.pick.character) : "");
     Write(path, L"costume", std::to_string(n.pick.costume));
     Write(path, L"color", std::to_string(n.pick.color + 1));
@@ -234,8 +222,7 @@ void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const
     Write(path, L"recent_servers", recent);
 }
 
-std::map<std::string, PlayerSetup> ReadLoadouts(const std::wstring& path)
-{
+std::map<std::string, PlayerSetup> ReadLoadouts(const std::wstring& path) {
     std::map<std::string, PlayerSetup> loadouts;
     std::vector<wchar_t> buf(32768);
     const DWORD n = GetPrivateProfileSectionW(L"loadouts", buf.data(), static_cast<DWORD>(buf.size()), path.c_str());
@@ -270,19 +257,16 @@ std::wstring g_mainIni;
 
 std::wstring MainIniPath() { return g_mainIni; }
 
-int ReadMainIni(const wchar_t* section, const wchar_t* key, int fallback)
-{
+int ReadMainIni(const wchar_t* section, const wchar_t* key, int fallback) {
     return g_mainIni.empty() ? fallback : static_cast<int>(GetPrivateProfileIntW(section, key, fallback, g_mainIni.c_str()));
 }
 
-void SaveMainIni(const wchar_t* section, const wchar_t* key, int value)
-{
+void SaveMainIni(const wchar_t* section, const wchar_t* key, int value) {
     if (g_mainIni.empty()) return;
     WritePrivateProfileStringW(section, key, std::to_wstring(value).c_str(), g_mainIni.c_str());
 }
 
-Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const std::wstring& panelPath)
-{
+Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const std::wstring& panelPath) {
     g_mainIni = path;
     Config c;
     const std::wstring mode = ReadString(path, L"mod", L"mode", L"probe");
@@ -358,14 +342,13 @@ Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const st
     return c;
 }
 
-const char* ModeName(Mode mode)
-{
+const char* ModeName(Mode mode) {
     switch (mode) {
-    case Mode::Off: return "off";
-    case Mode::Probe: return "probe";
-    case Mode::LearnStateMap: return "learn_statemap";
-    case Mode::Netplay: return "netplay";
-    case Mode::Playback: return "playback";
+        case Mode::Off: return "off";
+        case Mode::Probe: return "probe";
+        case Mode::LearnStateMap: return "learn_statemap";
+        case Mode::Netplay: return "netplay";
+        case Mode::Playback: return "playback";
     }
     return "?";
 }

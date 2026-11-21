@@ -16,7 +16,10 @@ namespace {
 
 using namespace ui;
 
-enum class Icon { Pad, Rooms, Log, None };
+enum class Icon { Pad,
+                  Rooms,
+                  Log,
+                  None };
 
 struct Entry {
     HubAction action;
@@ -32,11 +35,11 @@ struct Frame {
 };
 
 std::atomic<bool> g_open{false};
-int g_focus = 1;        // the last entry used keeps focus (0 Play Offline, 1 Custom Rooms, 2 Battle Log, 3 My Character)
-int g_column = 0;       // the left column's entry right comes back to (0 or 2)
-double g_openedAt = 0;  // ImGui time, for the fade in
+int g_focus = 1;          // the last entry used keeps focus (0 Play Offline, 1 Custom Rooms, 2 Battle Log, 3 My Character)
+int g_column = 0;         // the left column's entry right comes back to (0 or 2)
+double g_openedAt = 0;    // ImGui time, for the fade in
 bool g_fromBlack = false; // ... from black (at launch)
-float g_blackFade = 0;     // from black: seconds of the fade drawn so far
+float g_blackFade = 0;    // from black: seconds of the fade drawn so far
 bool g_clickedTile = false;
 
 // The grid: the left column this PC's own (Play Offline over the Battle
@@ -49,8 +52,7 @@ const ImU32 kRing = IM_COL32(240, 194, 74, 255);
 const ImU32 kCream = IM_COL32(244, 241, 232, 255);
 const ImU32 kMuted = IM_COL32(198, 193, 180, 255);
 
-std::vector<Entry> Entries(const HubLive& live)
-{
+std::vector<Entry> Entries(const HubLive& live) {
     return {
         {HubAction::PlayOffline, "PLAY OFFLINE", Icon::Pad, "Story, arcade, training, versus",
          "Press Back + Start in the game's menus to come back here.",
@@ -68,8 +70,7 @@ std::vector<Entry> Entries(const HubLive& live)
 }
 
 // A picture filling `a`..`b` (design units) without stretching: cropped.
-void Cover(ImDrawList* d, const TextureView* t, float x, float y, float w, float h, ImU32 tint)
-{
+void Cover(ImDrawList* d, const TextureView* t, float x, float y, float w, float h, ImU32 tint) {
     if (!t || !t->width || !t->height) return;
     const float ta = float(t->width) / float(t->height), fa = w / h;
     ImVec2 uv0(0, 0), uv1(1, 1);
@@ -77,8 +78,7 @@ void Cover(ImDrawList* d, const TextureView* t, float x, float y, float w, float
         const float keep = fa / ta;
         uv0.x = (1 - keep) / 2;
         uv1.x = 1 - uv0.x;
-    }
-    else {
+    } else {
         const float keep = ta / fa;
         uv0.y = (1 - keep) / 2;
         uv1.y = 1 - uv0.y;
@@ -88,30 +88,25 @@ void Cover(ImDrawList* d, const TextureView* t, float x, float y, float w, float
 }
 
 // The mock-up's icons, on a 24-unit grid at `size` design units.
-void DrawIcon(ImDrawList* d, Icon icon, float cx, float cy, float size, ImU32 col)
-{
+void DrawIcon(ImDrawList* d, Icon icon, float cx, float cy, float size, ImU32 col) {
     const float k = size / 24.0f;
     auto at = [&](float x, float y) { return g_v.P(cx + (x - 12) * k, cy + (y - 12) * k); };
     const float stroke = g_v.L(1.4f * k);
     if (icon == Icon::Pad) {
-        static const ImVec2 body[] = {{6.5f, 8},   {17.5f, 8},  {20.3f, 9.2f}, {21.4f, 11.1f}, {22.4f, 15.7f}, {21.8f, 17.5f},
-                                      {20, 18.4f}, {18.1f, 17.9f}, {15.8f, 16}, {8.2f, 16},     {5.9f, 17.9f},  {4, 18.4f},
-                                      {2.2f, 17.5f}, {1.6f, 15.7f}, {2.6f, 11.1f}, {3.7f, 9.2f}};
+        static const ImVec2 body[] = {{6.5f, 8}, {17.5f, 8}, {20.3f, 9.2f}, {21.4f, 11.1f}, {22.4f, 15.7f}, {21.8f, 17.5f}, {20, 18.4f}, {18.1f, 17.9f}, {15.8f, 16}, {8.2f, 16}, {5.9f, 17.9f}, {4, 18.4f}, {2.2f, 17.5f}, {1.6f, 15.7f}, {2.6f, 11.1f}, {3.7f, 9.2f}};
         for (const ImVec2& p : body) d->PathLineTo(at(p.x, p.y));
         d->PathStroke(col, ImDrawFlags_Closed, stroke);
         d->AddLine(at(7.5f, 10.5f), at(7.5f, 13.5f), col, stroke);
         d->AddLine(at(6, 12), at(9, 12), col, stroke);
         d->AddCircleFilled(at(15.5f, 11.2f), g_v.L(0.9f * k), col);
         d->AddCircleFilled(at(17.3f, 13), g_v.L(0.9f * k), col);
-    }
-    else if (icon == Icon::Log) {
+    } else if (icon == Icon::Log) {
         // A list: three lines, a play mark before the first.
         d->AddTriangleFilled(at(3, 4.5f), at(3, 9.5f), at(7, 7), col);
         d->AddLine(at(9.5f, 7), at(21, 7), col, stroke);
         d->AddLine(at(3, 12.5f), at(21, 12.5f), col, stroke);
         d->AddLine(at(3, 18), at(21, 18), col, stroke);
-    }
-    else {
+    } else {
         for (const ImVec2& o : {ImVec2(3, 3), ImVec2(13.5f, 3), ImVec2(3, 13.5f), ImVec2(13.5f, 13.5f)}) {
             d->AddRect(at(o.x, o.y), at(o.x + 7.5f, o.y + 7.5f), col, g_v.L(1 * k), 0, stroke);
         }
@@ -120,8 +115,7 @@ void DrawIcon(ImDrawList* d, Icon icon, float cx, float cy, float size, ImU32 co
 
 // The panel over the Custom Rooms tile: the focused entry's stage and
 // character inside a glass pane, its name and one tagline on them.
-void DrawPanel(ImDrawList* d, const HubFonts& f, const Entry& e)
-{
+void DrawPanel(ImDrawList* d, const HubFonts& f, const Entry& e) {
     const Frame p = kPanel;
     DropShadow(d, p.x, p.y, p.x + p.w, p.y + p.h, 6, 18, 0.32f, true);
     d->AddRectFilled(g_v.P(p.x, p.y), g_v.P(p.x + p.w, p.y + p.h), look::kGround);
@@ -146,8 +140,7 @@ void DrawPanel(ImDrawList* d, const HubFonts& f, const Entry& e)
 
 // My Character's tile: the pick's stage behind its character, the name
 // strip at the top and the subtitle ("Seth VS1 / VT2") along the bottom.
-void DrawPickTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame& r, bool on)
-{
+void DrawPickTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame& r, bool on) {
     Pane(d, r.x, r.y, r.x + r.w, r.y + r.h);
     d->PushClipRect(g_v.P(r.x + 2, r.y + 2), g_v.P(r.x + r.w - 2, r.y + r.h - 2), true);
     if (!e.stage.empty()) Cover(d, TextureSized(StageTex(e.stage, "StageSelectBG"), g_v.L(r.w)), r.x, r.y, r.w, r.h, Rgba(205, 205, 205));
@@ -176,8 +169,7 @@ void DrawPickTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame&
 // A tile: a glass pane with its name in a strip (gold with the focus) and
 // its icon; no description inside it (the hint at the bottom says it).
 // `state`: live state on the strip's right (the rooms' counts).
-void DrawTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame& r, bool on, const std::string& state)
-{
+void DrawTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame& r, bool on, const std::string& state) {
     if (e.icon == Icon::None) return DrawPickTile(d, f, e, r, on);
     Pane(d, r.x, r.y, r.x + r.w, r.y + r.h);
     Strip(d, r.x + 2, r.y + 2, r.x + r.w - 2, r.y + 46, on);
@@ -196,8 +188,7 @@ int g_updateChoice = 0;
 // The modal: what is wrong and what can be done. While connecting it waits,
 // and Custom Rooms opens by itself once it can; a problem gone (the server
 // answered) does the same.
-HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live)
-{
+HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live) {
     using P = HubLive::RoomsProblem;
     if (live.roomsProblem == P::None) {
         g_problemOpen = false;
@@ -210,40 +201,40 @@ HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live
     const char* primary = nullptr; // the first button, besides Close
     HubAction primaryAction = HubAction::None;
     switch (live.roomsProblem) {
-    case P::Connecting:
-        title = "Connecting...";
-        text = "Custom Rooms opens once connected.";
-        break;
-    case P::Unreachable:
-        title = "Can't reach the rooms server";
-        text = "Couldn't connect to " + server + ". Check your internet connection and firewall. "
-               "If they're fine, the server may be down. Polarity retries every 10 seconds.";
-        primary = "Try again";
-        primaryAction = HubAction::RetryRooms;
-        break;
-    case P::CheckingUpdate:
-        title = "Checking for updates...";
-        text = "Custom Rooms opens once the check is done.";
-        break;
-    case P::UpdatePending:
-        title = "Update to play online";
-        text = "Polarity " + live.update.latest + " is out. Custom Rooms need the latest version.";
-        primary = "Update now";
-        primaryAction = HubAction::UpdateInstall;
-        break;
-    case P::UpdateNeeded:
-        title = "Update needed";
-        text = "Custom Rooms need a newer Polarity" + (live.roomsBuild.empty() ? std::string() : " (protocol " + live.roomsBuild + ")") +
-               ". Update in Polarity settings, then restart the game.";
-        primary = "Polarity settings";
-        primaryAction = HubAction::Settings;
-        break;
-    default:
-        title = "Custom Rooms are unavailable";
-        text = "The rooms server is up, but isn't hosting rooms right now. Try again in a little while.";
-        primary = "Try again";
-        primaryAction = HubAction::RetryRooms;
-        break;
+        case P::Connecting:
+            title = "Connecting...";
+            text = "Custom Rooms opens once connected.";
+            break;
+        case P::Unreachable:
+            title = "Can't reach the rooms server";
+            text = "Couldn't connect to " + server + ". Check your internet connection and firewall. "
+                                                     "If they're fine, the server may be down. Polarity retries every 10 seconds.";
+            primary = "Try again";
+            primaryAction = HubAction::RetryRooms;
+            break;
+        case P::CheckingUpdate:
+            title = "Checking for updates...";
+            text = "Custom Rooms opens once the check is done.";
+            break;
+        case P::UpdatePending:
+            title = "Update to play online";
+            text = "Polarity " + live.update.latest + " is out. Custom Rooms need the latest version.";
+            primary = "Update now";
+            primaryAction = HubAction::UpdateInstall;
+            break;
+        case P::UpdateNeeded:
+            title = "Update needed";
+            text = "Custom Rooms need a newer Polarity" + (live.roomsBuild.empty() ? std::string() : " (protocol " + live.roomsBuild + ")") +
+                   ". Update in Polarity settings, then restart the game.";
+            primary = "Polarity settings";
+            primaryAction = HubAction::Settings;
+            break;
+        default:
+            title = "Custom Rooms are unavailable";
+            text = "The rooms server is up, but isn't hosting rooms right now. Try again in a little while.";
+            primary = "Try again";
+            primaryAction = HubAction::RetryRooms;
+            break;
     }
     const float wrap = 544;
     const float textH = f.body->CalcTextSizeA(TextPx(19), FLT_MAX, g_v.L(wrap), text.c_str()).y / g_v.s;
@@ -267,8 +258,7 @@ HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live
     if (primary) {
         if (Button(d, bold, 528, y, 806, y + 48, primary, g_problemChoice == 0)) pressed = 0;
         if (Button(d, bold, 822, y, 1072, y + 48, "Close", g_problemChoice == 1)) pressed = 1;
-    }
-    else if (Button(d, bold, 528, y, 1072, y + 48, "Close", true)) pressed = 0;
+    } else if (Button(d, bold, 528, y, 1072, y + 48, "Close", true)) pressed = 0;
     if (!g_inputOn) return HubAction::None;
     if (buttons == 2 && (Left() || Right())) g_problemChoice = 1 - g_problemChoice;
     if (pressed >= 0) g_problemChoice = pressed;
@@ -290,8 +280,7 @@ HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live
 
 // The update modal: what is out (its notes), Update now; the download's
 // progress; then Restart now, or why it failed.
-HubAction DrawUpdateModal(ImDrawList* d, const HubFonts& f, const HubLive& live)
-{
+HubAction DrawUpdateModal(ImDrawList* d, const HubFonts& f, const HubLive& live) {
     using S = UpdateView::State;
     const UpdateView& u = live.update;
     ImFont* bold = f.bold ? f.bold : f.strong;
@@ -301,47 +290,47 @@ HubAction DrawUpdateModal(ImDrawList* d, const HubFonts& f, const HubLive& live)
     const char* close = "Later";
     float progress = -1;
     switch (u.state) {
-    case S::Available: {
-        title = "Polarity " + u.latest + " is out";
-        // The first paragraph of the notes, cut to a few lines.
-        std::string notes = u.notes.substr(0, u.notes.find("\n\n"));
-        if (notes.size() > 360) notes = notes.substr(0, notes.rfind(' ', 357)) + "...";
-        text = notes.empty() ? "A new version is ready to download." : notes;
-        primary = "Update now";
-        primaryAction = HubAction::UpdateInstall;
-        break;
-    }
-    case S::Downloading:
-        title = "Updating to Polarity " + u.latest;
-        progress = u.total ? static_cast<float>(u.done) / static_cast<float>(u.total) : 0.0f;
-        text = "Downloading... " + std::to_string(static_cast<int>(progress * 100)) + "%. You can keep using the menus.";
-        close = "Hide";
-        break;
-    case S::Ready:
-        title = "Polarity " + u.latest + " is ready";
-        text = live.restartError.empty() ? "Restart the game to finish."
-                                         : "Couldn't restart: " + live.restartError + ". Close the game and start it again.";
-        primary = "Restart now";
-        primaryAction = HubAction::UpdateRestart;
-        break;
-    case S::Failed:
-        title = "The update failed";
-        text = u.message.empty() ? std::string("Something went wrong.") : u.message;
-        text += " Check your connection and try again.";
-        primary = "Try again";
-        primaryAction = HubAction::UpdateRetry;
-        close = "Close";
-        break;
-    case S::Checking:
-        title = "Checking for updates...";
-        text = "One moment.";
-        close = "Close";
-        break;
-    default:
-        title = "Polarity is up to date";
-        text = "You have the latest version.";
-        close = "Close";
-        break;
+        case S::Available: {
+            title = "Polarity " + u.latest + " is out";
+            // The first paragraph of the notes, cut to a few lines.
+            std::string notes = u.notes.substr(0, u.notes.find("\n\n"));
+            if (notes.size() > 360) notes = notes.substr(0, notes.rfind(' ', 357)) + "...";
+            text = notes.empty() ? "A new version is ready to download." : notes;
+            primary = "Update now";
+            primaryAction = HubAction::UpdateInstall;
+            break;
+        }
+        case S::Downloading:
+            title = "Updating to Polarity " + u.latest;
+            progress = u.total ? static_cast<float>(u.done) / static_cast<float>(u.total) : 0.0f;
+            text = "Downloading... " + std::to_string(static_cast<int>(progress * 100)) + "%. You can keep using the menus.";
+            close = "Hide";
+            break;
+        case S::Ready:
+            title = "Polarity " + u.latest + " is ready";
+            text = live.restartError.empty() ? "Restart the game to finish."
+                                             : "Couldn't restart: " + live.restartError + ". Close the game and start it again.";
+            primary = "Restart now";
+            primaryAction = HubAction::UpdateRestart;
+            break;
+        case S::Failed:
+            title = "The update failed";
+            text = u.message.empty() ? std::string("Something went wrong.") : u.message;
+            text += " Check your connection and try again.";
+            primary = "Try again";
+            primaryAction = HubAction::UpdateRetry;
+            close = "Close";
+            break;
+        case S::Checking:
+            title = "Checking for updates...";
+            text = "One moment.";
+            close = "Close";
+            break;
+        default:
+            title = "Polarity is up to date";
+            text = "You have the latest version.";
+            close = "Close";
+            break;
     }
     const float wrap = 544;
     const float textH = f.body->CalcTextSizeA(TextPx(19), FLT_MAX, g_v.L(wrap), text.c_str()).y / g_v.s;
@@ -372,8 +361,7 @@ HubAction DrawUpdateModal(ImDrawList* d, const HubFonts& f, const HubLive& live)
     if (primary) {
         if (Button(d, bold, 528, y, 806, y + 48, primary, g_updateChoice == 0)) pressed = 0;
         if (Button(d, bold, 822, y, 1072, y + 48, close, g_updateChoice == 1)) pressed = 1;
-    }
-    else if (Button(d, bold, 528, y, 1072, y + 48, close, true)) pressed = 0;
+    } else if (Button(d, bold, 528, y, 1072, y + 48, close, true)) pressed = 0;
     if (!g_inputOn) return HubAction::None;
     if (buttons == 2 && (Left() || Right())) g_updateChoice = 1 - g_updateChoice;
     if (pressed >= 0) g_updateChoice = pressed;
@@ -395,8 +383,7 @@ HubAction DrawUpdateModal(ImDrawList* d, const HubFonts& f, const HubLive& live)
     return HubAction::None;
 }
 
-void DrawTop(ImDrawList* d, const HubFonts& f, const HubLive& live)
-{
+void DrawTop(ImDrawList* d, const HubFonts& f, const HubLive& live) {
     StageText(d, f.display, 42, 800, 30, Rgba(255, 255, 255), "Polarity", 0.5f);
     // Right to left: the version, the player.
     float x = 1560;
@@ -408,8 +395,7 @@ void DrawTop(ImDrawList* d, const HubFonts& f, const HubLive& live)
 
 } // namespace
 
-void OpenHub(bool fromBlack)
-{
+void OpenHub(bool fromBlack) {
     if (!g_open.exchange(true)) {
         g_openedAt = -1;
         g_fromBlack = fromBlack;
@@ -418,15 +404,13 @@ void OpenHub(bool fromBlack)
     }
 }
 
-void CloseHub()
-{
+void CloseHub() {
     if (g_open.exchange(false)) Log("hub: closed");
 }
 
 bool HubOpen() { return g_open; }
 
-void OpenUpdateModal()
-{
+void OpenUpdateModal() {
     if (!g_updateOpen) Log("hub: update modal open");
     g_updateOpen = true;
     g_updateChoice = 0;
@@ -435,8 +419,7 @@ void OpenUpdateModal()
 
 bool UpdateModalOpen() { return g_updateOpen; }
 
-void WarmHubTextures(const HubLive& live)
-{
+void WarmHubTextures(const HubLive& live) {
     g_drawing = false;
     for (const char* icon : {"button_a", "button_start"}) Texture(PadTex(icon));
     for (const std::string& c : {live.roomsChara, live.offlineChara, live.myChara}) {
@@ -448,8 +431,7 @@ void WarmHubTextures(const HubLive& live)
     g_drawing = true;
 }
 
-HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
-{
+HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput) {
     if (!g_open || !f.display || !f.strong || !f.body) return HubAction::None;
     BeginScreen();
     const double now = ImGui::GetTime();
@@ -531,8 +513,7 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput)
     return action;
 }
 
-void ShowRoomsProblem()
-{
+void ShowRoomsProblem() {
     g_problemOpen = true;
     g_problemChoice = 0;
 }

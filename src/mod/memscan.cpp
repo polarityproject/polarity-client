@@ -15,8 +15,7 @@ std::vector<uintptr_t> g_hits;
 std::vector<int32_t> g_values; // scansmall/scandelta: the value at each hit
 constexpr size_t kMaxHits = 64u << 20;
 
-bool ReadSafe(uintptr_t address, void* out, size_t size)
-{
+bool ReadSafe(uintptr_t address, void* out, size_t size) {
     SIZE_T got = 0;
     return ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(address), out, size, &got) &&
            got == size;
@@ -24,8 +23,7 @@ bool ReadSafe(uintptr_t address, void* out, size_t size)
 
 } // namespace
 
-void ScanStart(int32_t value)
-{
+void ScanStart(int32_t value) {
     g_hits.clear();
     g_values.clear();
     std::vector<uint8_t> buffer(1u << 20);
@@ -53,8 +51,7 @@ void ScanStart(int32_t value)
     Log("scan %d: %zu hits in %zu MB", value, g_hits.size(), scanned >> 20);
 }
 
-void ScanSmall()
-{
+void ScanSmall() {
     g_hits.clear();
     g_values.clear();
     std::vector<uint8_t> buffer(1u << 20);
@@ -83,8 +80,7 @@ void ScanSmall()
     Log("scansmall: %zu hits", g_hits.size());
 }
 
-void FindPointer(uint64_t value)
-{
+void FindPointer(uint64_t value) {
     std::vector<uint8_t> buffer(1u << 20);
     uintptr_t addr = 0x10000;
     MEMORY_BASIC_INFORMATION mbi;
@@ -112,8 +108,7 @@ void FindPointer(uint64_t value)
     Log("findptr: %d hits", hits);
 }
 
-void FindBytes(const std::vector<uint8_t>& bytes)
-{
+void FindBytes(const std::vector<uint8_t>& bytes) {
     if (bytes.empty()) return;
     std::vector<uint8_t> buffer(1u << 20);
     uintptr_t addr = 0x10000;
@@ -143,8 +138,7 @@ void FindBytes(const std::vector<uint8_t>& bytes)
     Log("findbytes: %d hits", hits);
 }
 
-void ScanDelta(int32_t delta)
-{
+void ScanDelta(int32_t delta) {
     if (g_values.size() != g_hits.size()) {
         Log("scandelta needs scansmall first");
         return;
@@ -162,8 +156,7 @@ void ScanDelta(int32_t delta)
     Log("scandelta %d: %zu hits left", delta, kept);
 }
 
-void ScanNext(int32_t value)
-{
+void ScanNext(int32_t value) {
     g_values.clear();
     std::vector<uintptr_t> kept;
     for (uintptr_t a : g_hits) {
@@ -174,8 +167,7 @@ void ScanNext(int32_t value)
     Log("rescan %d: %zu hits left", value, g_hits.size());
 }
 
-void ScanRecordFilter(uint32_t fieldOffset)
-{
+void ScanRecordFilter(uint32_t fieldOffset) {
     std::vector<uintptr_t> kept;
     for (uintptr_t a : g_hits) {
         uint8_t r[0x100];
@@ -196,8 +188,7 @@ void ScanRecordFilter(uint32_t fieldOffset)
     }
 }
 
-void ScanShow()
-{
+void ScanShow() {
     size_t shown = 0;
     for (uintptr_t a : g_hits) {
         if (shown++ >= 64) break;

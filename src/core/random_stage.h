@@ -22,8 +22,7 @@ namespace sfv {
 
 inline constexpr std::string_view kNeverRandomStages[] = {"SX1", "DBI", "KPB"};
 
-inline bool IsNeverRandomStage(std::string_view code)
-{
+inline bool IsNeverRandomStage(std::string_view code) {
     for (std::string_view s : kNeverRandomStages) {
         if (code == s) return true;
     }
@@ -42,8 +41,7 @@ struct RandomStageChoice {
 // those `off` leaves out (by their own code; a stage left out keeps its
 // settings), or -1 when none is left. When `off` leaves nothing, every stage
 // but the never-random ones is in again.
-inline int PickRandomStage(const std::vector<RandomStageChoice>& stages, uint64_t roll, const std::vector<std::string>& off = {})
-{
+inline int PickRandomStage(const std::vector<RandomStageChoice>& stages, uint64_t roll, const std::vector<std::string>& off = {}) {
     std::vector<int> pool, all;
     for (const auto& s : stages) {
         if (IsNeverRandomStage(s.code) || IsNeverRandomStage(s.baseCode)) continue;
@@ -57,8 +55,7 @@ inline int PickRandomStage(const std::vector<RandomStageChoice>& stages, uint64_
 // A random list as the panel ini keeps it ("CHN,S25"): codes of three
 // letters or digits, sorted, each once. Parse takes the same (spaces and
 // lower case too) and drops anything else.
-inline std::vector<std::string> ParseStageMask(std::string_view text)
-{
+inline std::vector<std::string> ParseStageMask(std::string_view text) {
     std::vector<std::string> codes;
     size_t at = 0;
     while (at <= text.size()) {
@@ -77,8 +74,7 @@ inline std::vector<std::string> ParseStageMask(std::string_view text)
     return codes;
 }
 
-inline std::string FormatStageMask(const std::vector<std::string>& off)
-{
+inline std::string FormatStageMask(const std::vector<std::string>& off) {
     std::string joined;
     for (const auto& code : off) joined += code + ",";
     std::string text;

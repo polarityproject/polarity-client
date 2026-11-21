@@ -17,24 +17,31 @@ constexpr uint64_t P4 = 9650029242287828579ULL;
 constexpr uint64_t P5 = 2870177450012600261ULL;
 
 inline uint64_t Rotl(uint64_t x, int r) { return (x << r) | (x >> (64 - r)); }
-inline uint64_t Read64(const uint8_t* p) { uint64_t v; std::memcpy(&v, p, 8); return v; }
-inline uint32_t Read32(const uint8_t* p) { uint32_t v; std::memcpy(&v, p, 4); return v; }
 
-inline uint64_t Round(uint64_t acc, uint64_t input)
-{
+inline uint64_t Read64(const uint8_t* p) {
+    uint64_t v;
+    std::memcpy(&v, p, 8);
+    return v;
+}
+
+inline uint32_t Read32(const uint8_t* p) {
+    uint32_t v;
+    std::memcpy(&v, p, 4);
+    return v;
+}
+
+inline uint64_t Round(uint64_t acc, uint64_t input) {
     acc += input * P2;
     acc = Rotl(acc, 31);
     return acc * P1;
 }
 
-inline uint64_t MergeRound(uint64_t acc, uint64_t val)
-{
+inline uint64_t MergeRound(uint64_t acc, uint64_t val) {
     acc ^= Round(0, val);
     return acc * P1 + P4;
 }
 
-std::array<uint32_t, 256> MakeCrcTable()
-{
+std::array<uint32_t, 256> MakeCrcTable() {
     std::array<uint32_t, 256> table{};
     for (uint32_t i = 0; i < 256; i++) {
         uint32_t c = i;
@@ -46,8 +53,7 @@ std::array<uint32_t, 256> MakeCrcTable()
 
 } // namespace
 
-uint64_t Hash64(const void* data, size_t len, uint64_t seed)
-{
+uint64_t Hash64(const void* data, size_t len, uint64_t seed) {
     const uint8_t* p = static_cast<const uint8_t*>(data);
     const uint8_t* end = p + len;
     uint64_t h;
@@ -67,8 +73,7 @@ uint64_t Hash64(const void* data, size_t len, uint64_t seed)
         h = MergeRound(h, v2);
         h = MergeRound(h, v3);
         h = MergeRound(h, v4);
-    }
-    else {
+    } else {
         h = seed + P5;
     }
 
@@ -98,8 +103,7 @@ uint64_t Hash64(const void* data, size_t len, uint64_t seed)
     return h;
 }
 
-uint32_t Crc32(const void* data, size_t len, uint32_t crc)
-{
+uint32_t Crc32(const void* data, size_t len, uint32_t crc) {
     static const auto table = MakeCrcTable();
     const uint8_t* p = static_cast<const uint8_t*>(data);
     crc = ~crc;
@@ -107,23 +111,20 @@ uint32_t Crc32(const void* data, size_t len, uint32_t crc)
     return ~crc;
 }
 
-size_t StateSize(const std::vector<StateRegion>& regions)
-{
+size_t StateSize(const std::vector<StateRegion>& regions) {
     size_t total = 0;
     for (const auto& r : regions) total += r.size;
     return total;
 }
 
-void SaveRegions(const std::vector<StateRegion>& regions, uint8_t* dst)
-{
+void SaveRegions(const std::vector<StateRegion>& regions, uint8_t* dst) {
     for (const auto& r : regions) {
         std::memcpy(dst, r.ptr, r.size);
         dst += r.size;
     }
 }
 
-void LoadRegions(const std::vector<StateRegion>& regions, const uint8_t* src)
-{
+void LoadRegions(const std::vector<StateRegion>& regions, const uint8_t* src) {
     for (const auto& r : regions) {
         std::memcpy(r.ptr, src, r.size);
         src += r.size;
@@ -137,8 +138,7 @@ AddressTest g_addressTest = nullptr;
 // Hash64 of `len` bytes with every byte of a masked 8-byte word read as zero:
 // the same value as Hash64 over a copy with those words cleared, without the
 // copy (which doubled the cost over SFV's 436 KB of mostly masked regions).
-uint64_t Hash64Masked(const uint8_t* data, size_t len, const std::vector<uint8_t>& ignore)
-{
+uint64_t Hash64Masked(const uint8_t* data, size_t len, const std::vector<uint8_t>& ignore) {
     auto word = [&](size_t offset) { return IsIgnored(ignore, offset) ? 0 : Read64(data + offset); };
     size_t at = 0;
     uint64_t h;
@@ -153,8 +153,7 @@ uint64_t Hash64Masked(const uint8_t* data, size_t len, const std::vector<uint8_t
                 v2 = Round(v2, Read64(data + at + 8));
                 v3 = Round(v3, Read64(data + at + 16));
                 v4 = Round(v4, Read64(data + at + 24));
-            }
-            else {
+            } else {
                 v1 = Round(v1, bits & 1 ? 0 : Read64(data + at));
                 v2 = Round(v2, bits & 2 ? 0 : Read64(data + at + 8));
                 v3 = Round(v3, bits & 4 ? 0 : Read64(data + at + 16));
@@ -167,8 +166,7 @@ uint64_t Hash64Masked(const uint8_t* data, size_t len, const std::vector<uint8_t
         h = MergeRound(h, v2);
         h = MergeRound(h, v3);
         h = MergeRound(h, v4);
-    }
-    else {
+    } else {
         h = P5;
     }
     h += static_cast<uint64_t>(len);
@@ -195,8 +193,7 @@ uint64_t Hash64Masked(const uint8_t* data, size_t len, const std::vector<uint8_t
     return h;
 }
 
-uint64_t HashRegion(const uint8_t* data, const StateRegion& region)
-{
+uint64_t HashRegion(const uint8_t* data, const StateRegion& region) {
     const AddressTest isAddress = g_addressTest;
     if (!isAddress) return region.ignore.empty() ? Hash64(data, region.size) : Hash64Masked(data, region.size, region.ignore);
 
@@ -217,8 +214,7 @@ void SetAddressTest(AddressTest test) { g_addressTest = test; }
 
 bool IsProcessAddress(uint64_t value) { return g_addressTest && g_addressTest(value); }
 
-void HashRegions(const std::vector<StateRegion>& regions, uint64_t* out)
-{
+void HashRegions(const std::vector<StateRegion>& regions, uint64_t* out) {
     // The regions lie all over the heap, mostly out of cache: the start of
     // the next ones is fetched while this one hashes.
     constexpr size_t kAhead = 2, kLines = 4;
@@ -233,16 +229,14 @@ void HashRegions(const std::vector<StateRegion>& regions, uint64_t* out)
     }
 }
 
-void HashSavedState(const std::vector<StateRegion>& regions, const uint8_t* state, uint64_t* out)
-{
+void HashSavedState(const std::vector<StateRegion>& regions, const uint8_t* state, uint64_t* out) {
     for (size_t i = 0; i < regions.size(); i++) {
         out[i] = HashRegion(state, regions[i]);
         state += regions[i].size;
     }
 }
 
-uint32_t FoldChecksum(const uint64_t* regionHashes, size_t count)
-{
+uint32_t FoldChecksum(const uint64_t* regionHashes, size_t count) {
     // Order-independent: peers may list the same regions in a different order.
     thread_local std::vector<uint64_t> sorted;
     sorted.assign(regionHashes, regionHashes + count);

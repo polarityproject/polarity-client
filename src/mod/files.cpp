@@ -23,8 +23,7 @@ struct Found {
 };
 
 // The files matching `pattern` in `dir`, newest first.
-std::vector<Found> ListNewestFirst(const std::wstring& dir, const std::wstring& pattern)
-{
+std::vector<Found> ListNewestFirst(const std::wstring& dir, const std::wstring& pattern) {
     std::vector<Found> out;
     WIN32_FIND_DATAW fd;
     HANDLE h = FindFirstFileW((dir + L"\\" + pattern).c_str(), &fd);
@@ -37,15 +36,13 @@ std::vector<Found> ListNewestFirst(const std::wstring& dir, const std::wstring& 
     return out;
 }
 
-std::string Narrow(const std::wstring& w)
-{
+std::string Narrow(const std::wstring& w) {
     std::string s;
     for (wchar_t c : w) s += c < 128 ? static_cast<char>(c) : '_';
     return s;
 }
 
-bool ReadWhole(const std::wstring& path, std::vector<uint8_t>* out)
-{
+bool ReadWhole(const std::wstring& path, std::vector<uint8_t>* out) {
     // Shared: the event log of this run is still open for writing.
     HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -62,8 +59,7 @@ bool ReadWhole(const std::wstring& path, std::vector<uint8_t>* out)
 }
 
 // MS-DOS date and time, as zip entries carry them.
-void DosTime(const FILETIME& ft, uint16_t* time, uint16_t* date)
-{
+void DosTime(const FILETIME& ft, uint16_t* time, uint16_t* date) {
     FILETIME local;
     SYSTEMTIME t;
     FileTimeToLocalFileTime(&ft, &local);
@@ -73,13 +69,12 @@ void DosTime(const FILETIME& ft, uint16_t* time, uint16_t* date)
 }
 
 void Put16(std::vector<uint8_t>& b, uint16_t v) { b.insert(b.end(), {uint8_t(v), uint8_t(v >> 8)}); }
-void Put32(std::vector<uint8_t>& b, uint32_t v)
-{
+
+void Put32(std::vector<uint8_t>& b, uint32_t v) {
     b.insert(b.end(), {uint8_t(v), uint8_t(v >> 8), uint8_t(v >> 16), uint8_t(v >> 24)});
 }
 
-std::string Stamp(const SYSTEMTIME& t)
-{
+std::string Stamp(const SYSTEMTIME& t) {
     char s[32];
     std::snprintf(s, sizeof(s), "%04d-%02d-%02d_%02d-%02d-%02d", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
     return s;
@@ -90,14 +85,18 @@ std::wstring Wide(const std::string& s) { return std::wstring(s.begin(), s.end()
 } // namespace
 
 void SetDataDir(const std::wstring& dir) { g_dataDir = dir; }
+
 std::wstring DataDir() { return g_dataDir; }
+
 std::wstring LogsDir() { return g_dataDir + L"\\logs"; }
+
 std::wstring MatchesDir() { return g_dataDir + L"\\matches"; }
+
 std::wstring ReplaysDir() { return g_dataDir + L"\\replays"; }
+
 std::wstring CrashesDir() { return g_dataDir + L"\\crashes"; }
 
-bool EnsureDirectory(const std::wstring& path)
-{
+bool EnsureDirectory(const std::wstring& path) {
     if (path.empty()) return false;
     const DWORD attr = GetFileAttributesW(path.c_str());
     if (attr != INVALID_FILE_ATTRIBUTES) return (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
@@ -106,14 +105,12 @@ bool EnsureDirectory(const std::wstring& path)
     return CreateDirectoryW(path.c_str(), nullptr) || GetLastError() == ERROR_ALREADY_EXISTS;
 }
 
-void PruneOldest(const std::wstring& dir, const std::wstring& pattern, size_t keep)
-{
+void PruneOldest(const std::wstring& dir, const std::wstring& pattern, size_t keep) {
     const auto files = ListNewestFirst(dir, pattern);
     for (size_t i = keep; i < files.size(); i++) DeleteFileW((dir + L"\\" + files[i].name).c_str());
 }
 
-void RotateLog(const std::wstring& dir, const std::wstring& stem)
-{
+void RotateLog(const std::wstring& dir, const std::wstring& stem) {
     const std::wstring path = dir + L"\\" + stem + L".log";
     WIN32_FILE_ATTRIBUTE_DATA info;
     if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &info)) return;
@@ -146,8 +143,7 @@ void RotateLog(const std::wstring& dir, const std::wstring& stem)
     PruneOldest(dir, stem + L"_*.log", kKeptRunLogs);
 }
 
-std::string Utf8Path(const std::wstring& path)
-{
+std::string Utf8Path(const std::wstring& path) {
     if (path.empty()) return {};
     const int n = WideCharToMultiByte(CP_UTF8, 0, path.data(), static_cast<int>(path.size()), nullptr, 0, nullptr, nullptr);
     std::string out(static_cast<size_t>(n > 0 ? n : 0), '\0');
@@ -155,8 +151,7 @@ std::string Utf8Path(const std::wstring& path)
     return out;
 }
 
-std::string FileSafe(const std::string& text, size_t maxLen, const std::string& empty)
-{
+std::string FileSafe(const std::string& text, size_t maxLen, const std::string& empty) {
     std::string out;
     for (unsigned char c : text) {
         const bool keep = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-';
@@ -169,8 +164,7 @@ std::string FileSafe(const std::string& text, size_t maxLen, const std::string& 
 }
 
 bool WriteZip(const std::wstring& path, const std::vector<std::pair<std::wstring, std::string>>& files,
-              std::string* error)
-{
+              std::string* error) {
     std::vector<uint8_t> zip, central;
     uint16_t entries = 0;
     for (const auto& [source, name] : files) {
@@ -239,8 +233,7 @@ bool WriteZip(const std::wstring& path, const std::vector<std::pair<std::wstring
     return written;
 }
 
-std::wstring PackLogsToShare(std::string* error)
-{
+std::wstring PackLogsToShare(std::string* error) {
     std::vector<std::pair<std::wstring, std::string>> files;
     // The event logs: this run's and the earlier ones kept.
     for (const auto& f : ListNewestFirst(LogsDir(), L"*.log")) files.push_back({LogsDir() + L"\\" + f.name, "logs/" + Narrow(f.name)});
@@ -283,16 +276,14 @@ std::wstring PackLogsToShare(std::string* error)
     return path;
 }
 
-void OpenDataFolder(const std::wstring& select)
-{
+void OpenDataFolder(const std::wstring& select) {
     const std::wstring args = select.empty() ? L"\"" + DataDir() + L"\"" : L"/select,\"" + select + L"\"";
     ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
 }
 
 namespace {
 
-bool IsGamePak(const std::wstring& name)
-{
+bool IsGamePak(const std::wstring& name) {
     // pakchunk<digits>-WindowsNoEditor.pak
     const std::wstring head = L"pakchunk", tail = L"-WindowsNoEditor.pak";
     if (name.size() <= head.size() + tail.size() || _wcsnicmp(name.c_str(), head.c_str(), head.size()) != 0) return false;
@@ -304,8 +295,7 @@ bool IsGamePak(const std::wstring& name)
 }
 
 // Every .pak under `dir` (subfolders too), as paths relative to `root`.
-void ListPaks(const std::wstring& root, const std::wstring& rel, int depth, std::vector<std::pair<std::wstring, uint64_t>>* out)
-{
+void ListPaks(const std::wstring& root, const std::wstring& rel, int depth, std::vector<std::pair<std::wstring, uint64_t>>* out) {
     WIN32_FIND_DATAW fd;
     HANDLE h = FindFirstFileW((root + rel + L"\\*").c_str(), &fd);
     if (h == INVALID_HANDLE_VALUE) return;
@@ -325,8 +315,7 @@ void ListPaks(const std::wstring& root, const std::wstring& rel, int depth, std:
 
 } // namespace
 
-std::vector<std::wstring> OtherPaks()
-{
+std::vector<std::wstring> OtherPaks() {
     wchar_t exe[MAX_PATH] = {};
     GetModuleFileNameW(nullptr, exe, MAX_PATH);
     std::wstring dir(exe);
@@ -343,8 +332,7 @@ std::vector<std::wstring> OtherPaks()
     return out;
 }
 
-std::string GameFilesText()
-{
+std::string GameFilesText() {
     static const std::string text = [] {
         wchar_t exe[MAX_PATH] = {};
         GetModuleFileNameW(nullptr, exe, MAX_PATH);

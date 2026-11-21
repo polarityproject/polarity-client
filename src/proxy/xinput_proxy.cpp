@@ -15,8 +15,8 @@
 namespace {
 
 // The real export by name or ordinal, looked up once per export.
-template <typename Fn> Fn Real(const char* name)
-{
+template <typename Fn>
+Fn Real(const char* name) {
     HMODULE m = sfv::proxy::RealXInput();
     return m ? reinterpret_cast<Fn>(GetProcAddress(m, name)) : nullptr;
 }
@@ -29,11 +29,12 @@ thread_local int t_depth = 0;
 
 struct Depth {
     Depth() { t_depth++; }
+
     ~Depth() { t_depth--; }
 };
 
-template <typename Fn> Fn Target(Fn real, const char* name)
-{
+template <typename Fn>
+Fn Target(Fn real, const char* name) {
     if (t_depth == 0) return real;
     if (t_depth > 1) return nullptr;
     HMODULE m = sfv::proxy::FallbackXInput();
@@ -47,8 +48,7 @@ template <typename Fn> Fn Target(Fn real, const char* name)
 
 extern "C" {
 
-DWORD WINAPI ProxyXInputGetState(DWORD user, XINPUT_STATE* state)
-{
+DWORD WINAPI ProxyXInputGetState(DWORD user, XINPUT_STATE* state) {
     static const auto real = Real<decltype(&ProxyXInputGetState)>("XInputGetState");
     const auto fn = Target(real, "XInputGetState");
     if (!fn) return ERROR_DEVICE_NOT_CONNECTED;
@@ -56,8 +56,7 @@ DWORD WINAPI ProxyXInputGetState(DWORD user, XINPUT_STATE* state)
     return fn(user, state);
 }
 
-DWORD WINAPI ProxyXInputSetState(DWORD user, XINPUT_VIBRATION* vibration)
-{
+DWORD WINAPI ProxyXInputSetState(DWORD user, XINPUT_VIBRATION* vibration) {
     static const auto real = Real<decltype(&ProxyXInputSetState)>("XInputSetState");
     const auto fn = Target(real, "XInputSetState");
     if (!fn) return ERROR_DEVICE_NOT_CONNECTED;
@@ -65,8 +64,7 @@ DWORD WINAPI ProxyXInputSetState(DWORD user, XINPUT_VIBRATION* vibration)
     return fn(user, vibration);
 }
 
-DWORD WINAPI ProxyXInputGetCapabilities(DWORD user, DWORD flags, XINPUT_CAPABILITIES* caps)
-{
+DWORD WINAPI ProxyXInputGetCapabilities(DWORD user, DWORD flags, XINPUT_CAPABILITIES* caps) {
     static const auto real = Real<decltype(&ProxyXInputGetCapabilities)>("XInputGetCapabilities");
     const auto fn = Target(real, "XInputGetCapabilities");
     if (!fn) return ERROR_DEVICE_NOT_CONNECTED;
@@ -74,8 +72,7 @@ DWORD WINAPI ProxyXInputGetCapabilities(DWORD user, DWORD flags, XINPUT_CAPABILI
     return fn(user, flags, caps);
 }
 
-void WINAPI ProxyXInputEnable(BOOL enable)
-{
+void WINAPI ProxyXInputEnable(BOOL enable) {
     static const auto real = Real<decltype(&ProxyXInputEnable)>("XInputEnable");
     const auto fn = Target(real, "XInputEnable");
     if (!fn) return;
@@ -83,8 +80,7 @@ void WINAPI ProxyXInputEnable(BOOL enable)
     fn(enable);
 }
 
-DWORD WINAPI ProxyXInputGetDSoundAudioDeviceGuids(DWORD user, GUID* render, GUID* capture)
-{
+DWORD WINAPI ProxyXInputGetDSoundAudioDeviceGuids(DWORD user, GUID* render, GUID* capture) {
     static const auto real = Real<decltype(&ProxyXInputGetDSoundAudioDeviceGuids)>("XInputGetDSoundAudioDeviceGuids");
     const auto fn = Target(real, "XInputGetDSoundAudioDeviceGuids");
     if (!fn) return ERROR_DEVICE_NOT_CONNECTED;
@@ -92,8 +88,7 @@ DWORD WINAPI ProxyXInputGetDSoundAudioDeviceGuids(DWORD user, GUID* render, GUID
     return fn(user, render, capture);
 }
 
-DWORD WINAPI ProxyXInputGetBatteryInformation(DWORD user, BYTE type, XINPUT_BATTERY_INFORMATION* info)
-{
+DWORD WINAPI ProxyXInputGetBatteryInformation(DWORD user, BYTE type, XINPUT_BATTERY_INFORMATION* info) {
     static const auto real = Real<decltype(&ProxyXInputGetBatteryInformation)>("XInputGetBatteryInformation");
     const auto fn = Target(real, "XInputGetBatteryInformation");
     if (!fn) return ERROR_DEVICE_NOT_CONNECTED;
@@ -101,8 +96,7 @@ DWORD WINAPI ProxyXInputGetBatteryInformation(DWORD user, BYTE type, XINPUT_BATT
     return fn(user, type, info);
 }
 
-DWORD WINAPI ProxyXInputGetKeystroke(DWORD user, DWORD reserved, XINPUT_KEYSTROKE* keystroke)
-{
+DWORD WINAPI ProxyXInputGetKeystroke(DWORD user, DWORD reserved, XINPUT_KEYSTROKE* keystroke) {
     static const auto real = Real<decltype(&ProxyXInputGetKeystroke)>("XInputGetKeystroke");
     const auto fn = Target(real, "XInputGetKeystroke");
     if (!fn) return ERROR_DEVICE_NOT_CONNECTED;
@@ -112,8 +106,7 @@ DWORD WINAPI ProxyXInputGetKeystroke(DWORD user, DWORD reserved, XINPUT_KEYSTROK
 
 // The unnamed ones: XInputGetStateEx (the guide button too), the guide button
 // wait and its cancel, a controller's power off.
-DWORD WINAPI ProxyOrdinal100(DWORD user, void* state)
-{
+DWORD WINAPI ProxyOrdinal100(DWORD user, void* state) {
     static const auto real = Real<decltype(&ProxyOrdinal100)>(MAKEINTRESOURCEA(100));
     const auto fn = Target(real, MAKEINTRESOURCEA(100));
     if (!fn) return ERROR_DEVICE_NOT_CONNECTED;
@@ -121,8 +114,7 @@ DWORD WINAPI ProxyOrdinal100(DWORD user, void* state)
     return fn(user, state);
 }
 
-DWORD WINAPI ProxyOrdinal101(DWORD user, DWORD flags, void* event)
-{
+DWORD WINAPI ProxyOrdinal101(DWORD user, DWORD flags, void* event) {
     static const auto real = Real<decltype(&ProxyOrdinal101)>(MAKEINTRESOURCEA(101));
     const auto fn = Target(real, MAKEINTRESOURCEA(101));
     if (!fn) return ERROR_DEVICE_NOT_CONNECTED;
@@ -130,8 +122,7 @@ DWORD WINAPI ProxyOrdinal101(DWORD user, DWORD flags, void* event)
     return fn(user, flags, event);
 }
 
-DWORD WINAPI ProxyOrdinal102(DWORD user)
-{
+DWORD WINAPI ProxyOrdinal102(DWORD user) {
     static const auto real = Real<decltype(&ProxyOrdinal102)>(MAKEINTRESOURCEA(102));
     const auto fn = Target(real, MAKEINTRESOURCEA(102));
     if (!fn) return ERROR_DEVICE_NOT_CONNECTED;
@@ -139,8 +130,7 @@ DWORD WINAPI ProxyOrdinal102(DWORD user)
     return fn(user);
 }
 
-DWORD WINAPI ProxyOrdinal103(DWORD user)
-{
+DWORD WINAPI ProxyOrdinal103(DWORD user) {
     static const auto real = Real<decltype(&ProxyOrdinal103)>(MAKEINTRESOURCEA(103));
     const auto fn = Target(real, MAKEINTRESOURCEA(103));
     if (!fn) return ERROR_DEVICE_NOT_CONNECTED;

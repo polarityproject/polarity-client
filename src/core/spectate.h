@@ -46,13 +46,21 @@ public:
     void Update();
 
     int NextWanted() const { return received_; } // every frame before this one is in hand
-    int NextFrame() const { return next_; }       // the next frame to play
+
+    int NextFrame() const { return next_; } // the next frame to play
+
     int Buffered() const { return received_ - next_; }
+
     int Stalls() const { return stalls_; }
-    int Held() const { return held_; }                 // rendered frames held while low on frames
+
+    int Held() const { return held_; } // rendered frames held while low on frames
+
     int LongestGapMs() const { return longestGapMs_; } // longest wait for new frames, once playing
+
     int DesyncFrame() const { return desyncFrame_; } // first frame whose checksum differed, or -1
+
     int DesyncCount() const { return desyncCount_; }
+
     ReplayFile Recording() const;
 
 private:
@@ -62,7 +70,7 @@ private:
     IGame& game_;
     SpectateConfig config_;
     std::map<int, std::pair<FrameInputs, uint32_t>> pending_; // beyond received_
-    std::vector<FrameInputs> inputs_;                          // [0, received_)
+    std::vector<FrameInputs> inputs_;                         // [0, received_)
     std::vector<uint32_t> checksums_;
     int received_ = 0;
     int next_ = 0;

@@ -10,8 +10,7 @@
 
 namespace sfv::mod {
 
-std::unique_ptr<UdpTransport> UdpTransport::Create(uint16_t port, std::string* error)
-{
+std::unique_ptr<UdpTransport> UdpTransport::Create(uint16_t port, std::string* error) {
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
         *error = "WSAStartup failed";
@@ -48,13 +47,11 @@ std::unique_ptr<UdpTransport> UdpTransport::Create(uint16_t port, std::string* e
     return t;
 }
 
-UdpTransport::~UdpTransport()
-{
+UdpTransport::~UdpTransport() {
     if (socket_ != ~uintptr_t(0)) closesocket(static_cast<SOCKET>(socket_));
 }
 
-void UdpTransport::Send(uint64_t peer, const uint8_t* data, size_t len)
-{
+void UdpTransport::Send(uint64_t peer, const uint8_t* data, size_t len) {
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(static_cast<uint32_t>(peer >> 16));
@@ -63,8 +60,7 @@ void UdpTransport::Send(uint64_t peer, const uint8_t* data, size_t len)
            reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
 }
 
-bool UdpTransport::Receive(Packet& out)
-{
+bool UdpTransport::Receive(Packet& out) {
     char buf[2048];
     sockaddr_in from{};
     int fromLen = sizeof(from);
@@ -81,15 +77,13 @@ bool UdpTransport::Receive(Packet& out)
     }
 }
 
-uint32_t ParseIpv4(const std::string& text)
-{
+uint32_t ParseIpv4(const std::string& text) {
     in_addr a{};
     if (inet_pton(AF_INET, text.c_str(), &a) != 1) return 0;
     return ntohl(a.s_addr);
 }
 
-uint8_t DetectLinkType()
-{
+uint8_t DetectLinkType() {
     // The interface a packet to a public address would leave through.
     sockaddr_in to{};
     to.sin_family = AF_INET;

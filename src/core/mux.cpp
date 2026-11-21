@@ -8,8 +8,7 @@ class Mux::View : public ITransport {
 public:
     View(Mux& mux, uint8_t id) : mux_(mux), id_(id) {}
 
-    void Send(uint64_t peer, const uint8_t* data, size_t len) override
-    {
+    void Send(uint64_t peer, const uint8_t* data, size_t len) override {
         std::vector<uint8_t> tagged(len + 1);
         tagged[0] = id_;
         std::copy(data, data + len, tagged.begin() + 1);
@@ -17,8 +16,7 @@ public:
         mux_.base_.Send(peer, tagged.data(), tagged.size());
     }
 
-    bool Receive(Packet& out) override
-    {
+    bool Receive(Packet& out) override {
         std::lock_guard lock(mux_.mutex_);
         mux_.Pump();
         if (queue.empty()) return false;
@@ -38,16 +36,14 @@ Mux::Mux(ITransport& base) : base_(base) {}
 
 Mux::~Mux() = default;
 
-ITransport& Mux::Channel(uint8_t id)
-{
+ITransport& Mux::Channel(uint8_t id) {
     std::lock_guard lock(mutex_);
     auto& v = views_[id];
     if (!v) v = std::make_unique<View>(*this, id);
     return *v;
 }
 
-void Mux::Pump()
-{
+void Mux::Pump() {
     Packet p;
     while (base_.Receive(p)) {
         if (p.data.empty()) continue;
@@ -60,20 +56,17 @@ void Mux::Pump()
     }
 }
 
-void ConditionedTransport::SetConditions(const NetConditions& c)
-{
+void ConditionedTransport::SetConditions(const NetConditions& c) {
     std::lock_guard lock(mutex_);
     conditions_ = c;
 }
 
-NetConditions ConditionedTransport::Conditions()
-{
+NetConditions ConditionedTransport::Conditions() {
     std::lock_guard lock(mutex_);
     return conditions_;
 }
 
-void ConditionedTransport::Send(uint64_t peer, const uint8_t* data, size_t len)
-{
+void ConditionedTransport::Send(uint64_t peer, const uint8_t* data, size_t len) {
     std::lock_guard lock(mutex_);
     const NetConditions c = conditions_;
     if (c.latencyMs == 0 && c.jitterMs == 0 && c.loss <= 0.0 && pending_.empty()) {
@@ -87,8 +80,7 @@ void ConditionedTransport::Send(uint64_t peer, const uint8_t* data, size_t len)
     Flush();
 }
 
-bool ConditionedTransport::Receive(Packet& out)
-{
+bool ConditionedTransport::Receive(Packet& out) {
     {
         std::lock_guard lock(mutex_);
         Flush();
@@ -96,8 +88,7 @@ bool ConditionedTransport::Receive(Packet& out)
     return base_.Receive(out);
 }
 
-void ConditionedTransport::Flush()
-{
+void ConditionedTransport::Flush() {
     const auto now = Clock::now();
     std::stable_sort(pending_.begin(), pending_.end(), [](const Pending& a, const Pending& b) { return a.due < b.due; });
     while (!pending_.empty() && pending_.front().due <= now) {

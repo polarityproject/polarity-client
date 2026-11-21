@@ -20,8 +20,7 @@ namespace sfv::mod {
 
 namespace {
 
-int64_t MicrosSince(std::chrono::steady_clock::time_point from)
-{
+int64_t MicrosSince(std::chrono::steady_clock::time_point from) {
     return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - from).count();
 }
 
@@ -30,19 +29,18 @@ constexpr size_t kMaxDatagram = 1024;
 constexpr auto kLinkKick = std::chrono::milliseconds(200);
 const char kCodeAlphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-const char* RoomErrorName(WeyveRoomError e)
-{
+const char* RoomErrorName(WeyveRoomError e) {
     switch (e) {
-    case WEYVE_ROOM_ERROR_ALREADY_IN_ROOM: return "already in a room";
-    case WEYVE_ROOM_ERROR_NO_SUCH_ROOM: return "no such room";
-    case WEYVE_ROOM_ERROR_NOT_IN_ROOM: return "not in a room";
-    case WEYVE_ROOM_ERROR_NOT_HOST: return "not the room's host";
-    case WEYVE_ROOM_ERROR_BAD_ROOM_DATA: return "bad room data";
-    case WEYVE_ROOM_ERROR_NO_SUCH_MEMBER: return "no such member";
-    case WEYVE_ROOM_ERROR_ROOM_CLOSED: return "the room is closed";
-    case WEYVE_ROOM_ERROR_BAD_PASSWORD: return "wrong password";
-    case WEYVE_ROOM_ERROR_BANNED: return "banned from the room";
-    case WEYVE_ROOM_ERROR_RATE_LIMITED: return "asked too often";
+        case WEYVE_ROOM_ERROR_ALREADY_IN_ROOM: return "already in a room";
+        case WEYVE_ROOM_ERROR_NO_SUCH_ROOM: return "no such room";
+        case WEYVE_ROOM_ERROR_NOT_IN_ROOM: return "not in a room";
+        case WEYVE_ROOM_ERROR_NOT_HOST: return "not the room's host";
+        case WEYVE_ROOM_ERROR_BAD_ROOM_DATA: return "bad room data";
+        case WEYVE_ROOM_ERROR_NO_SUCH_MEMBER: return "no such member";
+        case WEYVE_ROOM_ERROR_ROOM_CLOSED: return "the room is closed";
+        case WEYVE_ROOM_ERROR_BAD_PASSWORD: return "wrong password";
+        case WEYVE_ROOM_ERROR_BANNED: return "banned from the room";
+        case WEYVE_ROOM_ERROR_RATE_LIMITED: return "asked too often";
     }
     return "room error";
 }
@@ -50,8 +48,8 @@ const char* RoomErrorName(WeyveRoomError e)
 std::string Str(const char* p, uint32_t len) { return p ? std::string(p, len) : std::string(); }
 
 // A getter's byte range (it writes the length through its last argument).
-template <typename Get> std::string Bytes(Get get)
-{
+template <typename Get>
+std::string Bytes(Get get) {
     uint32_t len = 0;
     const char* p = get(&len);
     return Str(p, len);
@@ -59,16 +57,14 @@ template <typename Get> std::string Bytes(Get get)
 
 } // namespace
 
-const WeyveMember* WeyveRoomView::Member(uint32_t id) const
-{
+const WeyveMember* WeyveRoomView::Member(uint32_t id) const {
     for (const WeyveMember& m : members) {
         if (m.id == id) return &m;
     }
     return nullptr;
 }
 
-bool ParseServer(const std::string& text, std::string* host, uint16_t* port)
-{
+bool ParseServer(const std::string& text, std::string* host, uint16_t* port) {
     *host = text;
     *port = kDefaultPort;
     const size_t colon = text.rfind(':');
@@ -96,7 +92,7 @@ struct WeyveService::Impl {
     std::vector<WeyveListedRoom> roomList;
     std::deque<Packet> inbox;
     std::map<uint32_t, std::chrono::steady_clock::time_point> kicked; // per peer, last send while unlinked
-    std::map<uint32_t, bool> linked;                                   // per peer, as last logged
+    std::map<uint32_t, bool> linked;                                  // per peer, as last logged
 
     std::atomic<bool> stop{false};
     std::thread thread;
@@ -108,24 +104,21 @@ struct WeyveService::Impl {
     int noccUnanswered = 0;
 
     // With the lock held (or before the thread shares the client).
-    void SendHideCountry(WeyveClient* c, bool hide)
-    {
+    void SendHideCountry(WeyveClient* c, bool hide) {
         uint32_t len = 0;
         const bool inRoom = weyve_room_id(c, &len) && len;
         weyve_set_member_data(c, "nocc", hide ? "1" : "");
         if (!inRoom) noccUnanswered++;
     }
 
-    void Queue(std::function<void(WeyveClient*)> command)
-    {
+    void Queue(std::function<void(WeyveClient*)> command) {
         std::lock_guard lock(mutex);
         commands.push_back(std::move(command));
     }
 
     // With the lock held: the client's network work, then its events and
     // datagrams into our queues.
-    void Pump()
-    {
+    void Pump() {
         if (!connected) return;
         // Polled on after the server connection is gone: the P2P links stay
         // (third_party/weyvelength-keep-links.patch).
@@ -138,76 +131,76 @@ struct WeyveService::Impl {
         ::WeyveEvent raw;
         while (weyve_next(client, &raw)) {
             switch (raw.type) {
-            case WEYVE_EVENT_ROOM_ID_ASSIGNED:
-                noccUnanswered = 0; // answered by now, in order, if ever
-                ev = {WeyveEvent::Type::RoomJoined, 0, Str(raw.data.room_assigned.id, raw.data.room_assigned.id_len)};
-                Log("weyve: in room %s as member %u", ev.text.c_str(), weyve_id(client));
-                events.push_back(ev);
-                break;
-            case WEYVE_EVENT_ROOM_ERROR:
-                if (raw.data.room_error.code == WEYVE_ROOM_ERROR_NOT_IN_ROOM && noccUnanswered > 0) {
-                    noccUnanswered--;
-                    static bool said = false;
-                    if (!said) Log("weyve: this rooms server does not take \"nocc\" (and gives no countries)");
-                    said = true;
+                case WEYVE_EVENT_ROOM_ID_ASSIGNED:
+                    noccUnanswered = 0; // answered by now, in order, if ever
+                    ev = {WeyveEvent::Type::RoomJoined, 0, Str(raw.data.room_assigned.id, raw.data.room_assigned.id_len)};
+                    Log("weyve: in room %s as member %u", ev.text.c_str(), weyve_id(client));
+                    events.push_back(ev);
+                    break;
+                case WEYVE_EVENT_ROOM_ERROR:
+                    if (raw.data.room_error.code == WEYVE_ROOM_ERROR_NOT_IN_ROOM && noccUnanswered > 0) {
+                        noccUnanswered--;
+                        static bool said = false;
+                        if (!said) Log("weyve: this rooms server does not take \"nocc\" (and gives no countries)");
+                        said = true;
+                        break;
+                    }
+                    ev = {WeyveEvent::Type::RoomError, 0, RoomErrorName(raw.data.room_error.code)};
+                    ev.error = raw.data.room_error.code == WEYVE_ROOM_ERROR_NO_SUCH_ROOM   ? WeyveEvent::Error::NoSuchRoom
+                               : raw.data.room_error.code == WEYVE_ROOM_ERROR_ROOM_CLOSED  ? WeyveEvent::Error::Closed
+                               : raw.data.room_error.code == WEYVE_ROOM_ERROR_BANNED       ? WeyveEvent::Error::Banned
+                               : raw.data.room_error.code == WEYVE_ROOM_ERROR_RATE_LIMITED ? WeyveEvent::Error::RateLimited
+                                                                                           : WeyveEvent::Error::Other;
+                    Log("weyve: room error: %s %s", ev.text.c_str(),
+                        Str(raw.data.room_error.context, raw.data.room_error.context_len).c_str());
+                    events.push_back(ev);
+                    break;
+                case WEYVE_EVENT_PEER_JOINED:
+                    Log("weyve: member %u (%s) joined", raw.data.peer_joined.id,
+                        Str(raw.data.peer_joined.name, raw.data.peer_joined.name_len).c_str());
+                    events.push_back({WeyveEvent::Type::PeerJoined, raw.data.peer_joined.id, {}});
+                    break;
+                case WEYVE_EVENT_PEER_LEFT:
+                    if (raw.data.peer_left.id == weyve_id(client)) break; // our own leave
+                    Log("weyve: member %u left", raw.data.peer_left.id);
+                    kicked.erase(raw.data.peer_left.id);
+                    linked.erase(raw.data.peer_left.id);
+                    events.push_back({WeyveEvent::Type::PeerLeft, raw.data.peer_left.id, {}});
+                    break;
+                case WEYVE_EVENT_HEARTBEAT:
+                    if (!heartbeatAnswered) Log("weyve: the server answers heartbeats (every %lld s)", static_cast<long long>(kHeartbeatEvery.count()));
+                    heartbeatAnswered = true;
+                    break;
+                case WEYVE_EVENT_CHAT:
+                    events.push_back({WeyveEvent::Type::Chat, raw.data.chat.from, Str(raw.data.chat.text, raw.data.chat.text_len)});
+                    break;
+                case WEYVE_EVENT_HOST_CHANGED:
+                    events.push_back({WeyveEvent::Type::HostChanged, raw.data.host_changed.id, {}});
+                    break;
+                case WEYVE_EVENT_ROOM_LIST: {
+                    roomList.clear();
+                    const uint32_t n = weyve_room_list_count(client);
+                    for (uint32_t r = 0; r < n; r++) {
+                        WeyveListedRoom& l = roomList.emplace_back();
+                        l.code = Bytes([&](uint32_t* len) { return weyve_room_list_id(client, r, len); });
+                        l.members = weyve_room_list_members(client, r);
+                        l.joinable = weyve_room_list_joinable(client, r);
+                        const uint32_t keys = weyve_room_list_listing_count(client, r);
+                        for (uint32_t k = 0; k < keys; k++) {
+                            const std::string key = Bytes([&](uint32_t* len) { return weyve_room_list_listing_key_at(client, r, k, len); });
+                            l.listing[key] = Bytes([&](uint32_t* len) { return weyve_room_list_listing(client, r, key.c_str(), len); });
+                        }
+                    }
+                    events.push_back({WeyveEvent::Type::RoomList, 0, {}});
                     break;
                 }
-                ev = {WeyveEvent::Type::RoomError, 0, RoomErrorName(raw.data.room_error.code)};
-                ev.error = raw.data.room_error.code == WEYVE_ROOM_ERROR_NO_SUCH_ROOM ? WeyveEvent::Error::NoSuchRoom
-                           : raw.data.room_error.code == WEYVE_ROOM_ERROR_ROOM_CLOSED ? WeyveEvent::Error::Closed
-                           : raw.data.room_error.code == WEYVE_ROOM_ERROR_BANNED       ? WeyveEvent::Error::Banned
-                           : raw.data.room_error.code == WEYVE_ROOM_ERROR_RATE_LIMITED ? WeyveEvent::Error::RateLimited
-                                                                                       : WeyveEvent::Error::Other;
-                Log("weyve: room error: %s %s", ev.text.c_str(),
-                    Str(raw.data.room_error.context, raw.data.room_error.context_len).c_str());
-                events.push_back(ev);
-                break;
-            case WEYVE_EVENT_PEER_JOINED:
-                Log("weyve: member %u (%s) joined", raw.data.peer_joined.id,
-                    Str(raw.data.peer_joined.name, raw.data.peer_joined.name_len).c_str());
-                events.push_back({WeyveEvent::Type::PeerJoined, raw.data.peer_joined.id, {}});
-                break;
-            case WEYVE_EVENT_PEER_LEFT:
-                if (raw.data.peer_left.id == weyve_id(client)) break; // our own leave
-                Log("weyve: member %u left", raw.data.peer_left.id);
-                kicked.erase(raw.data.peer_left.id);
-                linked.erase(raw.data.peer_left.id);
-                events.push_back({WeyveEvent::Type::PeerLeft, raw.data.peer_left.id, {}});
-                break;
-            case WEYVE_EVENT_HEARTBEAT:
-                if (!heartbeatAnswered) Log("weyve: the server answers heartbeats (every %lld s)", static_cast<long long>(kHeartbeatEvery.count()));
-                heartbeatAnswered = true;
-                break;
-            case WEYVE_EVENT_CHAT:
-                events.push_back({WeyveEvent::Type::Chat, raw.data.chat.from, Str(raw.data.chat.text, raw.data.chat.text_len)});
-                break;
-            case WEYVE_EVENT_HOST_CHANGED:
-                events.push_back({WeyveEvent::Type::HostChanged, raw.data.host_changed.id, {}});
-                break;
-            case WEYVE_EVENT_ROOM_LIST: {
-                roomList.clear();
-                const uint32_t n = weyve_room_list_count(client);
-                for (uint32_t r = 0; r < n; r++) {
-                    WeyveListedRoom& l = roomList.emplace_back();
-                    l.code = Bytes([&](uint32_t* len) { return weyve_room_list_id(client, r, len); });
-                    l.members = weyve_room_list_members(client, r);
-                    l.joinable = weyve_room_list_joinable(client, r);
-                    const uint32_t keys = weyve_room_list_listing_count(client, r);
-                    for (uint32_t k = 0; k < keys; k++) {
-                        const std::string key = Bytes([&](uint32_t* len) { return weyve_room_list_listing_key_at(client, r, k, len); });
-                        l.listing[key] = Bytes([&](uint32_t* len) { return weyve_room_list_listing(client, r, key.c_str(), len); });
-                    }
-                }
-                events.push_back({WeyveEvent::Type::RoomList, 0, {}});
-                break;
-            }
-            case WEYVE_EVENT_KICKED:
-            case WEYVE_EVENT_BANNED:
-                Log("weyve: removed from the room by its host");
-                events.push_back({WeyveEvent::Type::Removed, 0, "removed from the room"});
-                break;
-            default:
-                break;
+                case WEYVE_EVENT_KICKED:
+                case WEYVE_EVENT_BANNED:
+                    Log("weyve: removed from the room by its host");
+                    events.push_back({WeyveEvent::Type::Removed, 0, "removed from the room"});
+                    break;
+                default:
+                    break;
             }
         }
         uint32_t from = 0, len = 0;
@@ -232,8 +225,8 @@ struct WeyveService::Impl {
     // 21 s: the render thread, from the settings' Server row, and with it
     // the game (0.4.2 freeze c311abed, 2026-11-13).
     static constexpr auto kAlsoAfter = std::chrono::milliseconds(1500);
-    WeyveClient* Connect()
-    {
+
+    WeyveClient* Connect() {
         struct Race {
             std::mutex m;
             std::condition_variable done;
@@ -242,6 +235,7 @@ struct WeyveService::Impl {
             int finished = 0;
             bool abandoned = false; // the service stopped waiting: a late connect closes itself
         };
+
         auto race = std::make_shared<Race>();
         auto dial = [&](uint16_t p) {
             std::thread([race, p, h = host] {
@@ -253,8 +247,7 @@ struct WeyveService::Impl {
                 if (ok && !race->winner && !race->abandoned) {
                     race->winner = c;
                     race->winnerPort = p;
-                }
-                else {
+                } else {
                     weyve_client_destroy(c);
                 }
                 race->finished++;
@@ -288,8 +281,7 @@ struct WeyveService::Impl {
         return race->winner;
     }
 
-    void Run()
-    {
+    void Run() {
         ThreadGuard running;
         if (alsoPort) Log("weyve: connecting to %s:%u (then port %u if it does not answer)", host.c_str(), port, alsoPort);
         else Log("weyve: connecting to %s:%u", host.c_str(), port);
@@ -325,12 +317,13 @@ struct WeyveService::Impl {
             {
                 const auto heldFrom = std::chrono::steady_clock::now();
                 std::lock_guard lock(mutex);
+
                 // The game thread's sends and receives wait while this holds
                 // the lock: a long turn shows as a frame drop (hitch.h).
                 struct Held {
                     std::chrono::steady_clock::time_point from;
-                    ~Held()
-                    {
+
+                    ~Held() {
                         static ULONGLONG lastLog = 0;
                         const int64_t us = MicrosSince(from);
                         if (us >= 8000 && GetTickCount64() - lastLog >= 1000) {
@@ -339,6 +332,7 @@ struct WeyveService::Impl {
                         }
                     }
                 } held{heldFrom};
+
                 if (connected && server == WeyveRoomView::Server::Connected) {
                     for (auto& command : commands) command(client);
                     commands.clear();
@@ -365,8 +359,7 @@ struct WeyveService::Impl {
                 due.QuadPart = -10000; // 1 ms
                 SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE);
                 WaitForSingleObject(timer, 5);
-            }
-            else {
+            } else {
                 Sleep(1);
             }
         }
@@ -391,14 +384,12 @@ struct WeyveService::Live {
     std::vector<Impl*> impls;
 };
 
-WeyveService::Live& WeyveService::Open()
-{
+WeyveService::Live& WeyveService::Open() {
     static Live live;
     return live;
 }
 
-std::unique_ptr<WeyveService> WeyveService::Start(const std::string& server, const std::string& name, uint16_t alsoPort)
-{
+std::unique_ptr<WeyveService> WeyveService::Start(const std::string& server, const std::string& name, uint16_t alsoPort) {
     auto impl = std::make_unique<Impl>();
     if (!ParseServer(server, &impl->host, &impl->port)) impl->host = server;
     impl->alsoPort = alsoPort == impl->port ? 0 : alsoPort;
@@ -413,8 +404,7 @@ std::unique_ptr<WeyveService> WeyveService::Start(const std::string& server, con
     return s;
 }
 
-WeyveService::~WeyveService()
-{
+WeyveService::~WeyveService() {
     {
         std::lock_guard lock(Open().mutex);
         std::erase(Open().impls, impl_.get());
@@ -423,48 +413,39 @@ WeyveService::~WeyveService()
     if (impl_->thread.joinable()) impl_->thread.join();
 }
 
-void WeyveService::CreateRoom()
-{
+void WeyveService::CreateRoom() {
     impl_->Queue([](WeyveClient* c) { weyve_create_room(c); });
 }
 
-void WeyveService::JoinRoom(const std::string& code)
-{
+void WeyveService::JoinRoom(const std::string& code) {
     impl_->Queue([code](WeyveClient* c) { weyve_join_room(c, code.c_str(), nullptr); });
 }
 
-void WeyveService::LeaveRoom()
-{
+void WeyveService::LeaveRoom() {
     impl_->Queue([](WeyveClient* c) { weyve_leave_room(c); });
 }
 
-void WeyveService::SetRoomData(const std::string& key, const std::string& value)
-{
+void WeyveService::SetRoomData(const std::string& key, const std::string& value) {
     impl_->Queue([key, value](WeyveClient* c) { weyve_set_room_data(c, key.c_str(), value.c_str()); });
 }
 
-void WeyveService::SetMemberData(const std::string& key, const std::string& value)
-{
+void WeyveService::SetMemberData(const std::string& key, const std::string& value) {
     impl_->Queue([key, value](WeyveClient* c) { weyve_set_member_data(c, key.c_str(), value.c_str()); });
 }
 
-void WeyveService::SendChat(const std::string& text)
-{
+void WeyveService::SendChat(const std::string& text) {
     impl_->Queue([text](WeyveClient* c) { weyve_send_chat(c, text.c_str()); });
 }
 
-void WeyveService::TransferHost(uint32_t id)
-{
+void WeyveService::TransferHost(uint32_t id) {
     impl_->Queue([id](WeyveClient* c) { weyve_transfer_host(c, id); });
 }
 
-void WeyveService::Ban(uint32_t id)
-{
+void WeyveService::Ban(uint32_t id) {
     impl_->Queue([id](WeyveClient* c) { weyve_ban_member(c, id); });
 }
 
-void WeyveService::ListRooms(const std::map<std::string, std::string>& equals)
-{
+void WeyveService::ListRooms(const std::map<std::string, std::string>& equals) {
     impl_->Queue([equals](WeyveClient* c) {
         std::vector<WeyveRoomFilter> filters;
         for (const auto& [key, value] : equals) filters.push_back({key.c_str(), WEYVE_FILTER_EQUALS, value.c_str()});
@@ -472,14 +453,12 @@ void WeyveService::ListRooms(const std::map<std::string, std::string>& equals)
     });
 }
 
-std::vector<WeyveListedRoom> WeyveService::RoomList()
-{
+std::vector<WeyveListedRoom> WeyveService::RoomList() {
     std::lock_guard lock(impl_->mutex);
     return impl_->roomList;
 }
 
-WeyveRoomView WeyveService::View()
-{
+WeyveRoomView WeyveService::View() {
     std::lock_guard lock(impl_->mutex);
     WeyveRoomView v;
     v.server = impl_->server;
@@ -513,8 +492,7 @@ WeyveRoomView WeyveService::View()
     return v;
 }
 
-bool WeyveService::NextEvent(WeyveEvent& out)
-{
+bool WeyveService::NextEvent(WeyveEvent& out) {
     std::lock_guard lock(impl_->mutex);
     if (impl_->events.empty()) return false;
     out = std::move(impl_->events.front());
@@ -522,26 +500,23 @@ bool WeyveService::NextEvent(WeyveEvent& out)
     return true;
 }
 
-bool WeyveService::PeerLinked(uint32_t id)
-{
+bool WeyveService::PeerLinked(uint32_t id) {
     std::lock_guard lock(impl_->mutex);
     return impl_->connected && weyve_peer_connected(impl_->client, id);
 }
 
-WeyveService::LinkPath WeyveService::PeerPath(uint32_t id)
-{
+WeyveService::LinkPath WeyveService::PeerPath(uint32_t id) {
     std::lock_guard lock(impl_->mutex);
     switch (weyve_peer_link_path(impl_->client, id)) {
-    case WEYVE_LINK_DIRECT: return LinkPath::Direct;
-    case WEYVE_LINK_RELAYED: return LinkPath::Relayed;
-    case WEYVE_LINK_UNKNOWN: return LinkPath::Unknown;
-    case WEYVE_LINK_NONE: break;
+        case WEYVE_LINK_DIRECT: return LinkPath::Direct;
+        case WEYVE_LINK_RELAYED: return LinkPath::Relayed;
+        case WEYVE_LINK_UNKNOWN: return LinkPath::Unknown;
+        case WEYVE_LINK_NONE: break;
     }
     return LinkPath::None;
 }
 
-std::string WeyveService::TurnHost()
-{
+std::string WeyveService::TurnHost() {
     std::lock_guard lock(impl_->mutex);
     const char* host = weyve_turn_host(impl_->client);
     return host ? host : "";
@@ -552,8 +527,7 @@ std::atomic<bool> g_relayOnly{false};
 std::atomic<bool> g_hideCountry{false};
 }
 
-void WeyveService::SetHideCountry(bool hide)
-{
+void WeyveService::SetHideCountry(bool hide) {
     if (g_hideCountry.exchange(hide) == hide) return;
     Log("weyve: country flag %s", hide ? "hidden" : "shown");
     std::lock_guard lock(Open().mutex);
@@ -562,16 +536,14 @@ void WeyveService::SetHideCountry(bool hide)
 
 bool WeyveService::HideCountry() { return g_hideCountry; }
 
-void WeyveService::SetRelayOnly(bool on)
-{
+void WeyveService::SetRelayOnly(bool on) {
     g_relayOnly = on;
     Log("weyve: relay only %s (from the next session)", on ? "on" : "off");
 }
 
 bool WeyveService::RelayOnly() { return g_relayOnly; }
 
-void WeyveService::Send(uint64_t peer, const uint8_t* data, size_t len)
-{
+void WeyveService::Send(uint64_t peer, const uint8_t* data, size_t len) {
     if (len == 0 || len > kMaxDatagram || peer > UINT32_MAX) return;
     const uint32_t id = static_cast<uint32_t>(peer);
     hitch::Scope timed(hitch::Part::Transport);
@@ -589,8 +561,7 @@ void WeyveService::Send(uint64_t peer, const uint8_t* data, size_t len)
     weyve_send_p2p(impl_->client, id, data, static_cast<uint32_t>(len));
 }
 
-bool WeyveService::Receive(Packet& out)
-{
+bool WeyveService::Receive(Packet& out) {
     hitch::Scope timed(hitch::Part::Transport);
     const auto waitFrom = std::chrono::steady_clock::now();
     std::lock_guard lock(impl_->mutex);
@@ -602,8 +573,7 @@ bool WeyveService::Receive(Packet& out)
     return true;
 }
 
-bool WeyveService::NormaliseCode(const std::string& text, std::string* code)
-{
+bool WeyveService::NormaliseCode(const std::string& text, std::string* code) {
     std::string s;
     for (char ch : text) {
         if (ch == '-' || ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') continue;
@@ -618,8 +588,7 @@ bool WeyveService::NormaliseCode(const std::string& text, std::string* code)
     return true;
 }
 
-std::string WeyveService::DisplayCode(const std::string& code)
-{
+std::string WeyveService::DisplayCode(const std::string& code) {
     return code;
 }
 

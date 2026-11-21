@@ -13,8 +13,7 @@ namespace {
 
 constexpr const wchar_t* kNote = L"Moved to Polarity.txt";
 
-std::string Utf8(const std::wstring& w)
-{
+std::string Utf8(const std::wstring& w) {
     if (w.empty()) return {};
     const int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
     std::string s(static_cast<size_t>(n > 0 ? n : 0), '\0');
@@ -24,22 +23,19 @@ std::string Utf8(const std::wstring& w)
 
 bool Exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES; }
 
-bool IsDir(const std::wstring& p)
-{
+bool IsDir(const std::wstring& p) {
     const DWORD a = GetFileAttributesW(p.c_str());
     return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
-bool StartsWith(const std::wstring& s, const wchar_t* prefix)
-{
+bool StartsWith(const std::wstring& s, const wchar_t* prefix) {
     const size_t n = std::wcslen(prefix);
     return s.size() >= n && _wcsnicmp(s.c_str(), prefix, n) == 0;
 }
 
 // The names in `dir` matching `pattern` (FindFirstFile: case-insensitive),
 // without "." and "..".
-std::vector<std::wstring> List(const std::wstring& dir, const std::wstring& pattern)
-{
+std::vector<std::wstring> List(const std::wstring& dir, const std::wstring& pattern) {
     std::vector<std::wstring> out;
     WIN32_FIND_DATAW fd;
     HANDLE h = FindFirstFileW((dir + L"\\" + pattern).c_str(), &fd);
@@ -54,8 +50,7 @@ std::vector<std::wstring> List(const std::wstring& dir, const std::wstring& patt
 
 // Whether two files hold the same bytes (the bundled font, put in the
 // Polarity folder by a test script before the first start).
-bool SameFile(const std::wstring& a, const std::wstring& b)
-{
+bool SameFile(const std::wstring& a, const std::wstring& b) {
     HANDLE ha = CreateFileW(a.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
     if (ha == INVALID_HANDLE_VALUE) return false;
     HANDLE hb = CreateFileW(b.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
@@ -81,25 +76,24 @@ bool SameFile(const std::wstring& a, const std::wstring& b)
     return same;
 }
 
-std::string Why(DWORD error)
-{
+std::string Why(DWORD error) {
     switch (error) {
-    case ERROR_SHARING_VIOLATION:
-    case ERROR_LOCK_VIOLATION: return "in use";
-    case ERROR_ACCESS_DENIED: return "access denied (open, or read-only)";
-    default: return "error " + std::to_string(error);
+        case ERROR_SHARING_VIOLATION:
+        case ERROR_LOCK_VIOLATION: return "in use";
+        case ERROR_ACCESS_DENIED: return "access denied (open, or read-only)";
+        default: return "error " + std::to_string(error);
     }
 }
 
 struct Run {
     std::wstring dir;
     MigrateResult r;
+
     void Line(const std::string& s) { r.lines.push_back("migrate: " + s); }
 
     // Renames <folder>\<name> to <folder>\<newName> unless that exists.
     // `what` names it in the log ("SFVR\logs\" + name).
-    bool Rename(const std::wstring& folder, const std::wstring& name, const std::wstring& newName, const std::string& what)
-    {
+    bool Rename(const std::wstring& folder, const std::wstring& name, const std::wstring& newName, const std::string& what) {
         const std::wstring from = folder + L"\\" + name, to = folder + L"\\" + newName;
         if (Exists(to)) {
             Line(what + Utf8(name) + " stays: " + Utf8(newName) + " is there already");
@@ -116,8 +110,7 @@ struct Run {
 
     // An ini moved from SFVR: the settings SFVR's defaults wrote that name
     // what Polarity renamed are cleared, so Polarity's defaults apply.
-    void FixIni(const std::wstring& path)
-    {
+    void FixIni(const std::wstring& path) {
         wchar_t value[512] = {};
         GetPrivateProfileStringW(L"update", L"url", L"", value, 512, path.c_str());
         if (_wcsicmp(value, kSfvrUpdateUrl) == 0) {
@@ -134,8 +127,7 @@ struct Run {
     }
 
     // sfv_rollback.ini, sfv_rollback.<n>.ini, sfv_rollback.panel[.<n>].ini.
-    void Inis()
-    {
+    void Inis() {
         for (const std::wstring& name : List(dir, L"sfv_rollback*.ini")) {
             if (!StartsWith(name, L"sfv_rollback")) continue;
             const std::wstring newName = L"polarity" + name.substr(std::wcslen(L"sfv_rollback"));
@@ -145,8 +137,7 @@ struct Run {
 
     // Moves what `from` has and `to` lacks; folders both have are merged.
     // What stays is listed in `stayed` (paths under SFVR\).
-    void Merge(const std::wstring& from, const std::wstring& to, const std::wstring& rel, std::vector<std::wstring>* stayed)
-    {
+    void Merge(const std::wstring& from, const std::wstring& to, const std::wstring& rel, std::vector<std::wstring>* stayed) {
         for (const std::wstring& name : List(from, L"*")) {
             if (rel.empty() && _wcsicmp(name.c_str(), kNote) == 0) continue;
             const std::wstring s = from + L"\\" + name, d = to + L"\\" + name, shown = rel + name;
@@ -164,22 +155,18 @@ struct Run {
                 }
                 const std::string why = Why(error);
                 stayed->push_back(shown + L" (" + std::wstring(why.begin(), why.end()) + L")");
-            }
-            else if (IsDir(s) && IsDir(d)) {
+            } else if (IsDir(s) && IsDir(d)) {
                 Merge(s, d, shown + L"\\", stayed);
                 RemoveDirectoryW(s.c_str());
-            }
-            else if (!IsDir(s) && !IsDir(d) && SameFile(s, d) && DeleteFileW(s.c_str())) {
+            } else if (!IsDir(s) && !IsDir(d) && SameFile(s, d) && DeleteFileW(s.c_str())) {
                 r.moved = true; // Polarity has it already, byte for byte
-            }
-            else {
+            } else {
                 stayed->push_back(shown + L" (Polarity has one of the same name)");
             }
         }
     }
 
-    void DataFolder()
-    {
+    void DataFolder() {
         const std::wstring from = dir + L"\\SFVR", to = dir + L"\\Polarity";
         if (!IsDir(from)) return;
         DeleteFileW((from + L"\\" + kNote).c_str()); // a run before this one's
@@ -218,8 +205,7 @@ struct Run {
 
     // In Polarity\: the event logs and the packed-logs zips get Polarity's
     // names, so rotation and pruning see one set.
-    void Names()
-    {
+    void Names() {
         const std::wstring data = dir + L"\\Polarity", logs = data + L"\\logs";
         for (const std::wstring& name : List(logs, L"sfvr*.log")) {
             if (StartsWith(name, L"sfvr")) Rename(logs, name, L"polarity" + name.substr(4), "Polarity\\logs\\");
@@ -231,8 +217,7 @@ struct Run {
 
     // SFVR's DLL and what came with it, once Polarity's is there and
     // Polarity's loader (which loads it) runs.
-    void OldFiles()
-    {
+    void OldFiles() {
         if (!Exists(dir + L"\\polarity.dll") || !GetEnvironmentVariableW(L"POLARITY_LOADER", nullptr, 0)) return;
         std::vector<std::wstring> names = List(dir, L"sfv_rollback.live.*.dll");
         for (const std::wstring& n : List(dir, L"sfv_rollback.dll*.old")) names.push_back(n);
@@ -249,8 +234,7 @@ struct Run {
 
 } // namespace
 
-MigrateResult MigrateFromSfvr(const std::wstring& dir)
-{
+MigrateResult MigrateFromSfvr(const std::wstring& dir) {
     Run run;
     run.dir = dir;
     // Instances that start together (multi_instance=1): one migrates, the

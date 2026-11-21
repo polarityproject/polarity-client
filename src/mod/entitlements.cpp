@@ -44,6 +44,7 @@ struct ByteArray {
     int32_t num;
     int32_t max;
 };
+
 using Codec_t = void(__fastcall*)(ByteArray*);
 using Loader_t = void(__fastcall*)(void*, uint8_t);
 using Realloc_t = void*(__fastcall*)(void*, size_t, uint32_t);
@@ -53,22 +54,21 @@ Codec_t g_origDecode = nullptr;
 Loader_t g_origLoader = nullptr;
 Realloc_t g_realloc = nullptr;
 std::atomic<int> g_decodes{0};
-bool g_freshProfile = false;   // the profile being loaded is the default one the game just wrote
+bool g_freshProfile = false; // the profile being loaded is the default one the game just wrote
 
-std::map<uint32_t, std::vector<std::string>> g_grants;   // Steam app -> codes it grants
+std::map<uint32_t, std::vector<std::string>> g_grants; // Steam app -> codes it grants
 // Granted to every profile: content only a CFN feature unlocked, which no
 // one can get any more. The Dojo stage (StageSpec 50, DOJ) came with joining
 // a clan on CFN.
 const char* const kAlwaysGranted[] = {"VeUuEoC0"};
-bool g_merge = true;   // [mod] steam_entitlements
+bool g_merge = true; // [mod] steam_entitlements
 
 // What the profile owns as it loaded (OwnsEntitlement): its list after the merge.
 std::mutex g_ownedMutex;
 bool g_ownedKnown = false;
 std::set<std::string> g_owned;
 
-void ParseGrants()
-{
+void ParseGrants() {
     std::istringstream in(std::string(reinterpret_cast<const char*>(kSteamGrants), sizeof(kSteamGrants)));
     std::string line;
     while (std::getline(in, line)) {
@@ -83,8 +83,7 @@ void ParseGrants()
 
 // ISteamApps::BIsSubscribedApp (vtable slot 6) for every app in the table:
 // the Steam client answers from its license cache, no server involved.
-bool OwnedApps(std::vector<uint32_t>* owned)
-{
+bool OwnedApps(std::vector<uint32_t>* owned) {
     HMODULE steam = GetModuleHandleW(L"steam_api64.dll");
     using Getter = void* (*)();
     const auto getter = steam ? reinterpret_cast<Getter>(GetProcAddress(steam, "SteamApps")) : nullptr;
@@ -98,8 +97,7 @@ bool OwnedApps(std::vector<uint32_t>* owned)
     return true;
 }
 
-std::string FStringUtf8(const uint8_t* p)
-{
+std::string FStringUtf8(const uint8_t* p) {
     const auto* chars = *reinterpret_cast<const wchar_t* const*>(p);
     const int n = *reinterpret_cast<const int32_t*>(p + 8);
     if (!chars || n <= 1 || n > 256 || !IsReadable(chars, static_cast<size_t>(n) * 2)) return {};
@@ -111,8 +109,7 @@ std::string FStringUtf8(const uint8_t* p)
 // The free content: EntitlementSpec rows (DA_Spec) with DefaultValue set.
 // UDataTable: RowStruct +0x28, row map elements (0x18: FName, row) +0x40,
 // count +0x48; properties: first child +0x38, next +0x28, offset +0x4C.
-bool FreeCodes(std::vector<std::string>* out)
-{
+bool FreeCodes(std::vector<std::string>* out) {
     if (!ue4::EnsureObjects(g_base)) return false;
     const auto* table = static_cast<const uint8_t*>(ue4::FindObject("EntitlementSpec", "DataTable"));
     if (!table || !IsReadable(table + 0x28, 0x28)) return false;
@@ -150,16 +147,15 @@ class Plain {
 public:
     explicit Plain(ByteArray* a) : a_(a) {}
 
-    int32_t Int(int at) const
-    {
+    int32_t Int(int at) const {
         int32_t v;
         std::memcpy(&v, a_->data + at, 4);
         return v;
     }
+
     void SetInt(int at, int32_t v) { std::memcpy(a_->data + at, &v, 4); }
 
-    bool Str(int at, std::string* s, int* next) const
-    {
+    bool Str(int at, std::string* s, int* next) const {
         if (at < 0 || at + 4 > a_->num) return false;
         const int32_t n = Int(at);
         if (n < 0 || n > 1024 || at + 4 + n > a_->num) return false;
@@ -169,16 +165,15 @@ public:
     }
 
     struct Tag {
-        int at = -1;        // the tag's start
+        int at = -1; // the tag's start
         std::string name, type, extra;
-        int sizeAt = 0;     // the int32 size
-        int value = 0;      // the value's start
-        int end = 0;        // after the value
+        int sizeAt = 0; // the int32 size
+        int value = 0;  // the value's start
+        int end = 0;    // after the value
     };
 
     // The tag at `at`; false at the closing "None" (next = after it) or on bad data.
-    bool ReadTag(int at, Tag* t, int* next) const
-    {
+    bool ReadTag(int at, Tag* t, int* next) const {
         int p;
         t->at = at;
         if (!Str(at, &t->name, &p)) return false;
@@ -193,12 +188,10 @@ public:
         t->extra.clear();
         if (t->type == "StructProperty" || t->type == "ByteProperty" || t->type == "ArrayProperty") {
             if (!Str(p, &t->extra, &p)) return false;
-        }
-        else if (t->type == "MapProperty") {
+        } else if (t->type == "MapProperty") {
             std::string v;
             if (!Str(p, &t->extra, &p) || !Str(p, &v, &p)) return false;
-        }
-        else if (t->type == "BoolProperty") {
+        } else if (t->type == "BoolProperty") {
             p += 1;
         }
         if (size < 0 || p + size > a_->num) return false;
@@ -208,8 +201,7 @@ public:
         return true;
     }
 
-    bool Insert(int at, const std::string& bytes)
-    {
+    bool Insert(int at, const std::string& bytes) {
         const int grow = static_cast<int>(bytes.size());
         if (a_->max < a_->num + grow) {
             auto* d = static_cast<uint8_t*>(g_realloc(a_->data, static_cast<size_t>(a_->num + grow), 0));
@@ -224,14 +216,14 @@ public:
     }
 
     int Num() const { return a_->num; }
+
     const uint8_t* Data() const { return a_->data; }
 
 private:
     ByteArray* a_;
 };
 
-void PutStr(std::string* out, const std::string& s)
-{
+void PutStr(std::string* out, const std::string& s) {
     const int32_t n = static_cast<int32_t>(s.size() + 1);
     out->append(reinterpret_cast<const char*>(&n), 4);
     out->append(s);
@@ -242,8 +234,7 @@ void PutInt(std::string* out, int32_t v) { out->append(reinterpret_cast<const ch
 
 // An FString as UE4 writes one: ANSI (length counting the NUL) when every
 // character is ASCII, else UTF-16 with the length negated.
-std::string FStringBytes(const std::string& utf8)
-{
+std::string FStringBytes(const std::string& utf8) {
     std::string out;
     bool ascii = true;
     for (unsigned char c : utf8) ascii = ascii && c < 0x80;
@@ -261,8 +252,7 @@ std::string FStringBytes(const std::string& utf8)
 }
 
 // The Steam persona name (ISteamFriends::GetPersonaName, slot 0), "" without Steam.
-std::string SteamName()
-{
+std::string SteamName() {
     HMODULE steam = GetModuleHandleW(L"steam_api64.dll");
     using Getter = void* (*)();
     const auto friends = steam ? reinterpret_cast<Getter>(GetProcAddress(steam, "SteamFriends")) : nullptr;
@@ -277,8 +267,7 @@ std::string SteamName()
 // goes in as MainUserProfileDetails.ProfileDataset.FightersId. The default
 // profile leaves ProfileDataset out (all its fields at their defaults), so
 // the struct goes in with that one field.
-void NameFreshProfile(Plain& s)
-{
+void NameFreshProfile(Plain& s) {
     const std::string name = SteamName();
     if (name.empty()) {
         Log("entitlements: fresh profile: no Steam name to give it");
@@ -320,12 +309,11 @@ void NameFreshProfile(Plain& s)
         if (!s.Insert(dataset.value, id)) return;
         s.SetInt(dataset.sizeAt, s.Int(dataset.sizeAt) + static_cast<int32_t>(id.size()));
         s.SetInt(obj.sizeAt, s.Int(obj.sizeAt) + static_cast<int32_t>(id.size()));
-    }
-    else {
+    } else {
         std::string tag;
         PutStr(&tag, "ProfileDataset");
         PutStr(&tag, "StructProperty");
-        PutInt(&tag, static_cast<int32_t>(id.size() + 9));   // its list: the name, then None (4 + 5)
+        PutInt(&tag, static_cast<int32_t>(id.size() + 9)); // its list: the name, then None (4 + 5)
         PutInt(&tag, 0);
         PutStr(&tag, "KWProfileDataset");
         tag += id;
@@ -336,8 +324,7 @@ void NameFreshProfile(Plain& s)
     Log("entitlements: fresh profile named %s (the Steam name)", name.c_str());
 }
 
-void PutIdElement(std::string* out, const std::string& code)
-{
+void PutIdElement(std::string* out, const std::string& code) {
     PutStr(out, "Id");
     PutStr(out, "StrProperty");
     PutInt(out, static_cast<int32_t>(4 + code.size() + 1));
@@ -351,8 +338,7 @@ bool g_wantReady = false;
 std::vector<std::string> g_want;
 std::string g_wantSummary;
 
-void WorkOutWant()
-{
+void WorkOutWant() {
     if (g_wantReady) return;
     g_wantReady = true;
     std::vector<uint32_t> owned;
@@ -371,8 +357,7 @@ void WorkOutWant()
     Log("entitlements: %s; apps:%s", buf, apps.empty() ? " none" : apps.c_str());
 }
 
-void RecordOwned(std::set<std::string> codes, bool known)
-{
+void RecordOwned(std::set<std::string> codes, bool known) {
     std::lock_guard lock(g_ownedMutex);
     g_owned = std::move(codes);
     g_ownedKnown = known;
@@ -380,8 +365,7 @@ void RecordOwned(std::set<std::string> codes, bool known)
         known ? "" : ": not known, everything open");
 }
 
-void MergeEntitlements(ByteArray* a)
-{
+void MergeEntitlements(ByteArray* a) {
     if (!a || a->num < 16 || std::memcmp(a->data, "GPRG", 4) != 0) return;
     if (g_merge) WorkOutWant();
     Plain s(a);
@@ -436,7 +420,7 @@ void MergeEntitlements(ByteArray* a)
                 }
                 at = next;
             }
-            at = next;   // after the element's None
+            at = next; // after the element's None
         }
     }
     const int32_t savedVersion = version.at >= 0 ? s.Int(version.value) : 0;
@@ -460,8 +444,7 @@ void MergeEntitlements(ByteArray* a)
             freeCount = free.size();
             want.insert(want.end(), free.begin(), free.end());
             setVersion = true;
-        }
-        else {
+        } else {
             Log("entitlements: profile list version %d, and the free content is not readable yet: the game resets the "
                 "list this time, Steam content comes with the next start",
                 savedVersion);
@@ -497,8 +480,7 @@ void MergeEntitlements(ByteArray* a)
         s.SetInt(countAt, s.Int(countAt) + static_cast<int32_t>(added.size()));
         s.SetInt(ids.sizeAt, s.Int(ids.sizeAt) + grow);
         objGrow += grow;
-    }
-    else {
+    } else {
         // A new array tag before the object's None (after anything else in it).
         std::string tag;
         PutStr(&tag, "AuthorizedEntitlementIds");
@@ -544,8 +526,7 @@ void MergeEntitlements(ByteArray* a)
 
 // The slot's file name (FString at +0x48: data, count with the 0), as the
 // loader passes it to the save system.
-std::string SlotName(void* slot)
-{
+std::string SlotName(void* slot) {
     const auto* base = static_cast<const uint8_t*>(slot);
     const auto* name = *reinterpret_cast<const wchar_t* const*>(base + 0x48);
     const int32_t count = *reinterpret_cast<const int32_t*>(base + 0x50);
@@ -557,8 +538,7 @@ std::string SlotName(void* slot)
 
 // Where the save system keeps a slot's file:
 // %LOCALAPPDATA%\StreetFighterV\Saved\SaveGames\<name>.sav.
-std::wstring SlotFile(const std::string& name)
-{
+std::wstring SlotFile(const std::string& name) {
     wchar_t local[MAX_PATH] = {};
     const DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH);
     if (name.empty() || n == 0 || n >= MAX_PATH) return L"";
@@ -571,8 +551,7 @@ std::atomic<int> g_emptyReads{0};
 std::string g_emptyTest;
 void* g_loadingSlot = nullptr;
 
-void __fastcall DecodeDetour(ByteArray* a)
-{
+void __fastcall DecodeDetour(ByteArray* a) {
     if (!g_emptyTest.empty() && g_loadingSlot && SlotName(g_loadingSlot) == g_emptyTest && a->num > 0) {
         Log("entitlements: test: %s's read taken as empty (%d bytes)", g_emptyTest.c_str(), a->num);
         g_emptyTest.clear();
@@ -596,8 +575,7 @@ void __fastcall DecodeDetour(ByteArray* a)
 // After an empty read the slot holds nothing from its file: its file is
 // deleted if it is still empty (the game then builds and writes a default
 // one) and the slot loaded again. Once.
-void ReloadAfterEmptyRead(void* slot, uint8_t arg)
-{
+void ReloadAfterEmptyRead(void* slot, uint8_t arg) {
     auto* loaded = static_cast<uint8_t*>(slot) + 0x41;
     if (*loaded != 1) return;
     const std::string name = SlotName(slot);
@@ -609,8 +587,7 @@ void ReloadAfterEmptyRead(void* slot, uint8_t arg)
         const bool removed = DeleteFileW(file.c_str()) != 0;
         Log("entitlements: %s.sav is empty: %s", name.c_str(),
             removed ? "removed; the game writes a default one" : ("cannot remove it (error " + std::to_string(GetLastError()) + ")").c_str());
-    }
-    else {
+    } else {
         Log("entitlements: %s.sav %s; reading it again", name.c_str(),
             found ? ("has " + std::to_string(size) + " bytes now").c_str() : "is not there now");
     }
@@ -622,8 +599,7 @@ void ReloadAfterEmptyRead(void* slot, uint8_t arg)
 // With no save file the loader builds a default profile and writes it,
 // without decoding anything. Loading that file back (the loaded flag
 // cleared) sends a fresh profile through the decode like a saved one.
-void __fastcall LoaderDetour(void* slot, uint8_t arg)
-{
+void __fastcall LoaderDetour(void* slot, uint8_t arg) {
     void* const outer = g_loadingSlot;
     g_loadingSlot = slot;
     const int before = g_decodes.load();
@@ -645,8 +621,7 @@ void __fastcall LoaderDetour(void* slot, uint8_t arg)
     g_loadingSlot = outer;
 }
 
-bool Hook(uintptr_t rva, const uint8_t* head, size_t n, LPVOID detour, LPVOID* original, const char* name)
-{
+bool Hook(uintptr_t rva, const uint8_t* head, size_t n, LPVOID detour, LPVOID* original, const char* name) {
     auto* target = reinterpret_cast<uint8_t*>(g_base + rva);
     if (!IsReadable(target, n) || std::memcmp(target, head, n) != 0) {
         Log("entitlements: the %s at rva %llX is not what this build expects; off", name, static_cast<unsigned long long>(rva));
@@ -661,8 +636,7 @@ bool Hook(uintptr_t rva, const uint8_t* head, size_t n, LPVOID detour, LPVOID* o
 
 } // namespace
 
-void InstallEntitlements(uintptr_t imageBase, const std::wstring& iniPath)
-{
+void InstallEntitlements(uintptr_t imageBase, const std::wstring& iniPath) {
     g_merge = GetPrivateProfileIntW(L"mod", L"steam_entitlements", 1, iniPath.c_str()) != 0;
     if (!g_merge) Log("entitlements: Steam content not added ([mod] steam_entitlements=0); the profile's own list still counts");
     g_base = imageBase;
@@ -687,14 +661,12 @@ void InstallEntitlements(uintptr_t imageBase, const std::wstring& iniPath)
     Log("entitlements: on (%zu Steam apps in the table)", g_grants.size());
 }
 
-bool EntitlementsKnown()
-{
+bool EntitlementsKnown() {
     std::lock_guard lock(g_ownedMutex);
     return g_ownedKnown;
 }
 
-bool OwnsEntitlement(const std::string& code)
-{
+bool OwnsEntitlement(const std::string& code) {
     if (code.empty()) return true;
     std::lock_guard lock(g_ownedMutex);
     return !g_ownedKnown || g_owned.count(code) != 0;

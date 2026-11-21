@@ -8,7 +8,14 @@ namespace sfv {
 
 namespace {
 
-enum State : int16_t { kIdle, kWalk, kJump, kCrouch, kAttack, kHitstun, kBlockstun, kKO };
+enum State : int16_t { kIdle,
+                       kWalk,
+                       kJump,
+                       kCrouch,
+                       kAttack,
+                       kHitstun,
+                       kBlockstun,
+                       kKO };
 
 struct AttackData {
     int16_t startup, active, recovery;
@@ -19,8 +26,12 @@ struct AttackData {
 
 // LP MP HP LK MK HK
 constexpr AttackData kAttacks[6] = {
-    {3, 2, 6, 70, 30, 12, 6},   {5, 3, 10, 90, 60, 16, 8},  {8, 3, 18, 110, 90, 20, 10},
-    {4, 2, 8, 80, 35, 12, 6},   {6, 3, 12, 100, 65, 16, 9}, {10, 4, 20, 130, 100, 22, 12},
+    {3, 2, 6, 70, 30, 12, 6},
+    {5, 3, 10, 90, 60, 16, 8},
+    {8, 3, 18, 110, 90, 20, 10},
+    {4, 2, 8, 80, 35, 12, 6},
+    {6, 3, 12, 100, 65, 16, 9},
+    {10, 4, 20, 130, 100, 22, 12},
 };
 
 constexpr int32_t kStageHalfWidth = 1000;
@@ -29,8 +40,7 @@ constexpr int32_t kRoundFrames = 99 * 60;
 
 } // namespace
 
-MockGame::MockGame(MockGameOptions options) : options_(std::move(options))
-{
+MockGame::MockGame(MockGameOptions options) : options_(std::move(options)) {
     regions_.push_back({"fighters", reinterpret_cast<uint8_t*>(fighters_), sizeof(fighters_)});
     regions_.push_back({"projectiles", reinterpret_cast<uint8_t*>(projectiles_), sizeof(projectiles_)});
     regions_.push_back({"rng", reinterpret_cast<uint8_t*>(&rng_), sizeof(rng_)});
@@ -40,8 +50,7 @@ MockGame::MockGame(MockGameOptions options) : options_(std::move(options))
     }
 }
 
-bool MockGame::BeginMatch(const MatchSetup& setup)
-{
+bool MockGame::BeginMatch(const MatchSetup& setup) {
     std::memset(fighters_, 0, sizeof(fighters_));
     std::memset(projectiles_, 0, sizeof(projectiles_));
     std::memset(&round_, 0, sizeof(round_));
@@ -55,14 +64,12 @@ bool MockGame::BeginMatch(const MatchSetup& setup)
     return true;
 }
 
-PackedInput MockGame::ReadLocalInput(int player)
-{
+PackedInput MockGame::ReadLocalInput(int player) {
     const int poll = polls_[player]++;
     return options_.input ? options_.input(poll, player) : 0;
 }
 
-uint32_t MockGame::NextRng()
-{
+uint32_t MockGame::NextRng() {
     uint32_t x = rng_;
     x ^= x << 13;
     x ^= x >> 17;
@@ -71,8 +78,7 @@ uint32_t MockGame::NextRng()
     return x;
 }
 
-void MockGame::ResetRound()
-{
+void MockGame::ResetRound() {
     for (int p = 0; p < kNumPlayers; p++) {
         Fighter& f = fighters_[p];
         const int32_t meter = f.meter;
@@ -88,8 +94,7 @@ void MockGame::ResetRound()
     camera_.x = 0;
 }
 
-void MockGame::Advance(const FrameInputs& inputs, bool rollingBack)
-{
+void MockGame::Advance(const FrameInputs& inputs, bool rollingBack) {
     round_.frame++;
 
     if (round_.matchOver) return;
@@ -113,72 +118,68 @@ void MockGame::Advance(const FrameInputs& inputs, bool rollingBack)
     EndRoundIfOver();
 }
 
-void MockGame::StepFighter(int p, PackedInput in)
-{
+void MockGame::StepFighter(int p, PackedInput in) {
     Fighter& f = fighters_[p];
 
     const bool forward = (in & (f.facing > 0 ? kRight : kLeft)) != 0;
     const bool back = (in & (f.facing > 0 ? kLeft : kRight)) != 0;
 
     switch (f.state) {
-    case kHitstun:
-    case kBlockstun:
-        f.vx = f.vx * 3 / 4;
-        if (--f.stun <= 0) {
+        case kHitstun:
+        case kBlockstun:
+            f.vx = f.vx * 3 / 4;
+            if (--f.stun <= 0) {
+                f.state = kIdle;
+                f.combo = 0;
+            }
+            break;
+        case kAttack: {
+            const AttackData& a = kAttacks[f.attack];
+            f.vx = 0;
+            if (++f.timer >= a.startup + a.active + a.recovery) f.state = kIdle;
+            break;
+        }
+        case kJump:
+            break;
+        default: {
+            f.vx = 0;
             f.state = kIdle;
-            f.combo = 0;
-        }
-        break;
-    case kAttack: {
-        const AttackData& a = kAttacks[f.attack];
-        f.vx = 0;
-        if (++f.timer >= a.startup + a.active + a.recovery) f.state = kIdle;
-        break;
-    }
-    case kJump:
-        break;
-    default: {
-        f.vx = 0;
-        f.state = kIdle;
-        int attack = -1;
-        for (int b = 0; b < 6; b++) {
-            if (in & (kLP << b)) {
-                attack = b;
-                break;
+            int attack = -1;
+            for (int b = 0; b < 6; b++) {
+                if (in & (kLP << b)) {
+                    attack = b;
+                    break;
+                }
             }
-        }
-        if (attack == 5 && (in & kDown) && f.meter >= 50) {
-            for (auto& pr : projectiles_) {
-                if (pr.life > 0) continue;
-                pr = {f.x + f.facing * 40, f.facing * 9, static_cast<int16_t>(p), 120};
-                f.meter -= 50;
+            if (attack == 5 && (in & kDown) && f.meter >= 50) {
+                for (auto& pr : projectiles_) {
+                    if (pr.life > 0) continue;
+                    pr = {f.x + f.facing * 40, f.facing * 9, static_cast<int16_t>(p), 120};
+                    f.meter -= 50;
+                    f.state = kAttack;
+                    f.attack = 5;
+                    f.timer = 0;
+                    f.attackHit = 1; // the projectile does the damage
+                    break;
+                }
+            } else if (attack >= 0) {
                 f.state = kAttack;
-                f.attack = 5;
+                f.attack = static_cast<int16_t>(attack);
                 f.timer = 0;
-                f.attackHit = 1; // the projectile does the damage
-                break;
+                f.attackHit = 0;
+            } else if (in & kUp) {
+                f.state = kJump;
+                f.vy = 22;
+                f.vx = forward ? 5 * f.facing : back ? -5 * f.facing
+                                                     : 0;
+            } else if (in & kDown) {
+                f.state = kCrouch;
+            } else if (forward || back) {
+                f.state = kWalk;
+                f.vx = (forward ? 4 : -3) * f.facing;
             }
+            break;
         }
-        else if (attack >= 0) {
-            f.state = kAttack;
-            f.attack = static_cast<int16_t>(attack);
-            f.timer = 0;
-            f.attackHit = 0;
-        }
-        else if (in & kUp) {
-            f.state = kJump;
-            f.vy = 22;
-            f.vx = forward ? 5 * f.facing : back ? -5 * f.facing : 0;
-        }
-        else if (in & kDown) {
-            f.state = kCrouch;
-        }
-        else if (forward || back) {
-            f.state = kWalk;
-            f.vx = (forward ? 4 : -3) * f.facing;
-        }
-        break;
-    }
     }
 
     if (f.y > 0 || f.vy > 0) {
@@ -199,8 +200,7 @@ void MockGame::StepFighter(int p, PackedInput in)
     f.meter = std::min(f.meter + 1, 100);
 }
 
-void MockGame::ResolveAttack(int p, bool rollingBack)
-{
+void MockGame::ResolveAttack(int p, bool rollingBack) {
     Fighter& f = fighters_[p];
     if (f.state != kAttack || f.attackHit) return;
     const AttackData& a = kAttacks[f.attack];
@@ -222,8 +222,7 @@ void MockGame::ResolveAttack(int p, bool rollingBack)
     Hit(1 - p, damage, a.stun, f.facing * a.push, rollingBack);
 }
 
-void MockGame::StepProjectiles(bool rollingBack)
-{
+void MockGame::StepProjectiles(bool rollingBack) {
     for (auto& pr : projectiles_) {
         if (pr.life <= 0) continue;
         pr.x += pr.vx;
@@ -243,8 +242,7 @@ void MockGame::StepProjectiles(bool rollingBack)
     }
 }
 
-void MockGame::Hit(int victim, int damage, int stun, int push, bool rollingBack)
-{
+void MockGame::Hit(int victim, int damage, int stun, int push, bool rollingBack) {
     Fighter& o = fighters_[victim];
     o.combo++;
     o.hp -= damage * 10 / (9 + o.combo);
@@ -259,15 +257,13 @@ void MockGame::Hit(int victim, int damage, int stun, int push, bool rollingBack)
     }
 }
 
-void MockGame::UpdateCamera()
-{
+void MockGame::UpdateCamera() {
     const int32_t mid = (fighters_[0].x + fighters_[1].x) / 2;
     camera_.x += (mid - camera_.x) / 6;
     camera_.x = std::clamp(camera_.x, -kStageHalfWidth + kScreenHalfWidth, kStageHalfWidth - kScreenHalfWidth);
 }
 
-void MockGame::EndRoundIfOver()
-{
+void MockGame::EndRoundIfOver() {
     const bool ko0 = fighters_[0].hp <= 0, ko1 = fighters_[1].hp <= 0;
     if (!ko0 && !ko1 && round_.timer > 0) return;
 

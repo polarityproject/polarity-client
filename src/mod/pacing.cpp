@@ -13,8 +13,8 @@ namespace sfv::mod {
 namespace {
 
 constexpr double kPeriodMs = 1000.0 / 60.0;
-constexpr double kResetAfterMs = 100;  // a frame this long is a hitch: the next one is not paced
-constexpr ULONGLONG kLapseMs = 250;    // pacing stays on this long after the driver's last lead
+constexpr double kResetAfterMs = 100; // a frame this long is a hitch: the next one is not paced
+constexpr ULONGLONG kLapseMs = 250;   // pacing stays on this long after the driver's last lead
 
 std::atomic<float> g_ahead{0};
 std::atomic<ULONGLONG> g_leadAt{0};
@@ -22,8 +22,7 @@ std::atomic<uint32_t> g_leads{0}; // the driver's frames so far: one pace per fr
 std::mutex g_statsMutex;
 PaceStats g_stats;
 
-double NowMs()
-{
+double NowMs() {
     static const LARGE_INTEGER freq = [] {
         LARGE_INTEGER f;
         QueryPerformanceFrequency(&f);
@@ -36,8 +35,7 @@ double NowMs()
 
 // Waits until `deadline`: a high-resolution timer for all but the last
 // millisecond (a plain Sleep(1) can take a whole 15.6 ms scheduler tick), then a spin.
-void WaitUntil(double deadline)
-{
+void WaitUntil(double deadline) {
     static HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
     for (double now = NowMs(); now < deadline; now = NowMs()) {
         const double rest = deadline - now;
@@ -46,8 +44,7 @@ void WaitUntil(double deadline)
             due.QuadPart = -static_cast<LONGLONG>((rest - 1.0) * 10000); // 100 ns units, relative
             SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE);
             WaitForSingleObject(timer, static_cast<DWORD>(rest) + 1);
-        }
-        else {
+        } else {
             YieldProcessor();
         }
     }
@@ -55,22 +52,19 @@ void WaitUntil(double deadline)
 
 } // namespace
 
-float StretchFor(float ahead)
-{
+float StretchFor(float ahead) {
     if (ahead <= 0.25f) return 0.0f;
     const float s = ahead <= 3.0f ? ahead * 0.01f : 0.03f + (ahead - 3.0f) * 0.03f;
     return std::min(0.25f, s);
 }
 
-void PaceLead(float ahead)
-{
+void PaceLead(float ahead) {
     g_ahead = ahead;
     g_leadAt = GetTickCount64();
     g_leads++;
 }
 
-void PaceFrame()
-{
+void PaceFrame() {
     // The engine's own limiter waits before this hook toward its own deadline,
     // a hair over 16.667 ms apart: an absolute 60.000 Hz deadline here was
     // always already past, and a wait shorter than the engine's period would
@@ -109,8 +103,7 @@ void PaceFrame()
     g_stats.waitedMs += waited;
 }
 
-PaceStats TakePaceStats()
-{
+PaceStats TakePaceStats() {
     std::lock_guard lock(g_statsMutex);
     const PaceStats s = g_stats;
     g_stats = {};

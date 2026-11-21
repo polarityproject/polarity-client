@@ -48,6 +48,7 @@ struct CapturedFrame {
     int64_t battle = 0; // the game's battle frame outside the driver
     int64_t draw = 0;   // the overlay and Present (render thread)
 };
+
 void BeginCapture();
 std::vector<CapturedFrame> EndCapture();
 
@@ -55,10 +56,11 @@ std::vector<CapturedFrame> EndCapture();
 class Scope {
 public:
     explicit Scope(Part part) : part_(part), start_(std::chrono::steady_clock::now()) {}
-    ~Scope()
-    {
+
+    ~Scope() {
         Add(part_, std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start_).count());
     }
+
     Scope(const Scope&) = delete;
     Scope& operator=(const Scope&) = delete;
 

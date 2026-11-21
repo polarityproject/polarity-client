@@ -15,8 +15,8 @@ struct ImFont;
 namespace sfv::mod {
 
 struct SelectChara {
-    std::string code;  // "RYU"; "ELV" for Eleven
-    std::string name;  // "RYU"
+    std::string code; // "RYU"; "ELV" for Eleven
+    std::string name; // "RYU"
     // Not owned by this profile (entitlements.h): shown dimmed, not picked,
     // as the game's own character select has it.
     bool locked = false;
@@ -28,8 +28,8 @@ struct SelectChara {
 };
 
 struct SelectStage {
-    std::string code; // "TAI"
-    std::string name; // "Ring of Destiny"
+    std::string code;    // "TAI"
+    std::string name;    // "Ring of Destiny"
     bool locked = false; // not owned: dimmed, the cursor steps over it
     // Its other settings, each a stage of its own (The Grid: The Grid
     // Alternative, S25), as the game's stage select offers them.
@@ -86,10 +86,12 @@ struct SelectCard {
     std::string chara;     // its code (the grid icon); empty: none
     std::string charaName; // "RYU"
     std::string place;     // "Table 2 \xC2\xB7 2nd" (gold, right)
+
     struct Row {
         std::string label, value;
         uint32_t swatch1 = 0, swatch2 = 0;
     };
+
     std::vector<Row> rows;
     std::string status;      // under the rows
     std::string statusRight; // "loading", "ready"

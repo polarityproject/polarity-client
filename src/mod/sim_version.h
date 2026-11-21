@@ -1,4 +1,5 @@
 #pragma once
+
 // The simulation version: recorded in every match recording's build id
 // ("/sim-<n>", core/build_id.h). The Battle Log plays a recording only on
 // the same game exe and the same sim version, so this is the one number to

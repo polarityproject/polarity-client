@@ -14,12 +14,12 @@ namespace sfv::mod {
 namespace {
 
 // KWUserProfileDetails.
-constexpr size_t kIsMainUser = 0x28;            // bit 0
-constexpr size_t kFavorites = 0x68;             // KWFavoriteBattleSettings
-constexpr size_t kFavoriteChara = kFavorites;   // FString CharaCode
-constexpr size_t kFavoriteStage = 0x90;         // FString StageCode
-constexpr size_t kCharaSettings = 0xA0;         // TArray of 0x38-byte entries
-constexpr size_t kRandomMask = 0x108;          // KWRandomStageSelectSetting: MaskStageCodes TArray<FString>
+constexpr size_t kIsMainUser = 0x28;          // bit 0
+constexpr size_t kFavorites = 0x68;           // KWFavoriteBattleSettings
+constexpr size_t kFavoriteChara = kFavorites; // FString CharaCode
+constexpr size_t kFavoriteStage = 0x90;       // FString StageCode
+constexpr size_t kCharaSettings = 0xA0;       // TArray of 0x38-byte entries
+constexpr size_t kRandomMask = 0x108;         // KWRandomStageSelectSetting: MaskStageCodes TArray<FString>
 constexpr size_t kProfileSize = 0x118;
 constexpr int kMaxMask = 128;
 // One CharaSettings entry.
@@ -28,8 +28,7 @@ constexpr size_t kEntryCostume = 0x10, kEntryColor = 0x14, kEntryComment = 0x28,
 constexpr int kMaxEntries = 128;
 
 // An FString's text (ASCII codes), empty if it is not readable.
-std::string Code(const uint8_t* field)
-{
+std::string Code(const uint8_t* field) {
     const auto* data = *reinterpret_cast<const wchar_t* const*>(field);
     const int32_t n = *reinterpret_cast<const int32_t*>(field + 8);
     std::string out;
@@ -40,8 +39,7 @@ std::string Code(const uint8_t* field)
 
 } // namespace
 
-bool ReadProfileFavorites(ProfileFavorites* out)
-{
+bool ReadProfileFavorites(ProfileFavorites* out) {
     if (!ue4::EnsureObjects(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)))) return false;
     const auto start = std::chrono::steady_clock::now();
     const uint8_t* main = nullptr;
