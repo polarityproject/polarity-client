@@ -78,6 +78,11 @@ build.cmd
 build\Release\sfvtests.exe
 ```
 
+clang-format sets the layout of the C++ sources (`.clang-format`). It comes
+with the Build Tools' "C++ Clang tools" component. `scripts\format.ps1`
+formats `src\` and `tests\`, and `scripts\format.ps1 -Check` lists the files
+that are not formatted.
+
 To try a build in the game, copy `build\Release\xinput1_3.dll` and
 `build\Release\polarity.dll` into `StreetFighterV\Binaries\Win64\`, next to
 the 64 MB exe (not the launcher). Settings go in `polarity.ini` in that
