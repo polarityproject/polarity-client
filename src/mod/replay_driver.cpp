@@ -1085,16 +1085,11 @@ private:
         game.Recanonicalize();
         std::vector<uint64_t> hashes(CheckRegions(game).size());
         HashRegions(CheckRegions(game), hashes.data());
-        // The neutral ticks before the objects exist depend on loading (16 in
-        // a session, 9 here), and so does the frozen state: take the
-        // recording's, as a netplay joiner takes the host's.
-        if (Compare(game, hashes.data(), rf_.initialHashes.data(), -2)) {
-            TakeRecordedStart(game, hashes);
-            game.Recanonicalize();
-            hashes.assign(CheckRegions(game).size(), 0);
-            HashRegions(CheckRegions(game), hashes.data());
-        }
-        layout_ = game.LayoutVersion(); // after the copy and its new canonical order
+        // The run starts from this battle's own frozen state, as a netplay
+        // session does: the recording's bytes are never written into the
+        // game. A start that differs from the recording's is out of sync
+        // from frame 0 (Compare below).
+        layout_ = game.LayoutVersion(); // its canonical order
         game.ArmStartProbe();
         if (stress_ == 0 && keepFrom_ >= 0) {
             // `keep`: this run as a full recording, its start state first.
@@ -1167,31 +1162,6 @@ private:
             }
         }
         return true;
-    }
-
-    // Copies the recording's state before frame 0 (its dump) into the regions
-    // that differ, as a joiner takes the host's (TakeOtherState).
-    void TakeRecordedStart(SfvGame& game, const std::vector<uint64_t>& hashes)
-    {
-        const StateDump* dump = rf_.FindDump(-1);
-        if (!dump) {
-            Log("replay: the recording has no state before frame 0 to start from");
-            return;
-        }
-        const auto& regions = CheckRegions(game); // as `hashes` (a later build's added regions keep theirs)
-        // The dump holds every recorded region back to back.
-        std::vector<OtherRegion> recorded;
-        size_t at = 0;
-        for (size_t j = 0; j < rf_.regions.size(); j++) {
-            const size_t size = static_cast<size_t>(rf_.regions[j].size);
-            if (at + size > dump->bytes.size()) break;
-            recorded.push_back({static_cast<uint32_t>(j), dump->bytes.data() + at, size});
-            at += size;
-        }
-        const TakenState taken = TakeOtherState(regions, hashes, rf_.initialHashes, recorded);
-        for (const std::string& line : DescribeTakenState(regions, taken, "the recording")) Log("replay: %s", line.c_str());
-        Log("replay: took the recording's start: %zu words in %zu regions (%zu pointer-like words kept)", taken.wordsCopied,
-            taken.regionsChanged, taken.pointersKept);
     }
 
     bool StraightFrame(SfvGame& game)
@@ -1747,7 +1717,11 @@ private:
             mismatchFrames_++;
             if (logged_++ < 12) Log("replay: frame %d differs from the recording in %d regions: %s", f, differ, names.c_str());
         }
-        if (differ && f == -1) Log("replay: state before frame 0 differs in %d regions: %s", differ, names.c_str());
+        if (differ && f == -1) {
+            // Out of sync from the start (the viewer's notice).
+            if (firstMismatch_ < 0) firstMismatch_ = 0;
+            Log("replay: state before frame 0 differs in %d regions: %s", differ, names.c_str());
+        }
         return differ;
     }
 

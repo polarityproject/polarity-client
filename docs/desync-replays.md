@@ -151,10 +151,11 @@ scripts\cmd.ps1 -Instance 0 -Commands "replay stop"
 
 (a file name is looked up in `Polarity\matches\`; a full path works too). The replay
 starts the recorded match setup the way a session does (a jump, neutral ticks
-until the battle's objects exist, frozen at frame 0), takes the recording's
-state before frame 0 where this battle's differs (the neutral ticks depend on
-loading: 16 in a session, 9 here; the same rules as a joiner taking the
-host's start), then plays the recorded inputs:
+until the battle's objects exist, frozen at frame 0) and plays the recorded
+inputs from that state. The recording's own bytes are never loaded into the
+game: a state before frame 0 that differs from the recording's makes the run
+out of sync from the start, and the log names the regions that differ. The
+modes:
 
 - **straight**: one frame per update, each frame's state compared with the
   recording's hashes. Answers "does this build reproduce the match?".
