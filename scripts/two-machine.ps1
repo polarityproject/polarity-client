@@ -100,39 +100,41 @@ Say "two-machine session: $hostName hosts, $Agent joins$(if ($Spectate -ge 0) { 
 $agents = @($sides | Where-Object { $_.Agent } | ForEach-Object { $_.Agent } | Select-Object -Unique)
 $iniBackups = @{}
 $iniFiles = @('polarity.ini', 'polarity.panel.ini', 'polarity.panel.1.ini', 'polarity.panel.2.ini')
-foreach ($a in $agents) {
-  Use-Agent $a
-  $ping = Remote 'ping'
-  Say "agent ${a}: $($ping.host), $($ping.games) game instance(s) running"
-  $dir = Join-Path $outDir ("ini-" + $a.Replace(':', '_'))
-  New-Item -ItemType Directory -Force -Path $dir | Out-Null
-  $iniBackups[$a] = @()
-  foreach ($f in $iniFiles) {
-    try { RemoteGet $f (Join-Path $dir $f) | Out-Null; $iniBackups[$a] += $f } catch { } # absent: nothing to keep
-  }
-  $count = 1 + @($sides | Where-Object { $_.Agent -eq $a -and $_.Instance -gt 0 }).Count
-  $iniValues = @(@('control', 'virtual_pads', '1'), @('control', 'always_active', '1'), @('netplay', 'upload_reports', '0'),
-                @('weyve', 'server', $serverAddress))
-  if ($count -gt 1) { $iniValues += , @('mod', 'multi_instance', '1') }
-  foreach ($s in $Settings) {
-    if ($s -notmatch '^(\w+)\.(\w+)=(.*)$') { throw "-Settings: '$s' is not section.key=value" }
-    $iniValues += , @($Matches[1], $Matches[2], $Matches[3])
-  }
-  foreach ($s in $iniValues) { (Remote 'ini' @{ file = 'polarity.ini'; section = $s[0]; key = $s[1]; value = $s[2] }).output | Out-Null }
-  # The panel files override the ini's upload setting.
-  foreach ($f in $iniBackups[$a] | Where-Object { $_ -like 'polarity.panel*' }) {
-    (Remote 'ini' @{ file = $f; section = 'netplay'; key = 'upload_reports'; value = '0' }).output | Out-Null
-  }
-  if ($Deploy) { RemoteDeploy; Say "deployed this build and the test scripts to $a" }
-  if ($ping.games) { Remote 'stop' | Out-Null; Start-Sleep 3 }
-  Say "starting $count game instance(s) on $a"
-  Say (RemoteStart $count)
-}
-if ($agents.Count) { Start-Sleep 15 } # the menu ignores input for a while after its map loads
-$localInstances = @($sides | Where-Object { -not $_.Agent } | ForEach-Object { $_.Instance })
-if ($localInstances.Count) { Assert-GamesRunning (1 + ($localInstances | Measure-Object -Maximum).Maximum) }
-
+# Inside the try: a game that fails to start still gets its agent's ini
+# files put back.
 try {
+  foreach ($a in $agents) {
+    Use-Agent $a
+    $ping = Remote 'ping'
+    Say "agent ${a}: $($ping.host), $($ping.games) game instance(s) running"
+    $dir = Join-Path $outDir ("ini-" + $a.Replace(':', '_'))
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $iniBackups[$a] = @()
+    foreach ($f in $iniFiles) {
+      try { RemoteGet $f (Join-Path $dir $f) | Out-Null; $iniBackups[$a] += $f } catch { } # absent: nothing to keep
+    }
+    $count = 1 + @($sides | Where-Object { $_.Agent -eq $a -and $_.Instance -gt 0 }).Count
+    $iniValues = @(@('control', 'virtual_pads', '1'), @('control', 'always_active', '1'), @('netplay', 'upload_reports', '0'),
+                  @('weyve', 'server', $serverAddress))
+    if ($count -gt 1) { $iniValues += , @('mod', 'multi_instance', '1') }
+    foreach ($s in $Settings) {
+      if ($s -notmatch '^(\w+)\.(\w+)=(.*)$') { throw "-Settings: '$s' is not section.key=value" }
+      $iniValues += , @($Matches[1], $Matches[2], $Matches[3])
+    }
+    foreach ($s in $iniValues) { (Remote 'ini' @{ file = 'polarity.ini'; section = $s[0]; key = $s[1]; value = $s[2] }).output | Out-Null }
+    # The panel files override the ini's upload setting.
+    foreach ($f in $iniBackups[$a] | Where-Object { $_ -like 'polarity.panel*' }) {
+      (Remote 'ini' @{ file = $f; section = 'netplay'; key = 'upload_reports'; value = '0' }).output | Out-Null
+    }
+    if ($Deploy) { RemoteDeploy; Say "deployed this build and the test scripts to $a" }
+    if ($ping.games) { Remote 'stop' | Out-Null; Start-Sleep 3 }
+    Say "starting $count game instance(s) on $a"
+    Say (RemoteStart $count)
+  }
+  if ($agents.Count) { Start-Sleep 15 } # the menu ignores input for a while after its map loads
+  $localInstances = @($sides | Where-Object { -not $_.Agent } | ForEach-Object { $_.Instance })
+  if ($localInstances.Count) { Assert-GamesRunning (1 + ($localInstances | Measure-Object -Maximum).Maximum) }
+
   foreach ($s in $sides) {
     Skip-SideLog $s
     # Nothing left over from an earlier run.
@@ -199,6 +201,7 @@ finally {
   # The agents' ini files as they were (games already running keep the test
   # settings until they restart).
   foreach ($a in $agents) {
+    if (-not $iniBackups.ContainsKey($a)) { continue } # not set up yet
     Use-Agent $a
     $dir = Join-Path $outDir ("ini-" + $a.Replace(':', '_'))
     foreach ($f in $iniBackups[$a]) { RemotePut (Join-Path $dir $f) $f | Out-Null }
