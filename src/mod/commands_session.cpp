@@ -384,7 +384,7 @@ void ShotCommand(const std::string&, std::stringstream& ss) {
     int scale = 1;
     ss >> path >> scale;
     if (path.empty()) Log("control: shot <path> [scale]");
-    else RequestScreenshot(path, scale > 0 ? scale : 1);
+    else OverlayRequestScreenshot(path, scale > 0 ? scale : 1);
 }
 
 void BurstonCommand(const std::string&, std::stringstream& ss) {
@@ -398,7 +398,7 @@ void ShotburstCommand(const std::string&, std::stringstream& ss) {
     std::string dir;
     int frames = 60, scale = 2;
     ss >> dir >> frames >> scale;
-    RequestShotBurst(dir, frames, scale);
+    OverlayRequestShotBurst(dir, frames, scale);
 }
 
 void EchoCommand(const std::string&, std::stringstream& ss) {
@@ -432,8 +432,8 @@ void VoicelangCommand(const std::string&, std::stringstream& ss) {
 void VsyncCommand(const std::string&, std::stringstream& ss) {
     std::string what;
     ss >> what;
-    if (what == "on" || what == "off") SetVsync(what == "on");
-    Log("overlay: %s", VsyncInfo().c_str());
+    if (what == "on" || what == "off") OverlaySetVsync(what == "on");
+    Log("overlay: %s", OverlayVsyncInfo().c_str());
 }
 
 void CountryflagCommand(const std::string&, std::stringstream& ss) {
@@ -463,29 +463,29 @@ void FreeplayCommand(const std::string&, std::stringstream& ss) {
 void OverlayCommand(const std::string&, std::stringstream& ss) {
     std::string what;
     ss >> what;
-    if (what == "show") SetOverlayVisible(true);
+    if (what == "show") OverlaySetVisible(true);
     else if (what == "select") {
         std::string phase, watching;
         ss >> phase >> watching;
-        RequestSelectPreview(phase == "grid" ? 1 : phase == "loadout" ? 2
-                                               : phase == "ready"     ? 3
-                                                                      : 0,
-                             watching == "spectate");
-    } else if (what == "hide") SetOverlayVisible(false);
+        OverlayRequestSelectPreview(phase == "grid" ? 1 : phase == "loadout" ? 2
+                                                      : phase == "ready"     ? 3
+                                                                             : 0,
+                                    watching == "spectate");
+    } else if (what == "hide") OverlaySetVisible(false);
     else if (what == "rooms") {
         OpenHub();
         OpenRoomsScreen();
     } else if (what == "hub") CloseRoomsScreen();
     else if (what == "benchresult") {
-        ShowLastBenchmarkResult();
+        OverlayShowLastBenchmarkResult();
     } else if (what == "battlelog") {
         OpenHub();
         OpenBattleLog();
     } else if (what == "preview") {
         std::string rest;
         std::getline(ss, rest);
-        PreviewOverlay(rest);
-    } else ToggleOverlay();
+        OverlayPreview(rest);
+    } else OverlayToggle();
 }
 
 void MenuCommand(const std::string&, std::stringstream&) {
@@ -656,7 +656,7 @@ void PickCommand(const std::string&, std::stringstream& ss) {
     }
     o.hasPick = !code.empty();
     o.pick.character = PackCode(code.c_str());
-    ReloadOverlayChoices();
+    OverlayReloadChoices();
     o.pick.costume = static_cast<uint16_t>(costume);
     o.pick.color = static_cast<uint8_t>(color - 1);
     o.pick.comment = static_cast<uint8_t>(comment);
@@ -694,7 +694,7 @@ void NetstatusCommand(const std::string&, std::stringstream&) {
 }
 
 void BattleCommand(const std::string&, std::stringstream&) {
-    Log("battle: %s | rendering %.1f fps", NetBattleInfo().c_str(), RenderFps());
+    Log("battle: %s | rendering %.1f fps", NetBattleInfo().c_str(), OverlayRenderFps());
 }
 
 void SetstageCommand(const std::string&, std::stringstream& ss) {

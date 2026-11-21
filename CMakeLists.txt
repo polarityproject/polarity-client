@@ -226,6 +226,15 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/pacing.cpp
     src/mod/outside_probe.cpp
     src/mod/overlay.cpp
+    src/mod/overlay_look.cpp
+    src/mod/overlay_choices.cpp
+    src/mod/overlay_select.cpp
+    src/mod/overlay_hud.cpp
+    src/mod/overlay_hub.cpp
+    src/mod/overlay_benchmark.cpp
+    src/mod/overlay_my_character.cpp
+    src/mod/overlay_frame.cpp
+    src/mod/overlay_shots.cpp
     src/mod/select_screen.cpp
     src/mod/textures.cpp
     src/mod/ue4.cpp

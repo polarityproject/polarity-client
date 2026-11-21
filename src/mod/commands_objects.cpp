@@ -164,7 +164,7 @@ void ShowtexCommand(const std::string&, std::stringstream& ss) {
     std::string which;
     ss >> which;
     if (which.empty() || which == "off") {
-        SetOverlayTexture(nullptr, 0, 0, "");
+        OverlaySetTexture(nullptr, 0, 0, "");
         return;
     }
     RunOnGameThread([which] {
@@ -174,7 +174,7 @@ void ShowtexCommand(const std::string&, std::stringstream& ss) {
             return;
         }
         const TextureView view = ViewOfTexture(texture);
-        if (view.srv) SetOverlayTexture(view.srv, view.width, view.height, which);
+        if (view.srv) OverlaySetTexture(view.srv, view.width, view.height, which);
     });
 }
 
@@ -204,7 +204,7 @@ void PaktexCommand(const std::string&, std::stringstream& ss) {
                 if (const TextureView* t = PakTexture(path, maxSide, true, &failed)) {
                     static_cast<IUnknown*>(t->srv)->AddRef();
                     Log("paktex: %s from the paks: %ux%u", path.c_str(), t->width, t->height);
-                    if (what == "show") SetOverlayTexture(t->srv, t->width, t->height, path + " (paks)");
+                    if (what == "show") OverlaySetTexture(t->srv, t->width, t->height, path + " (paks)");
                     else SaveTextureLater(t->srv, "pak_" + path.substr(path.rfind('/') + 1));
                     return;
                 }

@@ -57,7 +57,7 @@ extern "C" __declspec(dllexport) void SfvShutdown() {
     RemoveCrashHandler();
     RemoveWatchHandler();
     InputRestoreWindowProc();
-    UnhookPresentTable();
+    OverlayUnhookPresentTable();
     MH_DisableHook(MH_ALL_HOOKS);
     // Threads may be in the middle of a walk over every UE4 object (about a
     // second each).
@@ -65,7 +65,7 @@ extern "C" __declspec(dllexport) void SfvShutdown() {
     // A detour may have returned from its guard but not yet from the function.
     Sleep(50);
     // No Present runs our code any more: ImGui and its D3D objects can go.
-    ShutdownOverlay();
+    OverlayShutdown();
     MH_Uninitialize();
     Log("shut down for reload (%d detours, %d threads still active)", g_inDetour.load(), g_threads.load());
     LogClose();

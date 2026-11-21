@@ -301,7 +301,7 @@ lobby::Seat NetplayDriver::OwnSeat() {
     seat.row = selectRow_;
     seat.hover = selectHover_;
     seat.inputDelay = nextDelay_ >= 0 ? static_cast<uint8_t>(nextDelay_.load()) : options_.inputDelay;
-    seat.fps = static_cast<uint8_t>(std::clamp(RenderFps() + 0.5f, 0.0f, 255.0f));
+    seat.fps = static_cast<uint8_t>(std::clamp(OverlayRenderFps() + 0.5f, 0.0f, 255.0f));
     seat.link = link_;
     return seat;
 }

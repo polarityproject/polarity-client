@@ -159,10 +159,10 @@ DWORD WINAPI ModMain(LPVOID self) {
     HookProcessEnd();
     InputInstall(config.virtualPads, config.alwaysActive);
     ControlInstall(dir + L"\\sfv_cmd" + suffix + L".txt");
-    InstallOverlay(panelPath);
+    OverlayInstall(panelPath);
     InstallUiSound(image);
-    SetOverlayBuild(std::string("Polarity ") + kModVersion);
-    if (migrated.moved) SetMigratedNotice();
+    OverlaySetBuild(std::string("Polarity ") + kModVersion);
+    if (migrated.moved) OverlaySetMigratedNotice();
     InstallUpdater(dir, kModVersion, Narrow(config.updateUrl), config.updateCheck);
     InstallBattleSetup(image);
     InstallBootProbes(image, config.verbose);

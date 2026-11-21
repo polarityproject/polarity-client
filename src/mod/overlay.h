@@ -32,46 +32,46 @@ namespace sfv::mod {
 
 // panelPath: where the panel saves the player's choices (config.h). The
 // Present hooks go in from a thread once the game's window is up.
-bool InstallOverlay(const std::wstring& panelPath);
+bool OverlayInstall(const std::wstring& panelPath);
 // Hot reload, with the code hooks: puts the swap chain's table entry for
 // Present back (the game calls through it).
-void UnhookPresentTable();
+void OverlayUnhookPresentTable();
 // After the hooks are disabled and no detour runs (hot reload): releases ImGui
 // and its D3D objects.
-void ShutdownOverlay();
+void OverlayShutdown();
 
-void SetOverlayVisible(bool visible);
+void OverlaySetVisible(bool visible);
 // Tests (`overlay benchresult`): Polarity settings open on the last benchmark result.
-void ShowLastBenchmarkResult();
+void OverlayShowLastBenchmarkResult();
 // The next frame as shown (the overlay drawn) to a PNG at `path` (relative to
 // the game's Win64 folder unless absolute), `scale` 1 full size, 2 half, ...
 // (the `shot` command; the test agents' screenshots, also where no outside
 // tool can capture the game, as in Steam's Game Mode on a Steam Deck).
-void RequestScreenshot(const std::string& path, int scale);
+void OverlayRequestScreenshot(const std::string& path, int scale);
 // Research (`shotburst <dir> <frames> [scale]`): the next frames as shown, kept in memory, written after.
-void RequestShotBurst(const std::string& dir, int frames, int scale);
-void ToggleOverlay();
+void OverlayRequestShotBurst(const std::string& dir, int frames, int scale);
+void OverlayToggle();
 // The Debug tab's previews of the match windows (`overlay preview ...`):
 // words hud, strip, desync, p1, p2 switch a window on; relay or p2p the link
 // they show; vote or select pick
 // what P1's and P2's windows show, you1/you2 whose side is this player's,
 // toasts adds sample toasts, fade plays the player bars' fade at a match's
 // end, off turns every preview off.
-void PreviewOverlay(const std::string& words);
+void OverlayPreview(const std::string& words);
 // Opens the select screen preview (as the Debug tab's button) at a phase:
 // 0 stage select, 1 the grid, 2 the loadout, 3 ready; `spectator`: as one
 // watching.
-void RequestSelectPreview(int phase, bool spectator = false);
+void OverlayRequestSelectPreview(int phase, bool spectator = false);
 // Testing (`pick`): the panel's choices are read again from the netplay
 // options (else a session's lobby sends the panel's saved pick over it).
-void ReloadOverlayChoices();
+void OverlayReloadChoices();
 // Vsync: off presents every frame at once (sync interval 0) instead of
 // waiting for the display's refresh, whatever the game asked for.
-void SetVsync(bool on);
-bool VsyncOn();
+void OverlaySetVsync(bool on);
+bool OverlayVsyncOn();
 // For the log: the game's own sync interval, the swap chain, and the time
 // spent in Present per frame since the last call.
-std::string VsyncInfo();
+std::string OverlayVsyncInfo();
 bool OverlayVisible();
 // The overlay takes the keyboard, mouse and pads (the game sees neutral pads):
 // the panel is open, a session's select screen is up (until the battle scene
@@ -79,14 +79,14 @@ bool OverlayVisible();
 bool OverlayTakesInput();
 // Research: a texture view drawn in a small window (null: none), with a
 // label; the overlay holds the view's reference until it is replaced.
-void SetOverlayTexture(void* srv, uint32_t width, uint32_t height, const std::string& label);
+void OverlaySetTexture(void* srv, uint32_t width, uint32_t height, const std::string& label);
 // The mod's version, shown in the panel's title.
-void SetOverlayBuild(const std::string& version);
+void OverlaySetBuild(const std::string& version);
 // This start moved an SFVR install's files to Polarity's names (migrate.h):
 // a toast says so, once, at the first menu.
-void SetMigratedNotice();
+void OverlaySetMigratedNotice();
 // Frames the game presented per second, recently.
-float RenderFps();
+float OverlayRenderFps();
 
 // From the game window's procedure: true when the overlay took the message
 // (the game must not see it).

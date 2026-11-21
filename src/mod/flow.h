@@ -334,7 +334,7 @@ void SetSoundRollback(bool on);
 // The round end wait's mode (flow.cpp kKoWaitState) put back by loads (on by default).
 void SetKoWaitRollback(bool on);
 // Research (`burston <code> <dir> <frames> [scale] [count]`): a frame burst
-// (overlay.h RequestShotBurst) on each of the next `count` flow events `code`.
+// (overlay.h OverlayRequestShotBurst) on each of the next `count` flow events `code`.
 void SetBurstOnEvent(int code, const std::string& dir, int frames, int scale, int count);
 // Research (`ptrtest old|new`): the phase restores' pointer test as before
 // 2026-11-13 (any mapped, aligned word) or as now.

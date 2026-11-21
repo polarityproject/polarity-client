@@ -423,7 +423,7 @@ uint64_t Step0Detour(void* self, void* data, uint8_t a, uint8_t b) {
     return g_origStep0(self, data, a, b);
 }
 
-// Research (`burston`): a frame burst (overlay.h RequestShotBurst) each time
+// Research (`burston`): a frame burst (overlay.h OverlayRequestShotBurst) each time
 // a flow event of that code comes, a few times.
 std::mutex g_burstOnMutex;
 int g_burstOnCode = -1, g_burstOnFrames = 0, g_burstOnScale = 4, g_burstOnLeft = 0, g_burstOnIndex = 0;
@@ -453,7 +453,7 @@ uint64_t EventDetour(void* node, void* event, void* a3, void* a4) {
                 if (code == g_burstOnCode && g_burstOnLeft > 0) {
                     g_burstOnLeft--;
                     const std::string dir = g_burstOnDir + "-" + std::to_string(++g_burstOnIndex);
-                    RequestShotBurst(dir, g_burstOnFrames, g_burstOnScale);
+                    OverlayRequestShotBurst(dir, g_burstOnFrames, g_burstOnScale);
                     Log("flow: frame burst into %s on flow event %d", dir.c_str(), code);
                 }
             }

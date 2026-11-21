@@ -56,6 +56,15 @@ void InputIsolatePads(bool isolate);
 // together (EKWKeyConfigPadKeyId bits, docs/local-input.md), from any pad
 // the game reads.
 uint32_t InputGamePadKeys();
+
+// Those bits.
+namespace padkey {
+constexpr uint32_t kUp = 0x1, kDown = 0x2, kLeft = 0x4, kRight = 0x8;
+constexpr uint32_t kX = 0x10, kY = 0x20, kA = 0x40, kB = 0x80;
+constexpr uint32_t kLB = 0x100, kRB = 0x200, kLT = 0x400, kRT = 0x800;
+constexpr uint32_t kStart = 0x4000, kBack = 0x8000;
+} // namespace padkey
+
 // The local player's input as the game maps it (keyboard and pads, with the
 // player's button config), with Start; the pad's default layout when the
 // input manager is not hooked.
