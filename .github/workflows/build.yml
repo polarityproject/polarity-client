@@ -1,8 +1,9 @@
-# Builds Polarity and runs the unit tests on every push and pull request, and
-# keeps the release files as an artifact for two weeks. A pushed v<version>
-# tag also attests those files and puts them in a draft GitHub Release with
-# the version's CHANGELOG.md section. scripts/release.ps1 then checks and
-# publishes the draft and signs the update info (docs/updater.md).
+# Checks the formatting, builds Polarity and runs the unit tests on every push
+# and pull request, and keeps the release files as an artifact for two weeks.
+# A pushed v<version> tag also attests those files and puts them in a draft
+# GitHub Release with the version's CHANGELOG.md section. scripts/release.ps1
+# then checks and publishes the draft and signs the update info
+# (docs/updater.md).
 name: build
 
 on:
@@ -20,6 +21,10 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Formatting
+        shell: pwsh
+        run: scripts/format.ps1 -Check
 
       - name: Build
         shell: cmd
