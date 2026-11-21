@@ -147,6 +147,8 @@ add_library(sfvcore STATIC
   src/core/texture_package.cpp
   src/core/key_names.cpp
   src/core/look.cpp
+  src/core/pick_check.cpp
+  src/core/bad_pick.cpp
   src/core/battle_log.cpp
   src/core/display_name.cpp
   src/core/rules.cpp

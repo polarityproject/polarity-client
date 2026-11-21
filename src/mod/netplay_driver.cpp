@@ -74,6 +74,9 @@ constexpr uint8_t kPredictionWindow = 8;
 constexpr int kMaxInputDelay = 10;
 // Testing (startskew): this side's next frozen start hashes differently.
 std::atomic<bool> g_skewStart{false};
+// Testing (badpick): what this side sends carries a pick no game has.
+std::mutex g_badPickMutex;
+std::optional<BadPick> g_badPick;
 // The heartbeat (PlayerState / SessionState) and the resends.
 constexpr auto kBeat = std::chrono::milliseconds(250);
 constexpr auto kMinBeat = std::chrono::milliseconds(33); // select screen changes go out at once, this often at most
@@ -686,6 +689,10 @@ private:
 
     void SendTo(uint64_t to, lobby::Message m) {
         m.protocol = lobby::kProtocol;
+        {
+            std::lock_guard lock(g_badPickMutex);
+            if (g_badPick) BadPickApply(*g_badPick, m);
+        }
         const auto bytes = lobby::Encode(m);
         control_->Send(to, bytes.data(), bytes.size());
     }
@@ -1158,6 +1165,14 @@ private:
         const State s = GetState();
         if (m.protocol != lobby::kProtocol) {
             if (host_ && m.type == lobby::Type::Hello) Reject(from, lobby::RejectReason::ProtocolMismatch);
+            return;
+        }
+        // Picks and setups this game does not have go no further
+        // (core/pick_check.h): from the other side the session ends; from a
+        // spectator the message is dropped.
+        if (const std::string why = MessageProblem(m, pickTables_); !why.empty()) {
+            if (from == peer_) RefuseFromPeer(why);
+            else Log("netplay: dropped a message from %s: %s", Hex64(from).c_str(), why.c_str());
             return;
         }
         if (from == peer_ && s != State::Joining) heard_ = Clock::now();
@@ -1801,6 +1816,15 @@ private:
         if (!up) ClearPendingSetup(); // kept for a battle that did not come (Transitions)
         Log("netplay: %s: back to the menu", up ? "the battle the ended session jumped to is up" : "no battle after the ended session's jump");
         ReturnToMainMenu(kMenuAfterMatchFrames);
+    }
+
+    // Something the other side sent that this game does not have: refused
+    // before it is kept, and the session ends.
+    void RefuseFromPeer(const std::string& why) {
+        if (GetState() == State::Ended || next_ == Next::End) return;
+        Log("netplay: refused from the other side: %s", why.c_str());
+        EndSessionFor("the other side sent a pick this game does not have (" + why + ")",
+                      "the other side's game does not have a pick sent from here (" + why + ")");
     }
 
     // EndSession, with the reason the other side is told in a Bye sent at
@@ -3112,6 +3136,7 @@ private:
     std::string relayHost_;                           // under mutex_
 
     std::thread thread_;
+    const PickTables pickTables_ = GamePickTables();
     std::thread jump_;
     std::atomic<bool> stop_{false};
     Clock::time_point lastBeat_;
@@ -3420,6 +3445,11 @@ void NetAgainAnswer(bool ok, const std::string& rules) {
 }
 
 void NetSkewNextStartForTest() { g_skewStart = true; }
+
+void NetSendBadPickForTest(const std::optional<BadPick>& bad) {
+    std::lock_guard lock(g_badPickMutex);
+    g_badPick = bad;
+}
 
 void NetPark() {
     if (!g_game || !g_game->BattleTicking()) {

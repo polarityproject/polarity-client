@@ -12,6 +12,7 @@
 
 #include "core/game.h"
 #include "core/look.h"
+#include "core/pick_check.h"
 #include "mod/image.h"
 
 #include <cstdint>
@@ -132,5 +133,14 @@ bool IsFighter(int index);
 // The color ids of a costume as the select screen lists them (EX colors,
 // 100.., after the rest); empty when not known.
 std::vector<int> CostumeColorIds(int index, int costume);
+
+// This game's tables for core/pick_check.h. Not from the game thread: a
+// character's V-Comments may load there first (VCommentNames).
+PickTables GamePickTables();
+// Testing (pickcheck): runs every pick the select screen offers, with every
+// color, the last V-Skill, V-Trigger and V-Comment and all its variants, and
+// every selectable stage through the check, and logs what it refused. Not
+// from the game thread.
+void LogOfferedPickCheck();
 
 } // namespace sfv::mod

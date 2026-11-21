@@ -298,6 +298,55 @@ std::vector<int> CostumeColorIds(int index, int costume) {
     return ids;
 }
 
+PickTables GamePickTables() {
+    PickTables t;
+    t.charaIndex = CharaIndex;
+    t.isFighter = IsFighter;
+    t.costumeCount = CharaCostumeCount;
+    t.colorCount = CostumeColorCount;
+    t.colorIds = CostumeColorIds;
+    t.isEleven = IsElevenPick;
+    t.skillCount = [](const std::string& code, bool vtrigger) { return SkillNames(code, vtrigger).size(); };
+    t.commentCount = [](const std::string& code) { return VCommentNames(code).size(); };
+    t.variants = CostumeVariants;
+    t.isPlayableStage = IsPlayableStage;
+    return t;
+}
+
+void LogOfferedPickCheck() {
+    const PickTables tables = GamePickTables();
+    int checked = 0, failed = 0;
+    for (int index = 0; index < CharaCount(); index++) {
+        if (!IsFighter(index) || CharaName(index).empty()) continue;
+        const std::string code = CharaCode(index);
+        PlayerSetup pick;
+        pick.character = PackCode(code.c_str());
+        pick.vskill = static_cast<uint8_t>(std::max<size_t>(tables.skillCount(code, false), 2) - 1);
+        pick.vtrigger = static_cast<uint8_t>(std::max<size_t>(tables.skillCount(code, true), 2) - 1);
+        pick.comment = static_cast<uint8_t>(tables.commentCount(code));
+        const int eleven = CostumeInFolder(index, "0C");
+        for (int costume = 0; costume < CharaCostumeCount(index); costume++) {
+            const bool offered = CostumeColorCount(index, costume) > 0;
+            if (!offered && costume != eleven) continue;
+            pick.costume = static_cast<uint16_t>(costume);
+            pick.variation = CostumeVariants(index, costume);
+            const std::vector<int> colors = offered ? CostumeColorIds(index, costume) : std::vector<int>{0, 1};
+            for (int color : colors) {
+                pick.color = static_cast<uint8_t>(color);
+                checked++;
+                if (const std::string why = PickProblem(pick, tables); !why.empty() && ++failed <= 10) Log("pickcheck: refused %s", why.c_str());
+            }
+        }
+    }
+    int stages = 0, stagesFailed = 0;
+    for (int stage = 0; stage < StageCount(); stage++) {
+        if (!IsSelectableStage(stage)) continue;
+        stages++;
+        if (!StageRuleProblem(static_cast<uint16_t>(stage), tables).empty()) stagesFailed++;
+    }
+    Log("pickcheck: %d offered picks, %d refused; %d selectable stages, %d refused", checked, failed, stages, stagesFailed);
+}
+
 void SetUniqueParamOverride(int player, int index, int value) {
     if (player >= 0 && player < 2 && index >= 0 && index < 8) g_uniqueParams[player][index] = value;
 }

@@ -53,6 +53,8 @@ several with `;`. The common ones:
 | `menu` | back to the main menu from anywhere |
 | `echo <text>` | a marker in the log, for scripts waiting on earlier steps |
 | `update check`, `reports send`, `crash <kind>` | the updater, report uploads and crash reports, for testing |
+| `badpick <field\|off> [message]` | what this side sends carries a pick or stage no game has, so the other side must refuse it and end the session. Fields: `character`, `costume`, `color`, `vskill`, `vtrigger`, `comment`, `variant`, `stage`. Messages: `state`, `session`, `welcome`, `loaded`, `matches` (every one when left out) |
+| `pickcheck` | runs every pick the select screen offers, and every selectable stage, through the check on other PCs' picks, and logs any it refuses |
 
 `src/mod/control.cpp` has the full list, including the research commands
 the other docs mention.

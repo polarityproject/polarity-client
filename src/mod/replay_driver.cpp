@@ -1986,6 +1986,11 @@ void RequestReplay(const std::string& path, int stressDistance, int watchFrom, i
         Log("replay: %s: %s", full.c_str(), error.c_str());
         return;
     }
+    // Recordings come from other PCs too (shared files, reports).
+    if (const std::string why = SetupProblem(rf.setup, GamePickTables()); !why.empty()) {
+        Log("replay: %s: this game does not have its setup (%s)", full.c_str(), why.c_str());
+        return;
+    }
     stressDistance = std::clamp(stressDistance, 0, 30);
     const std::string name = full.substr(full.find_last_of("\\/") + 1);
     Log("replay: %s, %d frames (confirmed through %d), build %s, %s%s", name.c_str(), rf.FrameCount(), rf.finalThrough,

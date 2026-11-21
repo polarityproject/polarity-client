@@ -9,6 +9,8 @@
 #include "core/input_delay.h"
 #include "core/lobby.h"
 #include "core/look.h"
+#include "core/pick_check.h"
+#include "core/bad_pick.h"
 #include "core/match_ticket.h"
 #include "core/country_flags.h"
 #include "core/keeper_protocol.h"
@@ -1411,6 +1413,110 @@ void TestShownSetup() {
     CHECK(!(RealPicks(host, same, 0, rules) == RealPicks(odd, same, 1, rules)));
 }
 
+void TestPickCheck() {
+    // Ryu (index 0) has 20 costumes: costume 0 offers colors 0..9 and EX
+    // colors 100 and 101 and has a dress variant, costume 5 is not offered,
+    // costume 15 is the silver model Eleven plays in. X01 (index 1) is a
+    // helper. Ryu has three V-Comments; skill names are not loaded (two of
+    // each). Stages 0..9 are playable.
+    PickTables t;
+    t.charaIndex = [](const std::string& code) { return code == "RYU" ? 0 : code == "X01" ? 1
+                                                                                          : -1; };
+    t.isFighter = [](int index) { return index == 0; };
+    t.costumeCount = [](int) { return 20; };
+    t.colorCount = [](int, int costume) { return costume == 5 || costume == 15 ? 0 : 10; };
+    t.colorIds = [](int, int) {
+        std::vector<int> ids;
+        for (int i = 0; i < 10; i++) ids.push_back(i);
+        ids.push_back(100);
+        ids.push_back(101);
+        return ids;
+    };
+    t.isEleven = [](const PlayerSetup& p) { return p.costume == 15; };
+    t.skillCount = [](const std::string&, bool) { return size_t{0}; };
+    t.commentCount = [](const std::string&) { return size_t{3}; };
+    t.variants = [](int, int costume) { return static_cast<uint8_t>(costume == 0 ? 1 : 0); };
+    t.isPlayableStage = [](int stage) { return stage >= 0 && stage < 10; };
+    PlayerSetup ryu;
+    ryu.character = PackCode("RYU");
+    const auto with = [&](auto change) {
+        PlayerSetup p = ryu;
+        change(p);
+        return PickProblem(p, t);
+    };
+    CHECK(PickProblem(ryu, t).empty());
+    CHECK(with([](PlayerSetup& p) { p.color = 101; p.vskill = 1; p.vtrigger = 1; p.comment = 3; p.variation = 1; }).empty());
+    CHECK(with([](PlayerSetup& p) { p.costume = 15; p.color = 1; }).empty());
+    CHECK(with([](PlayerSetup& p) { p.character = 0; }) == "no fighter (none)");
+    CHECK(with([](PlayerSetup& p) { p.character = PackCode("X01"); }) == "no fighter X01");
+    CHECK(with([](PlayerSetup& p) { p.character = 0x00FF0A41; }) == "no fighter A??");
+    CHECK(with([](PlayerSetup& p) { p.costume = 20; }) == "no RYU costume 20");
+    CHECK(with([](PlayerSetup& p) { p.costume = 0xFFFF; }) == "no RYU costume 65535");
+    CHECK(with([](PlayerSetup& p) { p.costume = 5; }) == "RYU costume 5 is not offered");
+    CHECK(with([](PlayerSetup& p) { p.color = 10; }) == "RYU costume 0 has no color id 10");
+    CHECK(with([](PlayerSetup& p) { p.color = 255; }) == "RYU costume 0 has no color id 255");
+    CHECK(with([](PlayerSetup& p) { p.costume = 15; p.color = 2; }) == "RYU costume 15 has no color id 2");
+    CHECK(with([](PlayerSetup& p) { p.vskill = 2; }) == "RYU has no V-Skill 3");
+    CHECK(with([](PlayerSetup& p) { p.vtrigger = 255; }) == "RYU has no V-Trigger 256");
+    CHECK(with([](PlayerSetup& p) { p.comment = 4; }) == "RYU has no V-Comment 4");
+    CHECK(with([](PlayerSetup& p) { p.variation = 2; }) == "RYU costume 0 has no variant 2");
+    CHECK(with([](PlayerSetup& p) { p.costume = 1; p.variation = 1; }) == "RYU costume 1 has no variant 1");
+    // Setups: both picks, then the stage (never random: the one to play).
+    MatchSetup s;
+    s.players[0] = s.players[1] = ryu;
+    s.stage = 9;
+    CHECK(SetupProblem(s, t).empty());
+    s.stage = lobby::kAnyStage;
+    CHECK(SetupProblem(s, t).empty());
+    s.stage = 10;
+    CHECK(SetupProblem(s, t) == "no stage 10");
+    s.stage = lobby::kRandomStage;
+    CHECK(SetupProblem(s, t) == "no stage 65534");
+    s.stage = 0;
+    s.players[1].comment = 9;
+    CHECK(SetupProblem(s, t) == "P2: RYU has no V-Comment 9");
+    // The host's stage rule may be random.
+    CHECK(StageRuleProblem(lobby::kRandomStage, t).empty() && StageRuleProblem(lobby::kAnyStage, t).empty() && StageRuleProblem(3, t).empty());
+    CHECK(StageRuleProblem(10, t) == "no stage 10");
+    // badpick's values fail the check in each message that carries a pick.
+    CHECK(!BadPickParse("nope", "") && !BadPickParse("color", "nope") && BadPickParse("color", "welcome"));
+    for (const char* field : {"character", "costume", "color", "vskill", "vtrigger", "comment", "variant", "stage"}) {
+        lobby::Message welcome;
+        welcome.type = lobby::Type::Welcome;
+        welcome.setup.players[0] = welcome.setup.players[1] = ryu;
+        CHECK(MessageProblem(welcome, t).empty());
+        BadPickApply(*BadPickParse(field, ""), welcome);
+        CHECK(!MessageProblem(welcome, t).empty());
+        lobby::Message state;
+        state.type = lobby::Type::SessionState;
+        state.stage = 3;
+        state.seats[0].pick = ryu;
+        CHECK(MessageProblem(state, t).empty());
+        BadPickApply(*BadPickParse(field, "session"), state);
+        CHECK(!MessageProblem(state, t).empty());
+        lobby::Message matches;
+        matches.type = lobby::Type::Matches;
+        matches.matches.resize(3);
+        for (lobby::MatchEntry& e : matches.matches) e.setup = welcome.setup;
+        matches.matches[0].setup.players[0] = matches.matches[0].setup.players[1] = ryu;
+        matches.matches[0].setup.stage = 0;
+        CHECK(!MessageProblem(matches, t).empty());
+    }
+    // Only the message asked for.
+    lobby::Message beat;
+    beat.type = lobby::Type::PlayerState;
+    beat.seat.pick = ryu;
+    BadPickApply(*BadPickParse("color", "welcome"), beat);
+    CHECK(beat.seat.pick == ryu && MessageProblem(beat, t).empty());
+    // A seat with no pick yet, and messages without picks, pass.
+    beat.seat.pick = {};
+    CHECK(MessageProblem(beat, t).empty());
+    lobby::Message inputs;
+    inputs.type = lobby::Type::Inputs;
+    inputs.setup.stage = 10;
+    CHECK(MessageProblem(inputs, t).empty());
+}
+
 void TestRulesFormat() {
     // The defaults (the Table rules screen's), and a round trip of every kind.
     Rules r;
@@ -2613,6 +2719,7 @@ int main() {
         {"pak index", TestPakIndex},
         {"key names", TestKeyNames},
         {"shown setup", TestShownSetup},
+        {"pick check", TestPickCheck},
         {"rules format", TestRulesFormat},
         {"random stage", TestRandomStage},
         {"battle log", TestBattleLog},

@@ -20,6 +20,7 @@
 // play the host's confirmed inputs (core/spectate.h). Desync reports and the
 // match recordings go to the report folder.
 
+#include "core/bad_pick.h"
 #include "core/game.h"
 #include "core/input_delay.h"
 #include "core/lobby.h"
@@ -27,6 +28,7 @@
 #include "core/mux.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -162,6 +164,9 @@ void NetPark();
 // Testing: this side's next frozen start hashes differently, as a game
 // whose frame 0 differs would: the session ends before the match starts.
 void NetSkewNextStartForTest();
+// Testing: what this side sends from now on carries a pick or stage no game
+// has (core/bad_pick.h); nullopt stops it.
+void NetSendBadPickForTest(const std::optional<BadPick>& bad);
 void NetSetConditions(const NetConditions& conditions);
 std::string NetStatus();
 
