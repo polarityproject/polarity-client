@@ -1498,17 +1498,19 @@ void TestPickCheck() {
     };
     t.isEleven = [](const PlayerSetup& p) { return p.costume == 15; };
     t.skillCount = [](const std::string&, bool) { return size_t{0}; };
-    t.commentCount = [](const std::string&) { return size_t{3}; };
-    t.variants = [](int, int costume) { return static_cast<uint8_t>(costume == 0 ? 1 : 0); };
+    bool commentsLoaded = true;
+    t.commentCount = [&commentsLoaded](const std::string&) { return commentsLoaded ? std::optional<size_t>(3) : std::nullopt; };
+    bool variantsKnown = true;
+    t.variants = [&variantsKnown](int, int costume) { return variantsKnown ? std::optional<uint8_t>(static_cast<uint8_t>(costume == 0 ? 1 : 0)) : std::nullopt; };
     t.isPlayableStage = [](int stage) { return stage >= 0 && stage < 10; };
     PlayerSetup ryu;
     ryu.character = PackCode("RYU");
     const auto with = [&](auto change) {
         PlayerSetup p = ryu;
         change(p);
-        return PickProblem(p, t);
+        return PickCheck(p, t).why;
     };
-    CHECK(PickProblem(ryu, t).empty());
+    CHECK(PickCheck(ryu, t).Fine());
     CHECK(with([](PlayerSetup& p) { p.color = 101; p.vskill = 1; p.vtrigger = 1; p.comment = 3; p.variation = 1; }).empty());
     CHECK(with([](PlayerSetup& p) { p.costume = 15; p.color = 1; }).empty());
     CHECK(with([](PlayerSetup& p) { p.character = 0; }) == "no fighter (none)");
@@ -1529,56 +1531,81 @@ void TestPickCheck() {
     MatchSetup s;
     s.players[0] = s.players[1] = ryu;
     s.stage = 9;
-    CHECK(SetupProblem(s, t).empty());
+    CHECK(SetupCheck(s, t).Fine());
     s.stage = lobby::kAnyStage;
-    CHECK(SetupProblem(s, t).empty());
+    CHECK(SetupCheck(s, t).Fine());
     s.stage = 10;
-    CHECK(SetupProblem(s, t) == "no stage 10");
+    CHECK(SetupCheck(s, t).why == "no stage 10");
     s.stage = lobby::kRandomStage;
-    CHECK(SetupProblem(s, t) == "no stage 65534");
+    CHECK(SetupCheck(s, t).why == "no stage 65534");
     s.stage = 0;
     s.players[1].comment = 9;
-    CHECK(SetupProblem(s, t) == "P2: RYU has no V-Comment 9");
+    CHECK(SetupCheck(s, t).why == "P2: RYU has no V-Comment 9");
     // The host's stage rule may be random.
-    CHECK(StageRuleProblem(lobby::kRandomStage, t).empty() && StageRuleProblem(lobby::kAnyStage, t).empty() && StageRuleProblem(3, t).empty());
-    CHECK(StageRuleProblem(10, t) == "no stage 10");
+    CHECK(StageRuleCheck(lobby::kRandomStage, t).Fine() && StageRuleCheck(lobby::kAnyStage, t).Fine() && StageRuleCheck(3, t).Fine());
+    CHECK(StageRuleCheck(10, t).why == "no stage 10");
     // badpick's values fail the check in each message that carries a pick.
     CHECK(!BadPickParse("nope", "") && !BadPickParse("color", "nope") && BadPickParse("color", "welcome"));
     for (const char* field : {"character", "costume", "color", "vskill", "vtrigger", "comment", "variant", "stage"}) {
         lobby::Message welcome;
         welcome.type = lobby::Type::Welcome;
         welcome.setup.players[0] = welcome.setup.players[1] = ryu;
-        CHECK(MessageProblem(welcome, t).empty());
+        CHECK(MessageCheck(welcome, t).Fine());
         BadPickApply(*BadPickParse(field, ""), welcome);
-        CHECK(!MessageProblem(welcome, t).empty());
+        CHECK(MessageCheck(welcome, t).kind == PickVerdict::Kind::Bad);
         lobby::Message state;
         state.type = lobby::Type::SessionState;
         state.stage = 3;
         state.seats[0].pick = ryu;
-        CHECK(MessageProblem(state, t).empty());
+        CHECK(MessageCheck(state, t).Fine());
         BadPickApply(*BadPickParse(field, "session"), state);
-        CHECK(!MessageProblem(state, t).empty());
+        CHECK(MessageCheck(state, t).kind == PickVerdict::Kind::Bad);
         lobby::Message matches;
         matches.type = lobby::Type::Matches;
         matches.matches.resize(3);
         for (lobby::MatchEntry& e : matches.matches) e.setup = welcome.setup;
         matches.matches[0].setup.players[0] = matches.matches[0].setup.players[1] = ryu;
         matches.matches[0].setup.stage = 0;
-        CHECK(!MessageProblem(matches, t).empty());
+        CHECK(MessageCheck(matches, t).kind == PickVerdict::Kind::Bad);
     }
+    // A V-Comment list still loading: a pick with Auto passes, another waits;
+    // a bad value elsewhere in the pick is still refused.
+    commentsLoaded = false;
+    CHECK(with([](PlayerSetup&) {}).empty() && PickCheck(ryu, t).Fine());
+    PlayerSetup commented = ryu;
+    commented.comment = 2;
+    CHECK(PickCheck(commented, t).kind == PickVerdict::Kind::NotYet);
+    commented.color = 99;
+    CHECK(PickCheck(commented, t).why == "RYU costume 0 has no color id 99");
+    MatchSetup waiting;
+    waiting.players[0] = ryu;
+    waiting.players[1] = ryu;
+    waiting.players[1].comment = 1;
+    CHECK(SetupCheck(waiting, t).kind == PickVerdict::Kind::NotYet);
+    waiting.stage = 10;
+    CHECK(SetupCheck(waiting, t).why == "no stage 10");
+    commentsLoaded = true;
+    // Variants not asked yet: a pick without one passes, one with a variant
+    // waits.
+    variantsKnown = false;
+    CHECK(PickCheck(ryu, t).Fine());
+    PlayerSetup varied = ryu;
+    varied.variation = 1;
+    CHECK(PickCheck(varied, t).kind == PickVerdict::Kind::NotYet);
+    variantsKnown = true;
     // Only the message asked for.
     lobby::Message beat;
     beat.type = lobby::Type::PlayerState;
     beat.seat.pick = ryu;
     BadPickApply(*BadPickParse("color", "welcome"), beat);
-    CHECK(beat.seat.pick == ryu && MessageProblem(beat, t).empty());
+    CHECK(beat.seat.pick == ryu && MessageCheck(beat, t).Fine());
     // A seat with no pick yet, and messages without picks, pass.
     beat.seat.pick = {};
-    CHECK(MessageProblem(beat, t).empty());
+    CHECK(MessageCheck(beat, t).Fine());
     lobby::Message inputs;
     inputs.type = lobby::Type::Inputs;
     inputs.setup.stage = 10;
-    CHECK(MessageProblem(inputs, t).empty());
+    CHECK(MessageCheck(inputs, t).Fine());
 }
 
 void TestRulesFormat() {

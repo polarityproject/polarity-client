@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -28,18 +29,34 @@ struct PickTables {
     std::function<bool(const PlayerSetup&)> isEleven; // the silver model: two colors, not offered
     // 0 when not known: two V-Skills, two V-Triggers.
     std::function<size_t(const std::string& code, bool vtrigger)> skillCount;
-    std::function<size_t(const std::string& code)> commentCount;
-    std::function<uint8_t(int index, int costume)> variants; // PlayerSetup::variation bits
+    // nullopt while the character's V-Comments are still loading.
+    std::function<std::optional<size_t>(const std::string& code)> commentCount;
+    // PlayerSetup::variation bits; nullopt while still being asked.
+    std::function<std::optional<uint8_t>(int index, int costume)> variants;
     std::function<bool(int stage)> isPlayableStage;
 };
 
-// Why the pick or setup is not one these tables have, or "" when it is.
-std::string PickProblem(const PlayerSetup& pick, const PickTables& tables);
-std::string SetupProblem(const MatchSetup& setup, const PickTables& tables);
+// A check's outcome. NotYet: something the game finds out on demand (a
+// character's V-Comments, a costume's variants) is not known yet; ask again
+// shortly.
+struct PickVerdict {
+    enum class Kind { Fine,
+                      Bad,
+                      NotYet };
+    Kind kind = Kind::Fine;
+    std::string why; // Bad: what these tables do not have
+
+    static PickVerdict Bad(std::string why) { return {Kind::Bad, std::move(why)}; }
+
+    bool Fine() const { return kind == Kind::Fine; }
+};
+
+PickVerdict PickCheck(const PlayerSetup& pick, const PickTables& tables);
+PickVerdict SetupCheck(const MatchSetup& setup, const PickTables& tables);
 // The host's stage rule: kAnyStage, kRandomStage or a playable stage.
-std::string StageRuleProblem(uint16_t stage, const PickTables& tables);
+PickVerdict StageRuleCheck(uint16_t stage, const PickTables& tables);
 // Every pick, setup and stage rule a lobby message carries (PlayerState,
-// SessionState, Welcome, Loaded, Matches); "" for the others.
-std::string MessageProblem(const lobby::Message& m, const PickTables& tables);
+// SessionState, Welcome, Loaded, Matches); Fine for the others.
+PickVerdict MessageCheck(const lobby::Message& m, const PickTables& tables);
 
 } // namespace sfv

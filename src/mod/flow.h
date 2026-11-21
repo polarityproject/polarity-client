@@ -12,6 +12,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -153,6 +154,9 @@ int CostumeColorCount(int index, int costume);
 constexpr uint8_t kVariantDress = 1;
 constexpr uint8_t kVariantSpecial = 2;
 uint8_t CostumeVariants(int index, int costume);
+// The same without waiting: nullopt until a background thread has asked the
+// paks (the first call starts it).
+std::optional<uint8_t> CostumeVariantsKnown(int index, int costume);
 // The character's special variant ("Thong", "Helmet off"), or nullptr.
 const char* SpecialVariantName(const std::string& code);
 // A variation's name for the panel and logs: "Normal", "Variant", "Thong",
@@ -188,11 +192,18 @@ std::string StageName(int index);
 // A character's V-Skill (or V-Trigger) names in the game's order ("" for one
 // without a name; empty when unknown).
 std::vector<std::string> SkillNames(const std::string& charaCode, bool vtrigger);
+// How many: SkillNames' count once its asset has been found, without waiting
+// (0 until then; the search runs on a thread of its own, at most every 5 s).
+size_t SkillCountKnown(const std::string& charaCode, bool vtrigger);
 // A character's V-Comments as the menus list them after Auto (the battle
 // setup's comment n is the n-th; empty when unknown). Loads the character's
 // subtitle asset (DA_<code>_Subtitle) on the game thread when needed and
 // waits for it, so not from the game thread.
 std::vector<std::string> VCommentNames(const std::string& charaCode);
+// How many V-Comments the character has, without waiting: nullopt while its
+// list loads (the first call starts the load on the game thread); 0 when the
+// game has none for it.
+std::optional<size_t> VCommentCount(const std::string& charaCode);
 
 // The colour preview's two swatch colours (0xAARRGGBB) per colour of a costume:
 // its colours, then its EX colours (ids 100..). Empty without a preview.

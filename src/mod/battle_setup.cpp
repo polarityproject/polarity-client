@@ -306,9 +306,9 @@ PickTables GamePickTables() {
     t.colorCount = CostumeColorCount;
     t.colorIds = CostumeColorIds;
     t.isEleven = IsElevenPick;
-    t.skillCount = [](const std::string& code, bool vtrigger) { return SkillNames(code, vtrigger).size(); };
-    t.commentCount = [](const std::string& code) { return VCommentNames(code).size(); };
-    t.variants = CostumeVariants;
+    t.skillCount = SkillCountKnown;
+    t.commentCount = VCommentCount;
+    t.variants = CostumeVariantsKnown;
     t.isPlayableStage = IsPlayableStage;
     return t;
 }
@@ -323,7 +323,7 @@ void LogOfferedPickCheck() {
         pick.character = PackCode(code.c_str());
         pick.vskill = static_cast<uint8_t>(std::max<size_t>(tables.skillCount(code, false), 2) - 1);
         pick.vtrigger = static_cast<uint8_t>(std::max<size_t>(tables.skillCount(code, true), 2) - 1);
-        pick.comment = static_cast<uint8_t>(tables.commentCount(code));
+        pick.comment = static_cast<uint8_t>(VCommentNames(code).size()); // waits for the list
         const int eleven = CostumeInFolder(index, "0C");
         for (int costume = 0; costume < CharaCostumeCount(index); costume++) {
             const bool offered = CostumeColorCount(index, costume) > 0;
@@ -334,7 +334,8 @@ void LogOfferedPickCheck() {
             for (int color : colors) {
                 pick.color = static_cast<uint8_t>(color);
                 checked++;
-                if (const std::string why = PickProblem(pick, tables); !why.empty() && ++failed <= 10) Log("pickcheck: refused %s", why.c_str());
+                const PickVerdict v = PickCheck(pick, tables);
+                if (!v.Fine() && ++failed <= 10) Log("pickcheck: refused %s", v.kind == PickVerdict::Kind::Bad ? v.why.c_str() : "(V-Comments not loaded)");
             }
         }
     }
@@ -342,7 +343,7 @@ void LogOfferedPickCheck() {
     for (int stage = 0; stage < StageCount(); stage++) {
         if (!IsSelectableStage(stage)) continue;
         stages++;
-        if (!StageRuleProblem(static_cast<uint16_t>(stage), tables).empty()) stagesFailed++;
+        if (!StageRuleCheck(static_cast<uint16_t>(stage), tables).Fine()) stagesFailed++;
     }
     Log("pickcheck: %d offered picks, %d refused; %d selectable stages, %d refused", checked, failed, stages, stagesFailed);
 }

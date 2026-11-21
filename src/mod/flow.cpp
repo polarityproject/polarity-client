@@ -2276,15 +2276,26 @@ namespace {
 
 // A class (or other long-lived object) by name, looked up once: a lookup
 // walks every object (about 130k), far too slow to repeat every frame.
+namespace {
+
+std::mutex g_cachedObjectsMutex;
+std::map<std::string, void*> g_cachedObjects; // className/name -> object, once found
+
+} // namespace
+
+// CachedObject's answer if it has found the object before, without looking
+// (quick, any thread); null otherwise.
+void* KnownObject(const std::string& name, const std::string& className) {
+    std::lock_guard lock(g_cachedObjectsMutex);
+    const auto it = g_cachedObjects.find(className + "/" + name);
+    return it == g_cachedObjects.end() ? nullptr : it->second;
+}
+
 void* CachedObject(const std::string& name, const std::string& className) {
-    static std::mutex mutex;
-    static std::map<std::string, void*> cache;
-    std::lock_guard lock(mutex);
-    const std::string key = className + "/" + name;
-    auto it = cache.find(key);
-    if (it != cache.end()) return it->second;
+    if (void* known = KnownObject(name, className)) return known;
     void* object = ue4::EnsureObjects(g_base) ? ue4::FindObject(name, className) : nullptr;
-    if (object) cache[key] = object;
+    std::lock_guard lock(g_cachedObjectsMutex);
+    if (object) g_cachedObjects[className + "/" + name] = object;
     return object;
 }
 
@@ -2875,6 +2886,24 @@ uint8_t CostumeVariants(int index, int costume) {
     return variants;
 }
 
+std::optional<uint8_t> CostumeVariantsKnown(int index, int costume) {
+    static std::mutex mutex;
+    static std::map<std::pair<int, int>, int> known; // -1 while asked
+    const std::pair<int, int> key{index, costume};
+    {
+        std::lock_guard lock(mutex);
+        const auto [it, asked] = known.try_emplace(key, -1);
+        if (!asked) return it->second < 0 ? std::nullopt : std::optional<uint8_t>(static_cast<uint8_t>(it->second));
+    }
+    std::thread([key] {
+        ThreadGuard running;
+        const uint8_t variants = CostumeVariants(key.first, key.second);
+        std::lock_guard lock(mutex);
+        known[key] = variants;
+    }).detach();
+    return std::nullopt;
+}
+
 const char* SpecialVariantName(const std::string& code) {
     if (code == "URN") return "Thong";
     if (code == "Z41") return "Helmet off";
@@ -3450,6 +3479,22 @@ std::string StageName(int index) {
     return loaded == g_loadedNames.end() ? "" : loaded->second;
 }
 
+size_t SkillCountKnown(const std::string& charaCode, bool vtrigger) {
+    const char* name = vtrigger ? "DA_VTriggerNameAsset" : "DA_VSkillNameAsset";
+    if (KnownObject(name, "KWVersionDataAsset")) return SkillNames(charaCode, vtrigger).size();
+    static std::atomic<ULONGLONG> askedAt[2] = {};
+    std::atomic<ULONGLONG>& asked = askedAt[vtrigger ? 1 : 0];
+    const ULONGLONG now = GetTickCount64();
+    ULONGLONG before = asked;
+    if (now - before > 5000 && asked.compare_exchange_strong(before, now)) {
+        std::thread([name] {
+            ThreadGuard running;
+            CachedObject(name, "KWVersionDataAsset");
+        }).detach();
+    }
+    return 0;
+}
+
 std::vector<std::string> SkillNames(const std::string& charaCode, bool vtrigger) {
     // DA_VSkillNameAsset / DA_VTriggerNameAsset (KWVersionDataAsset):
     // VersionCharaInfo at +0x28, entries of 0x20 (charaName FString +0x0,
@@ -3499,6 +3544,38 @@ std::vector<std::string> VCommentNames(const std::string& charaCode) {
         names.push_back(std::move(text));
     }
     return names;
+}
+
+std::optional<size_t> VCommentCount(const std::string& charaCode) {
+    constexpr uint32_t kCommentsOff = 0x48; // FixedVCommentLocalizeIds, a TArray<FText>
+    constexpr int kMaxComments = 32;
+    const std::string name = "DA_" + charaCode + "_Subtitle";
+    const auto count = [&]() -> std::optional<size_t> {
+        const auto* asset = static_cast<const uint8_t*>(KnownObject(name, "KWSubtitleDataAsset"));
+        if (!asset) return std::nullopt;
+        if (!IsReadable(asset + kCommentsOff, 16)) return 0;
+        return static_cast<size_t>(std::clamp(*reinterpret_cast<const int32_t*>(asset + kCommentsOff + 8), 0, kMaxComments));
+    };
+    if (const auto n = count()) return n;
+    static std::mutex mutex;
+    static std::map<std::string, std::shared_ptr<std::atomic<bool>>> loads;
+    std::shared_ptr<std::atomic<bool>> done;
+    {
+        std::lock_guard lock(mutex);
+        auto& load = loads[charaCode];
+        if (!load) {
+            load = std::make_shared<std::atomic<bool>>(false);
+            RunOnGameThread([path = "/Game/Chara/" + charaCode + "/DataAsset/" + name + "." + name, name, load] {
+                LoadAsset("KWSubtitleDataAsset", path);
+                CachedObject(name, "KWSubtitleDataAsset");
+                *load = true;
+            });
+        }
+        done = load;
+    }
+    if (!*done) return std::nullopt;
+    const auto n = count();
+    return n ? n : 0;
 }
 
 int StageIndex(const std::string& code) {

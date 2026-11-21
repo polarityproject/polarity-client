@@ -1169,10 +1169,17 @@ private:
         }
         // Picks and setups this game does not have go no further
         // (core/pick_check.h): from the other side the session ends; from a
-        // spectator the message is dropped.
-        if (const std::string why = MessageProblem(m, pickTables_); !why.empty()) {
-            if (from == peer_) RefuseFromPeer(why);
-            else Log("netplay: dropped a message from %s: %s", Hex64(from).c_str(), why.c_str());
+        // spectator the message is dropped. One that cannot be checked yet
+        // waits for its next copy (every such message is sent again).
+        const auto checkFrom = Clock::now();
+        const PickVerdict check = MessageCheck(m, pickTables_);
+        if (const auto took = Clock::now() - checkFrom; took > std::chrono::milliseconds(50)) {
+            Log("netplay: checking a message's picks took %lld ms", static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(took).count()));
+        }
+        if (check.kind == PickVerdict::Kind::NotYet) return;
+        if (check.kind == PickVerdict::Kind::Bad) {
+            if (from == peer_) RefuseFromPeer(check.why);
+            else Log("netplay: dropped a message from %s: %s", Hex64(from).c_str(), check.why.c_str());
             return;
         }
         if (from == peer_ && s != State::Joining) heard_ = Clock::now();
