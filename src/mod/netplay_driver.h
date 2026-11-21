@@ -159,6 +159,9 @@ void NetSetAgainOffered(bool offered);
 void NetAgainAnswer(bool ok, const std::string& rules);
 // Testing: leaves a running battle for stage select (pause menu).
 void NetPark();
+// Testing: this side's next frozen start hashes differently, as a game
+// whose frame 0 differs would: the session ends before the match starts.
+void NetSkewNextStartForTest();
 void NetSetConditions(const NetConditions& conditions);
 std::string NetStatus();
 

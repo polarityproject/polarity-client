@@ -72,6 +72,8 @@ constexpr int kMenuAfterMatchFrames = 60 * 3;
 constexpr auto kDifferentStartGrace = std::chrono::seconds(2);
 constexpr uint8_t kPredictionWindow = 8;
 constexpr int kMaxInputDelay = 10;
+// Testing (startskew): this side's next frozen start hashes differently.
+std::atomic<bool> g_skewStart{false};
 // The heartbeat (PlayerState / SessionState) and the resends.
 constexpr auto kBeat = std::chrono::milliseconds(250);
 constexpr auto kMinBeat = std::chrono::milliseconds(33); // select screen changes go out at once, this often at most
@@ -2229,6 +2231,10 @@ private:
             game.Recanonicalize();
             std::vector<uint64_t> hashes(game.Regions().size());
             HashRegions(game.Regions(), hashes.data());
+            if (g_skewStart.exchange(false) && !hashes.empty()) {
+                hashes[0] ^= 1; // the game's memory stays as it is
+                Log("netplay: test: this side's frozen start hashes differently (startskew)");
+            }
             frozenChecksum_ = FoldChecksum(hashes.data(), hashes.size());
             KeepFrozenState();
             ReadMatchSetup(&loadedSetup_);
@@ -3527,6 +3533,8 @@ void NetAgainAnswer(bool ok, const std::string& rules)
     std::lock_guard lock(g_driverMutex);
     if (g_driver) g_driver->AgainAnswer(ok, rules);
 }
+
+void NetSkewNextStartForTest() { g_skewStart = true; }
 
 void NetPark()
 {
