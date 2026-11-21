@@ -101,3 +101,13 @@ On SteamOS, `scripts/agent_steamos.py` speaks the same protocol.
 `tests/replays/sim-<n>/` on the second PC, straight and under rollback
 stress. See [replay-versioning.md](replay-versioning.md) and
 [tests/replays/README.md](../tests/replays/README.md).
+
+## Fuzzing
+
+`scripts\fuzz.ps1 [-Seconds 300] [-Target replay|xpress|all]` builds the
+libFuzzer targets in `tests/fuzz/` with MSVC's AddressSanitizer and runs
+each for the given time. `replay` reads recordings from any bytes, starting
+from the reference recordings; `xpress` runs the XPRESS Huffman decoder,
+starting from their packed chunks. An input that crashes is saved in
+`build\fuzz\<target>\` as a `crash-*` file. It needs the Build Tools' C++
+AddressSanitizer component.
