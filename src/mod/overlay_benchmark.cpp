@@ -40,7 +40,7 @@ void StepBenchmarkLaunch() {
     }
     if (l.step == 1 && now - l.since > kBenchGiveUp) {
         Log("benchmark: no battle scene %.0f s after Run: stopping it", kBenchGiveUp);
-        ControlReplay(ReplayControl::Leave);
+        ReplayApplyControl(ReplayControl::Leave);
         g_benchModal = BenchModal::None;
         l = {};
         AddToast("The benchmark didn't start. Try again.", kRed, 5);

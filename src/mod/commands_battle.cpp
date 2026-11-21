@@ -293,7 +293,7 @@ void ForcerollbackCommand(const std::string&, std::stringstream& ss) {
         if (w == "xor") ss >> std::hex >> guessXor >> std::dec;
         else frames.push_back(std::atoi(w.c_str()));
     }
-    SetForcedRollbacks(std::move(frames), guessXor);
+    ReplaySetForcedRollbacks(std::move(frames), guessXor);
 }
 
 void PtrtestCommand(const std::string&, std::stringstream& ss) {

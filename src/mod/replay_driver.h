@@ -44,15 +44,15 @@ namespace sfv::mod {
 // holdAt (>= 0): the replay stands still after that frame for holdSeconds.
 // mispredictDelay (> 0, no stress): player `remote`'s (0/1; -1: the one the
 // recording machine played against) inputs arrive that many frames late.
-void RequestReplay(const std::string& path, int stressDistance, int watchFrom = -1, int watchTo = -1,
+void ReplayRequest(const std::string& path, int stressDistance, int watchFrom = -1, int watchTo = -1,
                    const std::string& watchRegion = "", int keepFrom = -1, int keepTo = -1, bool preload = true,
                    const std::string& traps = "", int holdAt = -1, int holdSeconds = 0, int mispredictDelay = 0,
                    int remote = -1, const std::string& viewTitle = "", bool jumpNow = false, bool benchmark = false);
 
 // The Battle Log's playback of a recording: as played, with the controls
 // below; the game goes back to the menus when it is left, then onLeave runs
-// (on the game thread). holdAt/holdSeconds: tests' screenshots (the `hold` of RequestReplay).
-void RequestReplayView(const std::string& path, const std::string& title, std::function<void()> onLeave, int holdAt = -1,
+// (on the game thread). holdAt/holdSeconds: tests' screenshots (the `hold` of ReplayRequest).
+void ReplayRequestView(const std::string& path, const std::string& title, std::function<void()> onLeave, int holdAt = -1,
                        int holdSeconds = 0);
 enum class ReplayControl {
     Pause,
@@ -73,11 +73,11 @@ enum class ReplayControl {
 };
 // Any thread; taken at the replay's next frame. Returns the command's number:
 // ReplayView::handled reaches it once the replay has taken it (0: no replay).
-uint32_t ControlReplay(ReplayControl c, int arg = 0);
+uint32_t ReplayApplyControl(ReplayControl c, int arg = 0);
 // Research (`rview callkeys|crossrounds 0|1`): round jumps load the keyframe
 // before a round's call; keyframe loads across round ends.
-void SetReplayExperiment(const std::string& what, bool on);
-void SetReplayExperimentValue(const std::string& what, int value);
+void ReplaySetExperiment(const std::string& what, bool on);
+void ReplaySetExperimentValue(const std::string& what, int value);
 
 struct ReplayView {
     bool active = false;
@@ -135,12 +135,12 @@ int ReplayTickRound();
 // The benchmark's run of its round (benchmark.h): a stress replay with an
 // 8-frame rollback every frame, its FIGHT to its end measured; back to the
 // menus after, the result to FinishBenchmark. B (ReplayControl::Leave) stops.
-bool RequestBenchmark(const std::string& path);
+bool ReplayRequestBenchmark(const std::string& path);
 // The pad latch of the next replay (research): 1 latches after every tick
 // (SfvGame::latchEachTick), 0 keeps the game's once-per-rendered-frame latch,
 // -1 (the default) picks by the recording's build and the replay's mode.
-void SetReplayLatch(int latch);
+void ReplaySetLatch(int latch);
 // Research: frames a mispredict replay rolls back to whatever the guess (empty: none).
-void SetForcedRollbacks(std::vector<int> frames, uint32_t guessXor);
+void ReplaySetForcedRollbacks(std::vector<int> frames, uint32_t guessXor);
 
 } // namespace sfv::mod

@@ -853,7 +853,7 @@ void RoundJumpFade(ImDrawList* d, const ReplayView& v) {
                 alpha = 1;
                 // dir 0: a fade the replay itself asked for (a takeover's end):
                 // no command, black until it is done seeking.
-                g_jump.handledAt = g_jump.dir != 0 ? ControlReplay(ReplayControl::Round, g_jump.dir) : v.handled;
+                g_jump.handledAt = g_jump.dir != 0 ? ReplayApplyControl(ReplayControl::Round, g_jump.dir) : v.handled;
                 g_jump.phase = g_jump.handledAt || g_jump.dir == 0 ? JumpFade::Black : JumpFade::In;
                 g_jump.since = now;
             }
@@ -890,7 +890,7 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput) {
     SetUiSoundSet(UiSoundSet::Menu);
     if (v.benchmark) {
         // The benchmark's: wait, keep the window in focus; B stops it.
-        if (takeInput && Back()) ControlReplay(ReplayControl::Leave);
+        if (takeInput && Back()) ReplayApplyControl(ReplayControl::Leave);
         g_inputOn = false;
         const float y0 = 856, y1 = 900;
         d->AddRectFilled(g_v.P(0, y0), g_v.P(1600, y1), Rgba(10, 12, 16, 184));
@@ -903,7 +903,7 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput) {
         Text(d, bold, g_v.L(18), g_v.P(48 + TextW(bold, 16, "BENCHMARK") + 18, y0 + 11), look::kCream, line);
         int clicked = -1;
         PromptRow(d, f.body, 17, {{"button_b", "Stop"}}, 1564, y0 + 8, 28, false, &clicked);
-        if (clicked >= 0) ControlReplay(ReplayControl::Leave);
+        if (clicked >= 0) ReplayApplyControl(ReplayControl::Leave);
         return;
     }
     // Replay Takeover: the pad plays a side, so the stripe takes none of it
@@ -911,7 +911,7 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput) {
     if (v.takeover >= 0) {
         if (takeInput && Pressed({ImGuiKey_GamepadStart}, false)) {
             PlayUi(UiSound::Cancel);
-            ControlReplay(ReplayControl::TakeoverStop);
+            ReplayApplyControl(ReplayControl::TakeoverStop);
         }
         g_inputOn = false;
         // The KO screen over: to black, back to the start point behind it,
@@ -936,7 +936,7 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput) {
         const std::string line = v.takeoverCountdown > 0 ? "Get ready" : v.takeoverEnding ? "Round over: back to where you took control"
                                                                                           : "Until the round's KO";
         Text(d, bold, g_v.L(18), g_v.P(textX, y0 + 11), look::kCream, Fit(bold, 18, v.title + " \xC2\xB7 " + line, left - 24 - textX));
-        if (clicked >= 0) ControlReplay(ReplayControl::TakeoverStop);
+        if (clicked >= 0) ReplayApplyControl(ReplayControl::TakeoverStop);
         return;
     }
     // The intro run to round 1's call (a replay's start): black like a round
@@ -959,17 +959,17 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput) {
     // While a round jump fades, only B (leave) is taken.
     const bool fading = g_jump.phase != JumpFade::None;
     const bool canTakeOver = v.roundFrame >= 0 && !v.seeking && !fading;
-    if (takeInput && fading && Back()) ControlReplay(ReplayControl::Leave);
+    if (takeInput && fading && Back()) ReplayApplyControl(ReplayControl::Leave);
     if (takeInput && !fading) {
         if (canTakeOver) {
             const int side = Pressed({ImGuiKey_GamepadFaceLeft}, false) ? 0 : Pressed({ImGuiKey_GamepadFaceUp}, false) ? 1
                                                                                                                        : -1;
             if (side >= 0) {
                 PlayUi(UiSound::Decide);
-                ControlReplay(ReplayControl::Takeover, side);
+                ReplayApplyControl(ReplayControl::Takeover, side);
             }
         }
-        if (Confirm()) ControlReplay(ReplayControl::Toggle);
+        if (Confirm()) ReplayApplyControl(ReplayControl::Toggle);
         if (Pressed({ImGuiKey_GamepadBack}, false)) {
             PlayUi(UiSound::Decide);
             SetHitboxesInReplays(!HitboxesInReplays());
@@ -979,10 +979,10 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput) {
             SetFrameMeterInReplays(!FrameMeterInReplays());
         }
         // A step back plays no sound, the menu's cue included.
-        if (Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}) && v.frame > v.backLimit) ControlReplay(ReplayControl::Step, -1);
+        if (Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}) && v.frame > v.backLimit) ReplayApplyControl(ReplayControl::Step, -1);
         if (Pressed({ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight}) && v.canStepForward) {
             PlayUi(UiSound::Cursor); // the directions' sound (ui_kit Left/Right)
-            ControlReplay(ReplayControl::Step, 1);
+            ReplayApplyControl(ReplayControl::Step, 1);
         }
         // A round jump fades the picture out, jumps behind the black (a run
         // or the battle started again: nothing to watch) and fades back in
@@ -998,9 +998,9 @@ void DrawReplayStripe(const HubFonts& f, bool takeInput) {
         const bool held = ImGui::IsKeyDown(ImGuiKey_GamepadR2);
         if (held != fast) {
             fast = held;
-            ControlReplay(ReplayControl::Fast, held ? 4 : 0);
+            ReplayApplyControl(ReplayControl::Fast, held ? 4 : 0);
         }
-        if (Back()) ControlReplay(ReplayControl::Leave);
+        if (Back()) ReplayApplyControl(ReplayControl::Leave);
     }
     g_inputOn = false;
     RoundJumpFade(d, v);

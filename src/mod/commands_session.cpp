@@ -65,7 +65,7 @@ void BenchmarkCommand(const std::string&, std::stringstream& ss) {
         std::string file;
         std::getline(ss >> std::ws, file);
         const std::string path = file.find(':') != std::string::npos ? file : Utf8Path(MatchesDir()) + "\\" + file;
-        if (!RequestBenchmark(path)) Log("benchmark: not started");
+        if (!ReplayRequestBenchmark(path)) Log("benchmark: not started");
     } else if (!StartBenchmark(kPolarityVersion)) Log("benchmark: not started");
 }
 
@@ -501,7 +501,7 @@ void ReplayCommand(const std::string&, std::stringstream& ss) {
     if (file == "view") {
         ss >> file;
         if (ss >> word && word == "hold") ss >> holdAt >> holdSeconds;
-        RequestReplayView(file, file, nullptr, holdAt, holdSeconds);
+        ReplayRequestView(file, file, nullptr, holdAt, holdSeconds);
         return;
     }
     while (ss >> word) {
@@ -515,7 +515,7 @@ void ReplayCommand(const std::string&, std::stringstream& ss) {
         if (word == "latch") {
             std::string how;
             ss >> how;
-            SetReplayLatch(how == "tick" ? 1 : how == "game" ? 0
+            ReplaySetLatch(how == "tick" ? 1 : how == "game" ? 0
                                                              : -1);
         }
         if (word == "trap") {
@@ -524,7 +524,7 @@ void ReplayCommand(const std::string&, std::stringstream& ss) {
             traps += f + " " + r + " " + off + " " + b + " ";
         }
     }
-    RequestReplay(file, stress, from, to, region, keepFrom, keepTo, !cold, traps, holdAt, holdSeconds, mispredict, remote - 1);
+    ReplayRequest(file, stress, from, to, region, keepFrom, keepTo, !cold, traps, holdAt, holdSeconds, mispredict, remote - 1);
 }
 
 void RviewCommand(const std::string&, std::stringstream& ss) {
@@ -532,11 +532,11 @@ void RviewCommand(const std::string&, std::stringstream& ss) {
     int arg = 0;
     ss >> what >> arg;
     if (what == "callkeys" || what == "crossrounds" || what == "anykeys" || what == "keysanywhere" || what == "intro") {
-        SetReplayExperiment(what, arg != 0);
+        ReplaySetExperiment(what, arg != 0);
         return;
     }
     if (what == "callpace" || what == "callafter") {
-        SetReplayExperimentValue(what, arg);
+        ReplaySetExperimentValue(what, arg);
         return;
     }
     if (what == "status") {
@@ -560,7 +560,7 @@ void RviewCommand(const std::string&, std::stringstream& ss) {
                                                                  : what == "outofsync"    ? ReplayControl::OutOfSync
                                                                  : what == "holdat"       ? ReplayControl::HoldAt
                                                                                           : ReplayControl::Toggle;
-    ControlReplay(c, arg);
+    ReplayApplyControl(c, arg);
 }
 
 void NextstageCommand(const std::string&, std::stringstream& ss) {

@@ -139,7 +139,7 @@ bool StartBenchmark(const std::string& modVersion) {
         return false;
     }
     Log("benchmark: starting (%zu bytes of round)", sizeof(kBenchmarkRound));
-    return RequestBenchmark(path);
+    return ReplayRequestBenchmark(path);
 }
 
 bool BenchmarkRunning(int* frame, int* frames) {

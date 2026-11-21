@@ -24,6 +24,8 @@ types.
 
 ## Terms
 
+- **Session:** an online match between two players, with any spectators
+  ([netplay.md](netplay.md)).
 - **Tick:** one step of the battle's simulation, 60 a second. In a session
   the mod runs the ticks itself ([netplay.md](netplay.md)).
 - **Snapshot:** the memory regions the mod saves after each tick and loads to
