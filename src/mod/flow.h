@@ -325,6 +325,9 @@ int SchedulerPhaseNow();
 void SetResimTaskSkip(std::vector<uintptr_t> rvas);
 // The phase-4 tasks replayed ticks leave out by default (flow.cpp kLeanResimTasks).
 std::vector<uintptr_t> DefaultLeanResimTasks();
+// A lean resim task named by its object's class (the generic task's vtable
+// rva) carries this bit.
+constexpr uintptr_t kResimTaskByClass = 0x80000000u;
 // The game's own rollback of sounds (flow.cpp kSoundReconcileTask): on by
 // default; off, resimulated ticks play their sounds again (`soundrollback`).
 void SetSoundRollback(bool on);

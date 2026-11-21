@@ -1,5 +1,6 @@
 #include "mod/battle_driver.h"
 #include "mod/control.h"
+#include "mod/local_input.h"
 #include "mod/crash_report.h"
 #include "mod/lifecycle.h"
 #include "mod/log.h"
@@ -55,7 +56,7 @@ extern "C" __declspec(dllexport) void SfvShutdown() {
     NetLeave();
     RemoveCrashHandler();
     RemoveWatchHandler();
-    RestoreWindowProc();
+    InputRestoreWindowProc();
     UnhookPresentTable();
     MH_DisableHook(MH_ALL_HOOKS);
     // Threads may be in the middle of a walk over every UE4 object (about a

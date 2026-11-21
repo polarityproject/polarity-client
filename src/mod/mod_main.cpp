@@ -10,6 +10,7 @@
 #include "mod/boot.h"
 #include "mod/config.h"
 #include "mod/control.h"
+#include "mod/local_input.h"
 #include "mod/crash_report.h"
 #include "mod/flow.h"
 #include "mod/overlay.h"
@@ -156,7 +157,8 @@ DWORD WINAPI ModMain(LPVOID self) {
     // The content the Steam account owns, into the profile as it loads (entitlements.h).
     InstallEntitlements(image.base, iniPath);
     HookProcessEnd();
-    InstallControl(dir + L"\\sfv_cmd" + suffix + L".txt", config.virtualPads, config.alwaysActive);
+    InputInstall(config.virtualPads, config.alwaysActive);
+    ControlInstall(dir + L"\\sfv_cmd" + suffix + L".txt");
     InstallOverlay(panelPath);
     InstallUiSound(image);
     SetOverlayBuild(std::string("Polarity ") + kModVersion);

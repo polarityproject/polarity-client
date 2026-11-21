@@ -3,6 +3,7 @@
 #include "core/replay_diff.h"
 #include "core/state.h"
 #include "mod/control.h"
+#include "mod/local_input.h"
 #include "mod/log.h"
 
 #include <windows.h>
@@ -70,7 +71,7 @@ void SyncTest::DrivePads(int frame) {
     for (int p = 0; p < 2; p++) {
         uint8_t rt;
         const uint16_t b = Buttons(frame, p, &rt);
-        SetScriptedPad(p, true, b, rt);
+        InputScriptedPad(p, true, b, rt);
     }
 }
 
@@ -81,7 +82,7 @@ void SyncTest::OnTick(SfvGame& game) {
     const size_t size = StateSize(regions);
 
     // Pad reads since the previous tick; each tick should see exactly one.
-    const uint64_t polls = PadPolls(0);
+    const uint64_t polls = InputPadPolls(0);
     if (k_ > 0) pollHistogram_[std::min<uint64_t>(polls - lastPolls_, 3)]++;
     lastPolls_ = polls;
 
@@ -167,8 +168,8 @@ void SyncTest::LogByteDiffs(const std::vector<StateRegion>& regions, const std::
 
 void SyncTest::Finish(SfvGame& game) {
     phase_ = Phase::Idle;
-    SetScriptedPad(0, false);
-    SetScriptedPad(1, false);
+    InputScriptedPad(0, false);
+    InputScriptedPad(1, false);
 
     Log("synctest: pad polls per tick: 0:%d 1:%d 2:%d 3+:%d", pollHistogram_[0], pollHistogram_[1], pollHistogram_[2],
         pollHistogram_[3]);

@@ -13,6 +13,7 @@
 #include "mod/hitch.h"
 #include "mod/hud_step.h"
 #include "mod/control.h"
+#include "mod/local_input.h"
 #include "mod/files.h"
 #include "mod/flow.h"
 #include "mod/lifecycle.h"
@@ -464,7 +465,7 @@ private:
     // ---- Replay Takeover ----------------------------------------------------
     // From a frame in a round's fight: its state kept (as a keyframe is), a
     // 3 s countdown, then ticks with one side's input from the local pad
-    // (MappedLocalInput: pad 0 and the keyboard, with this player's Button
+    // (InputMappedLocal: pad 0 and the keyboard, with this player's Button
     // Settings) and the other side's as recorded, until the fight ends (KO
     // or time); the KO screen gets kKoScreenMs, then the kept state is
     // loaded (a fight key in the same round, from the KO's own frame: loads
@@ -548,7 +549,7 @@ private:
                 break;
             case TakeoverPhase::Live: {
                 FrameInputs in = frame_ <= last_ ? rf_.inputs[frame_] : FrameInputs{};
-                in.p[tk_.side] = MappedLocalInput(0) & ~static_cast<PackedInput>(kStart);
+                in.p[tk_.side] = InputMappedLocal(0) & ~static_cast<PackedInput>(kStart);
                 if (in.p[tk_.side] != tk_.lastInput && tk_.inputLogs++ < 12) {
                     Log("replay: takeover input %08X at frame %d", static_cast<unsigned>(in.p[tk_.side]), frame_);
                 }
@@ -1051,7 +1052,7 @@ private:
             return true;
         }
         ready_ = true;
-        SetPadIsolation(true);
+        InputIsolatePads(true);
         game.exclusiveTicks = true;
         // Recordings from before adapter-9 were made with the game's own
         // pad latch (once per rendered frame): an intro skip lands a tick
@@ -1779,7 +1780,7 @@ private:
         const RestartPending restartWith{startAt_, paused_, fast_, roundStarts_, roundEnds_, roundCalls_};
         const bool restart = viewer_ && restarting_;
         SetRoundDirectorPerTick(false, false);
-        SetPadIsolation(false);
+        InputIsolatePads(false);
         // Stress: frames whose resimulation differed outside the presentation clocks.
         const int stressDesyncs = static_cast<int>(stressFrames_.size());
         const bool pass = ready_ && firstMismatch_ < 0 && stressDesyncs == 0 && framesChecked_ > last_;

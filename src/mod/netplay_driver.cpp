@@ -16,6 +16,7 @@
 #include "mod/battle_setup.h"
 #include "mod/pacing.h"
 #include "mod/control.h"
+#include "mod/local_input.h"
 #include "mod/files.h"
 #include "mod/flow.h"
 #include "mod/lifecycle.h"
@@ -164,9 +165,9 @@ std::string SteamPersonaName() {
 }
 
 void PressPad(int pad, uint16_t buttons, int holdMs = 90, int gapMs = 600) {
-    SetScriptedPad(pad, true, buttons);
+    InputScriptedPad(pad, true, buttons);
     Sleep(holdMs);
-    SetScriptedPad(pad, true, 0);
+    InputScriptedPad(pad, true, 0);
     Sleep(gapMs);
 }
 
@@ -185,7 +186,7 @@ bool LeaveBattleForStageSelect(SfvGame& game, const std::atomic<bool>& stop) {
             PressPad(0, XINPUT_GAMEPAD_A, 90, 900);
             PressPad(1, XINPUT_GAMEPAD_DPAD_DOWN);
             PressPad(1, XINPUT_GAMEPAD_A, 90, 6000);
-            SetScriptedPad(1, false);
+            InputScriptedPad(1, false);
             if (game.BattleTicking()) {
                 Log("netplay: the battle does not pause");
                 return false;
@@ -573,7 +574,7 @@ public:
             }
             SendBye();
         }
-        SetPadIsolation(false);
+        InputIsolatePads(false);
         game_.localInput = nullptr;
         game_.exclusiveTicks = false;
         SetRoundDirectorPerTick(false, false);
@@ -593,9 +594,9 @@ public:
         }
         spectate_.reset();
         SetMatchRunning(false);
-        SetBlockPause(false);
-        SetScriptedPad(0, false);
-        SetScriptedPad(1, false);
+        InputBlockPause(false);
+        InputScriptedPad(0, false);
+        InputScriptedPad(1, false);
         // Ended during its jump (a spectator's X on the room screen while it
         // still had the input, the links lost): the game goes on into the
         // battle the jump asked for. With the setup cleared it built a bare
@@ -1786,8 +1787,8 @@ private:
                     SetFrameDriver(this);
                     // Nothing the players press reaches the game meanwhile: a
                     // press on the results screen opens its own Results Menu.
-                    SetPadIsolation(true);
-                    SetBlockPause(true);
+                    InputIsolatePads(true);
+                    InputBlockPause(true);
                 }
                 break;
             case Next::End: {
@@ -2039,8 +2040,8 @@ private:
     // or the session ends).
     void ReleaseResults() {
         if (!holdOverResults_.exchange(false)) return;
-        SetPadIsolation(false);
-        SetBlockPause(false);
+        InputIsolatePads(false);
+        InputBlockPause(false);
         DetachFrameDriver();
     }
 
@@ -2149,7 +2150,7 @@ private:
             objectsReady_ = false;
             game.BeginWarmup();
             SetState(State::Loading);
-            SetBlockPause(true);
+            InputBlockPause(true);
             Log("netplay: battle created");
         }
         // The battle's units (and so its state regions) only show up after
@@ -2162,7 +2163,7 @@ private:
             }
             objectsReady_ = true;
             // From here on the game sees neutral pads; the session feeds it.
-            SetPadIsolation(true);
+            InputIsolatePads(true);
             game.exclusiveTicks = true;
             SetRoundDirectorPerTick(true, options_.roundEndRollback);
             SetMatchDrawSeed(setup_.seed);
@@ -2251,7 +2252,7 @@ private:
         nc.log = [](const std::string& m) { Log("netplay: %s", m.c_str()); };
         game.localPadSlot = 0;
         game.bothPadsLocal = false;
-        game.localInput = &MappedLocalInput;
+        game.localInput = &InputMappedLocal;
         session_ = std::make_unique<NetplaySession>(game, *gekko_, nc);
         game.CaptureStartProbe("at the session's start");
         session_->onDesync = [this, &game](const DesyncInfo& d, const ReplayFile& rf) {
@@ -2433,7 +2434,7 @@ private:
             decidedAt_ = Clock::now();
             SetState(State::PostMatch);
             SetHoldResults(true);
-            if (options_.mashSeed || !options_.inputLoop.empty()) SetScriptedPad(0, true, 0);
+            if (options_.mashSeed || !options_.inputLoop.empty()) InputScriptedPad(0, true, 0);
             Log("netplay: the match is decided at frame %d", session_->NextFrame());
         }
         if (host_) Stream();
@@ -2723,7 +2724,7 @@ private:
         // Asks Windows only, no message to any window (safe on the game thread);
         // the real one: always_active makes the game's own call say it is in front.
         DWORD foregroundPid = 0;
-        GetWindowThreadProcessId(RealForegroundWindow(), &foregroundPid);
+        GetWindowThreadProcessId(InputRealForegroundWindow(), &foregroundPid);
         pace_.focused += foregroundPid == GetCurrentProcessId();
         if (++pace_.rendered < 600) return;
         const auto now = std::chrono::steady_clock::now();
@@ -2775,7 +2776,7 @@ private:
                 pos -= n;
             }
         }
-        SetScriptedPad(0, true, buttons, 0);
+        InputScriptedPad(0, true, buttons, 0);
     }
 
     int loopsLogged_ = 0, loopLoggedAt_ = -1;
@@ -2808,18 +2809,18 @@ private:
             default: break;
         }
         if (frame < options_.mashFrom) b = 0, rt = 0;
-        SetScriptedPad(0, true, b, rt);
+        InputScriptedPad(0, true, b, rt);
     }
 
     // Lets go of the match: its recording saved, the game's own input back.
     // Game thread (or, while jumping without a battle, the net thread).
     void FinishMatch(SfvGame& game, bool keepSetup = false) {
-        SetBlockPause(false);
-        SetPadIsolation(false);
+        InputBlockPause(false);
+        InputIsolatePads(false);
         game.localInput = nullptr;
         game.exclusiveTicks = false;
         SetRoundDirectorPerTick(false, false);
-        SetScriptedPad(0, false);
+        InputScriptedPad(0, false);
         if (!keepSetup) ClearPendingSetup();
         if (session_) {
             const auto rf = WithSummary(session_->Recording(), false);
@@ -3456,7 +3457,7 @@ void NetPark() {
         ThreadGuard running;
         static const std::atomic<bool> never{false};
         Log("park: %s", LeaveBattleForStageSelect(*g_game, never) ? "at stage select" : "could not pause the battle");
-        SetScriptedPad(0, false);
+        InputScriptedPad(0, false);
     }).detach();
 }
 
@@ -3507,7 +3508,7 @@ void NetPollHotkeys() {
     // code still on the clipboard each clip left the match to join it again.
     if (!g_options.hotkeys) return;
     DWORD pid = 0;
-    GetWindowThreadProcessId(RealForegroundWindow(), &pid);
+    GetWindowThreadProcessId(InputRealForegroundWindow(), &pid);
     const bool focused = pid == GetCurrentProcessId();
     const int keys[2] = {VK_F7, VK_F8};
     for (int i = 0; i < 2; i++) {

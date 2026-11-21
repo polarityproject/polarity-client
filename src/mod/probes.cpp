@@ -3,6 +3,7 @@
 #include "core/state.h"
 #include "mod/battle_setup.h"
 #include "mod/control.h"
+#include "mod/local_input.h"
 #include "mod/lifecycle.h"
 #include "mod/stack.h"
 #include "mod/log.h"
@@ -69,7 +70,7 @@ ProbeState g;
 
 bool Pressed(int vk) {
     bool foreground = false;
-    if (HWND w = RealForegroundWindow()) {
+    if (HWND w = InputRealForegroundWindow()) {
         DWORD pid = 0;
         GetWindowThreadProcessId(w, &pid);
         foreground = pid == GetCurrentProcessId();
@@ -84,7 +85,7 @@ bool Pressed(int vk) {
 // the state is the end state of the previous tick and nothing is mid-update.
 void HandleHotkeys() {
     const auto& regions = g.game->Regions();
-    const GameRequest request = TakeGameRequest();
+    const GameRequest request = ControlTakeGameRequest();
     const GameCommand cmd = request.command;
     if (cmd == GameCommand::SyncTest) g.syncTest.Start(request.arg0, static_cast<uint64_t>(request.arg1));
     if (cmd == GameCommand::Watch) {

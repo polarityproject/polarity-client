@@ -7,6 +7,13 @@
 
 namespace sfv::mod {
 
+uintptr_t ImageBase() { return reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)); }
+
+bool ImageHolds(uint64_t address) {
+    constexpr uint64_t kImageSpan = 0x5000000;
+    return address >= ImageBase() && address < ImageBase() + kImageSpan;
+}
+
 bool OpenGameImage(GameImage* out, std::string* why) {
     const auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);

@@ -56,8 +56,8 @@ several with `;`. The common ones:
 | `badpick <field\|off> [message]` | what this side sends carries a pick or stage no game has, so the other side must refuse it and end the session. Fields: `character`, `costume`, `color`, `vskill`, `vtrigger`, `comment`, `variant`, `stage`. Messages: `state`, `session`, `welcome`, `loaded`, `matches` (every one when left out) |
 | `pickcheck` | runs every pick the select screen offers, and every selectable stage, through the check on other PCs' picks, and logs any it refuses |
 
-`src/mod/control.cpp` has the full list, including the research commands
-the other docs mention.
+[commands.md](commands.md) has the full list, including the research
+commands the other docs mention.
 
 ### Scripts
 

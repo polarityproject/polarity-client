@@ -64,7 +64,7 @@ enum class ReplayControl {
     Fast,  // arg frames per rendered frame (0 or 1: as played) through action frames
     Leave,
     // Replay Takeover: in a round's fight, side arg (0 P1, 1 P2) is played
-    // with the local pad (MappedLocalInput) after a 3 s countdown, until the
+    // with the local pad (InputMappedLocal) after a 3 s countdown, until the
     // round's fight ends (KO or time); then back to where it began, paused.
     Takeover,
     TakeoverStop, // early: back to where it began (or the countdown called off)

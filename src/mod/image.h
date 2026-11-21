@@ -16,6 +16,11 @@ struct GameImage {
     T At(uint32_t rva) const { return reinterpret_cast<T>(base + rva); }
 };
 
+// The game exe's base address in this process, and whether an address
+// lies in its image (code and data).
+uintptr_t ImageBase();
+bool ImageHolds(uint64_t address);
+
 // Finds the game exe in this process and checks its timestamp and every code
 // signature. On failure `why` says what did not match.
 bool OpenGameImage(GameImage* out, std::string* why);

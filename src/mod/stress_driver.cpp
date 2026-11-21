@@ -4,6 +4,7 @@
 #include "core/state.h"
 #include "core/transport.h"
 #include "mod/control.h"
+#include "mod/local_input.h"
 #include "mod/flow.h"
 #include "mod/log.h"
 
@@ -101,7 +102,7 @@ private:
             static const uint16_t kAttack[] = {XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y, XINPUT_GAMEPAD_RIGHT_SHOULDER,
                                                XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B};
             if ((h >> 8) % 3 == 0) b |= kAttack[(h >> 16) % 5];
-            SetScriptedPad(p, true, b, 0);
+            InputScriptedPad(p, true, b, 0);
         }
     }
 
@@ -128,8 +129,8 @@ private:
 
     void Finish(SfvGame& game) {
         SetRoundDirectorPerTick(false, false);
-        SetScriptedPad(0, false);
-        SetScriptedPad(1, false);
+        InputScriptedPad(0, false);
+        InputScriptedPad(1, false);
         game.bothPadsLocal = false;
         if (session_) {
             const auto ms =

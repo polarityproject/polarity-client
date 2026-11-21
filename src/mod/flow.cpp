@@ -6,6 +6,7 @@
 #include "mod/battle_setup.h"
 #include "mod/boot.h"
 #include "mod/control.h"
+#include "mod/local_input.h"
 #include "mod/crash_report.h"
 #include "mod/entitlements.h"
 #include "mod/lifecycle.h"
@@ -1696,7 +1697,7 @@ uint32_t PresentationStart(uint32_t p1, uint32_t p2) {
     // no longer need to agree), at the same session tick.
     if (MatchOver(f.lastCode)) {
         Log("flow: both players pressed Start after the match: confirm on each game's pad input");
-        PressUiButtons(kUiButtons, kUiStartMs);
+        InputPressUi(kUiButtons, kUiStartMs);
     }
     return kGameStart;
 }

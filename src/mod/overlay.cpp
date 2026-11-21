@@ -14,6 +14,7 @@
 #include "core/match_code.h"
 #include "mod/config.h"
 #include "mod/control.h"
+#include "mod/local_input.h"
 #include "mod/entitlements.h"
 #include "mod/files.h"
 #include "mod/font_resources.h"
@@ -227,7 +228,7 @@ void FeedPads(ImGuiIO& io) {
     };
 
     // The game's own pad keys too: a pad it reads past XInput (DirectInput,
-    // Steam Input) gave the overlay nothing (control.h GamePadKeys).
+    // Steam Input) gave the overlay nothing (control.h InputGamePadKeys).
     struct GameKey {
         uint32_t key;
         uint16_t button;
@@ -249,7 +250,7 @@ void FeedPads(ImGuiIO& io) {
     };
     // And the keyboard's keys as the game assigns them (the screens eat the
     // keyboard, so the game's own reading of it sees nothing then).
-    const uint32_t keys = GamePadKeys() | g_keyPad;
+    const uint32_t keys = InputGamePadKeys() | g_keyPad;
     uint16_t game = 0;
     for (const GameKey& k : kGameKeys) {
         if (keys & k.key) game |= k.button;
@@ -4603,7 +4604,7 @@ bool AnyInputDown() {
     for (const PadState& pad : g_pads) {
         if (pad.buttons) return true;
     }
-    if (GamePadKeys()) return true;
+    if (InputGamePadKeys()) return true;
     for (int vk = 0x01; vk <= 0xFE; vk++) {
         if (GetAsyncKeyState(vk) & 0x8000) return true;
     }

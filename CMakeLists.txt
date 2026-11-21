@@ -247,6 +247,10 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/entitlements.cpp
     src/mod/mod_main.cpp
     src/mod/netplay_driver.cpp
+    src/mod/local_input.cpp
+    src/mod/commands_session.cpp
+    src/mod/commands_objects.cpp
+    src/mod/commands_battle.cpp
     src/mod/udp_transport.cpp
     src/mod/rooms_client.cpp
     src/mod/ui_kit.cpp
