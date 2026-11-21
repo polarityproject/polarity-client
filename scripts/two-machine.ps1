@@ -8,6 +8,10 @@
 # are fetched and each match is compared with `polarity peers`.
 #   two-machine.ps1 -Agent 192.168.1.20 -Token <secret> -Server 192.168.1.10 [-Deploy] [-Choices rematch,select]
 #   two-machine.ps1 -HostAgent 192.168.1.20 -Agent 192.168.1.30 -Token <secret> -Server 192.168.1.10 -Deploy -Spectate 1
+#   two-machine.ps1 -HostAgent 192.168.1.30 -Agent 192.168.1.30 -Token <secret> -Server 192.168.1.10 -Deploy
+# The same agent for both players runs them as its instances 0 and 1 (a
+# Deck alone: agent_steamos.py starts two copies); a spectator there is
+# instance 2 or above.
 # -Server: this PC's address as the agents reach it (the server's port 5555
 # must be allowed in this PC's firewall). -Deploy first copies this build's
 # mod DLL and scripts to the agents and restarts their games. On the agents
@@ -86,12 +90,14 @@ if ($pairList.Count) {
   if ($pairList[0][2]) { $Stage = $pairList[0][2] }
   $Choices = @(@('select') * ($pairList.Count - 1))
 }
+$oneAgent = $HostAgent -and $HostAgent -eq $Agent
+if ($oneAgent -and $Spectate -ge 0 -and $Spectate -lt 2) { throw "-Spectate: instances 0 and 1 are the players on $Agent; use 2 or above" }
 $hostSide = New-Side 'host' $HostAgent 0
-$joinSide = New-Side 'joiner' $Agent 0
+$joinSide = New-Side 'joiner' $Agent $(if ($oneAgent) { 1 } else { 0 })
 $sides = @($hostSide, $joinSide)
 if ($Spectate -ge 0) { $sides += New-Side 'spectator' $HostAgent $Spectate }
 $hostName = if ($HostAgent) { $HostAgent } else { 'this PC' }
-Say "two-machine session: $hostName hosts, $Agent joins$(if ($Spectate -ge 0) { ", $hostName instance $Spectate watches" }), server $serverAddress"
+Say "two-machine session: $hostName hosts, $Agent$(if ($oneAgent) { ' instance 1' }) joins$(if ($Spectate -ge 0) { ", $hostName instance $Spectate watches" }), server $serverAddress"
 
 & (Join-Path $PSScriptRoot 'weyve-server.ps1') | ForEach-Object { Say "server: $_" }
 
