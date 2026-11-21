@@ -36,10 +36,9 @@ namespace sfv::mod {
 
 class SfvGame;
 
-// The public rooms server (the polarity-server repository's Docker stack, the
-// rooms VPS from 0.3.0): where a fresh
-// install hosts and joins unless [weyve] server or the panel's Debug tab
-// says otherwise.
+// The public rooms server (the polarity-server repository's Docker stack):
+// where a fresh install hosts and joins unless [weyve] server or the panel's
+// Debug tab says otherwise.
 inline constexpr const char* kDefaultServer = "2.29.123.240:5555";
 // The public server answers on 443 too, for networks that block 5555: tried
 // when 5555 does not answer within a moment, for kDefaultServer.
@@ -61,8 +60,7 @@ struct NetplayOptions {
     uint8_t inputDelay = 2;
     // Polarity settings' Input delay: kDelayAuto (each session starts at the
     // suggestion for its link, core/input_delay.h), 0-8 that many frames
-    // every session (user, 2026-11-04). Either can still be changed in a
-    // session.
+    // every session. Either can still be changed in a session.
     int8_t delaySetting = -1;
     uint8_t predictionWindow = 8;
     bool lockstepPresentation = false; // [netplay] lockstep_round_stages: no prediction (so no rollbacks) outside the fight (flow.h); off by default
@@ -107,15 +105,15 @@ struct NetplayOptions {
     bool wordFilter = true;             // public rooms: masked names, starred chat (rooms_client.h SetRoomsWordFilter)
 };
 
-void InstallNetplay(SfvGame* game, const std::wstring& reportDir, const std::string& modVersion,
-                    const NetplayOptions& defaults);
+void NetInstall(SfvGame* game, const std::wstring& reportDir, const std::string& modVersion,
+                const NetplayOptions& defaults);
 // The options the next host/join uses; commands change them.
 NetplayOptions& NetOptions();
 // The name others see: [netplay] name, else the Steam persona name ("" without Steam).
-std::string LocalPlayerName();
+std::string NetLocalPlayerName();
 // The game's and the mod's build (SfvGame::BuildId): replays of another
 // build cannot be played.
-std::string GameBuildId();
+std::string NetGameBuildId();
 // With [netplay] hotkeys=1: F7 hosts, F8 joins with the code on the clipboard
 // (game window focused, no session running).
 void NetPollHotkeys();
@@ -132,10 +130,10 @@ void NetSetPick(bool hasPick, const PlayerSetup& pick);
 struct NetView;
 // The delay a session starts at: the setting's, or with Auto the suggestion
 // for this link (NetView::SuggestedDelay; -1 until it is measured).
-int PreferredDelay(const NetView& v);
+int NetPreferredDelay(const NetView& v);
 // The same where only a ping is known (a room's table card): the setting's, or
-// the suggestion with the testers' typical jitter; 1 frame while unmeasured.
-int PreferredDelay(unsigned pingMs);
+// the suggestion with a typical jitter; 1 frame while unmeasured.
+int NetPreferredDelay(unsigned pingMs);
 constexpr int8_t kDelayAuto = -1;
 constexpr int kMaxDelaySetting = 8;
 // Between matches: this player's input delay for the next match; the host's
@@ -257,6 +255,6 @@ NetView NetViewNow();
 // other's Bye saying so), once: -1 none. rooms_client tells the keeper.
 int NetTakeForfeit();
 // Whether a battle is running and ticking, and its frame counters (diagnostics).
-std::string BattleInfo();
+std::string NetBattleInfo();
 
 } // namespace sfv::mod

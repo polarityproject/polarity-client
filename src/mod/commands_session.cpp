@@ -694,7 +694,7 @@ void NetstatusCommand(const std::string&, std::stringstream&) {
 }
 
 void BattleCommand(const std::string&, std::stringstream&) {
-    Log("battle: %s | rendering %.1f fps", BattleInfo().c_str(), RenderFps());
+    Log("battle: %s | rendering %.1f fps", NetBattleInfo().c_str(), RenderFps());
 }
 
 void SetstageCommand(const std::string&, std::stringstream& ss) {

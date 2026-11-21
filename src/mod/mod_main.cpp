@@ -176,7 +176,7 @@ DWORD WINAPI ModMain(LPVOID self) {
     if (config.netplay.skipLoadCallbacks) SetSkippedLoadCallbacks(DefaultSkippedLoadCallbacks());
     SetLeanResim(config.netplay.leanResim);
     if (!config.netplay.leanResim) SetResimTaskSkip({});
-    InstallNetplay(&game, config.reportDir, kModVersion, config.netplay);
+    NetInstall(&game, config.reportDir, kModVersion, config.netplay);
     WeyveService::SetHideCountry(!config.netplay.shareCountry);
     SetStreamerMode(config.netplay.streamerMode);
     SetRoomsWordFilter(config.netplay.wordFilter);

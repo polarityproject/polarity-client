@@ -2216,9 +2216,9 @@ std::vector<SettingsRow> SettingsRows() {
         SettingsRow& r = row("name", "ONLINE", "Name");
         r.text = true;
         r.editValue = g_choices.name;
-        r.value = g_choices.name[0] ? std::string(g_choices.name) : LocalPlayerName() + " (Steam name)";
+        r.value = g_choices.name[0] ? std::string(g_choices.name) : NetLocalPlayerName() + " (Steam name)";
         r.kicker = "ONLINE";
-        r.title = g_choices.name[0] ? std::string(g_choices.name) : LocalPlayerName();
+        r.title = g_choices.name[0] ? std::string(g_choices.name) : NetLocalPlayerName();
         r.lines = {"Shown to other players. Leave it empty to use your Steam name.", "On Steam Deck, press Steam + X for the keyboard."};
     }
     {
@@ -3036,7 +3036,7 @@ std::string RandomStagesText() {
 SelectCard MyCharacterCard(const RoomsView& rooms) {
     const Choices& c = g_my.saved;
     SelectCard card;
-    card.player = LocalPlayerName();
+    card.player = NetLocalPlayerName();
     if (c.chara < 0 || c.chara >= static_cast<int>(g_tables.charas.size())) return card;
     const std::string& code = g_tables.charas[c.chara];
     const bool eleven = IsEleven(c.chara);
@@ -3159,7 +3159,7 @@ void DrawMyCharacter(const RoomsView& rooms, bool takeInput) {
     v.seats[0].ready = g_my.savedNow;
     v.stageLocked = !g_my.stagePage;
     SelectLive live = SelectLiveFor(v);
-    live.sides[0].player = LocalPlayerName();
+    live.sides[0].player = NetLocalPlayerName();
     live.sides[1] = SelectSide{};
     live.bothReady = false;
     live.loading = false;
@@ -3288,7 +3288,7 @@ bool g_nameChanged = false;
 std::vector<std::string> g_createRules;
 
 void OpenHubRooms(const NetplayOptions& o) {
-    g_nameSeen = LocalPlayerName();
+    g_nameSeen = NetLocalPlayerName();
     g_nameChanged = false;
     RoomsOpen(o.server, g_nameSeen, o.server == kDefaultServer ? kDefaultServerAlsoPort : o.serverAlsoPort, o.keeperKey);
 }
@@ -3336,7 +3336,7 @@ void DrawHubScreens(bool takeInput) {
     // A new name in Polarity settings: connected again under it at once, or,
     // in a room (or on the way into one), once the player is out of it, so
     // the next room has it.
-    if (const std::string name = LocalPlayerName(); name != g_nameSeen) {
+    if (const std::string name = NetLocalPlayerName(); name != g_nameSeen) {
         g_nameSeen = name;
         g_nameChanged = RoomsOpened();
     }
@@ -3344,7 +3344,7 @@ void DrawHubScreens(bool takeInput) {
         using S = RoomsView::State;
         const S now = RoomsSnapshot().state;
         if (now != S::Room && now != S::Creating && now != S::Joining) {
-            Log("hub: the name is now %s: the rooms server again under it", LocalPlayerName().c_str());
+            Log("hub: the name is now %s: the rooms server again under it", NetLocalPlayerName().c_str());
             OpenHubRooms(o);
         }
     }
@@ -3395,7 +3395,7 @@ void DrawHubScreens(bool takeInput) {
         OpenUpdateModal();
     }
     HubLive live;
-    live.player = LocalPlayerName();
+    live.player = NetLocalPlayerName();
     live.server = o.server == kDefaultServer ? "Public server" : o.server;
     using S = RoomsView::State;
     live.serverState = rooms.state == S::Off ? 0 : rooms.state == S::Connecting ? 1
@@ -3460,8 +3460,8 @@ void DrawHubScreens(bool takeInput) {
     const HubFonts fonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold};
     if (BattleLogOpen()) {
         BattleLogLive bl;
-        bl.myName = LocalPlayerName();
-        bl.buildId = GameBuildId();
+        bl.myName = NetLocalPlayerName();
+        bl.buildId = NetGameBuildId();
         bl.charaName = [](uint32_t c) { return CharaLabel(UnpackCode(c)); };
         bl.stageName = [](uint16_t s) { return StageLabelOf(s); };
         bl.launching = g_logLaunch.active;
@@ -3528,7 +3528,7 @@ void DrawHubScreens(bool takeInput) {
                 }
             }
         }
-        SetCardDelay(PreferredDelay(opponentPing));
+        SetCardDelay(NetPreferredDelay(opponentPing));
         static bool namesSet = false;
         if (!namesSet && g_tables.loaded) {
             namesSet = true;
@@ -3837,10 +3837,10 @@ void Draw(IDXGISwapChain* swapChain) {
     static bool delaySet = false;
     if (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) {
         delaySet = false;
-    } else if (!delaySet && phase == NetView::Phase::Lobby && PreferredDelay(view) >= 0 && g_choices.initialised &&
+    } else if (!delaySet && phase == NetView::Phase::Lobby && NetPreferredDelay(view) >= 0 && g_choices.initialised &&
                !view.spectator && !view.scripted && !view.setPlay) {
         delaySet = true;
-        const int delay = PreferredDelay(view);
+        const int delay = NetPreferredDelay(view);
         g_choices.delay = delay;
         Act([delay] { NetSetDelay(static_cast<uint8_t>(delay)); });
         if (NetOptions().delaySetting >= 0) Log("overlay: input delay %d, the player's setting", delay);

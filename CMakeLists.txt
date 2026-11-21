@@ -247,6 +247,10 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/entitlements.cpp
     src/mod/mod_main.cpp
     src/mod/netplay_driver.cpp
+    src/mod/netplay_lobby.cpp
+    src/mod/netplay_course.cpp
+    src/mod/netplay_jump.cpp
+    src/mod/netplay_match.cpp
     src/mod/local_input.cpp
     src/mod/commands_session.cpp
     src/mod/commands_objects.cpp
