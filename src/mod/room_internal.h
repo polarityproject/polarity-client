@@ -85,7 +85,6 @@ std::string SkillLabel(const std::string& code, bool trigger, int index);
 int SkillCount(const std::string& code, bool trigger);
 const RoomMember* Member(const RoomsView& v, uint32_t id);
 std::string NameOf(const RoomsView& v, uint32_t id);
-std::string Ordinal(int n);
 std::vector<RoomMember> PlayerOrder(const RoomsView& v);
 
 void Seat(ImDrawList* d, const HubFonts& f, float x, float y, const RoomMember* m, bool ready, bool sitHere, int seat, bool dim);

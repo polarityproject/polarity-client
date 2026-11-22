@@ -2,6 +2,7 @@
 
 #include "mod/room_internal.h"
 
+#include "core/text.h"
 #include "mod/log.h"
 #include "mod/ui_sound.h"
 
@@ -21,16 +22,16 @@ std::string LeaveText(const RoomsView& v) {
     for (const TableView& t : v.tableViews) {
         const auto at = std::find(t.queue.begin(), t.queue.end(), v.self);
         if (at != t.queue.end() || t.s.seat[0] == v.self || t.s.seat[1] == v.self) {
-            text = "You lose your place at Table " + std::to_string(&t - v.tableViews.data() + 1) + ". ";
+            text = TRF(Str::room_leave_lose_place, static_cast<int>(&t - v.tableViews.data() + 1)) + " ";
         }
     }
     if (v.owner == v.self) {
-        if (v.members.size() <= 1) return text + "You're the last one here, so the room closes.";
+        if (v.members.size() <= 1) return text + TR(Str::room_leave_last_one);
         for (const RoomMember& m : v.members) {
-            if (m.id != v.self) return text + m.name + " becomes the owner.";
+            if (m.id != v.self) return text + TRF(Str::room_leave_new_owner, m.name.c_str());
         }
     }
-    return text.empty() ? "You can rejoin with the code while the room is open." : text;
+    return text.empty() ? std::string(TR(Str::room_leave_rejoin)) : text;
 }
 
 void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const PromptList& prompts, const std::string& hint, ImU32 hintCol, int* clicked) {
@@ -39,9 +40,9 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
     const float x0 = 380, w = 840, h = 616, y0 = 142, x1 = x0 + w;
     ModalSpec m;
     m.x0 = x0, m.y0 = y0, m.w = w, m.h = h;
-    m.kicker = "YOUR TURN \xC2\xB7 TABLE " + std::to_string(t + 1);
+    m.kicker = TRF(Str::room_card_kicker, t + 1);
     Rules rules;
-    if (ParseRules(v.tableViews[t].rules, &rules)) m.aside = DescribeRules(rules), m.asideCol = kGold;
+    if (ParseRules(v.tableViews[t].rules, &rules)) m.aside = RoomsRulesText(rules), m.asideCol = kGold;
     m.hint = hint, m.hintCol = hintCol;
     m.prompts = prompts;
     ui::Modal(d, bold, f.body, m, clicked);
@@ -56,8 +57,9 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
         const float sx = i ? x1 - 28 - 330 : x0 + 28;
         const float align = i ? 1.0f : 0.0f, ax = i ? sx + 330 : sx;
         Seat(d, f, sx, y0 + 66, mm, s.ready[i], false, i, false);
-        Text(d, bold, g_v.L(15), g_v.P(ax, y0 + 192), kSoft, i ? (i == mySeat ? "P2 \xC2\xB7 YOU" : "P2") : i == mySeat ? "P1 \xC2\xB7 YOU \xC2\xB7 HOSTS"
-                                                                                                                        : "P1 \xC2\xB7 HOSTS THE MATCH",
+        Text(d, bold, g_v.L(15), g_v.P(ax, y0 + 192), kSoft,
+             TR(i ? (i == mySeat ? Str::room_card_p2_you : Str::room_card_p2) : i == mySeat ? Str::room_card_p1_you_hosts
+                                                                                            : Str::room_card_p1_hosts),
              align);
         const bool me = i == mySeat;
         const std::string code = me ? g_cardPick.chara : mm ? mm->chara
@@ -69,10 +71,10 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
         const bool fresh = !me && ImGui::GetTime() - g.oppChangedAt < 1.5;
         for (int k = 0; k < 2; k++) {
             const float ly = y0 + 222 + k * 30;
-            const char* kicker = k ? "V-TRIGGER" : "V-SKILL";
+            const char* kicker = TR(k ? Str::room_card_vtrigger : Str::room_card_vskill);
             const int value = k ? vt : vs;
-            const std::string text = value < 0 ? std::string("Random") : value == 0 ? std::string("\xE2\x80\x94")
-                                                                                    : SkillLabel(code, k == 1, value);
+            const std::string text = value < 0 ? std::string(TR(Str::common_random)) : value == 0 ? std::string(TR(Str::room_card_none))
+                                                                                                  : SkillLabel(code, k == 1, value);
             const float kw = TextW(bold, 15, kicker) + 10;
             const float tw = TextW(f.strong, 18, text);
             const float tx = i ? ax - tw : ax + kw;
@@ -80,11 +82,11 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
             Text(d, f.strong, g_v.L(18), g_v.P(tx, ly), fresh ? kGold : kCream, text);
         }
     }
-    StageText(d, f.display, 36, x0 + w / 2, y0 + 104, Rgba(255, 255, 255), "VS", 0.5f);
+    StageText(d, f.display, 36, x0 + w / 2, y0 + 104, Rgba(255, 255, 255), TR(Str::common_vs), 0.5f);
     if (const RoomMember* other = Member(v, s.seat[1 - mySeat]); other && other->pingMs >= 0) {
-        const std::string ms = std::to_string(other->pingMs) + " ms";
+        const std::string ms = TRF(Str::common_ms, other->pingMs);
         const ImU32 col = PingColor(static_cast<unsigned>(other->pingMs));
-        Text(d, bold, g_v.L(14), g_v.P(x0 + w / 2, y0 + 150), kSoft, "PING", 0.5f);
+        Text(d, bold, g_v.L(14), g_v.P(x0 + w / 2, y0 + 150), kSoft, TR(Str::room_card_ping), 0.5f);
         StageText(d, f.strong, 22, x0 + w / 2, y0 + 168, col, ms, 0.5f);
         if (other->relayed) IconCloud(d, g_v.P(x0 + w / 2, y0 + 208), g_v.L(1.7f), col);
     }
@@ -95,15 +97,15 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
     if (!g.cardReady && !s.ready[mySeat] && second > 0 && second <= 5 && second != g.cardTick) UiSoundPlay(UiSound::Countdown);
     g.cardTick = second;
     if (g.cardReady || s.ready[mySeat]) {
-        Text(d, f.display, g_v.L(28), g_v.P(x0 + w / 2, ty + 40), kGreen, "READY", 0.5f);
-        Text(d, f.body, g_v.L(19), g_v.P(x0 + w / 2, ty + 86), kCream, "Waiting for " + NameOf(v, s.seat[1 - mySeat]) + ".", 0.5f);
+        Text(d, f.display, g_v.L(28), g_v.P(x0 + w / 2, ty + 40), kGreen, TR(Str::common_ready), 0.5f);
+        Text(d, f.body, g_v.L(19), g_v.P(x0 + w / 2, ty + 86), kCream, TRF(Str::room_card_waiting_for, NameOf(v, s.seat[1 - mySeat]).c_str()), 0.5f);
         return;
     }
     Text(d, f.display, g_v.L(26), g_v.P(x0 + w / 2, ty), Rgba(255, 255, 255),
-         left > 0 ? "Ready in " + std::to_string(static_cast<int>(left + 0.99)) : std::string("Out of time"), 0.5f);
+         left > 0 ? TRF(Str::room_card_ready_in, static_cast<int>(left + 0.99)) : std::string(TR(Str::room_card_out_of_time)), 0.5f);
     d->AddRectFilled(g_v.P(x0 + 28, ty + 40), g_v.P(x1 - 28, ty + 44), Rgba(255, 255, 255, 31));
     d->AddRectFilled(g_v.P(x0 + 28, ty + 40), g_v.P(x0 + 28 + (w - 56) * static_cast<float>(left / total), ty + 44), kGold);
-    static const char* const kRows[] = {"V-Skill", "V-Trigger", "Input delay"};
+    const char* const kRows[] = {TR(Str::room_card_row_vskill), TR(Str::room_card_row_vtrigger), TR(Str::room_card_row_delay)};
     const float rx0 = x0 + 160, rx1 = x1 - 160, vx = rx1 - 150;
     for (int r = 0; r < kCardRows; r++) {
         const float ry = ty + 62 + r * 56;
@@ -112,8 +114,8 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
         const ImU32 col = on ? look::kInk : usable ? kCream
                                                    : Rgba(244, 241, 232, 110);
         Text(d, on ? bold : f.strong, g_v.L(19), g_v.P(rx0 + 22, ry + 12), col, kRows[r]);
-        std::string value = r == kCardDelay        ? std::to_string(g.cardDelay) + (g.cardDelay == 1 ? " frame" : " frames")
-                            : !g_cardPick.editable ? std::string("Random")
+        std::string value = r == kCardDelay        ? TRF(g.cardDelay == 1 ? Str::common_frame : Str::common_frames, g.cardDelay)
+                            : !g_cardPick.editable ? std::string(TR(Str::common_random))
                                                    : SkillLabel(g_cardPick.chara, r == kCardVTrigger, r == kCardVTrigger ? g.cardVt : g.cardVs);
         Text(d, on ? bold : f.strong, g_v.L(19), g_v.P(vx, ry + 12), col, Ellipsize(bold, 19, value, 230), 0.5f);
         if (on && usable) {
@@ -125,7 +127,7 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
             g.cardMouseDir = on ? (MouseIn(g_v.P(rx0, ry), g_v.P(vx, ry + 50)) ? -1 : 1) : 0;
         }
     }
-    Text(d, f.body, g_v.L(17), g_v.P(x0 + w / 2, ty + 62 + 3 * 56 + 6), kSoft, "If time runs out, you go to the back of the queue.", 0.5f);
+    Text(d, f.body, g_v.L(17), g_v.P(x0 + w / 2, ty + 62 + 3 * 56 + 6), kSoft, TR(Str::room_card_time_out), 0.5f);
 }
 
 } // namespace roomui
@@ -143,22 +145,21 @@ std::vector<HandoffStep> HandoffSteps(const HubFonts& f, const RoomsView& v, con
     const bool linked = h.jumping || h.linked;
     const bool loaded = h.jumping || (h.preloaded[0] && h.preloaded[1]);
     std::vector<HandoffStep> steps;
-    steps.push_back({"Both ready", HandoffStep::Done});
-    steps.push_back({room ? std::string("Match set up") : host ? std::string("Setting up the match")
-                                                               : "Waiting for " + other,
+    steps.push_back({TR(Str::room_handoff_both_ready), HandoffStep::Done});
+    steps.push_back({room ? std::string(TR(Str::room_handoff_set_up)) : host ? std::string(TR(Str::room_handoff_setting_up))
+                                                                             : TRF(Str::room_handoff_waiting_for, other.c_str()),
                      room ? HandoffStep::Done : HandoffStep::InProgress});
-    std::string connected = "Connected";
-    if (h.pingMs) connected += " \xC2\xB7 " + std::to_string(h.pingMs) + " ms";
-    steps.push_back({linked ? connected : host ? "Waiting for " + other + " to join"
-                                               : "Connecting to " + other,
+    const std::string connected = h.pingMs ? TRF(Str::room_handoff_connected_ms, h.pingMs) : std::string(TR(Str::room_handoff_connected));
+    steps.push_back({linked ? connected : host ? TRF(Str::room_handoff_waiting_join, other.c_str())
+                                               : TRF(Str::room_handoff_connecting, other.c_str()),
                      linked ? HandoffStep::Done : room ? HandoffStep::InProgress
                                                        : HandoffStep::ToCome});
     const bool mine = h.preloaded[host ? 0 : 1];
-    steps.push_back({loaded ? std::string("Characters loaded") : mine ? "Waiting for " + other + "'s game"
-                                                                      : std::string("Loading characters"),
+    steps.push_back({loaded ? std::string(TR(Str::room_handoff_loaded)) : mine ? TRF(Str::room_handoff_waiting_game, other.c_str())
+                                                                               : std::string(TR(Str::room_handoff_loading)),
                      loaded ? HandoffStep::Done : linked ? HandoffStep::InProgress
                                                          : HandoffStep::ToCome});
-    steps.push_back({"Starting the match", h.jumping ? HandoffStep::InProgress : HandoffStep::ToCome});
+    steps.push_back({TR(Str::room_handoff_starting), h.jumping ? HandoffStep::InProgress : HandoffStep::ToCome});
     return steps;
 }
 
@@ -169,9 +170,9 @@ void HandoffModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, c
     const float x0 = 480, w = 640, h = 404, y0 = 220, x1 = x0 + w;
     ModalSpec m;
     m.x0 = x0, m.y0 = y0, m.w = w, m.h = h;
-    m.kicker = "TABLE " + std::to_string(t + 1) + " \xC2\xB7 " + (g_handoff.played > 0 ? "GAME " + std::to_string(g_handoff.played + 1) : std::string("YOUR TURN"));
+    m.kicker = g_handoff.played > 0 ? TRF(Str::room_handoff_kicker_game, t + 1, g_handoff.played + 1) : TRF(Str::room_handoff_kicker_turn, t + 1);
     Rules rules;
-    if (ParseRules(v.tableViews[t].rules, &rules)) m.hint = DescribeRules(rules);
+    if (ParseRules(v.tableViews[t].rules, &rules)) m.hint = RoomsRulesText(rules);
     m.prompts = prompts;
     ui::Modal(d, bold, f.body, m, clicked);
     float tx = x0 + 28;
@@ -182,8 +183,8 @@ void HandoffModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, c
         tx = x0 + 98;
     }
     if (other && g_names.count(other->chara)) Text(d, f.body, g_v.L(14), g_v.P(tx, y0 + 70), kSoft, g_names[other->chara]);
-    Text(d, f.display, g_v.L(28), g_v.P(tx, y0 + 92), kCream, "vs");
-    float nx = tx + TextW(f.display, 28, "vs") + 12;
+    Text(d, f.display, g_v.L(28), g_v.P(tx, y0 + 92), kCream, TR(Str::room_handoff_vs));
+    float nx = tx + TextW(f.display, 28, TR(Str::room_handoff_vs)) + 12;
     if (other && other->country.size() == 2) nx += RoomsScreenDrawFlag(d, f.strong, other->country, nx, y0 + 103, 13) + 10;
     Text(d, f.display, g_v.L(28), g_v.P(nx, y0 + 92), kCream, Ellipsize(f.display, 28, Upper(NameOf(v, otherId)), x1 - 28 - nx));
     float y = y0 + 158;
@@ -200,7 +201,7 @@ void HandoffModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, c
             d->AddCircleFilled(g_v.P(x0 + 40 + 7 * std::cos(turn), y + 11 + 7 * std::sin(turn)), g_v.L(2.6f), kRing);
         }
         std::string text = st.text;
-        if (st.state == HandoffStep::InProgress && stepSeconds >= 3) text += " \xC2\xB7 " + std::to_string(static_cast<int>(stepSeconds)) + " s";
+        if (st.state == HandoffStep::InProgress && stepSeconds >= 3) text = TRF(Str::room_handoff_seconds, text.c_str(), static_cast<int>(stepSeconds));
         Text(d, f.body, g_v.L(17), g_v.P(x0 + 66, y), st.state == HandoffStep::ToCome ? kMuted : kCream, text);
         y += 36;
     }
@@ -210,17 +211,21 @@ void HandoffModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, c
 
 namespace {
 
-const char* const kRuleRows[] = {"First to", "Rounds per game", "Round timer", "Rotation", "Stays up to"};
+const Str kRuleRows[] = {Str::rules_row_first_to, Str::rules_row_rounds, Str::rules_row_timer, Str::rules_row_rotation, Str::rules_row_stays};
 
 std::string RuleValue(const Rules& r, int row) {
     switch (row) {
-        case 0: return std::to_string(r.firstTo) + (r.firstTo == 1 ? " game" : " games");
-        case 1: return r.bestOf == 1 ? "One round" : "Best of " + std::to_string(r.bestOf);
-        case 2: return std::to_string(r.timer) + " seconds";
-        case 3: return r.rotation == Rotation::WinnerStays ? "Winner stays" : r.rotation == Rotation::LoserStays ? "Loser stays"
-                                                                                                                 : "Round robin";
-        default: return r.rotation == Rotation::RoundRobin ? "-" : r.staysLimit ? std::to_string(r.staysLimit) + " sets in a row"
-                                                                                : "No limit";
+        case 0: return TRF(r.firstTo == 1 ? Str::rules_value_game : Str::rules_value_games, r.firstTo);
+        case 1: return r.bestOf == 1 ? std::string(TR(Str::rules_value_one_round)) : TRF(Str::rules_value_best_of, r.bestOf);
+        case 2: return TRF(Str::rules_value_seconds, r.timer);
+        case 3:
+            return TR(r.rotation == Rotation::WinnerStays  ? Str::rules_value_winner_stays
+                      : r.rotation == Rotation::LoserStays ? Str::rules_value_loser_stays
+                                                           : Str::rules_value_round_robin);
+        default:
+            return r.rotation == Rotation::RoundRobin ? std::string("-")
+                   : r.staysLimit                     ? TRF(Str::rules_value_sets_in_row, r.staysLimit)
+                                                      : std::string(TR(Str::rules_value_no_limit));
     }
 }
 
@@ -252,7 +257,7 @@ void RulesModal(const HubFonts& f, const RoomsView& v, const PromptList& prompts
     Rules now;
     const std::string current = t < static_cast<int>(v.tableRules.size()) ? v.tableRules[t] : "";
     const bool changed = !(ParseRules(current, &now) && now == g.rules.rules[t]);
-    RoomDrawTableRules(f, g.rules, "OWNER", "Changes apply from the table's next set.", changed ? kGold : kSoft, prompts, clicked);
+    RoomDrawTableRules(f, g.rules, TR(Str::rules_modal_owner), TR(Str::rules_modal_next_set), changed ? kGold : kSoft, prompts, clicked);
 }
 
 void Request(RoomScreenInput* in, const char* kind, std::vector<std::string> args) {
@@ -289,16 +294,16 @@ void RoomDrawTableRules(const HubFonts& f, const TableRulesEditor& e, const char
     m.hintCol = hintCol;
     m.prompts = prompts;
     ui::Modal(d, bold, f.body, m, clicked);
-    Text(d, f.display, g_v.L(28), g_v.P(x0 + 28, y0 + 64), kCream, "Table rules");
+    Text(d, f.display, g_v.L(28), g_v.P(x0 + 28, y0 + 64), kCream, TR(Str::rules_modal_title));
     const int tables = static_cast<int>(e.rules.size());
     float tw = 0;
-    for (int t = 0; t < tables; t++) tw += TextW(bold, 17, "Table " + std::to_string(t + 1)) + 28 + 8;
+    for (int t = 0; t < tables; t++) tw += TextW(bold, 17, TRF(Str::rules_modal_table, t + 1)) + 28 + 8;
     float tx = x1 - 28 - 30 - 8 - tw - 30;
     Glyph(d, "button_lb", g_v.P(tx, y0 + 66), g_v.P(tx + 30, y0 + 96), IM_COL32_WHITE, false);
     if (Clicked() && MouseIn(g_v.P(tx - 4, y0 + 62), g_v.P(tx + 34, y0 + 100))) ui::ClickPad(ImGuiKey_GamepadL1);
     tx += 38;
     for (int t = 0; t < tables; t++) {
-        const std::string label = "Table " + std::to_string(t + 1);
+        const std::string label = TRF(Str::rules_modal_table, t + 1);
         const float lw = TextW(bold, 17, label) + 28;
         const bool on = t == at;
         Control(d, tx, y0 + 65, tx + lw, y0 + 97, on);
@@ -312,7 +317,7 @@ void RoomDrawTableRules(const HubFonts& f, const TableRulesEditor& e, const char
         const bool on = row == e.row;
         Control(d, x0 + 28, y, x1 - 28, y + 50, on);
         ImFont* rowFont = on ? bold : (f.strong ? f.strong : f.body);
-        Text(d, rowFont, g_v.L(21), g_v.P(x0 + 50, y + 11), on ? look::kInk : kCream, kRuleRows[row]);
+        Text(d, rowFont, g_v.L(21), g_v.P(x0 + 50, y + 11), on ? look::kInk : kCream, TR(kRuleRows[row]));
         Text(d, rowFont, g_v.L(21), g_v.P(x0 + 600, y + 11), on ? look::kInk : kCream, RuleValue(r, row), 0.5f);
         if (on) {
             d->AddTriangleFilled(g_v.P(x0 + 440, y + 19), g_v.P(x0 + 440, y + 31), g_v.P(x0 + 430, y + 25), look::kInk);

@@ -212,3 +212,307 @@ hub.update.latest	You have the latest version.
 settings.title	POLARITY SETTINGS
 settings.version	Version %s
 settings.typing_hint	Enter to save, Escape to cancel.
+
+# More words several screens use.
+common.table	%d table
+common.tables	%d tables
+common.player_count	%d player
+common.players_count	%d players
+common.prompt.create	Create
+common.prompt.change	Change
+common.prompt.join	Join
+common.prompt.delete	Delete
+common.prompt.paste	Paste
+common.prompt.done	Done
+common.prompt.cancel	Cancel
+common.prompt.try_again	Try again
+common.prompt.settings	Polarity settings
+
+# The rooms screen and the rooms client's notices (rooms_screen.cpp, rooms_events.cpp, rooms_client.cpp).
+rooms.notice.no_room	No room on that code
+rooms.notice.full	Room full
+rooms.notice.removed_by_owner	Removed by the room's owner
+rooms.notice.removed	Removed from the room
+rooms.notice.cannot_join	Cannot join: %s
+rooms.notice.other_version	That room is on Polarity %s. You have %s.
+rooms.notice.no_answer	The rooms server didn't respond. Try again.
+rooms.notice.unavailable	Custom Rooms are unavailable right now
+rooms.row.full	Full
+rooms.row.open_seat	%d open seat
+rooms.row.open_seats	%d open seats
+rooms.row.queues_only	Queues only
+rooms.row.first_to	first to %d
+rooms.row.detail	 · %s
+rooms.rules.default	Default
+rooms.rules.same	Customized, same on all
+rooms.rules.customized	Customized
+rooms.rules.customized_tables	Customized (%s)
+rooms.panel.full	FULL · %d OF %d
+rooms.panel.public	PUBLIC ROOM
+rooms.panel.players_tables	 · %d / %d players · %s
+rooms.panel.tables	TABLES
+rooms.panel.table	TABLE %d
+rooms.panel.open_seat	Open seat
+rooms.panel.more_table	+%d more table
+rooms.panel.more_tables	+%d more tables
+rooms.panel.players	PLAYERS · %d / %d
+rooms.panel.more_people	+%d more
+rooms.create.kicker	NEW ROOM
+rooms.create.title	Create a room
+rooms.create.row_title	Title
+rooms.create.row_chara1	Character 1
+rooms.create.row_chara2	Character 2
+rooms.create.row_visibility	Visibility
+rooms.create.row_tables	Tables
+rooms.create.row_rules	Table rules
+rooms.create.no_title	No title
+rooms.create.public	Public
+rooms.create.private	Private
+rooms.create.public_text	Listed for anyone to join. Friends can also use the code.
+rooms.create.private_text	Not listed. Only people with the code can join.
+rooms.create.up_to	Up to %d players. Table rules can change in the room too.
+rooms.code.kicker	ROOM CODE
+rooms.code.title	Join with a code
+rooms.code.full_lead	ROOM FULL
+rooms.code.version_lead	OTHER VERSION
+rooms.code.none_lead	NO SUCH ROOM
+rooms.code.full_that	That room has %d players
+rooms.code.full_code	%s has %d players
+rooms.code.version_that	That room is on another version
+rooms.code.version_code	%s is on another version
+rooms.code.none_that	Nothing open on that code
+rooms.code.none_code	Nothing open on %s
+rooms.code.full_text	Rooms hold %d players. Try again when someone leaves.
+rooms.code.none_text	Check the code. Rooms close once everyone leaves.
+rooms.title.room	Room
+rooms.title.owners	%s's room
+rooms.screen.title	CUSTOM ROOMS
+rooms.screen.summary	%s · %s
+rooms.screen.public_room	%d public room
+rooms.screen.public_rooms	%d public rooms
+rooms.screen.cant_reach	Can't reach the rooms server
+rooms.screen.unavailable	Custom Rooms are unavailable right now
+rooms.screen.create	CREATE A ROOM
+rooms.screen.create_info	Public or private, 1 to 8 tables
+rooms.screen.join	JOIN WITH A CODE
+rooms.screen.join_info	For private rooms, or a code from a friend
+rooms.screen.public_list	PUBLIC ROOMS · %d
+rooms.screen.none	No public rooms right now
+rooms.screen.none_text	Create one and it shows up here.
+rooms.wait.new	NEW ROOM
+rooms.wait.creating	Creating your room
+rooms.wait.creating_text	You go straight in once it's ready.
+rooms.wait.joining_kicker	JOINING
+rooms.wait.joining	Joining the room
+rooms.wait.one_moment	One moment.
+rooms.wait.in_room	IN A ROOM
+rooms.wait.your_room	Your room
+rooms.wait.room_code	Room %s
+rooms.wait.opening	Opening the room.
+rooms.bar.creating	Creating your room...
+rooms.bar.joining	Joining the room...
+rooms.bar.update_lead	UPDATE NEEDED
+rooms.bar.update	Custom Rooms need a different Polarity version. Check for updates in Polarity settings.
+rooms.bar.cannot_connect	CANNOT CONNECT
+rooms.bar.offline	OFFLINE
+rooms.bar.cant_reach	Can't reach the rooms server. Check your connection, or the server in Polarity settings.
+rooms.bar.unavailable	Custom Rooms are unavailable right now. Try again later.
+rooms.bar.removed	REMOVED
+rooms.bar.not_joined	NOT JOINED
+rooms.bar.not_made	NOT MADE
+rooms.bar.no_public	NO PUBLIC ROOMS
+rooms.bar.no_public_text	Create one, or join with a code.
+rooms.bar.title_help	Titles come from the game's Battle Lounge comments.
+rooms.bar.chara1_help	The character you play.
+rooms.bar.chara2_help	The character you want to face.
+rooms.bar.tables_help	With 8 tables, all 16 players can play at once.
+rooms.bar.rules_help	First to, rounds, timer and rotation, for each table.
+rooms.bar.customize	Customize Tables
+rooms.bar.enter_code	Enter the room code.
+rooms.bar.full	ROOM FULL
+rooms.bar.full_text	Try again when someone leaves.
+rooms.bar.open_seats	There are open seats.
+rooms.bar.no_seats	All seats are taken. You can still queue or watch.
+rooms.rules_modal.text	Players see these when they browse rooms.
+
+# The rooms client: where a player is, the room's own chat lines, table notices (rooms_tables.cpp, rooms_events.cpp).
+common.ordinal.1	1st
+common.ordinal.2	2nd
+common.ordinal.3	3rd
+common.ordinal.n	%dth
+rooms.place.idle	Idle
+rooms.place.seated	Table %d · seated
+rooms.place.next	Table %d · next
+rooms.place.set_over	Table %d · set over
+rooms.place.playing	Table %d · playing
+rooms.place.queued	Table %d · %s
+rooms.place.watching	Watching Table %d
+rooms.place.short_seated	T%d · seated
+rooms.place.short_next	T%d · next
+rooms.place.short_set_over	T%d · set over
+rooms.place.short_playing	T%d · playing
+rooms.place.short_queued	T%d · %s
+rooms.place.short_watching	Watching T%d
+rooms.chat.masked	Your name shows as %s in public rooms.
+rooms.chat.joined	%s joined
+rooms.chat.left	%s left
+rooms.chat.you_own	You own the room now
+rooms.chat.owns	%s owns the room now
+rooms.table.opponent_left	Your opponent left before the match started.
+rooms.table.not_started	The match did not start.
+rooms.table.not_started_why	The match did not start: %s.
+rooms.table.not_finished	The set did not finish.
+rooms.table.not_finished_why	The set did not finish: %s.
+rooms.table.no_link	Couldn't connect to your opponent, so the match didn't start.
+
+# The room screen (room_screen.cpp).
+common.prompt.ready	Ready
+common.prompt.ok	OK
+common.prompt.leave	Leave
+common.prompt.stay	Stay
+common.public	Public
+common.private	Private
+room.header.code	Code
+room.header.copy	Copy code
+room.bar.leave_queue	Leave queue
+room.bar.no_match	NO MATCH
+room.bar.typing	Enter to send, Escape to cancel. On Steam Deck, press Steam + X for the keyboard.
+room.bar.paused	ROOM PAUSED
+room.bar.paused_text	Tables are on hold while the rooms server reconnects. Chat still works.
+room.bar.table	TABLE %d
+room.bar.loading	The match is loading.
+room.bar.getting_ready	Getting the match ready with %s.
+room.bar.set_ended	SET ENDED
+room.bar.won	YOU WON THE SET
+room.bar.lost	YOU LOST THE SET
+room.bar.result_stay	%d - %d. You stay on Table %d.
+room.bar.result_queue	%d - %d. Back in the queue · %s.
+room.bar.result_room	%d - %d. Back to the room.
+room.bar.thats_you	That's you.
+room.bar.mute	Mute
+room.bar.unmute	Unmute
+room.bar.remove	Remove
+room.bar.tables	Tables
+room.bar.open	ROOM OPEN
+room.bar.open_text	Share the code to invite friends.
+room.bar.watching_text	Its matches open automatically.
+room.bar.pick_table	Pick a table to sit at or queue for.
+room.bar.stand_up	Stand up
+room.bar.sit_p1	Sit as P1
+room.bar.sit_p2	Sit as P2
+room.bar.leave_the_queue	Leave the queue
+room.bar.join_queue	Join the queue
+room.bar.stop_watching	Stop watching
+room.bar.watch	Watch
+room.bar.my_character	My character
+room.bar.training	Training
+room.bar.table_rules	Table rules
+room.bar.players	Players
+room.dialog.room	ROOM
+room.dialog.room_code	ROOM · %s
+room.dialog.leave	Leave the room?
+room.dialog.owner	OWNER
+room.dialog.remove	Remove %s?
+room.dialog.remove_text	They won't be able to rejoin.
+
+# The room screen's modals, tables, players and chat, and table rules (room_modals.cpp, room_parts.cpp, rooms_tables.cpp).
+common.random	Random
+common.vs	VS
+common.ready	READY
+common.open_seat	Open seat
+common.ms	%d ms
+common.list_separator	 · 
+rules.desc.first_to	First to %d
+rules.desc.winner_up_to	winner stays, up to %d
+rules.desc.winner_no_limit	winner stays, no limit
+rules.desc.loser_up_to	loser stays, up to %d
+rules.desc.loser_no_limit	loser stays, no limit
+rules.desc.round_robin	round robin
+rules.desc.seconds	%d seconds
+rules.desc.one_round	one round
+rules.desc.best_of	best of %d
+rules.row.first_to	First to
+rules.row.rounds	Rounds per game
+rules.row.timer	Round timer
+rules.row.rotation	Rotation
+rules.row.stays	Stays up to
+rules.value.game	%d game
+rules.value.games	%d games
+rules.value.one_round	One round
+rules.value.best_of	Best of %d
+rules.value.seconds	%d seconds
+rules.value.winner_stays	Winner stays
+rules.value.loser_stays	Loser stays
+rules.value.round_robin	Round robin
+rules.value.sets_in_row	%d sets in a row
+rules.value.no_limit	No limit
+rules.modal.title	Table rules
+rules.modal.table	Table %d
+rules.modal.owner	OWNER
+rules.modal.next_set	Changes apply from the table's next set.
+room.leave.lose_place	You lose your place at Table %d.
+room.leave.last_one	You're the last one here, so the room closes.
+room.leave.new_owner	%s becomes the owner.
+room.leave.rejoin	You can rejoin with the code while the room is open.
+room.card.kicker	YOUR TURN · TABLE %d
+room.card.p1	P1
+room.card.p2	P2
+room.card.p2_you	P2 · YOU
+room.card.p1_you_hosts	P1 · YOU · HOSTS
+room.card.p1_hosts	P1 · HOSTS THE MATCH
+room.card.vtrigger	V-TRIGGER
+room.card.vskill	V-SKILL
+room.card.none	—
+room.card.ping	PING
+room.card.waiting_for	Waiting for %s.
+room.card.ready_in	Ready in %d
+room.card.out_of_time	Out of time
+room.card.row_vskill	V-Skill
+room.card.row_vtrigger	V-Trigger
+room.card.row_delay	Input delay
+room.card.time_out	If time runs out, you go to the back of the queue.
+room.handoff.both_ready	Both ready
+room.handoff.set_up	Match set up
+room.handoff.setting_up	Setting up the match
+room.handoff.waiting_for	Waiting for %s
+room.handoff.connected	Connected
+room.handoff.connected_ms	Connected · %d ms
+room.handoff.waiting_join	Waiting for %s to join
+room.handoff.connecting	Connecting to %s
+room.handoff.loaded	Characters loaded
+room.handoff.waiting_game	Waiting for %s's game
+room.handoff.loading	Loading characters
+room.handoff.starting	Starting the match
+room.handoff.seconds	%s · %d s
+room.handoff.kicker_game	TABLE %d · GAME %d
+room.handoff.kicker_turn	TABLE %d · YOUR TURN
+room.handoff.vs	vs
+room.table.sit_p1	Sit here as P1
+room.table.sit_p2	Sit here as P2
+room.table.title	TABLE %d
+room.table.in_queue	%d in queue
+room.table.your_turn	Your turn
+room.table.connecting	Connecting
+room.table.playing	Playing
+room.table.set_over	Set over
+room.table.getting_ready	Getting ready
+room.players.title	PLAYERS · %d / %d
+room.players.you	(you)
+room.players.muted	muted
+room.players.wired	Wired
+room.players.wifi	Wi-Fi
+room.chat.title	ROOM CHAT
+room.chat.new_message	%d new message
+room.chat.new_messages	%d new messages
+room.chat.say_back	Say something (Back + Y, or click here)
+room.chat.say_enter	Say something (Enter, or Back + Y)
+
+# The room chat's send button, masked names and where a player goes after a set (room_parts.cpp, rooms_events.cpp, rooms_tables.cpp).
+room.chat.send	Send
+rooms.masked_name	Player %d
+rooms.after.next_player	the next player
+rooms.after.stays	Stays on Table %d
+rooms.after.stays_plays	Stays on Table %d · plays %s next
+rooms.after.back_to_room	Back to the room
+rooms.after.queue_next	Back in the queue · next
+rooms.after.queue_at	Back in the queue · %s

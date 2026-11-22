@@ -2,6 +2,7 @@
 
 #include "mod/rooms_internal.h"
 
+#include "core/text.h"
 #include "core/update_info.h"
 #include "mod/lifecycle.h"
 #include "mod/rooms_screen.h"
@@ -22,7 +23,7 @@ namespace rooms {
 
 std::string MyVersion() { return UpdateViewNow().current; }
 
-std::string OtherVersionNotice(const std::string& theirs) { return "That room is on Polarity " + theirs + ". You have " + MyVersion() + "."; }
+std::string OtherVersionNotice(const std::string& theirs) { return TRF(Str::rooms_notice_other_version, theirs.c_str(), MyVersion().c_str()); }
 
 } // namespace rooms
 
@@ -123,7 +124,7 @@ void Client::Run() {
                     Log("rooms: no answer from the keeper to #%u in time (link to it: %s)", pendingSeq,
                         svc->PeerPath(KeeperOf(v)) == WeyveService::LinkPath::None ? "none" : "up");
                     pendingSeq = 0;
-                    shared.view.notice = "The rooms server didn't respond. Try again.";
+                    SetNotice(RoomsView::Notice::NoAnswer, TR(Str::rooms_notice_no_answer));
                     Set(State::Lobby);
                 }
                 Listings();
@@ -377,6 +378,7 @@ void RoomsPeek(const std::string& code) {
 void RoomsClearNotice() {
     WithClient([](Client& c) {
         c.shared.view.notice.clear();
+        c.shared.view.noticeKind = RoomsView::Notice::None;
         c.shared.view.tableNotice.clear();
         return true;
     });

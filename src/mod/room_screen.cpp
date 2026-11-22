@@ -2,6 +2,7 @@
 
 #include "mod/room_internal.h"
 
+#include "core/text.h"
 #include "mod/log.h"
 #include "mod/ui_sound.h"
 #include "mod/weyve_service.h"
@@ -278,26 +279,26 @@ void RoomDrawScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
 
     const bool hideCode = RoomsScreenStreamerMode();
     const std::string code = WeyveService::DisplayCode(v.room);
-    const char* access = v.isPublic ? "Public" : "Private";
+    const char* access = TR(v.isPublic ? Str::common_public : Str::common_private);
     const float codeW = hideCode ? RoomsScreenDrawHiddenCode(nullptr, 0, 0, 20, 0) : TextW(f.strong, 20, code);
-    const float lineW = (paused ? 0 : TextW(f.strong, 20, access) + 16) + TextW(f.body, 20, "Code") + 6 + codeW + 20 + 38 +
-                        TextW(f.body, 20, "Copy code");
+    const float lineW = (paused ? 0 : TextW(f.strong, 20, access) + 16) + TextW(f.body, 20, TR(Str::room_header_code)) + 6 + codeW + 20 + 38 +
+                        TextW(f.body, 20, TR(Str::room_header_copy));
     const std::string title = RoomsScreenTitleText(v.title, NameOf(v, v.owner));
     float x = 48 + RoomsScreenFitText(d, f.display, 40, 26, 1552 - 48 - 30 - lineW, g_v.P(48, 22), Rgba(255, 255, 255), title, 0, true) + 30;
     if (!paused) {
         StageText(d, f.strong, 20, x, 39, v.isPublic ? kGreen : kSoft, access);
         x += TextW(f.strong, 20, access) + 16;
     }
-    StageText(d, f.body, 20, x, 39, kCream, "Code");
-    x += TextW(f.body, 20, "Code") + 6;
+    StageText(d, f.body, 20, x, 39, kCream, TR(Str::room_header_code));
+    x += TextW(f.body, 20, TR(Str::room_header_code)) + 6;
     if (hideCode) x += RoomsScreenDrawHiddenCode(d, x, 39, 20, kGold) + 20;
     else {
         StageText(d, f.strong, 20, x, 39, kGold, code);
         x += TextW(f.strong, 20, code) + 20;
     }
     Glyph(d, "button_back", g_v.P(x, 33), g_v.P(x + 32, 65));
-    StageText(d, f.body, 20, x + 38, 39, kCream, "Copy code");
-    if (g.modal == Modal::None && Clicked() && MouseIn(g_v.P(x, 32), g_v.P(x + 38 + TextW(f.body, 20, "Copy code"), 68))) {
+    StageText(d, f.body, 20, x + 38, 39, kCream, TR(Str::room_header_copy));
+    if (g.modal == Modal::None && Clicked() && MouseIn(g_v.P(x, 32), g_v.P(x + 38 + TextW(f.body, 20, TR(Str::room_header_copy)), 68))) {
         ImGui::SetClipboardText(v.room.c_str());
         in->copiedCode = true;
     }
@@ -340,83 +341,83 @@ void RoomDrawScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     const keeper::TableState* ms = myTable >= 0 ? &v.tableViews[myTable].s : nullptr;
     if (g.cardTable >= 0) {
         prompts = g.cardReady ? std::vector<std::pair<const char*, std::string>>{}
-                              : std::vector<std::pair<const char*, std::string>>{{"button_a", "Ready"}, {"button_b", "Leave queue"}};
+                              : std::vector<std::pair<const char*, std::string>>{{"button_a", TR(Str::common_prompt_ready)}, {"button_b", TR(Str::room_bar_leave_queue)}};
         text = "";
         if (!v.tableNotice.empty() && !g.cardReady) {
-            lead = "NO MATCH";
+            lead = TR(Str::room_bar_no_match);
             leadCol = kRed;
             text = v.tableNotice;
         }
     } else if (g.modal == Modal::Leaving) {
-        prompts = {{"button_a", "Select"}, {"button_b", "Stay"}};
+        prompts = {{"button_a", TR(Str::common_prompt_select)}, {"button_b", TR(Str::common_prompt_stay)}};
     } else if (g.modal == Modal::Remove) {
-        prompts = {{"button_a", "Select"}, {"button_b", "Cancel"}};
+        prompts = {{"button_a", TR(Str::common_prompt_select)}, {"button_b", TR(Str::common_prompt_cancel)}};
     } else if (g.modal == Modal::Rules) {
         text = "";
-        prompts = {{"button_a", "Done"}, {"button_b", "Cancel"}};
+        prompts = {{"button_a", TR(Str::common_prompt_done)}, {"button_b", TR(Str::common_prompt_cancel)}};
     } else if (g.typing) {
-        text = "Enter to send, Escape to cancel. On Steam Deck, press Steam + X for the keyboard.";
+        text = TR(Str::room_bar_typing);
     } else if (paused) {
-        lead = "ROOM PAUSED";
-        text = "Tables are on hold while the rooms server reconnects. Chat still works.";
-        prompts = {{"button_b", "Leave"}};
+        lead = TR(Str::room_bar_paused);
+        text = TR(Str::room_bar_paused_text);
+        prompts = {{"button_b", TR(Str::common_prompt_leave)}};
     } else if (handoffTable >= 0) {
         const keeper::TableState& s = v.tableViews[handoffTable].s;
-        lead = "TABLE " + std::to_string(handoffTable + 1);
-        text = g_handoff.jumping ? "The match is loading." : "Getting the match ready with " + NameOf(v, s.seat[s.seat[0] == v.self ? 1 : 0]) + ".";
-        if (canCancel) prompts = {{"button_b", "Cancel"}};
+        lead = TRF(Str::room_bar_table, handoffTable + 1);
+        text = g_handoff.jumping ? std::string(TR(Str::room_bar_loading)) : TRF(Str::room_bar_getting_ready, NameOf(v, s.seat[s.seat[0] == v.self ? 1 : 0]).c_str());
+        if (canCancel) prompts = {{"button_b", TR(Str::common_prompt_cancel)}};
     } else if (ms && ms->phase == TablePhase::After && (ms->lastWinner == v.self || ms->lastLoser == v.self)) {
         const bool won = ms->lastWinner == v.self;
         Rules rules;
         const bool early = ParseRules(v.tableViews[myTable].rules, &rules) && ms->lastScore[0] < rules.firstTo;
-        lead = early ? "SET ENDED" : won ? "YOU WON THE SET"
-                                         : "YOU LOST THE SET";
+        lead = TR(early ? Str::room_bar_set_ended : won ? Str::room_bar_won
+                                                        : Str::room_bar_lost);
         leadCol = early ? kSoft : won ? kGreen
                                       : kSoft;
-        text = std::to_string(won ? ms->lastScore[0] : ms->lastScore[1]) + " - " + std::to_string(won ? ms->lastScore[1] : ms->lastScore[0]) + ". ";
+        const int mine = won ? ms->lastScore[0] : ms->lastScore[1], theirs = won ? ms->lastScore[1] : ms->lastScore[0];
         const std::vector<uint32_t>& q = v.tableViews[myTable].queue;
         const auto at = std::find(q.begin(), q.end(), v.self);
-        if (ms->seat[0] == v.self || ms->seat[1] == v.self) text += "You stay on Table " + std::to_string(myTable + 1) + ".";
-        else if (at != q.end()) text += "Back in the queue \xC2\xB7 " + Ordinal(static_cast<int>(at - q.begin()) + 1) + ".";
-        else text += "Back to the room.";
+        if (ms->seat[0] == v.self || ms->seat[1] == v.self) text = TRF(Str::room_bar_result_stay, mine, theirs, myTable + 1);
+        else if (at != q.end()) text = TRF(Str::room_bar_result_queue, mine, theirs, Ordinal(static_cast<int>(at - q.begin()) + 1).c_str());
+        else text = TRF(Str::room_bar_result_room, mine, theirs);
     } else if (!v.tableNotice.empty()) {
-        lead = "NO MATCH";
+        lead = TR(Str::room_bar_no_match);
         leadCol = kRed;
         text = v.tableNotice;
-        prompts = {{"button_a", "OK"}};
+        prompts = {{"button_a", TR(Str::common_prompt_ok)}};
     } else if (g.onPlayers) {
         const uint32_t who = players.empty() ? 0 : players[g.player].id;
-        text = who == v.self ? "That's you." : "";
+        text = who == v.self ? TR(Str::room_bar_thats_you) : "";
         prompts = {};
-        if (who != v.self) prompts.push_back({"button_a", g.muted.count(who) ? "Unmute" : "Mute"});
-        if (who != v.self && v.owner == v.self) prompts.push_back({"button_x", "Remove"});
-        prompts.push_back({"button_b", "Tables"});
+        if (who != v.self) prompts.push_back({"button_a", TR(g.muted.count(who) ? Str::room_bar_unmute : Str::room_bar_mute)});
+        if (who != v.self && v.owner == v.self) prompts.push_back({"button_x", TR(Str::room_bar_remove)});
+        prompts.push_back({"button_b", TR(Str::room_bar_tables)});
     } else {
-        const std::string place = RoomsPlace(v, v.self);
+        const RoomPlace place = RoomsPlaceOf(v, v.self);
         if (v.members.size() <= 1) {
-            lead = "ROOM OPEN";
-            text = "Share the code to invite friends.";
-        } else if (v.watching >= 0 && place.rfind("Watching", 0) == 0) {
-            lead = Upper(place);
-            text = "Its matches open automatically.";
-        } else if (place != "Idle") {
-            lead = Upper(place);
+            lead = TR(Str::room_bar_open);
+            text = TR(Str::room_bar_open_text);
+        } else if (v.watching >= 0 && place.kind == RoomPlace::Kind::Watching) {
+            lead = Upper(RoomsPlaceText(place));
+            text = TR(Str::room_bar_watching_text);
+        } else if (place.kind != RoomPlace::Kind::Idle) {
+            lead = Upper(RoomsPlaceText(place));
         } else {
-            text = "Pick a table to sit at or queue for.";
+            text = TR(Str::room_bar_pick_table);
         }
-        if (fs.phase == TablePhase::Open && atFocused) prompts.push_back({"button_a", "Stand up"});
+        if (fs.phase == TablePhase::Open && atFocused) prompts.push_back({"button_a", TR(Str::room_bar_stand_up)});
         else if (fs.phase == TablePhase::Open && (!fs.seat[0] || !fs.seat[1])) {
             const int seat = !fs.seat[0] && !fs.seat[1] ? g.seatSide : !fs.seat[0] ? 0
                                                                                    : 1;
-            prompts.push_back({"button_a", seat ? "Sit as P2" : "Sit as P1"});
-        } else if (queuedHere) prompts.push_back({"button_a", "Leave the queue"});
-        else if (!atFocused) prompts.push_back({"button_a", "Join the queue"});
-        if (!atFocused) prompts.push_back({"button_x", v.watching == g.table ? "Stop watching" : "Watch"});
-        prompts.push_back({"button_y", "My character"});
-        if (waiting && !paused) prompts.push_back({"button_lb", "Training"});
-        if (v.owner == v.self) prompts.push_back({"button_start", "Table rules"});
-        if (v.members.size() > 1) prompts.push_back({"button_rb", "Players"});
-        prompts.push_back({"button_b", "Leave"});
+            prompts.push_back({"button_a", TR(seat ? Str::room_bar_sit_p2 : Str::room_bar_sit_p1)});
+        } else if (queuedHere) prompts.push_back({"button_a", TR(Str::room_bar_leave_the_queue)});
+        else if (!atFocused) prompts.push_back({"button_a", TR(Str::room_bar_join_queue)});
+        if (!atFocused) prompts.push_back({"button_x", TR(v.watching == g.table ? Str::room_bar_stop_watching : Str::room_bar_watch)});
+        prompts.push_back({"button_y", TR(Str::room_bar_my_character)});
+        if (waiting && !paused) prompts.push_back({"button_lb", TR(Str::room_bar_training)});
+        if (v.owner == v.self) prompts.push_back({"button_start", TR(Str::room_bar_table_rules)});
+        if (v.members.size() > 1) prompts.push_back({"button_rb", TR(Str::room_bar_players)});
+        prompts.push_back({"button_b", TR(Str::common_prompt_leave)});
     }
     const bool modal = g.cardTable >= 0 || handoffTable >= 0 || g.modal != Modal::None;
     PromptLine(d, f.body, f.bold ? f.bold : f.strong, modal ? std::string() : lead, leadCol, modal ? std::string() : text, modal ? PromptList{} : prompts,
@@ -425,11 +426,11 @@ void RoomDrawScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     if (g.cardTable >= 0) Card(d, f, v, g.cardTable, prompts, lead.empty() ? text : lead + "  " + text, lead.empty() ? kSoft : leadCol, &clicked);
     else if (handoffTable >= 0) HandoffModal(d, f, v, handoffTable, steps, stepSeconds, prompts, &clicked);
     else if (g.modal == Modal::Leaving) {
-        Dialog(d, f, RoomsScreenStreamerMode() ? std::string("ROOM") : "ROOM \xC2\xB7 " + WeyveService::DisplayCode(v.room), "Leave the room?", LeaveText(v), false, "Leave",
-               "Stay", prompts, &clicked, &pressed);
+        Dialog(d, f, RoomsScreenStreamerMode() ? std::string(TR(Str::room_dialog_room)) : TRF(Str::room_dialog_room_code, WeyveService::DisplayCode(v.room).c_str()),
+               TR(Str::room_dialog_leave), LeaveText(v), false, TR(Str::common_prompt_leave), TR(Str::common_prompt_stay), prompts, &clicked, &pressed);
     } else if (g.modal == Modal::Remove) {
-        Dialog(d, f, "OWNER", "Remove " + NameOf(v, g.removing) + "?", "They won't be able to rejoin.", true,
-               "Remove", "Cancel", prompts, &clicked, &pressed);
+        Dialog(d, f, TR(Str::room_dialog_owner), TRF(Str::room_dialog_remove, NameOf(v, g.removing).c_str()), TR(Str::room_dialog_remove_text), true,
+               TR(Str::room_bar_remove), TR(Str::common_prompt_cancel), prompts, &clicked, &pressed);
     } else if (g.modal == Modal::Rules) RulesModal(f, v, prompts, &clicked);
     if (pressed >= 0 && g_inputOn) {
         if (pressed == 0 && g.modal == Modal::Leaving) in->leave = true;

@@ -46,6 +46,12 @@ struct TableView {
 };
 
 struct ChatLine {
+    enum class Kind { Chat,
+                      Joined,
+                      Left,
+                      Owner,
+                      Note };
+    Kind kind = Kind::Chat;
     uint32_t from = 0;    // 0: the room's own line (joins, leaves, owner changes)
     std::string name;     // as the word filter shows it ("Player 1234" for a masked name)
     std::string text;     // as typed
@@ -93,8 +99,19 @@ struct RoomsView {
     // A table's match that did not start or finish (the opponent left during
     // the handoff, the match room never opened): what the room says about it.
     std::string tableNotice;
-    // The last thing that went wrong, for the screen ("No room on that code",
-    // "Room full", "Removed from the room", the keeper's refusal).
+    // The last thing that went wrong, for the screen: what kind, and its text
+    // (the strings table's, or as the keeper or the server sent it).
+    enum class Notice { None,
+                        NoRoom,
+                        Full,
+                        Removed,
+                        CannotJoin,
+                        OtherVersion,
+                        NoAnswer,
+                        Unavailable,
+                        ServerLost,
+                        Refused };
+    Notice noticeKind = Notice::None;
     std::string notice;
     // The table this player watches (RoomsWatch), -1 none.
     int watching = -1;
@@ -164,8 +181,30 @@ bool RoomsTakeWatch(WatchTicket* out);
 bool RoomsIsKeeper(const std::string& room, uint32_t id, const std::string& proof);
 // The clock TableView::callSeenMs is on (milliseconds).
 int64_t RoomsClockMs();
+
 // A member's place, for the player list: "Table 2 · playing", "Idle".
+// Where a member is in the room: at a table (seated, next, playing, its set
+// over), in a table's queue (1 first), watching one, or idle.
+struct RoomPlace {
+    enum class Kind { Idle,
+                      Seated,
+                      Next,
+                      Playing,
+                      SetOver,
+                      Queued,
+                      Watching };
+    Kind kind = Kind::Idle;
+    int table = -1;
+    int position = 0;
+};
+
+RoomPlace RoomsPlaceOf(const RoomsView& v, uint32_t id);
+// "Table 2 · seated", "Watching Table 1", "Idle"; short: "T2 · seated".
+std::string RoomsPlaceText(const RoomPlace& place, bool shortForm = false);
 std::string RoomsPlace(const RoomsView& v, uint32_t id);
+std::string Ordinal(int n);
+// A table's rules in a line: "First to 2 · winner stays, up to 3 · 99 seconds".
+std::string RoomsRulesText(const Rules& rules);
 // The character others see beside this player (member data `ch`: the
 // Fighter Profile favorite until My character, M4).
 void RoomsSetCharacter(const std::string& code);

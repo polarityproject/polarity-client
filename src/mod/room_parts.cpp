@@ -2,6 +2,7 @@
 
 #include "mod/room_internal.h"
 
+#include "core/text.h"
 #include "mod/ui_sound.h"
 
 #include <imgui_internal.h>
@@ -64,11 +65,6 @@ std::string NameOf(const RoomsView& v, uint32_t id) {
     return m ? m->name : std::string("?");
 }
 
-std::string Ordinal(int n) {
-    static const char* const k[] = {"1st", "2nd", "3rd"};
-    return n >= 1 && n <= 3 ? k[n - 1] : std::to_string(n) + "th";
-}
-
 } // namespace roomui
 
 namespace {
@@ -84,7 +80,7 @@ void Seat(ImDrawList* d, const HubFonts& f, float x, float y, const RoomMember* 
     if (sitHere) {
         d->AddRectFilled(a, b, Rgba(233, 196, 106, 36));
         d->AddRect(ImVec2(a.x + g_v.L(1), a.y + g_v.L(1)), ImVec2(b.x - g_v.L(1), b.y - g_v.L(1)), look::kRing, 0, 0, g_v.L(2));
-        Text(d, f.bold ? f.bold : f.strong, g_v.L(18), g_v.P(x + 165, y + 48), kGold, seat ? "Sit here as P2" : "Sit here as P1", 0.5f);
+        Text(d, f.bold ? f.bold : f.strong, g_v.L(18), g_v.P(x + 165, y + 48), kGold, TR(seat ? Str::room_table_sit_p2 : Str::room_table_sit_p1), 0.5f);
         return;
     }
     d->AddRectFilled(a, b, look::kControl);
@@ -110,10 +106,10 @@ void Seat(ImDrawList* d, const HubFonts& f, float x, float y, const RoomMember* 
         const float left = p2 ? tx : tx - nameW - flagW;
         if (flag) RoomsScreenDrawFlag(d, f.strong, m->country, left, y + 89, 13, dim ? 0.45f : 1.0f);
         StageText(d, bold, 21, left + flagW, y + 82, Dim(kCream, dim), who);
-        if (ready) StageText(d, bold, 15, tx, y + 11, Dim(kGreen, dim), "READY", align);
+        if (ready) StageText(d, bold, 15, tx, y + 11, Dim(kGreen, dim), TR(Str::common_ready), align);
     }
     d->AddRect(a, b, Dim(look::kEdgeControl, dim), 0, 0, std::max(1.0f, g_v.L(1)));
-    if (!m) Text(d, f.body, g_v.L(18), g_v.P(x + 165, y + 49), Dim(kSoft, dim), "Open seat", 0.5f);
+    if (!m) Text(d, f.body, g_v.L(18), g_v.P(x + 165, y + 49), Dim(kSoft, dim), TR(Str::common_open_seat), 0.5f);
 }
 
 void Table(ImDrawList* d, const HubFonts& f, const RoomsView& v, float y, int index, bool on, bool dim) {
@@ -122,13 +118,13 @@ void Table(ImDrawList* d, const HubFonts& f, const RoomsView& v, float y, int in
     Pane(d, 48, y, 868, y + kTableH);
     const bool lit = on && !dim;
     Strip(d, 50, y + 2, 866, y + 40, lit);
-    Text(d, f.display, g_v.L(21), g_v.P(64, y + 9), lit ? look::kInk : Dim(kCream, dim), "TABLE " + std::to_string(index + 1));
+    Text(d, f.display, g_v.L(21), g_v.P(64, y + 9), lit ? look::kInk : Dim(kCream, dim), TRF(Str::room_table_title, index + 1));
     Rules rules;
-    const std::string line = tv && ParseRules(tv->rules, &rules) ? DescribeRules(rules) : std::string();
-    const std::string queue = std::to_string(tv ? tv->queue.size() : 0) + " in queue";
+    const std::string line = tv && ParseRules(tv->rules, &rules) ? RoomsRulesText(rules) : std::string();
+    const std::string queue = TRF(Str::room_table_in_queue, tv ? static_cast<int>(tv->queue.size()) : 0);
     ImFont* infoFont = f.bold ? f.bold : f.strong;
     const float queueW = TextW(infoFont, 19, queue);
-    const float tableW = TextW(f.display, 21, "TABLE " + std::to_string(index + 1));
+    const float tableW = TextW(f.display, 21, TRF(Str::room_table_title, index + 1));
     Text(d, infoFont, g_v.L(19), g_v.P(852, y + 9), lit ? look::kInk : Dim(kCream, dim), queue, 1);
     Text(d, infoFont, g_v.L(19), g_v.P(852 - queueW - 18, y + 9), lit ? look::kInkSoft : Dim(kGold, dim),
          Ellipsize(infoFont, 19, line, 852 - queueW - 18 - (64 + tableW + 24)), 1);
@@ -145,12 +141,12 @@ void Table(ImDrawList* d, const HubFonts& f, const RoomsView& v, float y, int in
     }
     const bool live = s.phase == TablePhase::Playing || s.phase == TablePhase::Connecting;
     if (live) StageText(d, f.display, 40, 458, y + 78, Dim(Rgba(255, 255, 255), dim), std::to_string(s.wins[0]) + " - " + std::to_string(s.wins[1]), 0.5f);
-    else Text(d, f.display, g_v.L(30), g_v.P(458, y + 88), Dim(Rgba(138, 129, 112), dim), "VS", 0.5f);
-    const char* doing = s.phase == TablePhase::Call ? "Your turn" : s.phase == TablePhase::Connecting ? "Connecting"
-                                                                : s.phase == TablePhase::Playing      ? "Playing"
-                                                                : s.phase == TablePhase::After        ? "Set over"
-                                                                                                      : "";
-    if (s.phase == TablePhase::Call && !mine) doing = "Getting ready";
+    else Text(d, f.display, g_v.L(30), g_v.P(458, y + 88), Dim(Rgba(138, 129, 112), dim), TR(Str::common_vs), 0.5f);
+    const char* doing = s.phase == TablePhase::Call         ? TR(mine ? Str::room_table_your_turn : Str::room_table_getting_ready)
+                        : s.phase == TablePhase::Connecting ? TR(Str::room_table_connecting)
+                        : s.phase == TablePhase::Playing    ? TR(Str::room_table_playing)
+                        : s.phase == TablePhase::After      ? TR(Str::room_table_set_over)
+                                                            : "";
     if (*doing) Text(d, f.body, g_v.L(16), g_v.P(458, y + 130), Dim(kCream, dim), doing, 0.5f);
     if (lit) Ring(d, 48, y, 868, y + kTableH);
 }
@@ -231,13 +227,6 @@ ImVec2 RowArtShift(const std::string& code) {
 constexpr float kRowsTop = 112, kRowH = 50, kPlayersBottom = 526, kChatTop = 538;
 constexpr float kPlaceX = 1215;
 
-std::string ShortPlace(std::string place) {
-    const std::string watching = "Watching Table ", table = "Table ";
-    if (place.rfind(watching, 0) == 0) return "Watching T" + place.substr(watching.size());
-    if (place.rfind(table, 0) == 0) return "T" + place.substr(table.size());
-    return place;
-}
-
 } // namespace
 
 namespace roomui {
@@ -245,7 +234,7 @@ namespace roomui {
 void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v) {
     Panel(d, 892, 80, 1552, kPlayersBottom);
     Strip(d, 894, 82, 1550, 110, false);
-    Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(910, 86), kGold, "PLAYERS \xC2\xB7 " + std::to_string(v.members.size()) + " / 16");
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(910, 86), kGold, TRF(Str::room_players_title, static_cast<int>(v.members.size()), keeper::kRoomCap));
     const std::vector<RoomMember> list = PlayerOrder(v);
     const int count = static_cast<int>(list.size());
     if (g.modal == Modal::None && g.cardTable < 0)
@@ -281,26 +270,26 @@ void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v) {
         ImFont* bold = f.bold ? f.bold : f.strong;
         std::string who = Upper(m.name);
         const bool muted = g.muted.count(m.id) > 0;
-        const float after = (m.id == v.self ? TextW(f.body, 18, "(you)") + 6 : 0) + (muted ? TextW(f.body, 16, "muted") + 6 : 0);
+        const float after = (m.id == v.self ? TextW(f.body, 18, TR(Str::room_players_you)) + 6 : 0) + (muted ? TextW(f.body, 16, TR(Str::room_players_muted)) + 6 : 0);
         const float room = kPlaceX - 10 - x - after;
         who = Ellipsize(bold, 19, who, room);
         StageText(d, bold, 19, x, ty, kCream, who);
         x += TextW(bold, 19, who) + 6;
         if (m.id == v.self) {
-            Text(d, f.body, g_v.L(18), g_v.P(x, ty + 1), kSoft, "(you)", 0, true);
-            x += TextW(f.body, 18, "(you)") + 6;
+            Text(d, f.body, g_v.L(18), g_v.P(x, ty + 1), kSoft, TR(Str::room_players_you), 0, true);
+            x += TextW(f.body, 18, TR(Str::room_players_you)) + 6;
         }
-        if (muted) Text(d, f.body, g_v.L(16), g_v.P(x, ty + 2), kSoft, "muted", 0, true);
-        const std::string place = ShortPlace(RoomsPlace(v, m.id));
-        Text(d, f.body, g_v.L(18), g_v.P(kPlaceX, ty + 1), place == "Idle" ? kSoft : kGreen, place);
+        if (muted) Text(d, f.body, g_v.L(16), g_v.P(x, ty + 2), kSoft, TR(Str::room_players_muted), 0, true);
+        const RoomPlace place = RoomsPlaceOf(v, m.id);
+        Text(d, f.body, g_v.L(18), g_v.P(kPlaceX, ty + 1), place.kind == RoomPlace::Kind::Idle ? kSoft : kGreen, RoomsPlaceText(place, true));
         if (m.pingMs >= 0) {
             const ImU32 col = PingColor(static_cast<unsigned>(m.pingMs));
-            const std::string ms = std::to_string(m.pingMs) + " ms";
+            const std::string ms = TRF(Str::common_ms, m.pingMs);
             Text(d, bold, g_v.L(18), g_v.P(1428, ty + 1), col, ms, 1);
             if (m.relayed) IconCloud(d, g_v.P(1428 - TextW(bold, 18, ms) - 16, ty + 12), g_v.L(1.7f), col);
         }
         if (m.link) {
-            const char* what = m.link == 1 ? "Wired" : "Wi-Fi";
+            const char* what = TR(m.link == 1 ? Str::room_players_wired : Str::room_players_wifi);
             Text(d, f.body, g_v.L(17), g_v.P(1520, ty + 2), kSoft, what, 1);
             IconLinkType(d, g_v.P(1520 - TextW(f.body, 17, what) - 14, ty + 12), g_v.L(1.5f), m.link, kSoft);
         }
@@ -312,7 +301,7 @@ void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v) {
 void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox, bool* clickedSend) {
     Panel(d, 892, kChatTop, 1552, 832);
     Strip(d, 894, kChatTop + 2, 1550, kChatTop + 30, false);
-    Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(910, kChatTop + 6), kGold, "ROOM CHAT");
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(16), g_v.P(910, kChatTop + 6), kGold, TR(Str::room_chat_title));
     const float wrap = 610, size = 19, top = kChatTop + 36, viewBottom = 773;
     const ImVec2 ca = g_v.P(894, top), cb = g_v.P(1550, viewBottom);
     if (const int w = WheelSteps(ca, cb)) g.chatScroll += w * 40.0f;
@@ -326,8 +315,8 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
         const ChatLine& last = v.chat.back();
         if (g.chatHeard && (last.from != g.chatHeardFrom || last.text != g.chatHeardText)) {
             if (last.from && last.from != v.self && !g.muted.count(last.from)) UiSoundPlay(UiSound::ChatPost);
-            else if (!last.from && last.text.size() > 7 && last.text.compare(last.text.size() - 7, 7, " joined") == 0) UiSoundPlay(UiSound::Joined);
-            else if (!last.from && last.text.size() > 5 && last.text.compare(last.text.size() - 5, 5, " left") == 0) UiSoundPlay(UiSound::Left);
+            else if (last.kind == ChatLine::Kind::Joined) UiSoundPlay(UiSound::Joined);
+            else if (last.kind == ChatLine::Kind::Left) UiSoundPlay(UiSound::Left);
         }
         g.chatHeard = true;
         g.chatHeardFrom = last.from;
@@ -378,7 +367,7 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
     g.chatScroll = std::clamp(g.chatScroll, 0.0f, std::max(0.0f, height - view));
     if (height > view) ScrollBar(d, 1536, top, viewBottom, height - view - g.chatScroll, view, height, false);
     if (g.chatScroll > 0 && unseen > 0) {
-        const std::string label = std::to_string(unseen) + (unseen == 1 ? " new message" : " new messages");
+        const std::string label = TRF(unseen == 1 ? Str::room_chat_new_message : Str::room_chat_new_messages, unseen);
         ImFont* bold = f.bold ? f.bold : f.strong;
         const float w = TextW(bold, 16, label) + 34, x1 = 1530, x0 = x1 - w, y0 = 744, y1 = 772;
         DropShadow(d, x0, y0, x1, y1, 4, 10, 0.35f, false);
@@ -398,10 +387,10 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
         Text(d, f.body, g_v.L(19), g_v.P(924, 788), kCream, tail);
     } else {
         Text(d, f.body, g_v.L(19), g_v.P(924, 788), kSoft,
-             ui::MappedPadKeys(0x0D /* Enter */) ? "Say something (Back + Y, or click here)" : "Say something (Enter, or Back + Y)");
+             ui::MappedPadKeys(0x0D /* Enter */) ? TR(Str::room_chat_say_back) : TR(Str::room_chat_say_enter));
     }
     d->AddRectFilled(g_v.P(1468, 781), g_v.P(1534, 819), kGold);
-    Text(d, f.bold ? f.bold : f.strong, g_v.L(18), g_v.P(1501, 788), look::kInk, "Send", 0.5f);
+    Text(d, f.bold ? f.bold : f.strong, g_v.L(18), g_v.P(1501, 788), look::kInk, TR(Str::room_chat_send), 0.5f);
     *clickedBox = Clicked() && MouseIn(a, b);
     *clickedSend = Clicked() && MouseIn(g_v.P(1468, 781), g_v.P(1534, 819));
 }

@@ -2,6 +2,8 @@
 
 #include "mod/rooms_internal.h"
 
+#include "core/text.h"
+
 #include <algorithm>
 
 namespace sfv::mod {
@@ -98,9 +100,8 @@ void Client::Report() {
         const bool stillOn = seated && (s.phase == keeper::TablePhase::Connecting || s.phase == keeper::TablePhase::Playing);
         if (!stillOn && shared.view.keeper) {
             Log("rooms: table %d moved on before its match began: leaving the session", shared.playing.table + 1);
-            shared.view.tableNotice = s.seat[0] == shared.view.self || s.seat[1] == shared.view.self || !seated
-                                          ? "Your opponent left before the match started."
-                                          : "The match did not start.";
+            shared.view.tableNotice = TR(s.seat[0] == shared.view.self || s.seat[1] == shared.view.self || !seated ? Str::rooms_table_opponent_left
+                                                                                                                   : Str::rooms_table_not_started);
             abortSession = true;
             shared.playing = {};
             return;
@@ -114,7 +115,7 @@ void Client::Report() {
     if (!shared.playing.started) {
         if (NowMs() - shared.playing.at > kSessionStartMs) {
             Log("rooms: table %d's session never started", shared.playing.table + 1);
-            shared.view.tableNotice = "Couldn't connect to your opponent, so the match didn't start.";
+            shared.view.tableNotice = TR(Str::rooms_table_no_link);
             ask("result", {t, "0", "0"});
             shared.playing = {};
         }
@@ -152,7 +153,8 @@ void Client::Report() {
         }
         const bool done = SetWinner(shared.playing.rules, wins) >= 0;
         if (!done) {
-            shared.view.tableNotice = std::string(shared.playing.begun ? "The set did not finish" : "The match did not start") + (nv.result.empty() ? std::string(".") : ": " + nv.result + ".");
+            shared.view.tableNotice = nv.result.empty() ? std::string(TR(shared.playing.begun ? Str::rooms_table_not_finished : Str::rooms_table_not_started))
+                                                        : TRF(shared.playing.begun ? Str::rooms_table_not_finished_why : Str::rooms_table_not_started_why, nv.result.c_str());
             Log("rooms: %s", shared.view.tableNotice.c_str());
         }
         ask("result", {t, done ? std::to_string(wins[0]) : "0", done ? std::to_string(wins[1]) : "0"});
@@ -168,14 +170,14 @@ void Client::Asks(const WeyveRoomView& v) {
         const keeper::RoomSettings s = *shared.createAsk;
         shared.createAsk.reset();
         if (shared.view.state != State::Lobby || !shared.view.keeper) {
-            shared.view.notice = "Custom Rooms are unavailable right now";
+            SetNotice(RoomsView::Notice::Unavailable, TR(Str::rooms_notice_unavailable));
             Log("rooms: create: not available (%s%s)", RoomsStateName(shared.view.state), shared.view.keeper ? "" : ", no keeper");
         } else {
             const keeper::Request r = keeper::RoomRequest(++seq, s);
             svc->SetMemberData(keeper::kRequest, keeper::FormatRequest(r));
             pendingSeq = r.seq;
             pendingUntil = NowMs() + kAnswerWaitMs;
-            shared.view.notice.clear();
+            SetNotice(RoomsView::Notice::None, "");
             Log("rooms: asking the keeper for a room (#%u: %s, %d tables, %s)", r.seq, keeper::FormatTitle(s.title).c_str(), s.tables,
                 s.isPublic ? "public" : "private");
             Set(State::Creating);
@@ -185,7 +187,7 @@ void Client::Asks(const WeyveRoomView& v) {
         const std::string code = *shared.joinAsk;
         shared.joinAsk.reset();
         if ((shared.view.state == State::Lobby || shared.view.state == State::Browsing || shared.view.state == State::Room) && code != shared.view.room) {
-            shared.view.notice.clear();
+            SetNotice(RoomsView::Notice::None, "");
             target = code;
             ForgetTables();
             svc->LeaveRoom();
@@ -214,7 +216,7 @@ void Client::Asks(const WeyveRoomView& v) {
             shared.leftRoom = shared.view.room;
             shared.leftAtMs = NowMs();
             std::erase_if(shared.view.publicRooms, [&](const keeper::ListedRoom& r) { return r.code == shared.leftRoom && r.members <= 1; });
-            BackToLobby("", true);
+            BackToLobby(RoomsView::Notice::None, "", true);
         }
     }
     for (const std::string& text : shared.chatOut) {
@@ -240,51 +242,86 @@ std::string RoomsAfterSet(int seat, int winnerSeat) {
             for (const RoomMember& m : c.shared.view.members) {
                 if (m.id == id) return m.name;
             }
-            return std::string("the next player");
+            return std::string(TR(Str::rooms_after_next_player));
         };
-        const std::string table = "Table " + std::to_string(t + 1);
         if (s.seat[0] == who || s.seat[1] == who) {
-            out = "Stays on " + table;
             const uint32_t other = s.seat[0] == who ? s.seat[1] : s.seat[0];
             const uint32_t next = other ? other : queue.empty() ? 0
                                                                 : queue.front();
-            if (next) out += " \xC2\xB7 plays " + nameOf(next) + " next";
+            out = next ? TRF(Str::rooms_after_stays_plays, t + 1, nameOf(next).c_str()) : TRF(Str::rooms_after_stays, t + 1);
             return true;
         }
         const auto at = std::find(queue.begin(), queue.end(), who);
         if (at == queue.end()) {
-            out = "Back to the room";
+            out = TR(Str::rooms_after_back_to_room);
             return true;
         }
-        static const char* const kNth[] = {"next", "2nd", "3rd"};
-        const size_t n = static_cast<size_t>(at - queue.begin());
-        out = "Back in the queue \xC2\xB7 " + (n < 3 ? std::string(kNth[n]) : std::to_string(n + 1) + "th");
+        const int n = static_cast<int>(at - queue.begin());
+        out = n == 0 ? std::string(TR(Str::rooms_after_queue_next)) : TRF(Str::rooms_after_queue_at, Ordinal(n + 1).c_str());
         return true;
     });
     return out;
 }
 
-std::string RoomsPlace(const RoomsView& v, uint32_t id) {
-    static const char* const kOrdinal[] = {"1st", "2nd", "3rd"};
+RoomPlace RoomsPlaceOf(const RoomsView& v, uint32_t id) {
+    using K = RoomPlace::Kind;
     for (size_t t = 0; t < v.tableViews.size(); t++) {
         const TableView& tv = v.tableViews[t];
-        const std::string table = "Table " + std::to_string(t + 1) + " \xC2\xB7 ";
+        const int table = static_cast<int>(t);
         if (tv.s.seat[0] == id || tv.s.seat[1] == id) {
             switch (tv.s.phase) {
-                case keeper::TablePhase::Open: return table + "seated";
-                case keeper::TablePhase::Call: return table + "next";
-                case keeper::TablePhase::After: return table + "set over";
-                default: return table + "playing";
+                case keeper::TablePhase::Open: return {K::Seated, table};
+                case keeper::TablePhase::Call: return {K::Next, table};
+                case keeper::TablePhase::After: return {K::SetOver, table};
+                default: return {K::Playing, table};
             }
         }
         for (size_t k = 0; k < tv.queue.size(); k++) {
-            if (tv.queue[k] == id) return table + (k < 3 ? kOrdinal[k] : std::to_string(k + 1) + "th");
+            if (tv.queue[k] == id) return {K::Queued, table, static_cast<int>(k) + 1};
         }
     }
     for (const RoomMember& m : v.members) {
-        if (m.id == id && m.watching >= 0) return "Watching Table " + std::to_string(m.watching + 1);
+        if (m.id == id && m.watching >= 0) return {K::Watching, m.watching};
     }
-    return "Idle";
+    return {};
+}
+
+std::string Ordinal(int n) {
+    if (n >= 1 && n <= 3) return TR(static_cast<Str>(static_cast<int>(Str::common_ordinal_1) + n - 1));
+    return TRF(Str::common_ordinal_n, n);
+}
+
+std::string RoomsPlaceText(const RoomPlace& p, bool shortForm) {
+    using K = RoomPlace::Kind;
+    const int t = p.table + 1;
+    switch (p.kind) {
+        case K::Seated: return TRF(shortForm ? Str::rooms_place_short_seated : Str::rooms_place_seated, t);
+        case K::Next: return TRF(shortForm ? Str::rooms_place_short_next : Str::rooms_place_next, t);
+        case K::SetOver: return TRF(shortForm ? Str::rooms_place_short_set_over : Str::rooms_place_set_over, t);
+        case K::Playing: return TRF(shortForm ? Str::rooms_place_short_playing : Str::rooms_place_playing, t);
+        case K::Queued: return TRF(shortForm ? Str::rooms_place_short_queued : Str::rooms_place_queued, t, Ordinal(p.position).c_str());
+        case K::Watching: return TRF(shortForm ? Str::rooms_place_short_watching : Str::rooms_place_watching, t);
+        default: return TR(Str::rooms_place_idle);
+    }
+}
+
+std::string RoomsPlace(const RoomsView& v, uint32_t id) { return RoomsPlaceText(RoomsPlaceOf(v, id)); }
+
+std::string RoomsRulesText(const Rules& r) {
+    const std::string dot = TR(Str::common_list_separator);
+    std::string out = TRF(Str::rules_desc_first_to, r.firstTo) + dot;
+    switch (r.rotation) {
+        case Rotation::WinnerStays:
+            out += r.staysLimit ? TRF(Str::rules_desc_winner_up_to, r.staysLimit) : std::string(TR(Str::rules_desc_winner_no_limit));
+            break;
+        case Rotation::LoserStays:
+            out += r.staysLimit ? TRF(Str::rules_desc_loser_up_to, r.staysLimit) : std::string(TR(Str::rules_desc_loser_no_limit));
+            break;
+        case Rotation::RoundRobin: out += TR(Str::rules_desc_round_robin); break;
+    }
+    out += dot + TRF(Str::rules_desc_seconds, r.timer);
+    if (r.bestOf != 3) out += dot + (r.bestOf == 1 ? std::string(TR(Str::rules_desc_one_round)) : TRF(Str::rules_desc_best_of, r.bestOf));
+    return out;
 }
 
 } // namespace sfv::mod

@@ -433,8 +433,6 @@ void TestRulesFormat() {
     }
     CHECK(!ParseRules("r2 ft2 bo3 t99 ws3", &back, &error) && error.find("version 2") != std::string::npos);
     CHECK(FormatRules(Rules{}).size() < 512);
-    CHECK(DescribeRules(Rules{}) == "First to 2 \xC2\xB7 winner stays, up to 3 \xC2\xB7 99 seconds");
-    CHECK(DescribeRules(Rules{3, 1, 30, Rotation::RoundRobin, 0}) == "First to 3 \xC2\xB7 round robin \xC2\xB7 30 seconds \xC2\xB7 one round");
 }
 
 void TestRandomStage() {

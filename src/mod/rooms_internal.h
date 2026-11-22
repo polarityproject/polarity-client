@@ -155,8 +155,9 @@ struct Client {
     void Peeks();
 
     void ForgetTables(bool removed = false);
-    void BackToLobby(const std::string& notice, bool inRoom, bool removed = false);
-    void Line(uint32_t from, const std::string& shownName, const std::string& text, const std::string& realName = {});
+    void BackToLobby(RoomsView::Notice kind, const std::string& notice, bool inRoom, bool removed = false);
+    void SetNotice(RoomsView::Notice kind, const std::string& notice);
+    void Line(ChatLine::Kind kind, uint32_t from, const std::string& shownName, const std::string& text, const std::string& realName = {});
     std::string MaskedName(uint32_t id, const std::string& name) const;
     void OnEvent(const WeyveEvent& e, const WeyveRoomView& v);
     void Answers();

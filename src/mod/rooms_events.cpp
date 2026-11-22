@@ -2,6 +2,7 @@
 
 #include "mod/rooms_internal.h"
 
+#include "core/text.h"
 #include "core/display_name.h"
 
 #include <algorithm>
@@ -35,10 +36,15 @@ void Client::ForgetTables(bool removed) {
     shared.view.tableNotice.clear();
 }
 
-void Client::BackToLobby(const std::string& notice, bool inRoom, bool removed) {
+void Client::SetNotice(RoomsView::Notice kind, const std::string& notice) {
+    shared.view.noticeKind = kind;
+    shared.view.notice = notice;
+}
+
+void Client::BackToLobby(RoomsView::Notice kind, const std::string& notice, bool inRoom, bool removed) {
     ForgetTables(removed);
     if (!notice.empty()) {
-        shared.view.notice = notice;
+        SetNotice(kind, notice);
         Log("rooms: %s", notice.c_str());
     }
     if (inRoom) svc->LeaveRoom();
@@ -48,16 +54,16 @@ void Client::BackToLobby(const std::string& notice, bool inRoom, bool removed) {
     ToBrowsing();
 }
 
-void Client::Line(uint32_t from, const std::string& shownName, const std::string& text, const std::string& realName) {
+void Client::Line(ChatLine::Kind kind, uint32_t from, const std::string& shownName, const std::string& text, const std::string& realName) {
     const std::string name = core::DisplayName(shownName);
     const std::string censored = from && shared.view.isPublic && !words.empty() ? keeper::CensorChat(text, words) : text;
-    shared.view.chat.push_back({from, name, text, realName.empty() ? name : core::DisplayName(realName), censored});
+    shared.view.chat.push_back({kind, from, name, text, realName.empty() ? name : core::DisplayName(realName), censored});
     if (shared.view.chat.size() > kChatKept) shared.view.chat.erase(shared.view.chat.begin());
 }
 
 std::string Client::MaskedName(uint32_t id, const std::string& name) const {
     const auto it = mask.find(id);
-    return it != mask.end() ? "Player " + std::to_string(it->second) : name;
+    return it != mask.end() ? TRF(Str::rooms_masked_name, static_cast<int>(it->second)) : name;
 }
 
 void Client::OnEvent(const WeyveEvent& e, const WeyveRoomView& v) {
@@ -115,24 +121,23 @@ void Client::OnEvent(const WeyveEvent& e, const WeyveRoomView& v) {
             }
             if (shared.view.state != State::Joining) break;
             if (e.error == WeyveEvent::Error::Other && e.text == "not in a room") break;
-            BackToLobby(e.error == WeyveEvent::Error::NoSuchRoom ? "No room on that code"
-                        : e.error == WeyveEvent::Error::Closed   ? "Room full"
-                        : e.error == WeyveEvent::Error::Banned   ? "Removed by the room's owner"
-                                                                 : "Cannot join: " + e.text,
-                        false);
+            if (e.error == WeyveEvent::Error::NoSuchRoom) BackToLobby(RoomsView::Notice::NoRoom, TR(Str::rooms_notice_no_room), false);
+            else if (e.error == WeyveEvent::Error::Closed) BackToLobby(RoomsView::Notice::Full, TR(Str::rooms_notice_full), false);
+            else if (e.error == WeyveEvent::Error::Banned) BackToLobby(RoomsView::Notice::Removed, TR(Str::rooms_notice_removed_by_owner), false);
+            else BackToLobby(RoomsView::Notice::CannotJoin, TRF(Str::rooms_notice_cannot_join, e.text.c_str()), false);
             break;
         case WeyveEvent::Type::Removed:
-            if (shared.view.state == State::Room) BackToLobby("Removed from the room", false, true);
+            if (shared.view.state == State::Room) BackToLobby(RoomsView::Notice::Removed, TR(Str::rooms_notice_removed), false, true);
             break;
         case WeyveEvent::Type::ServerLost:
-            shared.view.notice = e.text;
+            SetNotice(RoomsView::Notice::ServerLost, e.text);
             Set(State::Failed);
             break;
         case WeyveEvent::Type::Chat:
             if (shared.view.state == State::Room) {
                 const WeyveMember* m = v.Member(e.peer);
                 const std::string real = m ? m->name : "?";
-                Line(e.peer, MaskedName(e.peer, real), e.text, real);
+                Line(ChatLine::Kind::Chat, e.peer, MaskedName(e.peer, real), e.text, real);
             }
             break;
         default:
@@ -220,7 +225,7 @@ void Client::Answers() {
         pendingSeq = 0;
         Log("rooms: the keeper answers #%u %s: %s %s", a.seq, a.kind.c_str(), a.ok ? "ok" : "no", a.text.c_str());
         if (!a.ok) {
-            shared.view.notice = a.text;
+            SetNotice(RoomsView::Notice::Refused, a.text);
             Set(State::Lobby);
             continue;
         }
@@ -270,7 +275,7 @@ void Client::Mirror(const WeyveRoomView& v) {
             joinedAt = -1;
             Log("rooms: in custom room %s", shared.view.room.c_str());
         } else if (NowMs() - joinedAt > kVerifyMs) {
-            BackToLobby("No room on that code", true);
+            BackToLobby(RoomsView::Notice::NoRoom, TR(Str::rooms_notice_no_room), true);
             return;
         }
     }
@@ -278,7 +283,7 @@ void Client::Mirror(const WeyveRoomView& v) {
         const std::string theirs = data(keeper::kVersion);
         if (!theirs.empty() && theirs != MyVersion()) {
             Log("rooms: %s plays Polarity %s, this game %s: leaving it", shared.view.room.c_str(), theirs.c_str(), MyVersion().c_str());
-            BackToLobby(OtherVersionNotice(theirs), true);
+            BackToLobby(RoomsView::Notice::OtherVersion, OtherVersionNotice(theirs), true);
             return;
         }
     }
@@ -358,7 +363,7 @@ void Client::Mirror(const WeyveRoomView& v) {
         }
         if (r.masked && m.id == v.self && !toldMasked) {
             toldMasked = true;
-            Line(0, "", "Your name shows as " + maskedName + " in public rooms.");
+            Line(ChatLine::Kind::Note, 0, "", TRF(Str::rooms_chat_masked, maskedName.c_str()));
             Log("rooms: this player's name is masked as %s (the word filter)", maskedName.c_str());
         }
         members.push_back(r);
@@ -367,20 +372,20 @@ void Client::Mirror(const WeyveRoomView& v) {
     if (joinedAt < 0) {
         for (const auto& [id, name] : now) {
             if (!names.count(id) && !names.empty()) {
-                Line(0, "", name + " joined");
+                Line(ChatLine::Kind::Joined, 0, "", TRF(Str::rooms_chat_joined, name.c_str()));
                 Log("rooms: %s (%u) joined %s, %zu members", name.c_str(), id, shared.view.room.c_str(), now.size());
             }
         }
         for (const auto& [id, name] : names) {
             if (!now.count(id) && id != keeperId) {
-                Line(0, "", name + " left");
+                Line(ChatLine::Kind::Left, 0, "", TRF(Str::rooms_chat_left, name.c_str()));
                 Log("rooms: %s (%u) left %s, %zu members", name.c_str(), id, shared.view.room.c_str(), now.size());
             }
         }
         if (shared.view.owner && shared.view.owner != lastOwner && lastOwner) {
             const auto it = now.find(shared.view.owner);
             Log("rooms: %s (%u) owns %s now", it != now.end() ? it->second.c_str() : "?", shared.view.owner, shared.view.room.c_str());
-            Line(0, "", (shared.view.owner == v.self ? std::string("You own") : (it != now.end() ? it->second : "?") + " owns") + " the room now");
+            Line(ChatLine::Kind::Owner, 0, "", shared.view.owner == v.self ? std::string(TR(Str::rooms_chat_you_own)) : TRF(Str::rooms_chat_owns, it != now.end() ? it->second.c_str() : "?"));
         }
         lastOwner = shared.view.owner;
         names = now;
