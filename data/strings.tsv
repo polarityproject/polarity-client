@@ -516,3 +516,102 @@ rooms.after.stays_plays	Stays on Table %d · plays %s next
 rooms.after.back_to_room	Back to the room
 rooms.after.queue_next	Back in the queue · next
 rooms.after.queue_at	Back in the queue · %s
+
+# The select screen, its stage select and random stages, and My character (select_*.cpp, overlay_select.cpp, overlay_my_character.cpp).
+common.prompt.confirm	Confirm
+common.you	(you)
+common.default	Default
+select.prompt.setting	Setting
+select.prompt.random_stages	Random stages
+select.prompt.confirm_stage	Confirm stage
+select.prompt.preferred_stage	Preferred stage
+select.prompt.random	Random
+select.prompt.stage	Stage
+select.prompt.characters	Characters
+select.prompt.back_to_room	Back to the room
+select.prompt.change_again	Change again
+select.prompt.not_ready	Not ready
+select.random_name	RANDOM
+select.title.my	MY CHARACTER
+select.title.select	CHARACTER SELECT
+select.not_owned	You don't own %s
+select.not_owned_dot	You don't own %s.
+select.both_ready_starting	Both ready. Starting...
+select.both_ready_loading	Both ready. Loading...
+select.ready_waiting	Ready. Waiting for your opponent...
+select.watching	WATCHING
+select.watching_ping	%u ms to the host  ·  %d watching
+select.watching_count	%d watching
+select.keep_one	Keep at least one stage on.
+select.settings_on	%d of %d on
+select.settings_hint	Random rolls the settings that are on.
+select.on_off	On / off
+select.all_off	All off
+select.all_on	All on
+select.random_stages	RANDOM STAGES
+select.stages_on	%d of %d stages on
+select.random_stages_hint	Choose which stages can be chosen from at random.
+select.settings	Settings
+select.not_owned_tile	Not owned
+select.settings_count	%d of %d settings
+select.all_but	All off but %s: random needs one stage.
+select.stage_select	STAGE SELECT
+select.random	Random
+select.all_stages	All %d stages
+select.some_stages	%d of %d stages
+select.setting_of	Setting %d / %d
+select.pick_stage	Pick the stage.
+select.p1_picking	Player 1 is picking the stage...
+select.row.costume	Costume
+select.row.color	Color
+select.row.variant	Variant
+select.row.vskill	V-Skill
+select.row.vtrigger	V-Trigger
+select.row.vcomment	V-Comment
+select.row.delay	Input delay
+select.saved	SAVED
+select.ready	READY
+select.1p	1P
+select.2p	2P
+select.waiting_player	WAITING FOR A PLAYER...
+select.leave.stop_watching_title	Stop watching?
+select.leave.set_title	Leave the set?
+select.leave.session_title	Leave the session?
+select.leave.menu	You'll return to the main menu.
+select.leave.set	The set ends here for both players.
+select.leave.session	The session ends for both players.
+select.leave.kicker_stop	STOP WATCHING
+select.leave.kicker	LEAVE
+select.leave.stop_watching	Stop watching
+select.current_loadout	CURRENT LOADOUT
+select.auto	AUTO
+select.normal	Normal
+select.hint.delay_fixed	%s in Polarity settings. Lower feels sharper but rolls back more.
+select.hint.delay_suggested	Suggested for a %d ms ping: %s. Lower feels sharper but rolls back more.
+select.hint.delay	Lower feels sharper but rolls back more.
+select.hint.eleven	Plays a random character in silver, with a random V-Skill and V-Trigger.
+select.hint.comment_auto	Changes with your opponent's character.
+select.hint.comment	"%s"
+select.hint.comment_n	Comment %d
+select.checking	checking...
+select.no_variants	This costume has no variants.
+my.random_all	Random
+my.random_some	Random (%d of %d stages)
+my.custom_rooms	Custom Rooms
+my.in_room	In the room
+my.row.stage	Stage
+my.from_profile	%s, from your Fighter Profile
+my.eleven	ELEVEN
+my.is_ready	%s is ready
+my.ready	ready
+my.loading	Loading %s...
+my.loading_right	loading
+my.loads_shortly	%s loads shortly
+my.loads_with_match	%s loads with the match
+my.keep	Keep %s
+my.delay_fixed	Each match starts with this. Lower feels sharper but rolls back more.
+my.delay_auto	Each match suggests a delay from your ping to the opponent.
+my.saved_room	Saved. The room sees your pick next to your name.
+my.saved	Saved. Custom Rooms play this pick.
+my.in_room_note	You keep your place in the room. If you're called now, your last saved pick plays.
+my.note	What you play at Custom Rooms' tables.

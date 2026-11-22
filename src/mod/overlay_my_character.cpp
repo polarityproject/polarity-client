@@ -1,5 +1,7 @@
 #include "mod/overlay_internal.h"
 
+#include "core/text.h"
+
 namespace sfv::mod::overlay {
 
 void ApplyProfileFavorite(Choices& c) {
@@ -104,8 +106,8 @@ std::string RandomStagesText() {
             count(g_tables.settings[i][k], have);
         }
     }
-    if (on == owned) return "Random";
-    return "Random (" + std::to_string(on) + " of " + std::to_string(owned) + " stages)";
+    if (on == owned) return TR(Str::my_random_all);
+    return TRF(Str::my_random_some, on, owned);
 }
 
 SelectCard MyCharacterCard(const RoomsView& rooms) {
@@ -117,20 +119,23 @@ SelectCard MyCharacterCard(const RoomsView& rooms) {
     const bool eleven = IsEleven(c.chara);
     card.chara = code;
     card.charaName = g_tables.labels[c.chara];
-    card.place = rooms.state == RoomsView::State::Room ? RoomsPlace(rooms, rooms.self) : "Custom Rooms";
-    if (card.place == "Idle") card.place = "In the room";
+    if (rooms.state != RoomsView::State::Room) card.place = TR(Str::my_custom_rooms);
+    else {
+        const RoomPlace place = RoomsPlaceOf(rooms, rooms.self);
+        card.place = place.kind == RoomPlace::Kind::Idle ? std::string(TR(Str::my_in_room)) : RoomsPlaceText(place);
+    }
     const int slot = std::max(0, CostumeSlot(c.chara, c.costume));
     if (eleven) {
-        for (const char* label : {"Costume", "Color", "V-Skill", "V-Trigger"}) card.rows.push_back({label, "Random"});
+        for (Str label : {Str::select_row_costume, Str::select_row_color, Str::select_row_vskill, Str::select_row_vtrigger}) card.rows.push_back({TR(label), TR(Str::common_random)});
     } else {
-        card.rows.push_back({"Costume", g_tables.costumeNames[c.chara][slot]});
-        SelectCard::Row color{"Color", ColorLabel(c.color)};
+        card.rows.push_back({TR(Str::select_row_costume), g_tables.costumeNames[c.chara][slot]});
+        SelectCard::Row color{TR(Str::select_row_color), ColorLabel(c.color)};
         const auto swatch = SwatchOf(c.chara, slot, c.color);
         color.swatch1 = swatch.first;
         color.swatch2 = swatch.second;
         card.rows.push_back(color);
-        card.rows.push_back({"V-Skill", SkillText(code, false, c.vskill - 1)});
-        card.rows.push_back({"V-Trigger", SkillText(code, true, c.vtrigger - 1)});
+        card.rows.push_back({TR(Str::select_row_vskill), SkillText(code, false, c.vskill - 1)});
+        card.rows.push_back({TR(Str::select_row_vtrigger), SkillText(code, true, c.vtrigger - 1)});
     }
     std::string stage = RandomStagesText();
     if (c.stage >= kFirstStage && c.stage - kFirstStage < static_cast<int>(g_tables.stages.size())) {
@@ -138,31 +143,31 @@ SelectCard MyCharacterCard(const RoomsView& rooms) {
         const auto& labels = g_tables.settingLabels[i];
         stage = c.setting > 0 && c.setting <= static_cast<int>(labels.size()) ? labels[c.setting - 1] : g_tables.stageLabels[i];
     }
-    card.rows.push_back({"Stage", stage});
+    card.rows.push_back({TR(Str::my_row_stage), stage});
     const NetplayOptions& o = NetOptions();
     if (g_my.fromProfile || !o.hasPick) {
-        card.status = card.charaName + ", from your Fighter Profile";
+        card.status = TRF(Str::my_from_profile, card.charaName.c_str());
         return card;
     }
-    const std::string loads = eleven ? "ELEVEN" : card.charaName;
+    const std::string loads = eleven ? std::string(TR(Str::my_eleven)) : card.charaName;
     double seconds = 0;
     switch (FlowPreloadStatus(UnpackCode(o.pick.character), o.pick.costume, &seconds)) {
         case 2:
-            card.status = loads + " is ready";
-            card.statusRight = "ready";
+            card.status = TRF(Str::my_is_ready, loads.c_str());
+            card.statusRight = TR(Str::my_ready);
             card.progress = 1;
             card.done = true;
             break;
         case 1:
-            card.status = "Loading " + loads + "...";
-            card.statusRight = "loading";
+            card.status = TRF(Str::my_loading, loads.c_str());
+            card.statusRight = TR(Str::my_loading_right);
             card.progress = static_cast<float>(std::min(0.9, seconds / 15.0));
             break;
         case 0:
-            card.status = loads + " loads shortly";
+            card.status = TRF(Str::my_loads_shortly, loads.c_str());
             card.progress = 0;
             break;
-        default: card.status = loads + " loads with the match"; break;
+        default: card.status = TRF(Str::my_loads_with_match, loads.c_str()); break;
     }
     return card;
 }
@@ -231,16 +236,14 @@ void DrawMyCharacter(const RoomsView& rooms, bool takeInput) {
     live.loading = false;
     live.myCharacter = true;
     live.randomOff = g_randomOff;
-    live.keepLabel = "Keep " + g_tables.labels[std::clamp(g_my.saved.chara, 0, static_cast<int>(g_tables.labels.size()) - 1)];
+    live.keepLabel = TRF(Str::my_keep, g_tables.labels[std::clamp(g_my.saved.chara, 0, static_cast<int>(g_tables.labels.size()) - 1)].c_str());
     SelectRow& delay = live.sides[0].rows[6];
-    delay.value = g_my.delaySetting >= 0 ? FramesText(g_my.delaySetting) : "Auto";
-    delay.hint = g_my.delaySetting >= 0 ? "Each match starts with this. Lower feels sharper but rolls back more."
-                                        : "Each match suggests a delay from your ping to the opponent.";
+    delay.value = g_my.delaySetting >= 0 ? FramesText(g_my.delaySetting) : std::string(TR(Str::common_auto));
+    delay.hint = TR(g_my.delaySetting >= 0 ? Str::my_delay_fixed : Str::my_delay_auto);
     live.card = MyCharacterCard(rooms);
     const bool inRoom = rooms.state == RoomsView::State::Room;
-    live.note = g_my.savedNow ? (inRoom ? "Saved. The room sees your pick next to your name." : "Saved. Custom Rooms play this pick.")
-                : inRoom      ? "You keep your place in the room. If you're called now, your last saved pick plays."
-                              : "What you play at Custom Rooms' tables.";
+    live.note = TR(g_my.savedNow ? (inRoom ? Str::my_saved_room : Str::my_saved) : inRoom ? Str::my_in_room_note
+                                                                                          : Str::my_note);
     g_my.alpha = std::min(1.0f, g_my.alpha + ImGui::GetIO().DeltaTime / 0.15f);
     SelectInput in;
     SelectDrawLive(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold}, live, g_my.alpha, takeInput && ImGui::GetFrameCount() > g_my.openedFrame, &in);

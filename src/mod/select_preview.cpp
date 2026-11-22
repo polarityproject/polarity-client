@@ -2,6 +2,7 @@
 
 #include "mod/select_internal.h"
 
+#include "core/text.h"
 #include "core/game.h"
 
 #include "mod/log.h"
@@ -79,9 +80,9 @@ SelectSide MockSide(int i) {
                                                                        : std::to_string(n); };
     for (int r = 0; r < kSelectRows; r++) s.rows[r].fixed = eleven && r < kRowDelay;
     if (eleven) {
-        for (int r = 0; r < kRowDelay; r++) s.rows[r].value = "Random";
+        for (int r = 0; r < kRowDelay; r++) s.rows[r].value = TR(Str::common_random);
     } else {
-        s.rows[kRowCostume].value = c.costumes.empty() ? "Default" : c.costumes[v[kRowCostume] % c.costumes.size()];
+        s.rows[kRowCostume].value = c.costumes.empty() ? std::string(TR(Str::common_default)) : c.costumes[v[kRowCostume] % c.costumes.size()];
         const size_t ci = std::min<size_t>(v[kRowCostume], c.swatches.empty() ? 0 : c.swatches.size() - 1);
         const int colors = MockCount(c, kRowColor, v[kRowCostume]);
         char buf[16];
@@ -91,7 +92,7 @@ SelectSide MockSide(int i) {
             s.rows[kRowColor].swatch1 = c.swatches[ci][v[kRowColor] % colors].first;
             s.rows[kRowColor].swatch2 = c.swatches[ci][v[kRowColor] % colors].second;
         }
-        s.rows[kRowVariant].value = "Normal";
+        s.rows[kRowVariant].value = TR(Str::select_normal);
         s.rows[kRowVariant].fixed = true;
         for (int k = 0; k < 2; k++) {
             const auto& names = k ? c.vtriggers : c.vskills;
@@ -99,14 +100,14 @@ SelectSide MockSide(int i) {
             s.rows[kRowVSkill + k].value = roman(n + 1) + (n < static_cast<int>(names.size()) && !names[n].empty() ? "  " + names[n] : "");
         }
         const int comment = v[kRowVComment] % (1 + static_cast<int>(c.vcomments.size()));
-        s.rows[kRowVComment].value = comment == kCommentAuto ? "AUTO" : std::to_string(comment);
+        s.rows[kRowVComment].value = comment == kCommentAuto ? std::string(TR(Str::select_auto)) : std::to_string(comment);
     }
-    s.rows[kRowDelay].value = std::to_string(v[kRowDelay]) + (v[kRowDelay] == 1 ? " frame" : " frames");
+    s.rows[kRowDelay].value = TRF(v[kRowDelay] == 1 ? Str::common_frame : Str::common_frames, v[kRowDelay]);
     const char* hints[kSelectRows] = {"", "", "", "", "", "", "Suggested for a 38 ms ping: 2 frames. Lower feels sharper but rolls back more."};
     const int comment = v[kRowVComment] % (1 + static_cast<int>(c.vcomments.size()));
-    const std::string commentLine = eleven                    ? "Plays a random character in silver, with a random V-Skill and V-Trigger."
-                                    : comment == kCommentAuto ? "Changes with your opponent's character."
-                                                              : "\"" + c.vcomments[comment - 1] + "\"";
+    const std::string commentLine = eleven                    ? std::string(TR(Str::select_hint_eleven))
+                                    : comment == kCommentAuto ? std::string(TR(Str::select_hint_comment_auto))
+                                                              : TRF(Str::select_hint_comment, c.vcomments[comment - 1].c_str());
     for (int r = 0; r < kSelectRows; r++) s.rows[r].hint = r == kRowVComment || eleven ? commentLine : hints[r];
     return s;
 }

@@ -1,5 +1,7 @@
 #include "mod/overlay_internal.h"
 
+#include "core/text.h"
+
 namespace sfv::mod::overlay {
 
 int ElevenIndex() {
@@ -18,9 +20,9 @@ std::pair<uint32_t, uint32_t> SwatchOf(int chara, int slot, int color) {
 }
 
 std::string CommentLine(int chara, int comment) {
-    if (comment == kCommentAuto) return "Changes with your opponent's character.";
+    if (comment == kCommentAuto) return TR(Str::select_hint_comment_auto);
     const auto& names = g_tables.vcomments[chara];
-    return comment <= static_cast<int>(names.size()) ? "\"" + names[comment - 1] + "\"" : "Comment " + std::to_string(comment);
+    return comment <= static_cast<int>(names.size()) ? TRF(Str::select_hint_comment, names[comment - 1].c_str()) : TRF(Str::select_hint_comment_n, comment);
 }
 
 SelectSide SelectSideFor(const NetView& v, int i) {
@@ -63,15 +65,15 @@ SelectSide SelectSideFor(const NetView& v, int i) {
     s.rows[6].value = FramesText(delay);
     const int fixed = NetOptions().delaySetting;
     const int suggested = v.SuggestedDelay();
-    s.rows[6].hint = fixed >= 0       ? FramesText(fixed) + " in Polarity settings. Lower feels sharper but rolls back more."
-                     : suggested >= 0 ? "Suggested for a " + std::to_string(v.link.pingMs) + " ms ping: " + FramesText(suggested) + ". Lower feels sharper but rolls back more."
-                                      : std::string("Lower feels sharper but rolls back more.");
+    s.rows[6].hint = fixed >= 0       ? TRF(Str::select_hint_delay_fixed, FramesText(fixed).c_str())
+                     : suggested >= 0 ? TRF(Str::select_hint_delay_suggested, static_cast<int>(v.link.pingMs), FramesText(suggested).c_str())
+                                      : std::string(TR(Str::select_hint_delay));
     if (chara < 0) return s;
     if (IsEleven(chara)) {
         for (int r = 0; r < 6; r++) {
-            s.rows[r].value = "Random";
+            s.rows[r].value = TR(Str::common_random);
             s.rows[r].fixed = true;
-            s.rows[r].hint = "Plays a random character in silver, with a random V-Skill and V-Trigger.";
+            s.rows[r].hint = TR(Str::select_hint_eleven);
         }
         return s;
     }
@@ -85,14 +87,14 @@ SelectSide SelectSideFor(const NetView& v, int i) {
     s.rows[1].swatch2 = swatch.second;
     s.rows[1].hint = "";
     const int variants = mine ? VariantsOf(chara, pick.costume) : 1;
-    s.rows[2].value = variants < 0 ? "checking..." : FlowVariantLabel(code, pick.variation);
+    s.rows[2].value = variants < 0 ? std::string(TR(Str::select_checking)) : FlowVariantLabel(code, pick.variation);
     s.rows[2].fixed = mine && variants <= 0;
-    s.rows[2].hint = variants == 0 ? "This costume has no variants." : "";
+    s.rows[2].hint = variants == 0 ? TR(Str::select_no_variants) : "";
     s.rows[3].value = SkillText(code, false, pick.vskill);
     s.rows[3].hint = "";
     s.rows[4].value = SkillText(code, true, pick.vtrigger);
     s.rows[4].hint = "";
-    s.rows[5].value = pick.comment == kCommentAuto ? "AUTO" : std::to_string(pick.comment);
+    s.rows[5].value = pick.comment == kCommentAuto ? std::string(TR(Str::select_auto)) : std::to_string(pick.comment);
     s.rows[5].hint = CommentLine(chara, pick.comment);
     return s;
 }

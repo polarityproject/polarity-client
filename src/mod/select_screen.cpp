@@ -2,6 +2,7 @@
 
 #include "mod/select_internal.h"
 
+#include "core/text.h"
 #include "mod/log.h"
 #include "mod/pak_textures.h"
 #include "mod/textures.h"
@@ -162,11 +163,11 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         }
         for (const char* icon : {"button_a", "button_b", "button_y"}) Texture(PadTex(icon));
         const SelectStage* stage = Shown(live.stage, 0);
-        if (live.host && !watching && stage && !stage->settings.empty()) prompts.push_back({"button_y", "Setting", 3});
+        if (live.host && !watching && stage && !stage->settings.empty()) prompts.push_back({"button_y", TR(Str::select_prompt_setting), 3});
         const bool onRandomStage = live.myCharacter && (in->stage >= 0 ? in->stage : live.stage) >= static_cast<int>(g_draw->stages.size());
-        if (onRandomStage) prompts.push_back({"button_x", "Random stages", 2});
-        if (live.host && !watching) prompts.push_back({"button_a", "Confirm stage", 0});
-        prompts.push_back({"button_b", live.myCharacter ? "Back" : "Leave", 1});
+        if (onRandomStage) prompts.push_back({"button_x", TR(Str::select_prompt_random_stages), 2});
+        if (live.host && !watching) prompts.push_back({"button_a", TR(Str::select_prompt_confirm_stage), 0});
+        prompts.push_back({"button_b", TR(live.myCharacter ? Str::common_prompt_back : Str::common_prompt_leave), 1});
         if (onRandomStage && Pressed({ImGuiKey_GamepadFaceLeft}, false)) {
             g_ui.randomList = true;
             g_ui.variantsOf = -1;
@@ -233,11 +234,11 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             if (live.myCharacter && i == 1) continue;
             DrawPlayerLine(d, f, live, i);
             const SelectChara* c = Chara(shown[i]);
-            const std::string name = onRandom[i] ? "RANDOM" : c ? Upper(c->name)
-                                                                : "";
+            const std::string name = onRandom[i] ? std::string(TR(Str::select_random_name)) : c ? Upper(c->name)
+                                                                                                : std::string();
             Text(d, f.name, g_v.L(74), g_v.P(i ? 1482.0f : 118.0f, 496), Rgba(255, 255, 255), name, i ? 1.0f : 0.0f, true);
         }
-        Text(d, f.name, g_v.L(42), g_v.P(800, 502), Rgba(255, 255, 255), live.myCharacter ? "MY CHARACTER" : "CHARACTER SELECT", 0.5f, true);
+        Text(d, f.name, g_v.L(42), g_v.P(800, 502), Rgba(255, 255, 255), TR(live.myCharacter ? Str::select_title_my : Str::select_title_select), 0.5f, true);
         if (live.myCharacter) {
             DrawCard(d, f, live.card);
             const std::string& note = loadout ? me->rows[g_ui.row].hint : live.note;
@@ -259,35 +260,35 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             }
         }
         if (grid && live.myCharacter) {
-            prompts.push_back({"button_a", "Select", 0});
-            prompts.push_back({"button_x", "Preferred stage", 2});
-            prompts.push_back({"button_y", "Random", 3});
-            prompts.push_back({"button_b", live.keepLabel.empty() ? "Back" : live.keepLabel, 1});
+            prompts.push_back({"button_a", TR(Str::common_prompt_select), 0});
+            prompts.push_back({"button_x", TR(Str::select_prompt_preferred_stage), 2});
+            prompts.push_back({"button_y", TR(Str::select_prompt_random), 3});
+            prompts.push_back({"button_b", live.keepLabel.empty() ? std::string(TR(Str::common_prompt_back)) : live.keepLabel, 1});
         } else if (grid) {
-            prompts.push_back({"button_a", "Select", 0});
-            prompts.push_back({"button_b", live.host ? "Stage" : "Leave", 1});
+            prompts.push_back({"button_a", TR(Str::common_prompt_select), 0});
+            prompts.push_back({"button_b", TR(live.host ? Str::select_prompt_stage : Str::common_prompt_leave), 1});
         } else if (watching) {
-            prompts.push_back({"button_b", "Leave", 1});
+            prompts.push_back({"button_b", TR(Str::common_prompt_leave), 1});
         } else if (loadout && live.myCharacter) {
-            prompts.push_back({"button_a", "Confirm", 0});
-            prompts.push_back({"button_x", "Preferred stage", 2});
-            prompts.push_back({"button_b", "Characters", 1});
+            prompts.push_back({"button_a", TR(Str::common_prompt_confirm), 0});
+            prompts.push_back({"button_x", TR(Str::select_prompt_preferred_stage), 2});
+            prompts.push_back({"button_b", TR(Str::select_prompt_characters), 1});
         } else if (loadout) {
-            prompts.push_back({"button_a", "Ready", 0});
-            prompts.push_back({"button_b", "Back", 1});
+            prompts.push_back({"button_a", TR(Str::common_prompt_ready), 0});
+            prompts.push_back({"button_b", TR(Str::common_prompt_back), 1});
         }
         const SelectChara* under = !g_ui.onRandom && hover >= 0 ? Chara(hover) : nullptr;
-        if (grid && under && under->locked) StatusPill(d, f, ("You don't own " + under->name).c_str());
+        if (grid && under && under->locked) StatusPill(d, f, TRF(Str::select_not_owned, under->name.c_str()).c_str());
         if (ready && live.myCharacter) {
-            prompts.push_back({"button_a", "Back to the room", 0});
-            prompts.push_back({"button_b", "Change again", 1});
+            prompts.push_back({"button_a", TR(Str::select_prompt_back_to_room), 0});
+            prompts.push_back({"button_b", TR(Str::select_prompt_change_again), 1});
         } else if (ready) {
             if (live.bothReady) {
-                StatusPill(d, f, live.loading ? kLoadingText : "Both ready. Starting...");
-                prompts.push_back({"button_b", "Leave", 1});
+                StatusPill(d, f, TR(live.loading ? Str::select_both_ready_loading : Str::select_both_ready_starting));
+                prompts.push_back({"button_b", TR(Str::common_prompt_leave), 1});
             } else {
-                StatusPill(d, f, "Ready. Waiting for your opponent...");
-                prompts.push_back({"button_b", "Not ready", 1});
+                StatusPill(d, f, TR(Str::select_ready_waiting));
+                prompts.push_back({"button_b", TR(Str::select_prompt_not_ready), 1});
             }
         }
         const bool a = Confirm();
@@ -322,10 +323,9 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         }
     }
     if (watching) {
-        const char* text = "WATCHING";
-        char detail[64];
-        if (live.pingMs) std::snprintf(detail, sizeof(detail), "%u ms to the host  \xC2\xB7  %d watching", live.pingMs, std::max(1, live.spectators));
-        else std::snprintf(detail, sizeof(detail), "%d watching", std::max(1, live.spectators));
+        const char* text = TR(Str::select_watching);
+        const std::string detail = live.pingMs ? TRF(Str::select_watching_ping, live.pingMs, std::max(1, live.spectators))
+                                               : TRF(Str::select_watching_count, std::max(1, live.spectators));
         const float tw = TextW(f.text, 19, text), dw = TextW(f.text, 18, detail);
         const float w = 24 + tw + 18 + 30 + dw + 24;
         const float bx = 800 - w / 2;
@@ -336,7 +336,7 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         else IconLink(d, g_v.P(ix + 10, 34), g_v.s, Rgba(217, 212, 198));
         Text(d, f.text, g_v.L(18), g_v.P(ix + 28, 23), Rgba(236, 232, 220), detail);
     }
-    if (watching && live.loading) StatusPill(d, f, kLoadingText);
+    if (watching && live.loading) StatusPill(d, f, TR(Str::select_both_ready_loading));
     g_inputOn = inputOn;
     if (g_ui.leaving) DrawLeaveDialog(d, f, live, dialog, in);
     else if (g_ui.randomList) DrawRandomList(d, f, live, in);

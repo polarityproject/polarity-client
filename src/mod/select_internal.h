@@ -57,8 +57,6 @@ constexpr ImVec2 kArtLeft[4] = {{6.45f, 2}, {68.45f, 2}, {95.55f, 142}, {33.55f,
 constexpr ImVec2 kArtRight[4] = {{47.55f, 2}, {109.55f, 2}, {82.45f, 142}, {20.45f, 142}};
 constexpr float kIconW = 116, kIconH = 144;
 
-constexpr const char* kLoadingText = "Both ready. Loading...";
-
 int CharaAt(const SelectData& data, const std::string& code);
 void BuildGrid(const SelectData& data);
 

@@ -2,6 +2,7 @@
 
 #include "mod/select_internal.h"
 
+#include "core/text.h"
 #include "core/random_stage.h"
 #include "mod/textures.h"
 
@@ -89,8 +90,6 @@ void ListNote(std::string text) {
     g_ui.listNoteUntil = ImGui::GetTime() + 3.5;
 }
 
-constexpr const char* kKeepOne = "Keep at least one stage on.";
-
 void CheckBox(ImDrawList* d, float x, float y, int on, int of) {
     const ImVec2 a = g_v.P(x, y), b = g_v.P(x + 24, y + 24);
     if (on <= 0) {
@@ -149,11 +148,11 @@ void DrawVariantList(ImDrawList* d, const SelectFonts& f, const std::vector<List
     m.x0 = (1600 - m.w) / 2;
     m.y0 = (900 - m.h) / 2;
     m.kicker = Upper(l.name);
-    m.aside = std::to_string(on) + " of " + std::to_string(owned) + " on";
+    m.aside = TRF(Str::select_settings_on, on, owned);
     const bool noted = !g_ui.listNote.empty() && ImGui::GetTime() < g_ui.listNoteUntil;
-    m.hint = noted ? g_ui.listNote : "Random rolls the settings that are on.";
+    m.hint = noted ? g_ui.listNote : std::string(TR(Str::select_settings_hint));
     m.hintCol = noted ? look::kGold : look::kSoft;
-    m.prompts = {{"button_a", "On / off"}, {"button_y", on == owned ? "All off" : "All on"}, {"button_b", "Back"}};
+    m.prompts = {{"button_a", TR(Str::select_on_off)}, {"button_y", TR(on == owned ? Str::select_all_off : Str::select_all_on)}, {"button_b", TR(Str::common_prompt_back)}};
     const float top = ui::Modal(d, bold, f.text, m, nullptr) + 20;
     const float x0 = m.x0 + 28, x1 = m.x0 + m.w - 28;
     for (int k = 0; k < n; k++) {
@@ -179,13 +178,13 @@ void DrawVariantList(ImDrawList* d, const SelectFonts& f, const std::vector<List
     if (Down()) g_ui.variantCursor = (g_ui.variantCursor + 1) % n;
     const ListVariant& cur = l.variants[g_ui.variantCursor];
     if (Confirm()) {
-        if (cur.locked) ListNote("You don't own " + cur.name + ".");
+        if (cur.locked) ListNote(TRF(Str::select_not_owned_dot, cur.name.c_str()));
         else if (SetVariants(list, off, {cur.code}, IsOff(*off, cur.code))) *changed = true;
-        else ListNote(kKeepOne);
+        else ListNote(TR(Str::select_keep_one));
     }
     if (NextSetting()) {
         if (SetVariants(list, off, OwnedCodes(l), on != owned)) *changed = true;
-        else ListNote(kKeepOne);
+        else ListNote(TR(Str::select_keep_one));
     }
     if (Back()) g_ui.variantsOf = -1;
 }
@@ -221,12 +220,12 @@ void DrawRandomList(ImDrawList* d, const SelectFonts& f, const SelectLive& live,
     const float gridY = 44 + 22;
     m.h = gridY + rows * kTileH + (rows - 1) * kGapY + 24 + 48;
     m.y0 = std::max(8.0f, (900 - m.h) / 2);
-    m.kicker = "RANDOM STAGES";
-    m.aside = std::to_string(on) + " of " + std::to_string(owned) + " stages on";
+    m.kicker = TR(Str::select_random_stages);
+    m.aside = TRF(Str::select_stages_on, on, owned);
     const bool noted = !g_ui.listNote.empty() && ImGui::GetTime() < g_ui.listNoteUntil && !sub;
-    m.hint = noted ? g_ui.listNote : "Choose which stages can be chosen from at random.";
+    m.hint = noted ? g_ui.listNote : std::string(TR(Str::select_random_stages_hint));
     m.hintCol = noted ? look::kGold : look::kSoft;
-    m.prompts = {{"button_a", cur.variants.size() > 1 ? "Settings" : "On / off"}, {"button_y", on == owned ? "All off" : "All on"}, {"button_b", "Done"}};
+    m.prompts = {{"button_a", TR(cur.variants.size() > 1 ? Str::select_settings : Str::select_on_off)}, {"button_y", TR(on == owned ? Str::select_all_off : Str::select_all_on)}, {"button_b", TR(Str::common_prompt_done)}};
     ui::Modal(d, bold, f.text, m, nullptr);
     const float gx = m.x0 + 28, gy = m.y0 + gridY;
     for (int i = 0; i < n; i++) {
@@ -241,11 +240,11 @@ void DrawRandomList(ImDrawList* d, const SelectFonts& f, const SelectLive& live,
         Text(d, medium, g_v.L(17), g_v.P(tx, y + (second ? 8 : 18)), lit ? look::kCream : look::kMuted, Ellipsize(medium, 17, l.name, room));
         if (l.locked) {
             d->AddRectFilled(g_v.P(x, y), g_v.P(x + kTileW, y + kTileH), Rgba(0, 0, 0, 110));
-            Text(d, f.text, g_v.L(15), g_v.P(tx, y + 33), look::kMuted, "Not owned");
+            Text(d, f.text, g_v.L(15), g_v.P(tx, y + 33), look::kMuted, TR(Str::select_not_owned_tile));
         } else {
             if (l.variants.size() > 1) {
                 Text(d, f.text, g_v.L(15), g_v.P(tx, y + 33), lit ? look::kGold : look::kMuted,
-                     std::to_string(von) + " of " + std::to_string(vowned) + " settings");
+                     TRF(Str::select_settings_count, von, vowned));
             }
             CheckBox(d, x + kTileW - 38, y + (kTileH - 24) / 2, von, vowned);
         }
@@ -260,12 +259,12 @@ void DrawRandomList(ImDrawList* d, const SelectFonts& f, const SelectLive& live,
         const ListStage& at = list[g_ui.listCursor];
         if (Confirm()) {
             const auto [von, vowned] = VariantsOn(at, off);
-            if (at.locked) ListNote("You don't own " + at.name + ".");
+            if (at.locked) ListNote(TRF(Str::select_not_owned_dot, at.name.c_str()));
             else if (at.variants.size() > 1) {
                 g_ui.variantsOf = g_ui.listCursor;
                 g_ui.variantCursor = 0;
             } else if (SetVariants(list, &off, OwnedCodes(at), von == 0)) changed = true;
-            else ListNote(kKeepOne);
+            else ListNote(TR(Str::select_keep_one));
         }
         if (NextSetting()) {
             if (on != owned) {
@@ -281,7 +280,7 @@ void DrawRandomList(ImDrawList* d, const SelectFonts& f, const SelectLive& live,
                 }
                 if (SetVariants(list, &off, codes, false)) {
                     changed = true;
-                    ListNote("All off but " + list[keep].name + ": random needs one stage.");
+                    ListNote(TRF(Str::select_all_but, list[keep].name.c_str()));
                 }
             }
         }
@@ -329,7 +328,7 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
         if (by) in->setting = setting;
     }
     const SelectStage* shown = Shown(stage, setting);
-    Text(d, f.name, g_v.L(42), g_v.P(800, 76), Rgba(255, 255, 255), "STAGE SELECT", 0.5f, true);
+    Text(d, f.name, g_v.L(42), g_v.P(800, 76), Rgba(255, 255, 255), TR(Str::select_stage_select), 0.5f, true);
     const float bx = 0, by = 132, bw = 1600, bh = 1600.0f * 534 / 1920;
     if (const TextureView* shadow = Texture(MenuTex("StagePreviewWindowShadow"))) Image(d, shadow, g_v.P(bx, by), g_v.P(bx + bw, by + bh));
     const bool random = stage >= count;
@@ -353,19 +352,18 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
         }
     }
     if (const TextureView* frame = Texture(MenuTex("StagePreviewWindow"))) Image(d, frame, g_v.P(bx, by), g_v.P(bx + bw, by + bh));
-    const std::string name = random ? "Random" : shown ? shown->name
-                                                       : "";
+    const std::string name = random ? std::string(TR(Str::select_random)) : shown ? shown->name
+                                                                                  : std::string();
     Text(d, f.name, g_v.L(46), g_v.P(800, by + bh - 106), Rgba(255, 255, 255), name, 0.5f, true);
     if (random && live.myCharacter) {
         const auto [on, owned] = StagesOn(RandomList(), live.randomOff);
-        const std::string line = on == owned ? "All " + std::to_string(owned) + " stages" : std::to_string(on) + " of " + std::to_string(owned) + " stages";
+        const std::string line = on == owned ? TRF(Str::select_all_stages, owned) : TRF(Str::select_some_stages, on, owned);
         const float w = TextW(f.text, 16, line) + 36, y = by + bh - 146;
         Pill(d, g_v.P(800 - w / 2, y), g_v.P(800 + w / 2, y + 30));
         Text(d, f.text, g_v.L(16), g_v.P(800, y + 6), Rgba(233, 196, 106), line, 0.5f);
     }
     if (settings) {
-        char line[32];
-        std::snprintf(line, sizeof(line), "Setting %d / %d", setting + 1, settings + 1);
+        const std::string line = TRF(Str::select_setting_of, setting + 1, settings + 1);
         const float w = TextW(f.text, 16, line) + 36, y = by + bh - 146;
         Pill(d, g_v.P(800 - w / 2, y), g_v.P(800 + w / 2, y + 30));
         Text(d, f.text, g_v.L(16), g_v.P(800, y + 6), Rgba(233, 196, 106), line, 0.5f);
@@ -392,7 +390,7 @@ void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live
         if (picking && Clicked() && MouseIn(g_v.P(x, sy), g_v.P(x + sw, sy + sh)) && !lockedAt(i, 0)) in->stage = i;
     }
     Text(d, f.text, g_v.L(19), g_v.P(800, sy + sh + 16), Rgba(232, 228, 216),
-         picking ? "Pick the stage." : "Player 1 is picking the stage...", 0.5f);
+         TR(picking ? Str::select_pick_stage : Str::select_p1_picking), 0.5f);
     if (picking && Confirm() && !lockedAt(stage, setting)) in->lockStage = true;
 }
 

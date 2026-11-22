@@ -2,6 +2,7 @@
 
 #include "mod/select_internal.h"
 
+#include "core/text.h"
 #include "mod/textures.h"
 
 #include <algorithm>
@@ -14,7 +15,8 @@ using namespace ui;
 
 namespace {
 
-const char* const kRowLabels[kSelectRows] = {"Costume", "Color", "Variant", "V-Skill", "V-Trigger", "V-Comment", "Input delay"};
+const Str kRowLabels[kSelectRows] = {Str::select_row_costume, Str::select_row_color, Str::select_row_variant, Str::select_row_vskill,
+                                     Str::select_row_vtrigger, Str::select_row_vcomment, Str::select_row_delay};
 
 } // namespace
 
@@ -84,7 +86,7 @@ void DrawLoadout(ImDrawList* d, const SelectFonts& f, bool right, const SelectSi
         }
         const ImU32 ink = lit ? look::kInk : (row.fixed && interactive ? Rgba(244, 241, 232, 150) : look::kCream);
         ImFont* rf = lit ? bold : font;
-        Text(d, rf, g_v.L(20), g_v.P(x0 + 44, y + 9), ink, kRowLabels[r]);
+        Text(d, rf, g_v.L(20), g_v.P(x0 + 44, y + 9), ink, TR(kRowLabels[r]));
         const float mid = x0 + 190 + (w - 190) / 2;
         const float tw = TextW(rf, 20, row.value);
         const float sw = row.swatch1 ? 48.0f : 0.0f;
@@ -119,7 +121,7 @@ void DrawLoadout(ImDrawList* d, const SelectFonts& f, bool right, const SelectSi
     if (side.ready) {
         const ImU32 g1 = Rgba(217, 166, 50), g2 = Rgba(150, 108, 28, 230);
         d->AddRectFilledMultiColor(a, b, right ? g2 : g1, right ? g1 : g2, right ? g1 : g2, right ? g2 : g1);
-        Text(d, f.name, g_v.L(20), g_v.P(x0 + 44, y + 4), Rgba(26, 20, 5), g_myCharacter ? "SAVED" : "READY");
+        Text(d, f.name, g_v.L(20), g_v.P(x0 + 44, y + 4), Rgba(26, 20, 5), TR(g_myCharacter ? Str::select_saved : Str::select_ready));
     } else if (!g_myCharacter) {
         const std::string& hint = side.rows[interactive ? g_ui.row : kRowVComment].hint;
         if (!hint.empty()) {
@@ -172,12 +174,12 @@ void DrawTile(ImDrawList* d, const Slot& t, bool p1, bool p2, const SelectFonts&
     if (p1) {
         const ImVec2 at(iq[0].x + g_v.L(t.right ? kSlant - 6 : 2.0f), iq[0].y + g_v.L(2));
         d->AddRectFilled(at, ImVec2(at.x + g_v.L(20), at.y + g_v.L(15)), Rgba(47, 111, 228));
-        Text(d, f.text, g_v.L(12), ImVec2(at.x + g_v.L(10), at.y + g_v.L(1)), Rgba(255, 255, 255), "1P", 0.5f);
+        Text(d, f.text, g_v.L(12), ImVec2(at.x + g_v.L(10), at.y + g_v.L(1)), Rgba(255, 255, 255), TR(Str::select_1p), 0.5f);
     }
     if (p2) {
         const ImVec2 at(iq[2].x - g_v.L(t.right ? kSlant - 6 : 2.0f), iq[2].y - g_v.L(2));
         d->AddRectFilled(ImVec2(at.x - g_v.L(20), at.y - g_v.L(15)), at, Rgba(210, 59, 49));
-        Text(d, f.text, g_v.L(12), ImVec2(at.x - g_v.L(10), at.y - g_v.L(14)), Rgba(255, 255, 255), "2P", 0.5f);
+        Text(d, f.text, g_v.L(12), ImVec2(at.x - g_v.L(10), at.y - g_v.L(14)), Rgba(255, 255, 255), TR(Str::select_2p), 0.5f);
     }
 }
 
@@ -187,22 +189,21 @@ void DrawPlayerLine(ImDrawList* d, const SelectFonts& f, const SelectLive& live,
     const bool left = i == 0;
     const SelectSide& s = live.sides[i];
     if (!s.present) {
-        Text(d, f.text, g_v.L(16), g_v.P(left ? 120.0f : 1480.0f, y + 4), dim, "WAITING FOR A PLAYER...", left ? 0.0f : 1.0f);
+        Text(d, f.text, g_v.L(16), g_v.P(left ? 120.0f : 1480.0f, y + 4), dim, TR(Str::select_waiting_player), left ? 0.0f : 1.0f);
         return;
     }
-    const std::string player = Upper(s.player.empty() ? "Player" : s.player);
+    const std::string player = Upper(s.player.empty() ? std::string(TR(Str::common_player)) : s.player);
     const bool you = live.you == i;
     const bool link = live.you >= 0 && !you;
-    char ping[32] = "";
-    if (link && live.pingMs) std::snprintf(ping, sizeof(ping), "%u ms", live.pingMs);
+    const std::string ping = link && live.pingMs ? TRF(Str::common_ms, static_cast<int>(live.pingMs)) : std::string();
     const float pw = (s.link ? 34.0f : 0.0f) + (link ? 34.0f : 0.0f) + (ping[0] ? TextW(f.text, 18, ping) + 18 : 0.0f);
     const float dir = left ? 1.0f : -1.0f;
     float x = left ? 120.0f : 1480.0f;
     Text(d, f.text, g_v.L(16), g_v.P(x, y + 4), white, player, left ? 0.0f : 1.0f);
     x += dir * (TextW(f.text, 16, player) + 10);
     if (you) {
-        Text(d, f.text, g_v.L(16), g_v.P(x, y + 4), dim, "(you)", left ? 0.0f : 1.0f);
-        x += dir * (TextW(f.text, 16, "(you)") + 10);
+        Text(d, f.text, g_v.L(16), g_v.P(x, y + 4), dim, TR(Str::common_you), left ? 0.0f : 1.0f);
+        x += dir * (TextW(f.text, 16, TR(Str::common_you)) + 10);
     }
     if (pw <= 0) return;
     const float px = left ? x : x - pw;
@@ -242,20 +243,19 @@ void OpenLeave() {
 
 void DrawLeaveDialog(ImDrawList* d, const SelectFonts& f, const SelectLive& live, bool takeInput, SelectInput* in) {
     const bool watching = live.you < 0;
-    const char* title = watching ? "Stop watching?" : live.set ? "Leave the set?"
-                                                               : "Leave the session?";
-    const char* detail = watching   ? "You'll return to the main menu."
-                         : live.set ? "The set ends here for both players."
-                                    : "The session ends for both players.";
+    const char* title = TR(watching ? Str::select_leave_stop_watching_title : live.set ? Str::select_leave_set_title
+                                                                                       : Str::select_leave_session_title);
+    const char* detail = TR(watching ? Str::select_leave_menu : live.set ? Str::select_leave_set
+                                                                         : Str::select_leave_session);
     ImFont* bold = f.bold ? f.bold : f.text;
     ui::ModalSpec m;
     m.w = 600;
     m.h = 44 + 22 + 34 + 12 + 24 + 24 + 48 + 26 + 46;
     m.x0 = 500;
     m.y0 = (844 - m.h) / 2;
-    m.kicker = watching ? "STOP WATCHING" : "LEAVE";
+    m.kicker = TR(watching ? Str::select_leave_kicker_stop : Str::select_leave_kicker);
     m.danger = !watching;
-    m.prompts = {{"button_a", "Select"}, {"button_b", "Stay"}};
+    m.prompts = {{"button_a", TR(Str::common_prompt_select)}, {"button_b", TR(Str::common_prompt_stay)}};
     int prompt = -1;
     float y = ui::Modal(d, bold, f.text, m, &prompt) + 22;
     Text(d, f.name, g_v.L(28), g_v.P(528, y), Rgba(244, 241, 232), title);
@@ -263,8 +263,8 @@ void DrawLeaveDialog(ImDrawList* d, const SelectFonts& f, const SelectLive& live
     Text(d, f.text, g_v.L(19), g_v.P(528, y), look::kCream, detail);
     y += 24 + 24;
     int pressed = -1;
-    if (ui::Button(d, bold, 528, y, 806, y + 48, watching ? "Stop watching" : "Leave", g_ui.leaveChosen, !watching)) pressed = 1;
-    if (ui::Button(d, bold, 822, y, 1072, y + 48, "Stay", !g_ui.leaveChosen)) pressed = 0;
+    if (ui::Button(d, bold, 528, y, 806, y + 48, TR(watching ? Str::select_leave_stop_watching : Str::common_prompt_leave), g_ui.leaveChosen, !watching)) pressed = 1;
+    if (ui::Button(d, bold, 822, y, 1072, y + 48, TR(Str::common_prompt_stay), !g_ui.leaveChosen)) pressed = 0;
     if (!takeInput) return;
     if (Left() || Right()) g_ui.leaveChosen = !g_ui.leaveChosen;
     if (pressed >= 0) g_ui.leaveChosen = pressed == 1;
@@ -282,7 +282,7 @@ void DrawCard(ImDrawList* d, const SelectFonts& f, const SelectCard& c) {
     ImFont* bold = f.bold ? f.bold : medium;
     d->AddRectFilled(g_v.P(x0, y0), g_v.P(x1, y1), Rgba(8, 9, 11, 228));
     d->AddRect(g_v.P(x0, y0), g_v.P(x1, y1), Rgba(201, 168, 92, 150), 0, 0, std::max(1.0f, g_v.L(1)));
-    Text(d, bold, g_v.L(16), g_v.P(x0 + 22, y0 + 18), gold, "CURRENT LOADOUT");
+    Text(d, bold, g_v.L(16), g_v.P(x0 + 22, y0 + 18), gold, TR(Str::select_current_loadout));
     const float bx0 = x0 + 22, by0 = y0 + 48, bx1 = x1 - 22, by1 = by0 + 66;
     d->AddRectFilled(g_v.P(bx0, by0), g_v.P(bx1, by1), Rgba(0, 0, 0, 120));
     float x = bx0 + 12;
@@ -290,11 +290,11 @@ void DrawCard(ImDrawList* d, const SelectFonts& f, const SelectCard& c) {
         Image(d, t, g_v.P(x, by0 + 8), g_v.P(x + 40, by0 + 58), ImVec2(0.12f, 0.0f), ImVec2(0.88f, 0.95f));
     }
     x += 52;
-    const std::string player = Upper(c.player.empty() ? "Player" : c.player);
+    const std::string player = Upper(c.player.empty() ? std::string(TR(Str::common_player)) : c.player);
     Text(d, bold, g_v.L(19), g_v.P(x, by0 + 21), white, player);
     x += TextW(bold, 19, player) + 6;
-    Text(d, f.text, g_v.L(17), g_v.P(x, by0 + 22), dim, "(you)");
-    x += TextW(f.text, 17, "(you)") + 14;
+    Text(d, f.text, g_v.L(17), g_v.P(x, by0 + 22), dim, TR(Str::common_you));
+    x += TextW(f.text, 17, TR(Str::common_you)) + 14;
     Text(d, medium, g_v.L(18), g_v.P(x, by0 + 21), white, c.charaName);
     Text(d, medium, g_v.L(17), g_v.P(bx1 - 12, by0 + 22), gold, c.place, 1.0f);
     float y = by1 + 20;
