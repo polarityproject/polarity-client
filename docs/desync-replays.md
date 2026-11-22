@@ -1,7 +1,7 @@
 # Desync reports and deterministic replays
 
-When a player reports a desync, we need to answer three questions without
-having been in the match:
+A desync report has to answer three questions for someone who was not in
+the match:
 
 1. **Where** did the two machines first disagree: which frame, which part of
    the state, which bytes?
@@ -9,7 +9,7 @@ having been in the match:
    simulated different inputs), or a nondeterministic simulation (same inputs,
    different result)?
 3. **Who**: if the simulation was nondeterministic, which machine was wrong,
-   and can we reproduce it locally?
+   and does the desync happen again on one PC?
 
 Every netplay match produces a recording on each peer that answers these. The
 same recordings double as replays and as regression tests for the rollback
