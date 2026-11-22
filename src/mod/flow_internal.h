@@ -158,7 +158,7 @@ struct RoundFlow {
     int32_t unused[2];
 };
 
-inline alignas(16) RoundFlow g_roundFlow{};
+alignas(16) inline RoundFlow g_roundFlow{};
 
 constexpr uintptr_t kRoundDirectorTask = 0x487CD0;
 
