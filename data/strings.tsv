@@ -1,0 +1,27 @@
+key	en
+# The fight's own screens (fight_ui.cpp): the leave modal, the post-match vote, the menu note.
+fight.leave.kicker	LEAVE
+fight.leave.prompt_select	Select
+fight.leave.prompt_stay	Stay
+fight.leave.title_set	Leave the set?
+fight.leave.title_match	Leave the match?
+fight.leave.body_set	The set ends here for both players.
+fight.leave.body_session	The session ends for both players.
+fight.leave.leave	Leave
+fight.leave.stay	Stay
+fight.vote.rematch	Rematch
+fight.vote.character_select	Character select
+fight.vote.leave	Leave
+fight.vote.p1	P1
+fight.vote.p2	P2
+fight.vote.p1_you	P1 · YOU
+fight.vote.p2_you	P2 · YOU
+fight.vote.player1	Player 1
+fight.vote.player2	Player 2
+fight.vote.of_set	of %d to win the set
+fight.vote.match_won	match won
+fight.vote.matches_won	matches won
+fight.vote.delay	Delay
+fight.vote.delay_frame	%d frame
+fight.vote.delay_frames	%d frames
+fight.menu_note	Back + Start or F1 for the Polarity menu

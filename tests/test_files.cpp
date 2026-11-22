@@ -500,3 +500,12 @@ void TestMatchTicket() {
     CHECK(SetWinner(ft3, going) == -1 && SetWinner(ft3, p2) == 1 && SetWinner(ft3, p1) == 0);
     CHECK(DescribeTicket(host) == "host, first joiner plays, r1 ft2 bo3 t99 ws3, vote after each match");
 }
+
+void TestText() {
+    CHECK(std::string(TR(Str::fight_leave_stay)) == "Stay");
+    CHECK(TRF(Str::fight_vote_of_set, 3) == "of 3 to win the set");
+    CHECK(TRF(Str::fight_vote_delay_frames, 12) == "12 frames");
+    CHECK(std::string(TR(Str::fight_vote_p1_you)) == "P1 \xC2\xB7 YOU");
+    TextSetLanguage(kLanguageCount + 4);
+    CHECK(TextLanguage() == 0 && std::string(TR(Str::fight_leave_stay)) == "Stay");
+}

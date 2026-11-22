@@ -2,6 +2,7 @@
 
 #include "mod/fight_ui.h"
 
+#include "core/text.h"
 #include "mod/log.h"
 #include "mod/rooms_screen.h"
 #include "mod/ui_kit.h"
@@ -51,19 +52,19 @@ void FightUiDrawLeaveModal(const HubFonts& f, bool set, bool takeInput, bool* le
     m.h = 44 + 22 + 34 + 12 + 24 + 24 + 48 + 26 + 48;
     m.x0 = 500;
     m.y0 = (844 - m.h) / 2;
-    m.kicker = "LEAVE";
+    m.kicker = TR(Str::fight_leave_kicker);
     m.danger = true;
     m.glass = Glass::Fight;
-    m.prompts = {{"button_a", "Select"}, {"button_b", "Stay"}};
+    m.prompts = {{"button_a", TR(Str::fight_leave_prompt_select)}, {"button_b", TR(Str::fight_leave_prompt_stay)}};
     int prompt = -1;
     float y = Modal(d, bold, f.body, m, &prompt) + 22;
-    Text(d, f.display, g_v.L(28), g_v.P(528, y), look::kCream, set ? "Leave the set?" : "Leave the match?");
+    Text(d, f.display, g_v.L(28), g_v.P(528, y), look::kCream, TR(set ? Str::fight_leave_title_set : Str::fight_leave_title_match));
     y += 46;
-    Text(d, f.body, g_v.L(19), g_v.P(528, y), look::kCream, set ? "The set ends here for both players." : "The session ends for both players.");
+    Text(d, f.body, g_v.L(19), g_v.P(528, y), look::kCream, TR(set ? Str::fight_leave_body_set : Str::fight_leave_body_session));
     y += 48;
     int pressed = -1;
-    if (Button(d, bold, 528, y, 806, y + 48, "Leave", g_leaveChoice == kLeaveButton, true)) pressed = kLeaveButton;
-    if (Button(d, bold, 822, y, 1072, y + 48, "Stay", g_leaveChoice == kStayButton)) pressed = kStayButton;
+    if (Button(d, bold, 528, y, 806, y + 48, TR(Str::fight_leave_leave), g_leaveChoice == kLeaveButton, true)) pressed = kLeaveButton;
+    if (Button(d, bold, 822, y, 1072, y + 48, TR(Str::fight_leave_stay), g_leaveChoice == kStayButton)) pressed = kStayButton;
     if (takeInput) {
         if (Left() || Right()) g_leaveChoice = g_leaveChoice == kLeaveButton ? kStayButton : kLeaveButton;
         if (pressed >= 0) g_leaveChoice = pressed;
@@ -89,7 +90,7 @@ void FightUiDrawVote(const HubFonts& f, const VoteSide (&sides)[2], bool armed, 
     g_inputOn = takeInput;
     ImFont* bold = f.bold ? f.bold : f.strong;
     constexpr float kW = 380, kBottom = 832, kInner = kW - 44;
-    static const char* const kButtons[3] = {"Rematch", "Character select", "Leave"};
+    const char* const kButtons[3] = {TR(Str::fight_vote_rematch), TR(Str::fight_vote_character_select), TR(Str::fight_vote_leave)};
     for (const VoteSide& s : sides) {
         if (!s.shown) continue;
         float h = 44 + 16 + 40 + 10 + 22;
@@ -100,8 +101,8 @@ void FightUiDrawVote(const HubFonts& f, const VoteSide (&sides)[2], bool armed, 
         const float x0 = s.slot == 0 ? 48 : 1600 - 48 - kW, x1 = x0 + kW, y0 = kBottom - h;
         Pane(d, x0, y0, x1, kBottom, Glass::Fight);
         Strip(d, x0 + 2, y0 + 2, x1 - 2, y0 + 44, false);
-        Text(d, bold, g_v.L(14), g_v.P(x0 + 22, y0 + 14), look::kGold, s.slot == 0 ? (s.mine ? "P1 \xC2\xB7 YOU" : "P1") : (s.mine ? "P2 \xC2\xB7 YOU" : "P2"));
-        std::string name = s.name.empty() ? (s.slot == 0 ? "Player 1" : "Player 2") : s.name;
+        Text(d, bold, g_v.L(14), g_v.P(x0 + 22, y0 + 14), look::kGold, TR(s.slot == 0 ? (s.mine ? Str::fight_vote_p1_you : Str::fight_vote_p1) : (s.mine ? Str::fight_vote_p2_you : Str::fight_vote_p2)));
+        std::string name = s.name.empty() ? TR(s.slot == 0 ? Str::fight_vote_player1 : Str::fight_vote_player2) : s.name;
         const float maxName = kW - 44 - 90 - 28;
         while (name.size() > 1 && TextW(f.body, 15, name) > maxName) name.pop_back();
         const float nameW = TextW(f.body, 15, name);
@@ -110,7 +111,7 @@ void FightUiDrawVote(const HubFonts& f, const VoteSide (&sides)[2], bool armed, 
         float y = y0 + 44 + 16;
         const std::string wins = std::to_string(s.wins);
         Text(d, f.display, g_v.L(40), g_v.P(x0 + 22, y - 6), look::kCream, wins);
-        const std::string of = s.firstTo > 0 ? "of " + std::to_string(s.firstTo) + " to win the set" : (s.wins == 1 ? "match won" : "matches won");
+        const std::string of = s.firstTo > 0 ? TRF(Str::fight_vote_of_set, s.firstTo) : TR(s.wins == 1 ? Str::fight_vote_match_won : Str::fight_vote_matches_won);
         Text(d, f.body, g_v.L(16), g_v.P(x0 + 22 + TextW(f.display, 40, wins) + 10, y + 16), look::kSoft, of);
         y += 40 + 10;
         static const ImU32 kStatus[3] = {look::kSoft, look::kOk, look::kMuted};
@@ -133,8 +134,8 @@ void FightUiDrawVote(const HubFonts& f, const VoteSide (&sides)[2], bool armed, 
             const bool on = g_voteFocus == kDelayRow;
             Control(d, x0 + 22, y, x1 - 22, y + 50, on);
             const ImU32 ink = on ? look::kInk : look::kCream;
-            Text(d, on ? bold : f.body, g_v.L(18), g_v.P(x0 + 44, y + 13), ink, "Delay");
-            const std::string value = std::to_string(s.delay) + (s.delay == 1 ? " frame" : " frames");
+            Text(d, on ? bold : f.body, g_v.L(18), g_v.P(x0 + 44, y + 13), ink, TR(Str::fight_vote_delay));
+            const std::string value = TRF(s.delay == 1 ? Str::fight_vote_delay_frame : Str::fight_vote_delay_frames, s.delay);
             const float vx = x1 - 44 - 18 - 12;
             Text(d, on ? bold : f.body, g_v.L(18), g_v.P(vx, y + 13), ink, value, 1);
             const float vw = TextW(on ? bold : f.body, 18, value);
@@ -246,7 +247,7 @@ void FightUiDrawMenuNote(const HubFonts& f) {
     BeginScreen();
     ImDrawList* d = ImGui::GetForegroundDrawList();
     ImFont* bold = f.bold ? f.bold : f.strong;
-    const std::string text = "Back + Start or F1 for the Polarity menu";
+    const std::string text = TR(Str::fight_menu_note);
     const float kickW = TextW(bold, 17, "Polarity") + 10;
     const float w = 14 + 8 + 10 + kickW + TextW(f.body, 17, text) + 16, h = 36;
     const float x0 = 800 - w / 2, y0 = 12;

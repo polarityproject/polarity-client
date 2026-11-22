@@ -31,6 +31,7 @@
 #include "core/state.h"
 #include "core/key_names.h"
 #include "core/texture_package.h"
+#include "core/text.h"
 #include "core/verifier.h"
 #include "mod/migrate.h"
 #include "proxy/loader_choice.h"
@@ -166,4 +167,5 @@ void TestPng();
 void TestPakIndex();
 void TestTexturePackage();
 void TestKeyNames();
+void TestText();
 void TestUpdateSignature();

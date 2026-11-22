@@ -46,6 +46,7 @@ int main() {
         {"texture package", TestTexturePackage},
         {"pak index", TestPakIndex},
         {"key names", TestKeyNames},
+        {"player text", TestText},
         {"shown setup", TestShownSetup},
         {"pick check", TestPickCheck},
         {"rules format", TestRulesFormat},

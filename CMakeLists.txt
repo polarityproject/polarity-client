@@ -138,8 +138,20 @@ if(MSVC)
   add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
+# The strings table (data/strings.tsv): polarity_strings checks it and writes
+# strings_table.h, which core/text.h includes (docs/strings.md).
+add_executable(polarity_strings src/tools/strings_gen.cpp)
+set(SFV_STRINGS_FILE ${CMAKE_SOURCE_DIR}/data/strings.tsv)
+set(SFV_STRINGS_HEADER ${CMAKE_BINARY_DIR}/generated/text/strings_table.h)
+add_custom_command(OUTPUT ${SFV_STRINGS_HEADER}
+  COMMAND polarity_strings ${SFV_STRINGS_FILE} ${SFV_STRINGS_HEADER}
+  DEPENDS polarity_strings ${SFV_STRINGS_FILE}
+  COMMENT "Checking data/strings.tsv")
+
 # Core: game-agnostic netplay driver, replay format, recorder and verifier.
 add_library(sfvcore STATIC
+  ${SFV_STRINGS_HEADER}
+  src/core/text.cpp
   src/core/state.cpp
   src/core/compress.cpp
   src/core/json.cpp
@@ -171,7 +183,7 @@ add_library(sfvcore STATIC
   src/core/spectate.cpp
   src/core/spectate_relay.cpp
   src/core/png.cpp)
-target_include_directories(sfvcore PUBLIC src)
+target_include_directories(sfvcore PUBLIC src ${CMAKE_BINARY_DIR}/generated/text)
 target_link_libraries(sfvcore PUBLIC GekkoNet PRIVATE bcrypt) # bcrypt: update signatures (the codec, compress.cpp, is looked up at run time)
 
 # Deterministic toy fighter and in-memory network used to exercise the core
@@ -192,6 +204,12 @@ enable_testing()
 add_executable(sfvtests tests/tests.cpp tests/test_assets.cpp tests/test_files.cpp tests/test_keeper.cpp tests/test_netplay.cpp tests/test_recording.cpp $<$<BOOL:${WIN32}>:src/mod/migrate.cpp>)
 target_link_libraries(sfvtests PRIVATE sfvcore sfvtestbed bcrypt)
 add_test(NAME sfvtests COMMAND sfvtests WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+# The strings table check: the good table passes, each bad one fails.
+add_test(NAME strings_good COMMAND polarity_strings ${CMAKE_SOURCE_DIR}/tests/strings/good.tsv ${CMAKE_BINARY_DIR}/strings_good.h)
+foreach(bad bad_order duplicate_key bad_key bad_percent)
+  add_test(NAME strings_${bad} COMMAND polarity_strings ${CMAKE_SOURCE_DIR}/tests/strings/${bad}.tsv ${CMAKE_BINARY_DIR}/strings_${bad}.h)
+  set_tests_properties(strings_${bad} PROPERTIES WILL_FAIL TRUE)
+endforeach()
 
 if(SFV_BUILD_MOD AND WIN32)
   # polarity-keeper (src/keeper/keeper.h): hosts the lobby channel and the custom
