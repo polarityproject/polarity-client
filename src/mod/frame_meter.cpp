@@ -127,7 +127,8 @@ std::atomic<int> g_log{0};
 
 Meter g_m;
 Player g_p[2];
-uint64_t g_layout = ~0ull;
+constexpr int kNoLayout = -1;
+int g_layout = kNoLayout;
 int g_written = 0;
 bool g_hasContent = false, g_ended = true, g_pendingMark = false, g_exchange = false;
 bool g_armed = false;
@@ -281,7 +282,7 @@ struct Candidate {
 };
 
 std::vector<Candidate> g_candidates[2];
-uint64_t g_candidatesLayout = ~0ull;
+int g_candidatesLayout = kNoLayout;
 
 bool RunnerNow(const uint8_t* r, uint32_t* script, int32_t* frame) {
     const auto* runner = At<const uint8_t*>(r, kRunner);
@@ -694,7 +695,7 @@ void FrameMeterTick(SfvGame& game) {
     bool replay = false, fight = true;
     int frame = 0;
     if (!Wanted(&replay, &frame, &fight) && !RecordsHidden(replay)) {
-        g_layout = ~0ull;
+        g_layout = kNoLayout;
         return;
     }
     if (!Ready(game, replay)) return;
@@ -708,7 +709,7 @@ void FrameMeterTick(SfvGame& game) {
         return;
     }
     if (!ReadFrame(game, true, &r)) {
-        g_layout = ~0ull;
+        g_layout = kNoLayout;
         return;
     }
     Apply(r);

@@ -46,7 +46,8 @@ std::vector<WorldBox> g_boxes;
 std::atomic<ULONGLONG> g_collectedAt{0};
 std::atomic<const uint8_t*> g_camera{nullptr};
 std::atomic<uintptr_t> g_cameraVtable{0};
-uint64_t g_cameraLayout = ~0ull;
+constexpr int kNoLayout = -1;
+int g_cameraLayout = kNoLayout;
 
 template <class T>
 T At(const uint8_t* p, size_t offset) {
