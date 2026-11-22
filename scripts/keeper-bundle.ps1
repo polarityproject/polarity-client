@@ -14,7 +14,7 @@ $files = @(
   'src/keeper/keeper_tables.cpp', 'src/keeper/keeper.h', 'src/keeper/keeper_internal.h', 'src/keeper/sign.cpp', 'src/keeper/sign.h', 'src/keeper/connector.h',
   'src/core/keeper_protocol.cpp', 'src/core/keeper_protocol.h', 'src/core/keeper_protocol_internal.h', 'src/core/keeper_words.cpp', 'src/core/rules.cpp', 'src/core/rules.h', 'src/core/lobby.h', 'src/core/lobby.cpp', 'src/core/game.h',
   'src/core/spectate_relay.h', 'src/core/spectate_relay.cpp',
-  'third_party/weyvelength.patch', 'third_party/weyvelength-departed-links.patch', 'third_party/weyvelength-port-range.patch', 'third_party/weyvelength-link-mux.patch', 'third_party/weyvelength-decode-limit.patch',
+  'third_party/weyvelength.patch', 'third_party/weyvelength-departed-links.patch', 'third_party/weyvelength-port-range.patch', 'third_party/weyvelength-link-mux.patch',
   'cmake/apply-patch.cmake'
 )
 foreach ($f in $files) {

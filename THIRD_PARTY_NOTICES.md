@@ -7,7 +7,7 @@ Releases ship this file next to the mod as `polarity_third_party_notices.txt`.
 | Component | Version | License | Copyright |
 | --- | --- | --- | --- |
 | [GekkoNet](https://github.com/HeatXD/GekkoNet) | commit 9da2363, with `third_party/gekkonet.patch` | BSD 2-Clause | (c) 2024-2026 Jamie Meyer |
-| [Weyvelength](https://github.com/HeatXD/Weyvelength), client | commit d4e25c7, with the `third_party/weyvelength-*.patch` files | BSD 2-Clause | (c) 2026 Jamie Meyer & Contributors |
+| [Weyvelength](https://github.com/HeatXD/Weyvelength), client | commit 4d71aef, with the `third_party/weyvelength-*.patch` files | BSD 2-Clause | (c) 2026 Jamie Meyer & Contributors |
 | [libjuice](https://github.com/paullouisageneau/libjuice), part of Weyvelength | 1.7.3, commit 6d0356d, unchanged | Mozilla Public License 2.0 | (c) 2020 Paul-Louis Ageneau |
 | [asio](https://think-async.com/Asio/), part of GekkoNet and Weyvelength | 1.38.1 | Boost Software License 1.0 | (c) 2003-2026 Christopher M. Kohlhoff |
 | [zpp_bits](https://github.com/eyalz800/zpp_bits), part of GekkoNet and Weyvelength | as bundled | MIT | (c) 2021 Eyal Z |

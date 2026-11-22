@@ -63,7 +63,7 @@ if(SFV_BUILD_MOD AND WIN32)
   # default it would ignore the static CRT setting above.
   FetchContent_Declare(weyvelength
     GIT_REPOSITORY https://github.com/HeatXD/Weyvelength.git
-    GIT_TAG d4e25c7da7aab18ff82d60d275ea95f794bb2ec9 # 2026-08-22
+    GIT_TAG 4d71aef28b9a59721a98198ab5b81c045cf26930 # 2026-11-07
     # The mod's changes to the client: peer-to-peer links survive losing the
     # server (a match goes on), and a link says whether it is direct or
     # relayed through TURN (plus a relay-only switch for testing).
@@ -95,15 +95,6 @@ if(SFV_BUILD_MOD AND WIN32)
                   WORKING_DIRECTORY ${weyvelength_SOURCE_DIR} RESULT_VARIABLE link_mux)
   if(NOT link_mux EQUAL 0)
     message(FATAL_ERROR "cannot apply third_party/weyvelength-link-mux.patch")
-  endif()
-  # A cap on what decoding one message may allocate, on both ends (a few
-  # bytes claiming gigabytes ran the rooms server out of memory). The same
-  # patch goes into polarity-server's server image and native install.
-  execute_process(COMMAND ${CMAKE_COMMAND} -DPATCH=${CMAKE_CURRENT_SOURCE_DIR}/third_party/weyvelength-decode-limit.patch
-                          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/apply-patch.cmake
-                  WORKING_DIRECTORY ${weyvelength_SOURCE_DIR} RESULT_VARIABLE decode_limit)
-  if(NOT decode_limit EQUAL 0)
-    message(FATAL_ERROR "cannot apply third_party/weyvelength-decode-limit.patch")
   endif()
   set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
   set(NO_SERVER ON CACHE BOOL "" FORCE)

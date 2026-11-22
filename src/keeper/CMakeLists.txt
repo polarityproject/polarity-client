@@ -18,7 +18,7 @@ include(FetchContent)
 # server's docker/server.Dockerfile WEYVELENGTH_COMMIT).
 FetchContent_Declare(weyvelength
   GIT_REPOSITORY https://github.com/HeatXD/Weyvelength.git
-  GIT_TAG d4e25c7da7aab18ff82d60d275ea95f794bb2ec9
+  GIT_TAG 4d71aef28b9a59721a98198ab5b81c045cf26930
   PATCH_COMMAND ${CMAKE_COMMAND} -DPATCH=${POLARITY_ROOT}/third_party/weyvelength.patch -P ${POLARITY_ROOT}/cmake/apply-patch.cmake
   SOURCE_SUBDIR none)
 FetchContent_MakeAvailable(weyvelength)
@@ -39,12 +39,6 @@ execute_process(COMMAND ${CMAKE_COMMAND} -DPATCH=${POLARITY_ROOT}/third_party/we
                 WORKING_DIRECTORY ${weyvelength_SOURCE_DIR} RESULT_VARIABLE link_mux)
 if(NOT link_mux EQUAL 0)
   message(FATAL_ERROR "cannot apply third_party/weyvelength-link-mux.patch")
-endif()
-execute_process(COMMAND ${CMAKE_COMMAND} -DPATCH=${POLARITY_ROOT}/third_party/weyvelength-decode-limit.patch
-                        -P ${POLARITY_ROOT}/cmake/apply-patch.cmake
-                WORKING_DIRECTORY ${weyvelength_SOURCE_DIR} RESULT_VARIABLE decode_limit)
-if(NOT decode_limit EQUAL 0)
-  message(FATAL_ERROR "cannot apply third_party/weyvelength-decode-limit.patch")
 endif()
 
 set(NO_SERVER ON CACHE BOOL "" FORCE)
