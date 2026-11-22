@@ -108,6 +108,8 @@ ImU32 Rgba(int r, int g, int b, int a = 255);
 ImU32 FromArgb(uint32_t argb);
 std::string Upper(std::string v);
 float TextW(ImFont* f, float size, const std::string& t); // in design units
+// `text` cut to `width` (design units) at this size with an ellipsis, by whole characters.
+std::string Ellipsize(ImFont* f, float size, std::string text, float width);
 // `size` in pixels (g_v.L(...)); `align` 0 left, 0.5 centre, 1 right.
 void Text(ImDrawList* d, ImFont* f, float size, ImVec2 at, ImU32 c, const std::string& t, float align = 0, bool shadow = false);
 void GradientQuad(ImDrawList* d, const ImVec2 (&q)[4], ImU32 top, ImU32 bottom);

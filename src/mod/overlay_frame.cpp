@@ -113,7 +113,7 @@ void Draw(IDXGISwapChain* swapChain) {
         FlowRunOnGameThread([data = PreviewSelectData()] {
             ProfileFavorites favorites;
             ReadProfileFavorites(&favorites);
-            WarmBootTextures(data, favorites.chara, favorites.stage);
+            SelectWarmBootTextures(data, favorites.chara, favorites.stage);
             std::lock_guard lock(g_favoritesMutex);
             g_favorites = favorites;
         });
@@ -137,8 +137,8 @@ void Draw(IDXGISwapChain* swapChain) {
     const bool onTheWay = phase != NetView::Phase::Idle && phase != NetView::Phase::Ended;
     if (!warmed && onTheWay && g_tables.loaded) {
         warmed = true;
-        SetSelectData(PreviewSelectData());
-        WarmSelectTextures();
+        SelectSetData(PreviewSelectData());
+        SelectWarmTextures();
     }
     static bool delaySet = false;
     if (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) {
@@ -190,7 +190,7 @@ void Draw(IDXGISwapChain* swapChain) {
         g_selectRequest = -1;
         SelectData data = PreviewSelectData();
         data.spectator = wanted >= 4;
-        OpenSelectPreview(std::move(data), wanted % 4);
+        SelectOpenPreview(std::move(data), wanted % 4);
         OverlaySetVisible(false);
     }
     const bool preview = SelectPreviewOpen();
@@ -203,8 +203,8 @@ void Draw(IDXGISwapChain* swapChain) {
                                   phase == NetView::Phase::Jumping);
     const bool lobby = phase == NetView::Phase::Lobby && g_tables.loaded && g_choices.initialised && !preview && (!view.setPlay || setSelect);
     if (lobby && !lobbyWas) {
-        SetSelectData(PreviewSelectData());
-        ResetSelectScreen();
+        SelectSetData(PreviewSelectData());
+        SelectReset();
         g_sentSelect = {};
         OverlaySetVisible(false);
         g_toasts.clear();
@@ -236,7 +236,7 @@ void Draw(IDXGISwapChain* swapChain) {
     g_selectLive = (lobby || holding) && !g_visible;
     if (liveAlpha > 0) {
         SelectInput in;
-        DrawSelectLive(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold}, SelectLiveFor(view), liveAlpha, lobby && !g_visible, &in);
+        SelectDrawLive(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold}, SelectLiveFor(view), liveAlpha, lobby && !g_visible, &in);
         if (lobby) ApplySelectInput(in, view);
         if (toBlack) {
             const float black = static_cast<float>(std::min(1.0, (now - blackFrom) / kToBlack));
@@ -290,7 +290,7 @@ void Draw(IDXGISwapChain* swapChain) {
     if (ReplayViewNow().active && !g_benchLaunch.active) DrawReplayStripe(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, !g_visible);
     if (g_benchLaunch.active) DrawBenchmarkLaunch(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold});
     if (preview) {
-        DrawSelectPreview(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold});
+        SelectDrawPreview(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold});
     } else if (session) {
         const bool inMatch = phase == NetView::Phase::Running || phase == NetView::Phase::PostMatch;
         if (inMatch) DrawPlayerBars(view);

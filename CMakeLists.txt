@@ -248,6 +248,9 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/overlay_frame.cpp
     src/mod/overlay_shots.cpp
     src/mod/select_screen.cpp
+    src/mod/select_parts.cpp
+    src/mod/select_preview.cpp
+    src/mod/select_stages.cpp
     src/mod/textures.cpp
     src/mod/ue4.cpp
     src/mod/config.cpp

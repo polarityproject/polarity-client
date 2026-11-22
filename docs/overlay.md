@@ -183,6 +183,51 @@ with its loadout and the profile's stage. Its Random stages list is kept
 apart from the pick and saved once the player has one. Its loading bar runs
 on the time a character takes, since the asset queue gives no progress.
 
+## The select screen
+
+The select screen draws the game's character select its own way, with the
+game's textures (`select_*.cpp`). It has two pages. On the stage
+select only the host moves the cursor. Left and right step through the
+stages, then Random. Up, down and Y change a stage's setting (The Grid: The
+Grid Alternative), shown in its place. The cursor steps over stages and
+settings the profile does not own.
+
+Once the stage is locked, the character grid follows the game's final
+roster screen: from the middle outwards, 11 a side on the top row and 12 a
+side on the bottom. The random tile in the middle spans both rows, so left
+and right reach it from either. The tiles lean as the portraits do:
+`CharaSelectIconLeft` and `CharaSelectIconRight` (116x144) each hold a
+parallelogram 62 px wide over rows 2 to 142, leaning 12 px every 62 rows.
+The picture fills the tile corner to corner inside a 2 px frame. A character
+the profile does not own shows dimmed and cannot be picked, as in the
+game's own select. Each side shows what that player sees: on the grid the
+character under their cursor, past it their pick and loadout. A side whose
+screen is not known yet is drawn from its pick.
+
+Behind both pages is the stage's picture (`StageSelectBG`, 4:1, cropped at
+the sides), blurred and darkened, with grain over it. A stage just moved to
+shows once its blurred copy is made, a frame or two later; the last one
+stays until then. The stage select's frame (`StagePreviewWindow`, 1920x534)
+spans the screen. Its mask (`StagePreviewBG`, 1920x512, 11 px into the
+frame) curves 2 px from the edge at the sides and 43 px at the middle, top
+and bottom alike. The picture is drawn in slices that follow the curve.
+While the stage is picked, the character select's textures load behind it,
+in the order asked.
+
+B goes back a step: from the loadout to the grid, from the grid to the stage
+select (the host), and from ready to not ready until both are ready. With
+nothing to go back to, B opens the leave dialog, on Stay. While the dialog is
+up it takes the input, and the screen behind stays as it is.
+
+My character's Random stages list opens with X on the random tile. It is a
+grid of the stages Random can land on, never the never-random ones, each
+with its settings as Random draws them. A stage with settings opens their
+list, as the game's own random stage menu does. At least one stage stays on.
+All off leaves the stage under the cursor on.
+
+The Debug tab opens a preview of the screen with mock players. Watching, the
+mock players act on a clock that starts over with each phase.
+
 ## Launches
 
 Watching a replay from the Battle Log and running the benchmark both keep

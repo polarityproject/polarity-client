@@ -41,8 +41,8 @@ void OpenMyCharacter() {
     g_my.saved = g_choices;
     g_my.delaySetting = NetOptions().delaySetting;
     g_my.openedFrame = ImGui::GetFrameCount();
-    SetSelectData(PreviewSelectData());
-    ResetSelectScreen();
+    SelectSetData(PreviewSelectData());
+    SelectReset();
     g_myCharacterOpen = true;
     Log("overlay: my character opened (%s%s)", g_tables.charas[g_choices.chara].c_str(), g_my.fromProfile ? ", the profile's" : "");
 }
@@ -243,7 +243,7 @@ void DrawMyCharacter(const RoomsView& rooms, bool takeInput) {
                               : "What you play at Custom Rooms' tables.";
     g_my.alpha = std::min(1.0f, g_my.alpha + ImGui::GetIO().DeltaTime / 0.15f);
     SelectInput in;
-    DrawSelectLive(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold}, live, g_my.alpha, takeInput && ImGui::GetFrameCount() > g_my.openedFrame, &in);
+    SelectDrawLive(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold}, live, g_my.alpha, takeInput && ImGui::GetFrameCount() > g_my.openedFrame, &in);
     ApplyMyCharacterInput(in);
 }
 

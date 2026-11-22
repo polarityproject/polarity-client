@@ -46,7 +46,7 @@ struct TexRetry {
 };
 
 std::vector<TexRetry> g_texRetries;
-bool g_drawing = true; // false while WarmSelectTextures asks ahead (render thread only)
+bool g_drawing = true; // false while SelectWarmTextures asks ahead (render thread only)
 constexpr int64_t kFadeInMs = 150;
 std::map<std::string, int> g_texTries;
 constexpr int kTextureTries = 6;
@@ -127,7 +127,7 @@ const TextureView* Texture(const std::string& path) {
     const auto it = g_textures.find(path);
     if (it != g_textures.end()) return it->second.srv ? &it->second : nullptr;
     if (!g_requested.insert(path).second) {
-        // Asked for ahead of time (WarmSelectTextures) and drawn now: it
+        // Asked for ahead of time (SelectWarmTextures) and drawn now: it
         // loads next (looked for once: drawing asks every frame).
         if (g_texDrawn.insert(path).second) {
             const auto queued = std::find(g_texQueue.begin(), g_texQueue.end(), path);
@@ -363,6 +363,15 @@ std::string Upper(std::string v) {
 }
 
 float TextW(ImFont* f, float size, const std::string& t) { return f->CalcTextSizeA(TextPx(size), FLT_MAX, 0, t.c_str()).x / g_v.s; }
+
+std::string Ellipsize(ImFont* f, float size, std::string text, float width) {
+    if (TextW(f, size, text) <= width) return text;
+    while (!text.empty() && TextW(f, size, text + "...") > width) {
+        text.pop_back();
+        while (!text.empty() && (static_cast<unsigned char>(text.back()) & 0xC0) == 0x80) text.pop_back();
+    }
+    return text + "...";
+}
 
 void Text(ImDrawList* d, ImFont* f, float size, ImVec2 at, ImU32 c, const std::string& t, float align, bool shadow) {
     size = std::max(size, kMinTextPx);

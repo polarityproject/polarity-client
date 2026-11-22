@@ -1,7 +1,7 @@
 #pragma once
 // The character select flow drawn the way the game draws its own (stage
 // select, the character grid, each side's loadout, ready), with the game's
-// textures. A session's lobby shows it live (DrawSelectLive: the overlay
+// textures. A session's lobby shows it live (SelectDrawLive: the overlay
 // gives the session's state and applies what the player does); the Debug
 // tab opens a preview of it with mock players.
 
@@ -52,7 +52,8 @@ struct SelectFonts {
 };
 
 // The loadout's rows, top to bottom.
-constexpr int kSelectRows = 7; // Costume, Color, Variant, V-Skill, V-Trigger, V-Comment, Input delay
+constexpr int kSelectRows = 7;
+constexpr int kRowCostume = 0, kRowColor = 1, kRowVariant = 2, kRowVSkill = 3, kRowVTrigger = 4, kRowVComment = 5, kRowDelay = 6;
 
 struct SelectRow {
     std::string value;
@@ -159,28 +160,28 @@ struct SelectInput {
 };
 
 // A session's select screen: its lists, once per session.
-void SetSelectData(SelectData data);
+void SelectSetData(SelectData data);
 // Starts the screen over (a new lobby): the grid cursor on the player's pick.
-void ResetSelectScreen();
-// Asks for every texture the screen draws (with the lists SetSelectData
+void SelectReset();
+// Asks for every texture the screen draws (with the lists SelectSetData
 // gave), the stage select's first: called while hosting or joining, so
 // nothing pops in when the screen opens. They load in the background, a few
 // ms' worth a frame.
-void WarmSelectTextures();
+void SelectWarmTextures();
 // The title's warm up (M1): the pad glyphs, the player's favorite character
 // and stage (Fighter Profile, `chara`, `stage`; either may be empty), then
 // every grid tile, stage icon and stage background, read from the paks
 // behind anything drawn meanwhile. Any thread.
-void WarmBootTextures(const SelectData& data, const std::string& chara, const std::string& stage);
+void SelectWarmBootTextures(const SelectData& data, const std::string& chara, const std::string& stage);
 // Render thread, in an ImGui frame: the screen at `alpha` (0..1, fades),
 // on the background draw list; with `takeInput` it reads the pads, keys and
 // mouse and fills `input`.
-void DrawSelectLive(const SelectFonts& fonts, const SelectLive& live, float alpha, bool takeInput, SelectInput* input);
+void SelectDrawLive(const SelectFonts& fonts, const SelectLive& live, float alpha, bool takeInput, SelectInput* input);
 
 // The Debug tab's preview with mock players. `phase`: 0 stage select, 1 the
 // grid, 2 the loadout, 3 ready.
-void OpenSelectPreview(SelectData data, int phase = 0);
+void SelectOpenPreview(SelectData data, int phase = 0);
 bool SelectPreviewOpen();
-void DrawSelectPreview(const SelectFonts& fonts);
+void SelectDrawPreview(const SelectFonts& fonts);
 
 } // namespace sfv::mod
