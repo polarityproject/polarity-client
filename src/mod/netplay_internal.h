@@ -369,7 +369,7 @@ private:
     std::string modVersion_;
     std::mt19937_64 rng_;
     const Clock::time_point epoch_;
-    NetplayOptions options_; // pick fields guarded by mutex_
+    NetplayOptions options_;
     bool host_ = false;
     std::atomic<Role> role_{Role::Player};
     std::string name_;
@@ -391,13 +391,9 @@ private:
     std::atomic<uint64_t> peer_{0}; // the host, or (host) the other player
     uint16_t nonce_ = 0;
     std::atomic<uint64_t> matchId_{0};
-    MatchSetup setup_;                         // guarded by mutex_ where both threads touch it
-    lobby::Seat seats_[kNumPlayers];           // guarded by mutex_
-    int played_ = 0;                           // guarded by mutex_
     std::atomic<bool> holdOverResults_{false}; // the lobby holds the last match's results screen (OnFrame)
     std::atomic<int> nextDelay_{-1};           // the input delay for the next match (-1: unchanged)
     std::atomic<bool> lockedIn_{false};        // the player said ready: their pick (and the host's stage) hold
-    uint8_t selectScreen_ = 0, selectRow_ = 0; // SetSelectState, under mutex_
     uint32_t selectHover_ = 0;
     std::atomic<bool> beatNow_{false};
     std::atomic<bool> againOffered_{false}; // the keeper's again mark on this player's table (rooms_client)
@@ -419,7 +415,6 @@ private:
     int spectators_ = 0; // guest: as the host says
     uint16_t stageRule_ = lobby::kAnyStage;
     std::atomic<bool> stageLocked_{false}; // the host's stage confirmed (the host's own, or as last heard)
-    std::map<uint64_t, Watcher> watchers_; // host; guarded by mutex_
     std::atomic<bool> ready_{false};
     std::atomic<Choice> myChoice_{Choice::None};
     std::atomic<Next> next_{Next::None};
@@ -436,11 +431,8 @@ private:
     uint32_t heardTime_ = 0;
     Clock::time_point heardTimeAt_{};
     std::atomic<unsigned> linkPingMs_{0};
-    std::vector<uint16_t> linkRtts_;                  // under mutex_: the last core::kLinkSamples round trips, oldest first
-    NetView::Path linkPath_ = NetView::Path::Unknown; // under mutex_
-    int roundCallFrame_ = -1;                         // game thread: the session frame the round call began, -1 outside it
-    bool loweredEarly_ = false;                       // ... and the delay is already back to the player's
-    std::string relayHost_;                           // under mutex_
+    int roundCallFrame_ = -1;   // game thread: the session frame the round call began, -1 outside it
+    bool loweredEarly_ = false; // ... and the delay is already back to the player's
 
     std::thread thread_;
     const PickTables pickTables_ = BattleSetupPickTables();
@@ -457,12 +449,8 @@ private:
     MatchTicket ticket_;            // what brought this player here (core/match_ticket.h)
     Clock::time_point decidedAt_{}; // when the last match was decided
     uint32_t frozenChecksum_ = 0;
-    MatchSetup peerLoadedSetup_; // guarded by mutex_
     uint32_t peerChecksum_ = 0;
     std::atomic<bool> byePending_{false};
-    std::string byeText_;       // the Bye's reason, for the other side (mutex_)
-    bool forfeitOnBye_ = false; // the Bye gives up the table set (mutex_)
-    int forfeitSeat_ = -1;      // the seat that left the set, -1 none (mutex_)
     std::atomic<bool> selfLoaded_{false};
     std::atomic<bool> peerLoaded_{false};
     Clock::time_point startsDifferAt_{}; // game thread: when the frozen starts were found to differ
@@ -480,7 +468,6 @@ private:
     int desyncFrame_ = -1;
     std::array<uint8_t, 60> recentRollbacks_{}; // frames rolled back in each of the last 60 frames
     unsigned rollbacksSeen_ = 0;                // the session's rollback count at the last frame
-    std::string desyncReport_;                  // guarded by mutex_
     uint8_t predictionWindow_ = 0;
     uint8_t inputDelay_ = 0; // the local delay now (UpdatePredictionWindow)
 
@@ -493,10 +480,7 @@ private:
         float aheadSum = 0;
     } pace_;
 
-    NetView live_; // match figures for View(), guarded by mutex_
-
-    std::map<uint64_t, std::vector<lobby::FrameRecord>> streams_; // per match; guarded by mutex_
-    std::vector<uint64_t> streamOrder_;                           // oldest first, at most lobby::kKeptMatches
+    std::vector<uint64_t> streamOrder_; // oldest first, at most lobby::kKeptMatches
 
     struct KeptMatch {
         MatchSetup setup;
@@ -505,21 +489,39 @@ private:
         int8_t winner = -1;
     };
 
-    std::map<uint64_t, KeptMatch> kept_; // guarded by mutex_
     Clock::time_point matchListSentAt_{};
-    std::vector<lobby::MatchEntry> matchList_; // guarded by mutex_
-    std::vector<lobby::MatchEntry> sliceList_; // the host's list as its slices come in (mutex_)
-    bool watchedFirst_ = false;                // watchFromFirst done (a table watch starts at game 1)
+    bool watchedFirst_ = false; // watchFromFirst done (a table watch starts at game 1)
     std::atomic<uint64_t> lastWatched_{0};
     std::atomic<bool> switchNow_{false};
     std::atomic<uint64_t> pickedMatch_{0};
     std::atomic<bool> pickWaits_{false};
     int streamed_ = 0; // game thread
     std::unique_ptr<SpectatorPlayback> spectate_;
-    std::vector<lobby::Message> inbound_; // guarded by mutex_
     std::atomic<int> specWanted_{0};
     std::atomic<int> specPlayed_{0}; // the next frame its playback shows (InputsAck.played)
     std::atomic<uint64_t> watchingMatch_{0};
+
+    struct Shared {
+        MatchSetup setup;
+        lobby::Seat seats[kNumPlayers];
+        int played = 0;
+        uint8_t selectScreen = 0, selectRow = 0;
+        std::map<uint64_t, Watcher> watchers;
+        std::vector<uint16_t> linkRtts;
+        NetView::Path linkPath = NetView::Path::Unknown;
+        std::string relayHost;
+        MatchSetup peerLoadedSetup;
+        std::string byeText;
+        bool forfeitOnBye = false;
+        int forfeitSeat = -1;
+        std::string desyncReport;
+        NetView live;
+        std::map<uint64_t, std::vector<lobby::FrameRecord>> streams;
+        std::map<uint64_t, KeptMatch> kept;
+        std::vector<lobby::MatchEntry> matchList;
+        std::vector<lobby::MatchEntry> sliceList;
+        std::vector<lobby::Message> inbound;
+    } shared_;
 
     void KeepFrozenState();
 

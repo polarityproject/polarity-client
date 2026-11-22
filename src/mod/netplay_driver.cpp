@@ -161,8 +161,8 @@ bool NetplayDriver::Open(const NetplayOptions& o, const MatchTicket& ticket, std
     control_ = &mux_->Channel(kControlChannel);
     gekko_ = &mux_->Channel(kGekkoChannel);
     build_ = Hash64(game_.BuildId().data(), game_.BuildId().size()) ^ Hash64(modVersion_.data(), modVersion_.size());
-    seats_[0].present = host;
-    if (host) seats_[0].name = name_;
+    shared_.seats[0].present = host;
+    if (host) shared_.seats[0].name = name_;
     ready_ = o.autoReady;
     peerReports_ = -1;
     return true;
@@ -228,9 +228,9 @@ void NetplayDriver::SetReady(bool ready) {
 
 void NetplayDriver::SetSelectState(uint8_t screen, uint8_t row, uint32_t hover) {
     std::lock_guard lock(mutex_);
-    if (selectScreen_ == screen && selectRow_ == row && selectHover_ == hover) return;
-    selectScreen_ = screen;
-    selectRow_ = row;
+    if (shared_.selectScreen == screen && shared_.selectRow == row && selectHover_ == hover) return;
+    shared_.selectScreen = screen;
+    shared_.selectRow = row;
     selectHover_ = hover;
     beatNow_ = true;
 }
@@ -270,10 +270,10 @@ void NetplayDriver::ChooseMatch(uint64_t id) {
     lobby::MatchEntry e;
     {
         std::lock_guard lock(mutex_);
-        if (matchList_.empty()) return;
-        const auto it = id ? std::find_if(matchList_.begin(), matchList_.end(), [&](const lobby::MatchEntry& m) { return m.id == id; })
-                           : matchList_.end() - 1;
-        if (it == matchList_.end()) {
+        if (shared_.matchList.empty()) return;
+        const auto it = id ? std::find_if(shared_.matchList.begin(), shared_.matchList.end(), [&](const lobby::MatchEntry& m) { return m.id == id; })
+                           : shared_.matchList.end() - 1;
+        if (it == shared_.matchList.end()) {
             Log("netplay: match %s is no longer kept", Hex64(id).c_str());
             return;
         }
@@ -318,7 +318,7 @@ std::string NetplayDriver::Status() {
 
 NetView NetplayDriver::View() {
     std::lock_guard lock(mutex_);
-    NetView v = live_;
+    NetView v = shared_.live;
     v.phase = state_;
     v.host = host_;
     v.spectator = role_ == Role::Spectator;
@@ -328,7 +328,7 @@ NetView NetplayDriver::View() {
     v.status = status_;
     v.server = options_.udp ? "" : options_.server;
     for (int i = 0; i < kNumPlayers; i++) {
-        v.seats[i] = seats_[i];
+        v.seats[i] = shared_.seats[i];
         if (!v.seats[i].name.empty()) v.seats[i].name = core::DisplayName(v.seats[i].name);
     }
     if (role_ == Role::Player) {
@@ -340,33 +340,33 @@ NetView NetplayDriver::View() {
         own.inputDelay = nextDelay_ >= 0 ? static_cast<uint8_t>(nextDelay_.load()) : options_.inputDelay;
         own.link = link_;
     }
-    v.desyncReport = desyncReport_;
+    v.desyncReport = shared_.desyncReport;
     v.you = role_ == Role::Spectator ? -1 : host_ ? 0
                                                   : 1;
     v.setPlay = ticket_.after == AfterMatch::Set;
     v.build = Hex64(build_);
     v.againVote = v.setPlay && role_ == Role::Player && state_ == State::PostMatch && SetWinnerLocked() >= 0 &&
-                  forfeitSeat_ < 0 && AgainOn();
+                  shared_.forfeitSeat < 0 && AgainOn();
     v.againAsk = host_ && again_ == Again::Ask;
-    if (v.setPlay && state_ == State::PostMatch && (SetWinnerLocked() < 0 || v.againVote) && forfeitSeat_ < 0) {
+    if (v.setPlay && state_ == State::PostMatch && (SetWinnerLocked() < 0 || v.againVote) && shared_.forfeitSeat < 0) {
         const auto left = kSetVote - (Clock::now() - decidedAt_);
         v.voteSecondsLeft = static_cast<int>(std::max<int64_t>(0, std::chrono::duration_cast<std::chrono::seconds>(left).count() + 1));
     }
-    v.forfeitSeat = forfeitSeat_;
+    v.forfeitSeat = shared_.forfeitSeat;
     v.firstTo = ticket_.rules.firstTo;
-    v.played = played_;
-    v.spectators = host_ ? static_cast<int>(watchers_.size()) : spectators_;
+    v.played = shared_.played;
+    v.spectators = host_ ? static_cast<int>(shared_.watchers.size()) : spectators_;
     v.linkPingMs = linkPingMs_;
-    v.link = core::MeasureLink(linkRtts_);
-    v.linkPath = linkPath_;
-    v.relayHost = relayHost_;
+    v.link = core::MeasureLink(shared_.linkRtts);
+    v.linkPath = shared_.linkPath;
+    v.relayHost = shared_.relayHost;
     v.stageRule = host_ ? StageRule() : stageRule_;
     v.stageLocked = stageLocked_;
     v.overResults = state_ == State::Lobby && game_.BattleRunning();
     v.haveSetup = state_ >= State::Jumping && state_ <= State::PostMatch;
-    v.setup = setup_;
+    v.setup = shared_.setup;
     if (role_ == Role::Spectator) {
-        v.matches = matchList_;
+        v.matches = shared_.matchList;
         v.watchingMatch = state_ >= State::Jumping && state_ <= State::PostMatch ? matchId_.load() : 0;
     }
     return v;
@@ -382,8 +382,8 @@ void NetplayDriver::Stop() {
             const int seat = host_ ? 0 : 1;
             {
                 std::lock_guard lock(mutex_);
-                forfeitOnBye_ = true;
-                forfeitSeat_ = seat;
+                shared_.forfeitOnBye = true;
+                shared_.forfeitSeat = seat;
             }
             g_forfeitSeat = seat;
             Log("netplay: left the table's set: a forfeit");
@@ -463,7 +463,7 @@ std::vector<PreloadPick> NetplayDriver::PreloadPicksLocked() const {
     if (role_ == Role::Player && (!lobby || both)) add(options_.hasPick, options_.pick);
     for (int i = 0; i < kNumPlayers; i++) {
         if (role_ == Role::Player && i == (host_ ? 0 : 1)) continue;
-        if (!lobby || both) add(seats_[i].present && seats_[i].hasPick, seats_[i].pick);
+        if (!lobby || both) add(shared_.seats[i].present && shared_.seats[i].hasPick, shared_.seats[i].pick);
     }
     return picks;
 }
@@ -471,7 +471,7 @@ std::vector<PreloadPick> NetplayDriver::PreloadPicksLocked() const {
 bool NetplayDriver::BothReadyLocked() const {
     for (int i = 0; i < kNumPlayers; i++) {
         const bool own = role_ == Role::Player && i == (host_ ? 0 : 1);
-        if (own ? !ready_ : !(seats_[i].present && seats_[i].ready)) return false;
+        if (own ? !ready_ : !(shared_.seats[i].present && shared_.seats[i].ready)) return false;
     }
     return true;
 }
@@ -484,8 +484,8 @@ void NetplayDriver::MaybeStartMatch() {
     lobby::Seat a, b;
     {
         std::lock_guard lock(mutex_);
-        a = seats_[0];
-        b = seats_[1];
+        a = shared_.seats[0];
+        b = shared_.seats[1];
     }
     if (!b.present || !a.ready || !b.ready) {
         bothReadyAt_ = {};
@@ -509,13 +509,13 @@ void NetplayDriver::StartMatch(bool rematch) {
     {
         std::lock_guard lock(mutex_);
         for (int i = 0; i < kNumPlayers; i++) {
-            setup.wins[i] = seats_[i].wins;
+            setup.wins[i] = shared_.seats[i].wins;
             setup.streaks[i] = streaks_[i];
         }
-        setup_ = setup;
+        shared_.setup = setup;
     }
     matchId_ = rng_();
-    Log("netplay: match %s; %s", Hex64(matchId_).c_str(), BattleSetupDescribe(setup_).c_str());
+    Log("netplay: match %s; %s", Hex64(matchId_).c_str(), BattleSetupDescribe(shared_.setup).c_str());
     next_ = Next::Jump;
 }
 
@@ -524,7 +524,7 @@ void NetplayDriver::MaybeResolve() {
     Choice theirs;
     {
         std::lock_guard lock(mutex_);
-        theirs = seats_[1].choice;
+        theirs = shared_.seats[1].choice;
     }
     Choice mine = myChoice_;
     if (ticket_.after == AfterMatch::Set) {

@@ -43,9 +43,9 @@ bool NetplayDriver::FrameWhileRunning(SfvGame& game) {
         {
             std::lock_guard lock(mutex_);
             if (host_) {
-                played_++;
+                shared_.played++;
                 if (winner >= 0) {
-                    seats_[winner].wins++;
+                    shared_.seats[winner].wins++;
                     streaks_[winner]++;
                     streaks_[1 - winner] = 0;
                 }
@@ -58,8 +58,8 @@ bool NetplayDriver::FrameWhileRunning(SfvGame& game) {
         else Log("netplay: the match's winner is not known (win counts %s)", counted ? "unchanged" : "not found");
         if (host_) {
             std::lock_guard lock(mutex_);
-            const auto k = kept_.find(liveMatch_);
-            if (k != kept_.end()) {
+            const auto k = shared_.kept.find(liveMatch_);
+            if (k != shared_.kept.end()) {
                 k->second.finished = true;
                 k->second.winner = static_cast<int8_t>(winner);
             }
@@ -80,7 +80,7 @@ void NetplayDriver::Stream() {
     if (through < streamed_) return;
     std::lock_guard lock(mutex_);
     KeepMatchLocked(liveMatch_);
-    std::vector<lobby::FrameRecord>& stream = streams_[liveMatch_];
+    std::vector<lobby::FrameRecord>& stream = shared_.streams[liveMatch_];
     for (; streamed_ <= through; streamed_++) {
         lobby::FrameRecord f;
         if (!session_->ConfirmedFrame(streamed_, &f.inputs, &f.checksum)) break;
@@ -92,8 +92,8 @@ void NetplayDriver::KeepMatchLocked(uint64_t id) {
     if (std::find(streamOrder_.begin(), streamOrder_.end(), id) != streamOrder_.end()) return;
     streamOrder_.push_back(id);
     while (streamOrder_.size() > lobby::kKeptMatches) {
-        streams_.erase(streamOrder_.front());
-        kept_.erase(streamOrder_.front());
+        shared_.streams.erase(streamOrder_.front());
+        shared_.kept.erase(streamOrder_.front());
         streamOrder_.erase(streamOrder_.begin());
     }
 }
@@ -102,13 +102,13 @@ lobby::Message NetplayDriver::MatchListLocked() const {
     lobby::Message m;
     m.type = lobby::Type::Matches;
     for (uint64_t id : streamOrder_) {
-        const auto k = kept_.find(id);
-        if (k == kept_.end()) continue;
+        const auto k = shared_.kept.find(id);
+        if (k == shared_.kept.end()) continue;
         lobby::MatchEntry e;
         e.id = id;
         e.setup = k->second.setup;
-        const auto s = streams_.find(id);
-        e.frames = s == streams_.end() ? 0 : static_cast<uint32_t>(s->second.size());
+        const auto s = shared_.streams.find(id);
+        e.frames = s == shared_.streams.end() ? 0 : static_cast<uint32_t>(s->second.size());
         e.finished = k->second.finished;
         e.winner = k->second.winner;
         m.matches.push_back(e);
@@ -118,8 +118,8 @@ lobby::Message NetplayDriver::MatchListLocked() const {
 
 std::optional<lobby::Message> NetplayDriver::KeptLoaded(uint64_t id) {
     std::lock_guard lock(mutex_);
-    const auto k = kept_.find(id);
-    if (k == kept_.end()) return std::nullopt;
+    const auto k = shared_.kept.find(id);
+    if (k == shared_.kept.end()) return std::nullopt;
     lobby::Message loaded;
     loaded.type = lobby::Type::Loaded;
     loaded.matchId = id;
@@ -131,7 +131,7 @@ std::optional<lobby::Message> NetplayDriver::KeptLoaded(uint64_t id) {
 void NetplayDriver::WatchMatch(const lobby::MatchEntry& e) {
     {
         std::lock_guard lock(mutex_);
-        setup_ = e.setup;
+        shared_.setup = e.setup;
     }
     matchId_ = e.id;
     options_.predictionWindow = kPredictionWindow;
@@ -143,14 +143,14 @@ bool NetplayDriver::WatchNext() {
     lobby::MatchEntry next;
     {
         std::lock_guard lock(mutex_);
-        if (matchList_.empty()) return false;
+        if (shared_.matchList.empty()) return false;
         const uint64_t last = lastWatched_;
-        const auto it = std::find_if(matchList_.begin(), matchList_.end(), [&](const lobby::MatchEntry& e) { return e.id == last; });
-        if (last && it != matchList_.end()) {
-            if (it + 1 == matchList_.end()) return false;
+        const auto it = std::find_if(shared_.matchList.begin(), shared_.matchList.end(), [&](const lobby::MatchEntry& e) { return e.id == last; });
+        if (last && it != shared_.matchList.end()) {
+            if (it + 1 == shared_.matchList.end()) return false;
             next = *(it + 1);
         } else {
-            next = matchList_.back();
+            next = shared_.matchList.back();
         }
     }
     WatchMatch(next);
@@ -160,24 +160,24 @@ bool NetplayDriver::WatchNext() {
 void NetplayDriver::Publish(float ahead) {
     std::string status;
     std::unique_lock lock(mutex_);
-    live_.syncing = sessionSyncing_;
-    live_.frame = session_->NextFrame();
-    live_.framesAhead = ahead;
-    live_.desyncFrame = desyncFrame_;
-    live_.inputDelay = options_.inputDelay;
-    live_.predictionWindow = options_.predictionWindow;
+    shared_.live.syncing = sessionSyncing_;
+    shared_.live.frame = session_->NextFrame();
+    shared_.live.framesAhead = ahead;
+    shared_.live.desyncFrame = desyncFrame_;
+    shared_.live.inputDelay = options_.inputDelay;
+    shared_.live.predictionWindow = options_.predictionWindow;
     const auto rb = session_->RollbackStats();
     recentRollbacks_[framesRun_ % recentRollbacks_.size()] =
         rb.total_count != rollbacksSeen_ ? static_cast<uint8_t>(std::min(rb.last_frames, 255u)) : 0;
     rollbacksSeen_ = rb.total_count;
     if (framesRun_ % 10 == 0) {
         const auto net = session_->NetworkStats();
-        live_.pingMs = net.last_ping;
-        live_.avgPingMs = net.avg_ping;
-        live_.jitterMs = net.jitter;
-        live_.rollbacks = rb.total_count;
-        live_.longestRollback = rb.max_frames;
-        live_.recentRollback = *std::max_element(recentRollbacks_.begin(), recentRollbacks_.end());
+        shared_.live.pingMs = net.last_ping;
+        shared_.live.avgPingMs = net.avg_ping;
+        shared_.live.jitterMs = net.jitter;
+        shared_.live.rollbacks = rb.total_count;
+        shared_.live.longestRollback = rb.max_frames;
+        shared_.live.recentRollback = *std::max_element(recentRollbacks_.begin(), recentRollbacks_.end());
     }
     if (framesRun_ % 30 == 0) {
         const auto net = session_->NetworkStats();
@@ -200,7 +200,7 @@ bool NetplayDriver::FrameWhileWatching(SfvGame& game) {
     std::vector<lobby::Message> in;
     {
         std::lock_guard lock(mutex_);
-        in.swap(inbound_);
+        in.swap(shared_.inbound);
     }
     for (const lobby::Message& m : in) {
         std::vector<FrameInputs> inputs;
@@ -219,7 +219,7 @@ bool NetplayDriver::FrameWhileWatching(SfvGame& game) {
         desyncFrame_ = spectate_->DesyncFrame();
         const std::string path = SaveReport(spectate_->Recording(), "spectator-desync", true);
         std::lock_guard lock(mutex_);
-        desyncReport_ = path;
+        shared_.desyncReport = path;
     }
     if (GetState() == State::Running && FlowMatchDecided()) {
         SetState(State::PostMatch);
@@ -232,9 +232,9 @@ bool NetplayDriver::FrameWhileWatching(SfvGame& game) {
     }
     {
         std::lock_guard lock(mutex_);
-        live_.frame = spectate_->NextFrame();
-        live_.behind = spectate_->Buffered();
-        live_.desyncFrame = desyncFrame_;
+        shared_.live.frame = spectate_->NextFrame();
+        shared_.live.behind = spectate_->Buffered();
+        shared_.live.desyncFrame = desyncFrame_;
     }
     if (framesRun_ % 30 == 0) {
         char buf[160];
@@ -416,7 +416,7 @@ ReplayFile NetplayDriver::WithSummary(ReplayFile rf, bool leftEarly) {
     s.present = true;
     {
         std::lock_guard lock(mutex_);
-        for (int i = 0; i < kNumPlayers; i++) s.names[i] = seats_[i].name;
+        for (int i = 0; i < kNumPlayers; i++) s.names[i] = shared_.seats[i].name;
     }
     s.winner = static_cast<int8_t>(leftEarly ? -1 : matchWinner_);
     s.ending = leftEarly || matchWinner_ < 0 ? 1 : 0;
@@ -467,7 +467,7 @@ std::string NetplayDriver::SaveReport(const ReplayFile& rf, const char* kind, bo
     std::string names[kNumPlayers];
     {
         std::lock_guard lock(mutex_);
-        for (int i = 0; i < kNumPlayers; i++) names[i] = seats_[i].name;
+        for (int i = 0; i < kNumPlayers; i++) names[i] = shared_.seats[i].name;
     }
     const std::time_t t = std::time(nullptr);
     std::tm tm;
@@ -515,9 +515,9 @@ void NetplayDriver::WriteMatchLog(const std::string& recording, const ReplayFile
     NetView::Path path;
     {
         std::lock_guard lock(mutex_);
-        for (int i = 0; i < kNumPlayers; i++) names[i] = seats_[i].name;
+        for (int i = 0; i < kNumPlayers; i++) names[i] = shared_.seats[i].name;
         server = options_.udp ? "direct UDP" : options_.server;
-        path = linkPath_;
+        path = shared_.linkPath;
     }
     const std::string logPath = recording.substr(0, recording.rfind('.')) + ".log";
     if (!ReportsOn()) ReportsKeepLocal(reportDir_, logPath.substr(logPath.find_last_of('\\') + 1));

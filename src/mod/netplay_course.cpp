@@ -45,10 +45,10 @@ void NetplayDriver::ContinueSet() {
     Rules rules = againRules_;
     {
         std::lock_guard lock(mutex_);
-        for (auto& seat : seats_) seat.wins = 0;
-        played_ = 0;
+        for (auto& seat : shared_.seats) seat.wins = 0;
+        shared_.played = 0;
         for (auto& streak : streaks_) streak = 0;
-        forfeitSeat_ = -1;
+        shared_.forfeitSeat = -1;
         ticket_.rules = rules;
     }
     g_forfeitSeat = -1;
@@ -105,9 +105,9 @@ void NetplayDriver::Transitions() {
             lockedIn_ = false;
             {
                 std::lock_guard lock(mutex_);
-                selectScreen_ = 0;
+                shared_.selectScreen = 0;
                 selectHover_ = 0;
-                for (auto& seat : seats_) {
+                for (auto& seat : shared_.seats) {
                     seat.choice = Choice::None;
                     seat.ready = false;
                 }
@@ -151,7 +151,7 @@ void NetplayDriver::RefuseFromPeer(const std::string& why) {
 void NetplayDriver::EndSessionFor(const std::string& why, const std::string& theirs) {
     {
         std::lock_guard lock(mutex_);
-        byeText_ = theirs;
+        shared_.byeText = theirs;
     }
     SendBye();
     EndSession(why);
@@ -176,23 +176,23 @@ bool NetplayDriver::LacksVersion(const MatchSetup& s, std::string* here, std::st
 
 std::string NetplayDriver::SetScoreText() {
     std::lock_guard lock(mutex_);
-    return "P1 " + std::to_string(seats_[0].wins) + " - " + std::to_string(seats_[1].wins) + " P2, first to " +
+    return "P1 " + std::to_string(shared_.seats[0].wins) + " - " + std::to_string(shared_.seats[1].wins) + " P2, first to " +
            std::to_string(ticket_.rules.firstTo);
 }
 
 int NetplayDriver::SetWinnerLocked() {
     if (ticket_.after != AfterMatch::Set) return -1;
     uint16_t wins[kNumPlayers];
-    for (int i = 0; i < kNumPlayers; i++) wins[i] = seats_[i].wins;
+    for (int i = 0; i < kNumPlayers; i++) wins[i] = shared_.seats[i].wins;
     return SetWinner(ticket_.rules, wins);
 }
 
 bool NetplayDriver::LeavingMidSet() {
     if (ticket_.after != AfterMatch::Set || role_ != Role::Player) return false;
     std::lock_guard lock(mutex_);
-    const bool begun = played_ > 0 || state_ == State::Jumping || state_ == State::Loading || state_ == State::Running ||
+    const bool begun = shared_.played > 0 || state_ == State::Jumping || state_ == State::Loading || state_ == State::Running ||
                        state_ == State::PostMatch;
-    return begun && state_ != State::Ended && state_ != State::Idle && SetWinnerLocked() < 0 && forfeitSeat_ < 0;
+    return begun && state_ != State::Ended && state_ != State::Idle && SetWinnerLocked() < 0 && shared_.forfeitSeat < 0;
 }
 
 bool NetplayDriver::TookForfeit(int seat) {
@@ -200,7 +200,7 @@ bool NetplayDriver::TookForfeit(int seat) {
     {
         std::lock_guard lock(mutex_);
         if (SetWinnerLocked() >= 0) return false;
-        forfeitSeat_ = seat;
+        shared_.forfeitSeat = seat;
     }
     g_forfeitSeat = seat;
     EndSession("the other player left: the set ends here");
@@ -212,7 +212,7 @@ std::string NetplayDriver::SetOverText() {
     uint16_t wins[kNumPlayers];
     {
         std::lock_guard lock(mutex_);
-        for (int i = 0; i < kNumPlayers; i++) wins[i] = seats_[i].wins;
+        for (int i = 0; i < kNumPlayers; i++) wins[i] = shared_.seats[i].wins;
     }
     const int winner = SetWinner(ticket_.rules, wins);
     if (winner < 0) return "";
@@ -268,9 +268,9 @@ MatchSetup NetplayDriver::ChooseSetup(bool rematch) {
         MatchSetup last;
         {
             std::lock_guard lock(mutex_);
-            joiner = seats_[1];
+            joiner = shared_.seats[1];
             s.players[0] = options_.hasPick ? options_.pick : current.players[0];
-            last = setup_;
+            last = shared_.setup;
         }
         s.players[1] = joiner.hasPick ? joiner.pick : current.players[1];
         for (int i = 0; rematch && i < kNumPlayers; i++) {
@@ -296,11 +296,11 @@ void NetplayDriver::StreamToWatchers() {
     std::vector<std::pair<uint64_t, lobby::Message>> out;
     {
         std::lock_guard lock(mutex_);
-        if (watchers_.empty()) return;
-        for (auto& [id, w] : watchers_) {
+        if (shared_.watchers.empty()) return;
+        for (auto& [id, w] : shared_.watchers) {
             if (!w.streaming) continue;
-            const auto found = streams_.find(w.match);
-            if (found == streams_.end()) continue;
+            const auto found = shared_.streams.find(w.match);
+            if (found == shared_.streams.end()) continue;
             const std::vector<lobby::FrameRecord>& stream = found->second;
             const int have = static_cast<int>(stream.size());
             if (now - w.progressAt > kStreamResend && w.sentThrough >= w.wanted) {

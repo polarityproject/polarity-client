@@ -29,7 +29,7 @@ std::vector<uint64_t> NetplayDriver::Members() {
     std::vector<uint64_t> out;
     if (peer_) out.push_back(peer_);
     std::lock_guard lock(mutex_);
-    for (const auto& [id, w] : watchers_) out.push_back(id);
+    for (const auto& [id, w] : shared_.watchers) out.push_back(id);
     return out;
 }
 
@@ -38,8 +38,8 @@ void NetplayDriver::SendBye() {
     bye.type = lobby::Type::Bye;
     {
         std::lock_guard lock(mutex_);
-        bye.text = std::exchange(byeText_, {});
-        bye.forfeit = forfeitOnBye_;
+        bye.text = std::exchange(shared_.byeText, {});
+        bye.forfeit = shared_.forfeitOnBye;
     }
     for (uint64_t to : Members()) SendTo(to, bye);
 }
@@ -146,7 +146,7 @@ void NetplayDriver::RoomEvents() {
                     }
                 } else {
                     std::lock_guard lock(mutex_);
-                    if (watchers_.erase(e.peer)) Log("netplay: spectator %u left", static_cast<unsigned>(e.peer));
+                    if (shared_.watchers.erase(e.peer)) Log("netplay: spectator %u left", static_cast<unsigned>(e.peer));
                 }
                 break;
             case WeyveEvent::Type::Removed:
@@ -228,11 +228,11 @@ void NetplayDriver::UpdateLinkPath() {
     const auto took = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - askedAt).count();
     if (took >= kSlowLinkQueryUs) Log("hitch: the link path query took %.1f ms", took / 1000.0);
     std::lock_guard lock(mutex_);
-    if (path != linkPath_ && path != NetView::Path::Unknown) {
+    if (path != shared_.linkPath && path != NetView::Path::Unknown) {
         Log("netplay: the link to the other side is %s", path == NetView::Path::Relayed ? ("relayed through " + (relay.empty() ? std::string("TURN") : relay)).c_str() : "peer to peer");
     }
-    linkPath_ = path;
-    relayHost_ = relay;
+    shared_.linkPath = path;
+    shared_.relayHost = relay;
 }
 
 bool NetplayDriver::CheckSilence(Clock::time_point now) {
@@ -247,10 +247,10 @@ bool NetplayDriver::CheckSilence(Clock::time_point now) {
     }
     if (host_) {
         std::lock_guard lock(mutex_);
-        for (auto it = watchers_.begin(); it != watchers_.end();) {
+        for (auto it = shared_.watchers.begin(); it != shared_.watchers.end();) {
             if (now - it->second.heard > kSilence) {
                 Log("netplay: spectator %s silent; dropped", it->second.name.c_str());
-                it = watchers_.erase(it);
+                it = shared_.watchers.erase(it);
             } else {
                 ++it;
             }
@@ -278,8 +278,8 @@ void NetplayDriver::TakeEcho(const lobby::Message& m) {
     if (rtt < 0 || rtt >= kMaxRttMs) return;
     linkPingMs_ = static_cast<unsigned>(rtt);
     std::lock_guard lock(mutex_);
-    linkRtts_.push_back(static_cast<uint16_t>(rtt));
-    if (linkRtts_.size() > core::kLinkSamples) linkRtts_.erase(linkRtts_.begin());
+    shared_.linkRtts.push_back(static_cast<uint16_t>(rtt));
+    if (shared_.linkRtts.size() > core::kLinkSamples) shared_.linkRtts.erase(shared_.linkRtts.begin());
 }
 
 lobby::Seat NetplayDriver::OwnSeat() {
@@ -293,12 +293,12 @@ lobby::Seat NetplayDriver::OwnSeat() {
     std::string picks;
     for (const PreloadPick& p : PreloadPicksLocked()) picks += p.code + "/" + std::to_string(p.costume) + " ";
     const bool otherKnown = options_.randomSetup || role_ != Role::Player ||
-                            (seats_[host_ ? 1 : 0].present && seats_[host_ ? 1 : 0].hasPick);
+                            (shared_.seats[host_ ? 1 : 0].present && shared_.seats[host_ ? 1 : 0].hasPick);
     const bool settled = options_.randomSetup || state_ != State::Lobby || BothReadyLocked();
     seat.preloaded = otherKnown && settled && FlowPreloadsDoneFor(picks);
     seat.choice = myChoice_;
-    seat.screen = selectScreen_;
-    seat.row = selectRow_;
+    seat.screen = shared_.selectScreen;
+    seat.row = shared_.selectRow;
     seat.hover = selectHover_;
     seat.inputDelay = nextDelay_ >= 0 ? static_cast<uint8_t>(nextDelay_.load()) : options_.inputDelay;
     seat.fps = static_cast<uint8_t>(std::clamp(OverlayRenderFps() + 0.5f, 0.0f, 255.0f));
@@ -322,13 +322,13 @@ void NetplayDriver::HostBeat(State s) {
     {
         const lobby::Seat own = OwnSeat();
         std::lock_guard lock(mutex_);
-        const uint16_t wins = seats_[0].wins;
-        seats_[0] = own;
-        seats_[0].wins = wins;
-        st.seats[0] = seats_[0];
-        st.seats[1] = seats_[1];
-        st.played = static_cast<uint16_t>(played_);
-        st.spectators = static_cast<uint8_t>(watchers_.size());
+        const uint16_t wins = shared_.seats[0].wins;
+        shared_.seats[0] = own;
+        shared_.seats[0].wins = wins;
+        st.seats[0] = shared_.seats[0];
+        st.seats[1] = shared_.seats[1];
+        st.played = static_cast<uint16_t>(shared_.played);
+        st.spectators = static_cast<uint8_t>(shared_.watchers.size());
     }
     st.phase = s == State::PostMatch                        ? SessionPhase::PostMatch
                : s >= State::Jumping && s <= State::Running ? SessionPhase::Match
@@ -343,7 +343,7 @@ void NetplayDriver::HostBeat(State s) {
     std::map<uint64_t, Watcher> watchers;
     {
         std::lock_guard lock(mutex_);
-        watchers = watchers_;
+        watchers = shared_.watchers;
     }
     for (const auto& [id, w] : watchers) {
         Echo(st, w.heardTime, w.heardTimeAt);
@@ -417,7 +417,7 @@ lobby::Message NetplayDriver::WelcomeMessage() {
     lobby::Message w;
     w.type = lobby::Type::Welcome;
     w.matchId = matchId_;
-    w.setup = setup_;
+    w.setup = shared_.setup;
     w.inputDelay = options_.inputDelay;
     w.predictionWindow = options_.predictionWindow;
     return w;
@@ -457,7 +457,7 @@ void NetplayDriver::OnMessage(uint64_t from, const lobby::Message& m) {
 void NetplayDriver::OnHostMessage(uint64_t from, const lobby::Message& m, State s) {
     Watcher* w = nullptr;
     std::unique_lock lock(mutex_);
-    if (auto it = watchers_.find(from); it != watchers_.end()) {
+    if (auto it = shared_.watchers.find(from); it != shared_.watchers.end()) {
         w = &it->second;
         w->heard = Clock::now();
     }
@@ -494,9 +494,9 @@ void NetplayDriver::OnHostMessage(uint64_t from, const lobby::Message& m, State 
                 heard_ = Clock::now();
                 {
                     std::lock_guard l(mutex_);
-                    seats_[1] = {};
-                    seats_[1].present = true;
-                    seats_[1].name = m.name;
+                    shared_.seats[1] = {};
+                    shared_.seats[1].present = true;
+                    shared_.seats[1].name = m.name;
                 }
                 Log("netplay: %s joined from %s", m.name.c_str(), Hex64(from).c_str());
                 peerReports_ = -1;
@@ -514,11 +514,11 @@ void NetplayDriver::OnHostMessage(uint64_t from, const lobby::Message& m, State 
                 break;
             }
             std::lock_guard l(mutex_);
-            if (!options_.allowSpectators || (!isKeeper && watchers_.size() >= kMaxSpectators)) {
+            if (!options_.allowSpectators || (!isKeeper && shared_.watchers.size() >= kMaxSpectators)) {
                 Reject(from, options_.allowSpectators ? lobby::RejectReason::Busy : lobby::RejectReason::NoSpectators);
                 break;
             }
-            Watcher& nw = watchers_[from];
+            Watcher& nw = shared_.watchers[from];
             nw.name = m.name;
             nw.heard = Clock::now();
             nw.keeper = isKeeper;
@@ -533,7 +533,7 @@ void NetplayDriver::OnHostMessage(uint64_t from, const lobby::Message& m, State 
             TakeEcho(m);
             {
                 std::lock_guard l(mutex_);
-                lobby::Seat& seat = seats_[1];
+                lobby::Seat& seat = shared_.seats[1];
                 seat.hasPick = m.seat.hasPick;
                 seat.pick = m.seat.pick;
                 seat.ready = m.seat.ready && m.seat.choice == Choice::None;
@@ -552,7 +552,7 @@ void NetplayDriver::OnHostMessage(uint64_t from, const lobby::Message& m, State 
             if (from == peer_ && m.matchId == matchId_) {
                 {
                     std::lock_guard l(mutex_);
-                    peerLoadedSetup_ = m.setup;
+                    shared_.peerLoadedSetup = m.setup;
                     peerChecksum_ = m.stateChecksum;
                 }
                 peerLoaded_ = true;
@@ -579,7 +579,7 @@ void NetplayDriver::OnHostMessage(uint64_t from, const lobby::Message& m, State 
                 if (!m.matchId) {
                     if (w->streaming) Log("netplay: spectator %s finished watching", w->name.c_str());
                     w->streaming = false;
-                } else if (streams_.count(m.matchId)) {
+                } else if (shared_.streams.count(m.matchId)) {
                     if (!w->streaming || w->match != m.matchId) {
                         w->streaming = true;
                         w->match = m.matchId;
@@ -605,7 +605,7 @@ void NetplayDriver::OnHostMessage(uint64_t from, const lobby::Message& m, State 
             } else if (w) {
                 std::lock_guard l(mutex_);
                 Log("netplay: spectator %s left", w->name.c_str());
-                watchers_.erase(from);
+                shared_.watchers.erase(from);
             }
             break;
         default:
@@ -622,7 +622,7 @@ void NetplayDriver::OnGuestMessage(uint64_t from, const lobby::Message& m, State
             role_ = m.role;
             {
                 std::lock_guard l(mutex_);
-                seats_[0].name = m.name;
+                shared_.seats[0].name = m.name;
             }
             Log("netplay: in %s's session as %s", m.name.c_str(), role_ == Role::Player ? "P2" : "a spectator");
             NotePeerReports(m.reports);
@@ -640,8 +640,8 @@ void NetplayDriver::OnGuestMessage(uint64_t from, const lobby::Message& m, State
             TakeEcho(m);
             {
                 std::lock_guard l(mutex_);
-                for (int i = 0; i < kNumPlayers; i++) seats_[i] = m.seats[i];
-                played_ = m.played;
+                for (int i = 0; i < kNumPlayers; i++) shared_.seats[i] = m.seats[i];
+                shared_.played = m.played;
                 spectators_ = m.spectators;
                 stageRule_ = m.stage;
             }
@@ -657,11 +657,11 @@ void NetplayDriver::OnGuestMessage(uint64_t from, const lobby::Message& m, State
             if (role_ == Role::Spectator) {
                 {
                     std::lock_guard l(mutex_);
-                    if (std::none_of(matchList_.begin(), matchList_.end(), [&](const lobby::MatchEntry& e) { return e.id == m.matchId; })) {
+                    if (std::none_of(shared_.matchList.begin(), shared_.matchList.end(), [&](const lobby::MatchEntry& e) { return e.id == m.matchId; })) {
                         lobby::MatchEntry e;
                         e.id = m.matchId;
                         e.setup = m.setup;
-                        matchList_.push_back(e);
+                        shared_.matchList.push_back(e);
                     }
                 }
                 if (s == State::Jumping || s == State::Loading || s == State::Running || switchNow_) break;
@@ -676,11 +676,11 @@ void NetplayDriver::OnGuestMessage(uint64_t from, const lobby::Message& m, State
             }
             {
                 std::lock_guard l(mutex_);
-                setup_ = m.setup;
+                shared_.setup = m.setup;
             }
             matchId_ = m.matchId;
             options_.predictionWindow = kPredictionWindow;
-            Log("netplay: match %s; %s", Hex64(matchId_).c_str(), BattleSetupDescribe(setup_).c_str());
+            Log("netplay: match %s; %s", Hex64(matchId_).c_str(), BattleSetupDescribe(shared_.setup).c_str());
             next_ = Next::Jump;
             break;
         }
@@ -688,7 +688,7 @@ void NetplayDriver::OnGuestMessage(uint64_t from, const lobby::Message& m, State
             if (m.matchId == matchId_) {
                 {
                     std::lock_guard l(mutex_);
-                    peerLoadedSetup_ = m.setup;
+                    shared_.peerLoadedSetup = m.setup;
                     peerChecksum_ = m.stateChecksum;
                 }
                 peerLoaded_ = true;
@@ -699,15 +699,15 @@ void NetplayDriver::OnGuestMessage(uint64_t from, const lobby::Message& m, State
                 uint64_t first = 0;
                 {
                     std::lock_guard l(mutex_);
-                    std::vector<lobby::MatchEntry>& list = sliceList_;
+                    std::vector<lobby::MatchEntry>& list = shared_.sliceList;
                     if (list.size() != m.sliceOf) {
                         std::vector<lobby::MatchEntry> fresh(m.sliceOf);
                         list = std::move(fresh);
                     }
                     for (size_t i = 0; i < m.matches.size() && m.sliceAt + i < list.size(); i++) list[m.sliceAt + i] = m.matches[i];
                     if (std::all_of(list.begin(), list.end(), [](const lobby::MatchEntry& e) { return e.id != 0; })) {
-                        matchList_ = list;
-                        if (ticket_.watchFromFirst && !watchedFirst_ && !matchList_.empty()) first = matchList_.front().id;
+                        shared_.matchList = list;
+                        if (ticket_.watchFromFirst && !watchedFirst_ && !shared_.matchList.empty()) first = shared_.matchList.front().id;
                     }
                 }
                 const State st = GetState();
@@ -723,7 +723,7 @@ void NetplayDriver::OnGuestMessage(uint64_t from, const lobby::Message& m, State
         case lobby::Type::Inputs:
             if (role_ == Role::Spectator && m.matchId && m.matchId == watchingMatch_) {
                 std::lock_guard l(mutex_);
-                inbound_.push_back(m);
+                shared_.inbound.push_back(m);
             }
             break;
         case lobby::Type::Bye:

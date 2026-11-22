@@ -9,11 +9,12 @@ The code is `src/mod/netplay_*.cpp` (the class is in `netplay_internal.h`).
 
 A session runs on two threads. The network thread (the control channel)
 reads and answers messages, sends heartbeats and moves the session through
-its states. The game thread drives the battle frame by frame. Fields both
-touch are guarded by the driver's mutex, as the class marks them. What the
-game thread must act on (a new match, back to the lobby, the end) the
-network thread hands over as the next step, and the game thread takes it once
-it has let go of the match.
+its states. The game thread drives the battle frame by frame. The fields
+both touch are in the driver's `shared_` struct, read and written under its
+mutex; so are the pick fields of its options. Flags one thread sets for the
+other are atomics. What the game thread must act on (a new match, back to
+the lobby, the end) the network thread hands over as the next step, and the
+game thread takes it once it has let go of the match.
 
 ## The server connection
 

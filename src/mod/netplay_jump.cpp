@@ -17,7 +17,7 @@ void NetplayDriver::BeginJump() {
         int played = 0;
         {
             std::lock_guard lock(mutex_);
-            played = played_;
+            played = shared_.played;
         }
         const bool fresh = setKey_ == 0 || (table ? played == 0 : GetState() == State::Lobby);
         if (fresh) {
@@ -35,17 +35,17 @@ void NetplayDriver::BeginJump() {
     switchesAtJump_ = FlowBattleSceneSwitches();
     ReleaseResults();
     if (nextDelay_ >= 0) options_.inputDelay = static_cast<uint8_t>(nextDelay_.exchange(-1));
-    const MatchSetup shown = ShownSetup(setup_, ViewerSide(), BattleSetupLookRules());
+    const MatchSetup shown = ShownSetup(shared_.setup, ViewerSide(), BattleSetupLookRules());
     for (int p = 0; p < kNumPlayers; p++) {
-        if (shown.players[p].color != setup_.players[p].color) {
+        if (shown.players[p].color != shared_.setup.players[p].color) {
             Log("netplay: both players on one look: P%d shows here in color %u (picked %u)", p + 1, shown.players[p].color + 1u,
-                setup_.players[p].color + 1u);
+                shared_.setup.players[p].color + 1u);
         }
     }
     MatchSetup pending = shown;
     {
         std::lock_guard lock(mutex_);
-        pending.played = static_cast<uint16_t>(played_);
+        pending.played = static_cast<uint16_t>(shared_.played);
     }
     BattleSetupSetPending(pending);
     creationsAtJump_ = BattleSetupCreations();
@@ -59,9 +59,9 @@ void NetplayDriver::BeginJump() {
     specPlayed_ = 0;
     {
         std::lock_guard lock(mutex_);
-        inbound_.clear();
-        for (auto& seat : seats_) seat.choice = Choice::None;
-        live_ = NetView{};
+        shared_.inbound.clear();
+        for (auto& seat : shared_.seats) seat.choice = Choice::None;
+        shared_.live = NetView{};
     }
     watchingMatch_ = 0;
     liveMatch_ = matchId_.load();
@@ -77,8 +77,8 @@ void NetplayDriver::BeginJump() {
 }
 
 void NetplayDriver::RunJump() {
-    FlowSetPendingStage(setup_.stage == kKeepStage ? "" : FlowStageCode(setup_.stage));
-    Log("netplay: jumping into the battle (stage %s)", setup_.stage == kKeepStage ? "as prepared" : FlowStageCode(setup_.stage).c_str());
+    FlowSetPendingStage(shared_.setup.stage == kKeepStage ? "" : FlowStageCode(shared_.setup.stage));
+    Log("netplay: jumping into the battle (stage %s)", shared_.setup.stage == kKeepStage ? "as prepared" : FlowStageCode(shared_.setup.stage).c_str());
     FlowJumpToBattle();
     const auto direct = Clock::now() + std::chrono::seconds(kDirectJumpSeconds);
     while (!stop_ && !Stopping() && GetState() == State::Jumping && BattleSetupCreations() == creationsAtJump_ &&
@@ -112,7 +112,7 @@ bool NetplayDriver::FrameWhileLoading(SfvGame& game) {
         InputIsolatePads(true);
         game.exclusiveTicks = true;
         FlowSetRoundDirectorPerTick(true, options_.roundEndRollback);
-        BattleSetMatchDrawSeed(setup_.seed);
+        BattleSetMatchDrawSeed(shared_.setup.seed);
         game.Recanonicalize();
         std::vector<uint64_t> hashes(game.Regions().size());
         HashRegions(game.Regions(), hashes.data());
@@ -146,12 +146,12 @@ bool NetplayDriver::FrameWhileLoading(SfvGame& game) {
         uint32_t peerChecksum;
         {
             std::lock_guard lock(mutex_);
-            peer = peerLoadedSetup_;
+            peer = shared_.peerLoadedSetup;
             peerChecksum = peerChecksum_;
         }
         const LookRules rules = BattleSetupLookRules();
         const std::string mismatch =
-            SetupMismatch(RealPicks(loadedSetup_, setup_, ViewerSide(), rules), RealPicks(peer, setup_, host_ ? 1 : 0, rules));
+            SetupMismatch(RealPicks(loadedSetup_, shared_.setup, ViewerSide(), rules), RealPicks(peer, shared_.setup, host_ ? 1 : 0, rules));
         if (!mismatch.empty()) {
             Log("netplay: the battles differ (%s); here %s | there %s", mismatch.c_str(),
                 BattleSetupDescribe(loadedSetup_).c_str(), BattleSetupDescribe(peer).c_str());
@@ -178,7 +178,7 @@ void NetplayDriver::StartSession(SfvGame& game) {
     nc.localPlayer = host_ ? 0 : 1;
     nc.remotePeer = peer_;
     nc.matchId = matchId_;
-    nc.setup = setup_;
+    nc.setup = shared_.setup;
     nc.modVersion = modVersion_;
     nc.inputDelay = options_.inputDelay;
     nc.predictionWindow = options_.predictionWindow;
@@ -200,7 +200,7 @@ void NetplayDriver::StartSession(SfvGame& game) {
         if (d.frame <= kStartProbeFrames) game.LogStartProbe(("a desync at frame " + std::to_string(d.frame)).c_str());
         const std::string path = SaveReport(rf, "desync", true);
         std::lock_guard lock(mutex_);
-        desyncReport_ = path;
+        shared_.desyncReport = path;
     };
     std::string error;
     if (!session_->Start(&error)) {
@@ -219,7 +219,7 @@ void NetplayDriver::StartSession(SfvGame& game) {
     rollbacksSeen_ = 0;
     {
         std::lock_guard lock(mutex_);
-        desyncReport_.clear();
+        shared_.desyncReport.clear();
     }
     streamed_ = 0;
     predictionWindow_ = options_.predictionWindow;
@@ -236,7 +236,7 @@ void NetplayDriver::StartSession(SfvGame& game) {
         core::LinkStats link;
         {
             std::lock_guard lock(mutex_);
-            link = core::MeasureLink(linkRtts_);
+            link = core::MeasureLink(shared_.linkRtts);
         }
         if (link.samples >= core::kSuggestSamples) {
             const int suggested = core::SuggestedDelay(link.pingMs, link.jitterMs);
@@ -252,7 +252,7 @@ void NetplayDriver::StartSession(SfvGame& game) {
 void NetplayDriver::StartWatching(SfvGame& game) {
     SpectateConfig sc;
     sc.matchId = matchId_;
-    sc.setup = setup_;
+    sc.setup = shared_.setup;
     sc.modVersion = modVersion_;
     if (ticket_.after == AfterMatch::Set) sc.delayFrames = kRelayWatchDelayFrames;
     sc.log = [](const std::string& m) { Log("netplay: %s", m.c_str()); };
@@ -274,7 +274,7 @@ void NetplayDriver::StartWatching(SfvGame& game) {
     rollbacksSeen_ = 0;
     {
         std::lock_guard lock(mutex_);
-        desyncReport_.clear();
+        shared_.desyncReport.clear();
     }
     watchingMatch_ = matchId_.load();
     lastWatched_ = watchingMatch_.load();
@@ -287,8 +287,8 @@ void NetplayDriver::KeepFrozenState() {
     if (!host_) return;
     std::lock_guard lock(mutex_);
     KeepMatchLocked(matchId_);
-    KeptMatch& k = kept_[matchId_];
-    k.setup = setup_;
+    KeptMatch& k = shared_.kept[matchId_];
+    k.setup = shared_.setup;
     k.checksum = frozenChecksum_;
 }
 
@@ -305,7 +305,7 @@ void NetplayDriver::SaveDifferentStart(SfvGame& game, uint32_t peerChecksum) {
     rf.createdUnix = static_cast<uint64_t>(std::time(nullptr));
     rf.inputDelay = options_.inputDelay;
     rf.predictionWindow = options_.predictionWindow;
-    rf.setup = setup_;
+    rf.setup = shared_.setup;
     rf.regions = DescribeRegions(regions);
     rf.initialHashes.resize(regions.size());
     HashRegions(regions, rf.initialHashes.data());
