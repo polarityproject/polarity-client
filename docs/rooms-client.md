@@ -33,6 +33,14 @@ keeper's public key, built in. `[rooms] keeper_key` (128 hex digits) adds
 another key, for tests against a local keeper. Checked proofs and signatures
 are remembered.
 
+The client's mutex guards its `shared` struct: the view the screens read and
+the requests they leave for the thread (create, join, leave, chat, table
+requests, tickets, the watched table and the set being played). The rest of
+the client is the thread's own. The relay room last handed out gets one
+watch ticket a set. A set being played counts as begun once its match
+itself starts (the jump), not only its session, and keeps the score seen
+last while the session was live.
+
 ## Listings
 
 The server takes one listing a second from a connection, so the client asks

@@ -505,7 +505,8 @@ std::string NetplayDriver::SaveReport(const ReplayFile& rf, const char* kind, bo
 }
 
 void NetplayDriver::NotePeerReports(bool reports) {
-    if (peerReports_.exchange(reports ? 1 : 0) == (reports ? 1 : 0)) return;
+    const PeerReports now = reports ? PeerReports::Sends : PeerReports::DoesNotSend;
+    if (peerReports_.exchange(now) == now) return;
     Log("netplay: the other side %s desync reports", reports ? "sends" : "does not send");
 }
 
@@ -550,10 +551,11 @@ void NetplayDriver::WriteMatchLog(const std::string& recording, const ReplayFile
     std::fprintf(f, "mods: %s\n", BattleDataScanModPaks().Text().c_str());
     std::fprintf(f, "battle data: %s\n", BattleDataLastCheck().Text().c_str());
     std::fprintf(f, "character versions: %s\n", FlowCharaVersionsText().c_str());
-    const int peerReports = peerReports_;
+    const PeerReports peerReports = peerReports_;
     std::fprintf(f, "desync reports: %s from this side, %s from the other side\n", ReportsOn() ? "sent" : "not sent",
-                 peerReports > 0 ? "sent" : peerReports == 0 ? "not sent"
-                                                             : "not known if sent");
+                 peerReports == PeerReports::Sends         ? "sent"
+                 : peerReports == PeerReports::DoesNotSend ? "not sent"
+                                                           : "not known if sent");
     std::fprintf(f, "recording %s\n\n", recording.substr(recording.find_last_of('\\') + 1).c_str());
     for (const std::string& line : lines) std::fprintf(f, "%s\n", line.c_str());
     std::fclose(f);

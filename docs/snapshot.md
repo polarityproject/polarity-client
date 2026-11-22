@@ -46,6 +46,11 @@ not stay "not an address" on one machine only.
 
 ## Regions the mod adds
 
+The game's own regions the mod looks into: the battle camera that pans from
+frame 0 has a sub-object (vtable rva 0x2C5F520) at +0xE8, of which the game
+snapshots 112 bytes from +0x1C0; a fighter's simulation object has 300
+bytes snapshot from +0x764.
+
 - **The input unit's counters** and the held-input capture (Urien's thong
   reads it), so a rollback runs the capture again on the corrected inputs.
 - **The battle frame's state** (its update counters) and the game

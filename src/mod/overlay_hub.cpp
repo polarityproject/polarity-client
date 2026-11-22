@@ -393,14 +393,14 @@ void StartTableSession(const keeper::TableTicket& t) {
 
 void DrawHubFrame(bool takeInput) {
     constexpr double kFadeSeconds = 0.16;
-    static int shown = -1;
+    static HubScreen shown = HubScreen::None;
     static double changedAt = -1;
     ui::g_backdropEnd = -1;
-    g_hubScreen = -1;
+    g_hubScreen = HubScreen::None;
     DrawHubScreens(takeInput);
     const double now = ImGui::GetTime();
     if (g_hubScreen != shown) {
-        if (shown >= 0 && g_hubScreen >= 0) changedAt = now;
+        if (shown != HubScreen::None && g_hubScreen != HubScreen::None) changedAt = now;
         shown = g_hubScreen;
     }
     const float alpha = changedAt < 0 ? 1.0f : static_cast<float>(std::clamp((now - changedAt) / kFadeSeconds, 0.0, 1.0));
@@ -511,11 +511,11 @@ void DrawHubScreens(bool takeInput) {
         }
     }
     const RoomsView rooms = RoomsSnapshot();
-    g_hubScreen = SettingsScreenOpen()                    ? 3
-                  : g_myCharacterOpen                     ? 4
-                  : rooms.state == RoomsView::State::Room ? 2
-                  : RoomsScreenOpen()                     ? 1
-                                                          : 0;
+    g_hubScreen = SettingsScreenOpen()                    ? HubScreen::Settings
+                  : g_myCharacterOpen                     ? HubScreen::MyCharacter
+                  : rooms.state == RoomsView::State::Room ? HubScreen::Room
+                  : RoomsScreenOpen()                     ? HubScreen::RoomBrowser
+                                                          : HubScreen::Hub;
     static uint64_t failedSince = 0;
     if (rooms.state == RoomsView::State::Failed) {
         const uint64_t now = GetTickCount64();

@@ -20,10 +20,10 @@ void ApplyProfileFavorite(Choices& c) {
         c.vtrigger = std::clamp(f.vtrigger + 1, 1, 2);
     }
     for (int i = 0; i < static_cast<int>(g_tables.stages.size()) && !fav.stage.empty(); i++) {
-        if (g_tables.stages[i] == fav.stage) c.stage = 2 + i, c.setting = 0;
+        if (g_tables.stages[i] == fav.stage) c.stage = kFirstStage + i, c.setting = kDefaultSetting;
         const auto& settings = g_tables.settings[i];
         if (const auto s = std::find(settings.begin(), settings.end(), fav.stage); s != settings.end()) {
-            c.stage = 2 + i;
+            c.stage = kFirstStage + i;
             c.setting = 1 + static_cast<int>(s - settings.begin());
         }
     }
@@ -133,8 +133,8 @@ SelectCard MyCharacterCard(const RoomsView& rooms) {
         card.rows.push_back({"V-Trigger", SkillText(code, true, c.vtrigger - 1)});
     }
     std::string stage = RandomStagesText();
-    if (c.stage >= 2 && c.stage - 2 < static_cast<int>(g_tables.stages.size())) {
-        const int i = c.stage - 2;
+    if (c.stage >= kFirstStage && c.stage - kFirstStage < static_cast<int>(g_tables.stages.size())) {
+        const int i = c.stage - kFirstStage;
         const auto& labels = g_tables.settingLabels[i];
         stage = c.setting > 0 && c.setting <= static_cast<int>(labels.size()) ? labels[c.setting - 1] : g_tables.stageLabels[i];
     }
@@ -201,7 +201,7 @@ void ApplyMyCharacterInput(const SelectInput& in) {
     if (in.stage >= 0) {
         const int count = static_cast<int>(g_tables.stages.size());
         c.stage = in.stage < count ? 2 + in.stage : 1;
-        c.setting = 0;
+        c.setting = kDefaultSetting;
     }
     if (in.setting >= 0) c.setting = in.setting;
     PickValid(c);

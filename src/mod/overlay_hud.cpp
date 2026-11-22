@@ -308,8 +308,7 @@ NetView PreviewView(NetView::Phase phase) {
         }
         s.ready = p.ready[i];
         s.preloaded = true;
-        s.choice = p.choice[i] == 1 ? lobby::Choice::Rematch : p.choice[i] == 2 ? lobby::Choice::CharacterSelect
-                                                                                : lobby::Choice::None;
+        s.choice = p.choice[i];
         s.wins = static_cast<uint16_t>(i == 0 ? 2 : 1);
         s.inputDelay = static_cast<uint8_t>(i == p.you ? g_choices.delay : 1);
         s.fps = 60;

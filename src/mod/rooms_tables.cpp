@@ -11,7 +11,7 @@ using namespace rooms;
 namespace rooms {
 
 void Client::DeskLink(uint32_t keeperId) {
-    if (view.state != State::Lobby || !keeperId) {
+    if (shared.view.state != State::Lobby || !keeperId) {
         deskDialFrom = 0;
         return;
     }
@@ -29,7 +29,7 @@ void Client::DeskLink(uint32_t keeperId) {
 }
 
 void Client::Pings(const WeyveRoomView& v, uint32_t keeperId) {
-    if (view.state != State::Room || NowMs() - lastPingMs < kPingEveryMs) return;
+    if (shared.view.state != State::Room || NowMs() - lastPingMs < kPingEveryMs) return;
     lastPingMs = NowMs();
     uint8_t ping[keeper::kPingSize], building[keeper::kPingSize];
     keeper::FormatPing(false, static_cast<uint64_t>(ClockUs()), ping);
@@ -42,48 +42,48 @@ void Client::Pings(const WeyveRoomView& v, uint32_t keeperId) {
 }
 
 void Client::TableAsks() {
-    for (auto& [kind, args] : tableAsks) {
-        if (view.state != State::Room) continue;
+    for (auto& [kind, args] : shared.tableAsks) {
+        if (shared.view.state != State::Room) continue;
         const keeper::Request r{++seq, kind, args};
         svc->SetMemberData(keeper::kRequest, keeper::FormatRequest(r));
         Log("rooms: asks the keeper: %s", keeper::FormatRequest(r).c_str());
     }
-    tableAsks.clear();
+    shared.tableAsks.clear();
 }
 
 void Client::Watch() {
-    if (watchTable < 0) return;
-    for (const TableView& tv : view.tableViews) {
-        const bool mine = tv.s.seat[0] == view.self || tv.s.seat[1] == view.self;
+    if (shared.watchTable < 0) return;
+    for (const TableView& tv : shared.view.tableViews) {
+        const bool mine = tv.s.seat[0] == shared.view.self || tv.s.seat[1] == shared.view.self;
         if (mine && tv.s.phase != keeper::TablePhase::Open) {
-            Log("rooms: called to play: no longer watching table %d", watchTable + 1);
-            if (watchSession && NetViewNow().spectator) abortSession = true;
-            watchTable = -1;
-            view.watching = -1;
-            watchSession = false;
-            watchTickets.clear();
+            Log("rooms: called to play: no longer watching table %d", shared.watchTable + 1);
+            if (shared.watchSession && NetViewNow().spectator) abortSession = true;
+            shared.watchTable = -1;
+            shared.view.watching = -1;
+            shared.watchSession = false;
+            shared.watchTickets.clear();
             svc->SetMemberData("w", "");
             return;
         }
     }
-    if (watchTable >= static_cast<int>(view.tableViews.size()) || !view.keeper) return;
-    const TableView& tv = view.tableViews[watchTable];
+    if (shared.watchTable >= static_cast<int>(shared.view.tableViews.size()) || !shared.view.keeper) return;
+    const TableView& tv = shared.view.tableViews[shared.watchTable];
     const bool on = tv.s.phase == keeper::TablePhase::Connecting || tv.s.phase == keeper::TablePhase::Playing;
-    if (!on || tv.s.watch.empty() || tv.s.watch == watchCode) return;
-    if (watchSession) {
+    if (!on || tv.s.watch.empty() || tv.s.watch == shared.watchCode) return;
+    if (shared.watchSession) {
         const NetView nv = NetViewNow();
         if (nv.spectator && nv.phase != NetView::Phase::Idle && nv.phase != NetView::Phase::Ended) return;
     }
-    watchCode = tv.s.watch;
-    watchTickets.push_back({watchTable, tv.s.watch, tv.rules});
-    Log("rooms: table %d's set: watching through the keeper's relay room %s", watchTable + 1, tv.s.watch.c_str());
+    shared.watchCode = tv.s.watch;
+    shared.watchTickets.push_back({shared.watchTable, tv.s.watch, tv.rules});
+    Log("rooms: table %d's set: watching through the keeper's relay room %s", shared.watchTable + 1, tv.s.watch.c_str());
 }
 
 void Client::Report() {
-    if (playing.table < 0) return;
+    if (shared.playing.table < 0) return;
     const NetView nv = NetViewNow();
     const bool live = nv.phase != NetView::Phase::Idle && nv.phase != NetView::Phase::Ended;
-    const std::string t = std::to_string(playing.table);
+    const std::string t = std::to_string(shared.playing.table);
     auto ask = [&](const std::string& kind, std::vector<std::string> args) {
         const keeper::Request r{++seq, kind, std::move(args)};
         svc->SetMemberData(keeper::kRequest, keeper::FormatRequest(r));
@@ -91,136 +91,136 @@ void Client::Report() {
     };
     const bool matchBegun = nv.phase == NetView::Phase::Jumping || nv.phase == NetView::Phase::Loading ||
                             nv.phase == NetView::Phase::Running || nv.phase == NetView::Phase::PostMatch;
-    if (matchBegun) playing.begun = true;
-    if (!matchBegun && !playing.begun && playing.table < static_cast<int>(view.tableViews.size()) && NowMs() - playing.at > kTableMovedOnMs) {
-        const keeper::TableState& s = view.tableViews[playing.table].s;
-        const bool seated = s.seat[0] == view.self || s.seat[1] == view.self;
+    if (matchBegun) shared.playing.begun = true;
+    if (!matchBegun && !shared.playing.begun && shared.playing.table < static_cast<int>(shared.view.tableViews.size()) && NowMs() - shared.playing.at > kTableMovedOnMs) {
+        const keeper::TableState& s = shared.view.tableViews[shared.playing.table].s;
+        const bool seated = s.seat[0] == shared.view.self || s.seat[1] == shared.view.self;
         const bool stillOn = seated && (s.phase == keeper::TablePhase::Connecting || s.phase == keeper::TablePhase::Playing);
-        if (!stillOn && view.keeper) {
-            Log("rooms: table %d moved on before its match began: leaving the session", playing.table + 1);
-            view.tableNotice = s.seat[0] == view.self || s.seat[1] == view.self || !seated
-                                   ? "Your opponent left before the match started."
-                                   : "The match did not start.";
+        if (!stillOn && shared.view.keeper) {
+            Log("rooms: table %d moved on before its match began: leaving the session", shared.playing.table + 1);
+            shared.view.tableNotice = s.seat[0] == shared.view.self || s.seat[1] == shared.view.self || !seated
+                                          ? "Your opponent left before the match started."
+                                          : "The match did not start.";
             abortSession = true;
-            playing = {};
+            shared.playing = {};
             return;
         }
     }
     if (live) {
-        playing.started = true;
-        playing.wins[0] = nv.seats[0].wins;
-        playing.wins[1] = nv.seats[1].wins;
+        shared.playing.started = true;
+        shared.playing.wins[0] = nv.seats[0].wins;
+        shared.playing.wins[1] = nv.seats[1].wins;
     }
-    if (!playing.started) {
-        if (NowMs() - playing.at > kSessionStartMs) {
-            Log("rooms: table %d's session never started", playing.table + 1);
-            view.tableNotice = "Couldn't connect to your opponent, so the match didn't start.";
+    if (!shared.playing.started) {
+        if (NowMs() - shared.playing.at > kSessionStartMs) {
+            Log("rooms: table %d's session never started", shared.playing.table + 1);
+            shared.view.tableNotice = "Couldn't connect to your opponent, so the match didn't start.";
             ask("result", {t, "0", "0"});
-            playing = {};
+            shared.playing = {};
         }
         return;
     }
-    if (playing.host && !playing.codeSent && !nv.code.empty()) {
-        playing.codeSent = true;
+    if (shared.playing.host && !shared.playing.codeSent && !nv.code.empty()) {
+        shared.playing.codeSent = true;
         ask("code", {t, nv.code, nv.build});
     }
-    if (playing.table < static_cast<int>(view.tableViews.size())) {
-        const keeper::TableState& s = view.tableViews[playing.table].s;
+    if (shared.playing.table < static_cast<int>(shared.view.tableViews.size())) {
+        const keeper::TableState& s = shared.view.tableViews[shared.playing.table].s;
         NetSetAgainOffered(s.again && s.phase == keeper::TablePhase::Playing);
     }
-    if (live && playing.host && nv.againAsk && !playing.againAsked) {
-        playing.againAsked = true;
+    if (live && shared.playing.host && nv.againAsk && !shared.playing.againAsked) {
+        shared.playing.againAsked = true;
         ask("again", {t, std::to_string(nv.seats[0].wins), std::to_string(nv.seats[1].wins)});
     }
-    if (!nv.againAsk) playing.againAsked = false;
-    if (live && playing.host && (nv.seats[0].wins != playing.sent[0] || nv.seats[1].wins != playing.sent[1])) {
-        playing.sent[0] = nv.seats[0].wins;
-        playing.sent[1] = nv.seats[1].wins;
+    if (!nv.againAsk) shared.playing.againAsked = false;
+    if (live && shared.playing.host && (nv.seats[0].wins != shared.playing.sent[0] || nv.seats[1].wins != shared.playing.sent[1])) {
+        shared.playing.sent[0] = nv.seats[0].wins;
+        shared.playing.sent[1] = nv.seats[1].wins;
         ask("score", {t, std::to_string(nv.seats[0].wins), std::to_string(nv.seats[1].wins)});
     }
     if (!live) {
         if (const int seat = NetTakeForfeit(); seat >= 0) {
-            Log("rooms: table %d's set: P%d left it (a forfeit)", playing.table + 1, seat + 1);
+            Log("rooms: table %d's set: P%d left it (a forfeit)", shared.playing.table + 1, seat + 1);
             ask("forfeit", {t, std::to_string(seat)});
-            playing = {};
+            shared.playing = {};
             return;
         }
         uint16_t wins[2] = {nv.seats[0].wins, nv.seats[1].wins};
-        if (SetWinner(playing.rules, wins) < 0) {
-            wins[0] = playing.wins[0];
-            wins[1] = playing.wins[1];
+        if (SetWinner(shared.playing.rules, wins) < 0) {
+            wins[0] = shared.playing.wins[0];
+            wins[1] = shared.playing.wins[1];
         }
-        const bool done = SetWinner(playing.rules, wins) >= 0;
+        const bool done = SetWinner(shared.playing.rules, wins) >= 0;
         if (!done) {
-            view.tableNotice = std::string(playing.begun ? "The set did not finish" : "The match did not start") + (nv.result.empty() ? std::string(".") : ": " + nv.result + ".");
-            Log("rooms: %s", view.tableNotice.c_str());
+            shared.view.tableNotice = std::string(shared.playing.begun ? "The set did not finish" : "The match did not start") + (nv.result.empty() ? std::string(".") : ": " + nv.result + ".");
+            Log("rooms: %s", shared.view.tableNotice.c_str());
         }
         ask("result", {t, done ? std::to_string(wins[0]) : "0", done ? std::to_string(wins[1]) : "0"});
-        playing = {};
+        shared.playing = {};
     }
 }
 
 void Client::Asks(const WeyveRoomView& v) {
     (void)v;
-    const bool deskNotReady = view.state == State::Browsing || (view.state == State::Lobby && !view.keeper);
-    if (createAsk && deskNotReady && NowMs() - std::max(createAskAt, deskJoinAt) < kDeskJoinMs) return;
-    if (createAsk) {
-        const keeper::RoomSettings s = *createAsk;
-        createAsk.reset();
-        if (view.state != State::Lobby || !view.keeper) {
-            view.notice = "Custom Rooms are unavailable right now";
-            Log("rooms: create: not available (%s%s)", RoomsStateName(view.state), view.keeper ? "" : ", no keeper");
+    const bool deskNotReady = shared.view.state == State::Browsing || (shared.view.state == State::Lobby && !shared.view.keeper);
+    if (shared.createAsk && deskNotReady && NowMs() - std::max(shared.createAskAt, deskJoinAt) < kDeskJoinMs) return;
+    if (shared.createAsk) {
+        const keeper::RoomSettings s = *shared.createAsk;
+        shared.createAsk.reset();
+        if (shared.view.state != State::Lobby || !shared.view.keeper) {
+            shared.view.notice = "Custom Rooms are unavailable right now";
+            Log("rooms: create: not available (%s%s)", RoomsStateName(shared.view.state), shared.view.keeper ? "" : ", no keeper");
         } else {
             const keeper::Request r = keeper::RoomRequest(++seq, s);
             svc->SetMemberData(keeper::kRequest, keeper::FormatRequest(r));
             pendingSeq = r.seq;
             pendingUntil = NowMs() + kAnswerWaitMs;
-            view.notice.clear();
+            shared.view.notice.clear();
             Log("rooms: asking the keeper for a room (#%u: %s, %d tables, %s)", r.seq, keeper::FormatTitle(s.title).c_str(), s.tables,
                 s.isPublic ? "public" : "private");
             Set(State::Creating);
         }
     }
-    if (joinAsk) {
-        const std::string code = *joinAsk;
-        joinAsk.reset();
-        if ((view.state == State::Lobby || view.state == State::Browsing || view.state == State::Room) && code != view.room) {
-            view.notice.clear();
+    if (shared.joinAsk) {
+        const std::string code = *shared.joinAsk;
+        shared.joinAsk.reset();
+        if ((shared.view.state == State::Lobby || shared.view.state == State::Browsing || shared.view.state == State::Room) && code != shared.view.room) {
+            shared.view.notice.clear();
             target = code;
             ForgetTables();
             svc->LeaveRoom();
-            view.room.clear();
-            view.members.clear();
+            shared.view.room.clear();
+            shared.view.members.clear();
             svc->JoinRoom(code);
             Log("rooms: joining %s", code.c_str());
             Set(State::Joining);
         }
     }
-    if (leaveAsk) {
-        leaveAsk = false;
-        if (view.state == State::Room) {
-            if (playing.table >= 0 && playing.table < static_cast<int>(view.tableViews.size())) {
-                const keeper::TableState& s = view.tableViews[playing.table].s;
-                const int seat = s.seat[0] == view.self ? 0 : s.seat[1] == view.self ? 1
-                                                                                     : -1;
+    if (shared.leaveAsk) {
+        shared.leaveAsk = false;
+        if (shared.view.state == State::Room) {
+            if (shared.playing.table >= 0 && shared.playing.table < static_cast<int>(shared.view.tableViews.size())) {
+                const keeper::TableState& s = shared.view.tableViews[shared.playing.table].s;
+                const int seat = s.seat[0] == shared.view.self ? 0 : s.seat[1] == shared.view.self ? 1
+                                                                                                   : -1;
                 if (seat >= 0 && (s.phase == keeper::TablePhase::Playing || s.phase == keeper::TablePhase::Connecting)) {
-                    const keeper::Request r{++seq, "forfeit", {std::to_string(playing.table), std::to_string(seat)}};
+                    const keeper::Request r{++seq, "forfeit", {std::to_string(shared.playing.table), std::to_string(seat)}};
                     svc->SetMemberData(keeper::kRequest, keeper::FormatRequest(r));
-                    Log("rooms: leaving during table %d's set: a forfeit (%s)", playing.table + 1, keeper::FormatRequest(r).c_str());
+                    Log("rooms: leaving during table %d's set: a forfeit (%s)", shared.playing.table + 1, keeper::FormatRequest(r).c_str());
                     abortSession = true;
                 }
             }
-            Log("rooms: leaving %s", view.room.c_str());
-            leftRoom = view.room;
-            leftAtMs = NowMs();
-            std::erase_if(view.publicRooms, [&](const keeper::ListedRoom& r) { return r.code == leftRoom && r.members <= 1; });
+            Log("rooms: leaving %s", shared.view.room.c_str());
+            shared.leftRoom = shared.view.room;
+            shared.leftAtMs = NowMs();
+            std::erase_if(shared.view.publicRooms, [&](const keeper::ListedRoom& r) { return r.code == shared.leftRoom && r.members <= 1; });
             BackToLobby("", true);
         }
     }
-    for (const std::string& text : chatOut) {
-        if (view.state == State::Room) svc->SendChat(text);
+    for (const std::string& text : shared.chatOut) {
+        if (shared.view.state == State::Room) svc->SendChat(text);
     }
-    chatOut.clear();
+    shared.chatOut.clear();
 }
 
 } // namespace rooms
@@ -228,16 +228,16 @@ void Client::Asks(const WeyveRoomView& v) {
 std::string RoomsAfterSet(int seat, int winnerSeat) {
     std::string out;
     WithClient([&](Client& c) {
-        const int t = c.playing.table;
-        if (t < 0 || t >= static_cast<int>(c.view.tableViews.size()) || seat < 0 || seat > 1) return false;
-        keeper::TableState s = c.view.tableViews[t].s;
-        std::vector<uint32_t> queue = c.view.tableViews[t].queue;
+        const int t = c.shared.playing.table;
+        if (t < 0 || t >= static_cast<int>(c.shared.view.tableViews.size()) || seat < 0 || seat > 1) return false;
+        keeper::TableState s = c.shared.view.tableViews[t].s;
+        std::vector<uint32_t> queue = c.shared.view.tableViews[t].queue;
         const uint32_t who = s.seat[seat];
         if (!who || !s.seat[1 - seat]) return false;
         const uint8_t games[2] = {s.wins[0], s.wins[1]};
-        keeper::ApplySetResult(c.playing.rules, winnerSeat, games, &s, &queue);
+        keeper::ApplySetResult(c.shared.playing.rules, winnerSeat, games, &s, &queue);
         auto nameOf = [&](uint32_t id) {
-            for (const RoomMember& m : c.view.members) {
+            for (const RoomMember& m : c.shared.view.members) {
                 if (m.id == id) return m.name;
             }
             return std::string("the next player");

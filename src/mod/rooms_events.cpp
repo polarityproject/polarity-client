@@ -14,45 +14,45 @@ using namespace rooms;
 namespace rooms {
 
 void Client::ForgetTables(bool removed) {
-    if (playing.table >= 0 && (!playing.begun || removed)) {
+    if (shared.playing.table >= 0 && (!shared.playing.begun || removed)) {
         Log(removed ? "rooms: removed from the room during table %d's set: leaving the session"
                     : "rooms: left the room before table %d's match began: leaving the session",
-            playing.table + 1);
+            shared.playing.table + 1);
         abortSession = true;
     }
-    playing = {};
-    tickets.clear();
+    shared.playing = {};
+    shared.tickets.clear();
     callSeen.clear();
     tableLogged.clear();
-    if (watchTable >= 0) Log("rooms: out of the room: no longer watching table %d", watchTable + 1);
-    if (watchSession && NetViewNow().spectator) abortSession = true;
-    watchTable = -1;
-    view.watching = -1;
-    watchCode.clear();
-    watchTickets.clear();
-    watchSession = false;
-    view.tableViews.clear();
-    view.tableNotice.clear();
+    if (shared.watchTable >= 0) Log("rooms: out of the room: no longer watching table %d", shared.watchTable + 1);
+    if (shared.watchSession && NetViewNow().spectator) abortSession = true;
+    shared.watchTable = -1;
+    shared.view.watching = -1;
+    shared.watchCode.clear();
+    shared.watchTickets.clear();
+    shared.watchSession = false;
+    shared.view.tableViews.clear();
+    shared.view.tableNotice.clear();
 }
 
 void Client::BackToLobby(const std::string& notice, bool inRoom, bool removed) {
     ForgetTables(removed);
     if (!notice.empty()) {
-        view.notice = notice;
+        shared.view.notice = notice;
         Log("rooms: %s", notice.c_str());
     }
     if (inRoom) svc->LeaveRoom();
-    view.room.clear();
-    view.members.clear();
+    shared.view.room.clear();
+    shared.view.members.clear();
     joinedAt = -1;
     ToBrowsing();
 }
 
 void Client::Line(uint32_t from, const std::string& shownName, const std::string& text, const std::string& realName) {
     const std::string name = core::DisplayName(shownName);
-    const std::string censored = from && view.isPublic && !words.empty() ? keeper::CensorChat(text, words) : text;
-    view.chat.push_back({from, name, text, realName.empty() ? name : core::DisplayName(realName), censored});
-    if (view.chat.size() > kChatKept) view.chat.erase(view.chat.begin());
+    const std::string censored = from && shared.view.isPublic && !words.empty() ? keeper::CensorChat(text, words) : text;
+    shared.view.chat.push_back({from, name, text, realName.empty() ? name : core::DisplayName(realName), censored});
+    if (shared.view.chat.size() > kChatKept) shared.view.chat.erase(shared.view.chat.begin());
 }
 
 std::string Client::MaskedName(uint32_t id, const std::string& name) const {
@@ -73,26 +73,26 @@ void Client::OnEvent(const WeyveEvent& e, const WeyveRoomView& v) {
                     const auto build = r.listing.find(keeper::kBuild);
                     if (build != r.listing.end() && build->second != std::to_string(lobby::kProtocol)) other = build->second;
                 }
-                if (other != view.otherBuild && !other.empty()) Log("rooms: the server has build %s's desk, not %u's", other.c_str(), lobby::kProtocol);
-                view.otherBuild = other;
+                if (other != shared.view.otherBuild && !other.empty()) Log("rooms: the server has build %s's desk, not %u's", other.c_str(), lobby::kProtocol);
+                shared.view.otherBuild = other;
             }
             break;
         }
         case WeyveEvent::Type::RoomJoined:
             svc->SetMemberData(keeper::kVersion, MyVersion());
-            if (deskJoining || e.text == view.lobby) {
+            if (deskJoining || e.text == shared.view.lobby) {
                 deskJoining = false;
                 Set(State::Lobby);
             } else {
-                view.room = e.text;
-                view.chat.clear();
+                shared.view.room = e.text;
+                shared.view.chat.clear();
                 names.clear();
                 lastOwner = 0;
                 joinedAt = NowMs();
                 pings.clear();
                 pingLogged.clear();
                 mask.clear();
-                tickets.clear();
+                shared.tickets.clear();
                 toldMasked = false;
                 Set(State::Room);
                 if (!chara.empty()) svc->SetMemberData("ch", chara);
@@ -106,14 +106,14 @@ void Client::OnEvent(const WeyveEvent& e, const WeyveRoomView& v) {
                 break;
             }
             if (deskJoining) {
-                Log("rooms: cannot join desk %s (%s); looking again", view.lobby.c_str(), e.text.c_str());
+                Log("rooms: cannot join desk %s (%s); looking again", shared.view.lobby.c_str(), e.text.c_str());
                 deskJoining = false;
-                staleLobbies[view.lobby] = NowMs() + kStaleLobbyMs;
-                view.lobby.clear();
+                staleLobbies[shared.view.lobby] = NowMs() + kStaleLobbyMs;
+                shared.view.lobby.clear();
                 nextDesksMs = 0;
                 break;
             }
-            if (view.state != State::Joining) break;
+            if (shared.view.state != State::Joining) break;
             if (e.error == WeyveEvent::Error::Other && e.text == "not in a room") break;
             BackToLobby(e.error == WeyveEvent::Error::NoSuchRoom ? "No room on that code"
                         : e.error == WeyveEvent::Error::Closed   ? "Room full"
@@ -122,14 +122,14 @@ void Client::OnEvent(const WeyveEvent& e, const WeyveRoomView& v) {
                         false);
             break;
         case WeyveEvent::Type::Removed:
-            if (view.state == State::Room) BackToLobby("Removed from the room", false, true);
+            if (shared.view.state == State::Room) BackToLobby("Removed from the room", false, true);
             break;
         case WeyveEvent::Type::ServerLost:
-            view.notice = e.text;
+            shared.view.notice = e.text;
             Set(State::Failed);
             break;
         case WeyveEvent::Type::Chat:
-            if (view.state == State::Room) {
+            if (shared.view.state == State::Room) {
                 const WeyveMember* m = v.Member(e.peer);
                 const std::string real = m ? m->name : "?";
                 Line(e.peer, MaskedName(e.peer, real), e.text, real);
@@ -174,7 +174,7 @@ void Client::Answers() {
                 Log("rooms: peek %s refused: %s", peekCode.c_str(), a.text.c_str());
                 peekSeq = 0;
                 svc->SetMemberData(keeper::kAck, std::to_string(a.seq));
-                view.peek = keeper::RoomDetail{};
+                shared.view.peek = keeper::RoomDetail{};
                 continue;
             }
             int part = 0, parts = 0;
@@ -193,26 +193,26 @@ void Client::Answers() {
                     d.people.size());
             }
             for (auto& person : d.people) person.name = core::DisplayName(person.name);
-            if (joined) view.peek = std::move(d);
+            if (joined) shared.view.peek = std::move(d);
             peekSeq = 0;
             continue;
         }
         svc->SetMemberData(keeper::kAck, std::to_string(a.seq));
         if (a.kind == "ticket") {
             keeper::TableTicket t;
-            if (keeper::ParseTicket(a.text, &t) && view.state == State::Room &&
-                std::none_of(tickets.begin(), tickets.end(), [&](const keeper::TableTicket& k) { return k.token == t.token && k.host == t.host; }) &&
-                !(playing.table == t.table && playing.host == t.host && lastTicketToken == t.token)) {
+            if (keeper::ParseTicket(a.text, &t) && shared.view.state == State::Room &&
+                std::none_of(shared.tickets.begin(), shared.tickets.end(), [&](const keeper::TableTicket& k) { return k.token == t.token && k.host == t.host; }) &&
+                !(shared.playing.table == t.table && shared.playing.host == t.host && lastTicketToken == t.token)) {
                 Log("rooms: ticket for table %d: %s", t.table + 1, t.host ? "open the match room" : ("join " + t.code).c_str());
                 lastTicketToken = t.token;
-                tickets.push_back(t);
+                shared.tickets.push_back(t);
             }
             continue;
         }
         if (a.kind == "again") {
             Log("rooms: the keeper on the next set: %s %s", a.ok ? "ok" : "no", a.text.c_str());
             Rules rules;
-            if (a.ok && ParseRules(a.text, &rules)) playing.rules = rules;
+            if (a.ok && ParseRules(a.text, &rules)) shared.playing.rules = rules;
             NetAgainAnswer(a.ok, a.text);
             continue;
         }
@@ -220,7 +220,7 @@ void Client::Answers() {
         pendingSeq = 0;
         Log("rooms: the keeper answers #%u %s: %s %s", a.seq, a.kind.c_str(), a.ok ? "ok" : "no", a.text.c_str());
         if (!a.ok) {
-            view.notice = a.text;
+            shared.view.notice = a.text;
             Set(State::Lobby);
             continue;
         }
@@ -232,35 +232,35 @@ void Client::Answers() {
 }
 
 void Client::Mirror(const WeyveRoomView& v) {
-    view.self = v.self;
+    shared.view.self = v.self;
     const uint32_t keeperId = KeeperOf(v);
-    const bool wasKeeper = view.keeper;
-    view.keeper = keeperId && v.host == keeperId;
-    if (wasKeeper != view.keeper && (view.state == State::Lobby || view.state == State::Room))
-        Log("rooms: %s %s", v.room.c_str(), view.keeper ? "is kept" : "is paused (its host is not the keeper)");
+    const bool wasKeeper = shared.view.keeper;
+    shared.view.keeper = keeperId && v.host == keeperId;
+    if (wasKeeper != shared.view.keeper && (shared.view.state == State::Lobby || shared.view.state == State::Room))
+        Log("rooms: %s %s", v.room.c_str(), shared.view.keeper ? "is kept" : "is paused (its host is not the keeper)");
     if (keeperId && v.host == v.self && v.self != keeperId && NowMs() - lastHandMs >= kHandBackEveryMs) {
         lastHandMs = NowMs();
         Log("rooms: handing host of %s back to the keeper (%u)", v.room.c_str(), keeperId);
         svc->TransferHost(keeperId);
     }
-    if (view.state == State::Lobby) {
-        if (view.keeper) lobbyUnkeptSince = -1;
+    if (shared.view.state == State::Lobby) {
+        if (shared.view.keeper) lobbyUnkeptSince = -1;
         else if (lobbyUnkeptSince < 0) lobbyUnkeptSince = NowMs();
         else if (NowMs() - lobbyUnkeptSince >= kUnkeptLobbyMs) {
-            Log("rooms: lobby channel %s has had no keeper for %lld s; looking for another", view.lobby.c_str(),
+            Log("rooms: lobby channel %s has had no keeper for %lld s; looking for another", shared.view.lobby.c_str(),
                 static_cast<long long>(kUnkeptLobbyMs / 1000));
-            staleLobbies[view.lobby] = NowMs() + kStaleLobbyMs;
+            staleLobbies[shared.view.lobby] = NowMs() + kStaleLobbyMs;
             lobbyUnkeptSince = -1;
             svc->LeaveRoom();
-            view.lobby.clear();
-            view.publicRooms.clear();
-            view.keeper = false;
+            shared.view.lobby.clear();
+            shared.view.publicRooms.clear();
+            shared.view.keeper = false;
             ToBrowsing();
         }
         return;
     }
     lobbyUnkeptSince = -1;
-    if (view.state != State::Room) return;
+    if (shared.view.state != State::Room) return;
     auto data = [&](const char* key) {
         const auto it = v.data.find(key);
         return it != v.data.end() ? it->second : std::string();
@@ -268,39 +268,39 @@ void Client::Mirror(const WeyveRoomView& v) {
     if (joinedAt >= 0) {
         if (data(keeper::kKind) == keeper::kKindCustom) {
             joinedAt = -1;
-            Log("rooms: in custom room %s", view.room.c_str());
+            Log("rooms: in custom room %s", shared.view.room.c_str());
         } else if (NowMs() - joinedAt > kVerifyMs) {
             BackToLobby("No room on that code", true);
             return;
         }
     }
-    if (view.keeper && view.state == State::Room) {
+    if (shared.view.keeper && shared.view.state == State::Room) {
         const std::string theirs = data(keeper::kVersion);
         if (!theirs.empty() && theirs != MyVersion()) {
-            Log("rooms: %s plays Polarity %s, this game %s: leaving it", view.room.c_str(), theirs.c_str(), MyVersion().c_str());
+            Log("rooms: %s plays Polarity %s, this game %s: leaving it", shared.view.room.c_str(), theirs.c_str(), MyVersion().c_str());
             BackToLobby(OtherVersionNotice(theirs), true);
             return;
         }
     }
-    if (view.keeper) {
-        if (!keeper::ParseTitle(data(keeper::kTitle), &view.title)) view.title = keeper::RoomTitle{};
-        view.isPublic = data(keeper::kPublic) == "1";
-        view.tables = std::atoi(data(keeper::kTables).c_str());
-        view.owner = static_cast<uint32_t>(std::strtoul(data(keeper::kOwner).c_str(), nullptr, 10));
-        view.tableRules.clear();
-        view.tableViews.clear();
-        for (int t = 0; t < std::min(view.tables, keeper::kMaxTables); t++) {
-            view.tableRules.push_back(data(keeper::TableKey(t).c_str()));
+    if (shared.view.keeper) {
+        if (!keeper::ParseTitle(data(keeper::kTitle), &shared.view.title)) shared.view.title = keeper::RoomTitle{};
+        shared.view.isPublic = data(keeper::kPublic) == "1";
+        shared.view.tables = std::atoi(data(keeper::kTables).c_str());
+        shared.view.owner = static_cast<uint32_t>(std::strtoul(data(keeper::kOwner).c_str(), nullptr, 10));
+        shared.view.tableRules.clear();
+        shared.view.tableViews.clear();
+        for (int t = 0; t < std::min(shared.view.tables, keeper::kMaxTables); t++) {
+            shared.view.tableRules.push_back(data(keeper::TableKey(t).c_str()));
             TableView tv;
             keeper::ParseTable(data(keeper::StateKey(t).c_str()), &tv.s);
             tv.queue = keeper::ParseIds(data(keeper::QueueKey(t).c_str()));
-            tv.rules = view.tableRules.back();
+            tv.rules = shared.view.tableRules.back();
             if (callSeen.size() <= static_cast<size_t>(t)) callSeen.resize(t + 1);
             if (tv.s.phase == keeper::TablePhase::Call && callSeen[t].first != tv.s.call) {
                 callSeen[t] = {tv.s.call, NowMs()};
-                if (tv.s.seat[0] == view.self || tv.s.seat[1] == view.self)
+                if (tv.s.seat[0] == shared.view.self || tv.s.seat[1] == shared.view.self)
                     Log("rooms: table %d calls this player (call %u, %u s%s)", t + 1, tv.s.call, tv.s.callSeconds,
-                        tv.s.ready[tv.s.seat[0] == view.self ? 0 : 1] ? ", already ready" : "");
+                        tv.s.ready[tv.s.seat[0] == shared.view.self ? 0 : 1] ? ", already ready" : "");
             }
             tv.callSeenMs = callSeen[t].second;
             if (tableLogged.size() <= static_cast<size_t>(t)) tableLogged.resize(t + 1);
@@ -309,13 +309,13 @@ void Client::Mirror(const WeyveRoomView& v) {
                 Log("rooms: table %d: %s", t + 1, state.c_str());
                 tableLogged[t] = std::move(state);
             }
-            view.tableViews.push_back(std::move(tv));
+            shared.view.tableViews.push_back(std::move(tv));
         }
     }
     std::vector<RoomMember> members;
     std::map<uint32_t, std::string> now;
-    if (view.keeper) mask = keeper::ParseMask(data(keeper::kMask));
-    if (const std::string hash = data(keeper::kWordListHash); view.isPublic && !hash.empty() && hash != wordsHash) {
+    if (shared.view.keeper) mask = keeper::ParseMask(data(keeper::kMask));
+    if (const std::string hash = data(keeper::kWordListHash); shared.view.isPublic && !hash.empty() && hash != wordsHash) {
         std::vector<std::string> values;
         for (int i = 0; i < keeper::kWordListKeys; i++) {
             const std::string value = data(keeper::WordListKey(i).c_str());
@@ -350,7 +350,7 @@ void Client::Mirror(const WeyveRoomView& v) {
                                                                                                   : 0;
         const auto watch = m.data.find("w");
         if (watch != m.data.end() && !watch->second.empty()) r.watching = std::atoi(watch->second.c_str()) - 1;
-        r.owner = m.id == view.owner;
+        r.owner = m.id == shared.view.owner;
         const auto ping = pings.find(m.id);
         if (ping != pings.end() && !ping->second.empty() && m.id != v.self) {
             r.pingMs = *std::min_element(ping->second.begin(), ping->second.end());
@@ -368,24 +368,24 @@ void Client::Mirror(const WeyveRoomView& v) {
         for (const auto& [id, name] : now) {
             if (!names.count(id) && !names.empty()) {
                 Line(0, "", name + " joined");
-                Log("rooms: %s (%u) joined %s, %zu members", name.c_str(), id, view.room.c_str(), now.size());
+                Log("rooms: %s (%u) joined %s, %zu members", name.c_str(), id, shared.view.room.c_str(), now.size());
             }
         }
         for (const auto& [id, name] : names) {
             if (!now.count(id) && id != keeperId) {
                 Line(0, "", name + " left");
-                Log("rooms: %s (%u) left %s, %zu members", name.c_str(), id, view.room.c_str(), now.size());
+                Log("rooms: %s (%u) left %s, %zu members", name.c_str(), id, shared.view.room.c_str(), now.size());
             }
         }
-        if (view.owner && view.owner != lastOwner && lastOwner) {
-            const auto it = now.find(view.owner);
-            Log("rooms: %s (%u) owns %s now", it != now.end() ? it->second.c_str() : "?", view.owner, view.room.c_str());
-            Line(0, "", (view.owner == v.self ? std::string("You own") : (it != now.end() ? it->second : "?") + " owns") + " the room now");
+        if (shared.view.owner && shared.view.owner != lastOwner && lastOwner) {
+            const auto it = now.find(shared.view.owner);
+            Log("rooms: %s (%u) owns %s now", it != now.end() ? it->second.c_str() : "?", shared.view.owner, shared.view.room.c_str());
+            Line(0, "", (shared.view.owner == v.self ? std::string("You own") : (it != now.end() ? it->second : "?") + " owns") + " the room now");
         }
-        lastOwner = view.owner;
+        lastOwner = shared.view.owner;
         names = now;
     }
-    view.members = std::move(members);
+    shared.view.members = std::move(members);
 }
 
 } // namespace rooms

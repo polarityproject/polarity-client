@@ -515,8 +515,9 @@ void ReplayCommand(const std::string&, std::stringstream& ss) {
         if (word == "latch") {
             std::string how;
             ss >> how;
-            ReplaySetLatch(how == "tick" ? 1 : how == "game" ? 0
-                                                             : -1);
+            ReplaySetLatch(how == "tick"   ? PadLatch::EachTick
+                           : how == "game" ? PadLatch::PerRenderedFrame
+                                           : PadLatch::ByRecording);
         }
         if (word == "trap") {
             std::string f, r, off, b;

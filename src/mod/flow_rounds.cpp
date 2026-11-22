@@ -523,7 +523,7 @@ void FlowRunRoundDirector() {
     std::memcpy(f.directorCounts, d + kDirectorCounts, sizeof(f.directorCounts));
     f.directorSeen = 1;
     if (g_roundEndRollback) CapturePhases();
-    const bool koStop = f.director[0] == kDirectorStopped && *reinterpret_cast<const int32_t*>(d + kDirectorStopKind) != 0;
+    const bool koStop = f.director[0] == kDirectorStopped && *reinterpret_cast<const int32_t*>(d + kDirectorStopKind) != kPlainStop;
     f.stopTicks = koStop ? f.stopTicks + 1 : 0;
 }
 

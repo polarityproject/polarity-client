@@ -52,8 +52,8 @@ int64_t ClockUs() {
 int64_t NowMs() { return static_cast<int64_t>(GetTickCount64()); }
 
 void Client::Set(State s) {
-    if (view.state != s) Log("rooms: %s -> %s", RoomsStateName(view.state), RoomsStateName(s));
-    view.state = s;
+    if (shared.view.state != s) Log("rooms: %s -> %s", RoomsStateName(shared.view.state), RoomsStateName(s));
+    shared.view.state = s;
 }
 
 bool Client::KeeperSigned(const std::string& message, const std::string& signature) const {
@@ -107,39 +107,39 @@ void Client::Run() {
         const WeyveRoomView v = svc->View();
         {
             std::lock_guard lock(mutex);
-            view.server = v.serverText;
+            shared.view.server = v.serverText;
             if (v.server == WeyveRoomView::Server::Connecting) Set(State::Connecting);
             else if (v.server != WeyveRoomView::Server::Connected) {
-                if (view.state != State::Failed) Log("rooms: the server connection failed: %s", v.serverText.empty() ? "-" : v.serverText.c_str());
+                if (shared.view.state != State::Failed) Log("rooms: the server connection failed: %s", v.serverText.empty() ? "-" : v.serverText.c_str());
                 Set(State::Failed);
-            } else if (view.state == State::Connecting) ToBrowsing();
+            } else if (shared.view.state == State::Connecting) ToBrowsing();
             wantDesk = RoomsScreenOpen();
-            view.wordFilter = g_wordFilter;
+            shared.view.wordFilter = g_wordFilter;
             WeyveEvent e;
             while (svc->NextEvent(e)) OnEvent(e, v);
-            if (view.state != State::Failed) {
+            if (shared.view.state != State::Failed) {
                 Answers();
                 if (pendingSeq && NowMs() > pendingUntil) {
                     Log("rooms: no answer from the keeper to #%u in time (link to it: %s)", pendingSeq,
                         svc->PeerPath(KeeperOf(v)) == WeyveService::LinkPath::None ? "none" : "up");
                     pendingSeq = 0;
-                    view.notice = "The rooms server didn't respond. Try again.";
+                    shared.view.notice = "The rooms server didn't respond. Try again.";
                     Set(State::Lobby);
                 }
                 Listings();
-                if (view.state == State::Browsing && wantDesk && view.keeper && !view.lobby.empty() && !deskJoining) {
+                if (shared.view.state == State::Browsing && wantDesk && shared.view.keeper && !shared.view.lobby.empty() && !deskJoining) {
                     deskJoining = true;
                     deskJoinAt = NowMs();
-                    target = view.lobby;
-                    svc->JoinRoom(view.lobby);
-                    Log("rooms: into desk %s", view.lobby.c_str());
+                    target = shared.view.lobby;
+                    svc->JoinRoom(shared.view.lobby);
+                    Log("rooms: into desk %s", shared.view.lobby.c_str());
                 }
-                if (view.state == State::Lobby && !wantDesk && !pendingSeq) {
+                if (shared.view.state == State::Lobby && !wantDesk && !pendingSeq) {
                     svc->LeaveRoom();
                     Log("rooms: out of the desk");
                     ToBrowsing();
                 }
-                if (view.state == State::Lobby || view.state == State::Room) {
+                if (shared.view.state == State::Lobby || shared.view.state == State::Room) {
                     const WeyveRoomView now = svc->View();
                     Mirror(now);
                     Pings(now, KeeperOf(now));
@@ -147,8 +147,8 @@ void Client::Run() {
                 }
                 Peeks();
                 TableAsks();
-                if (view.state == State::Room) Report();
-                if (view.state == State::Room) Watch();
+                if (shared.view.state == State::Room) Report();
+                if (shared.view.state == State::Room) Watch();
                 Asks(v);
             }
         }
@@ -205,7 +205,7 @@ void RoomsOpen(const std::string& server, const std::string& name, uint16_t also
         if (ok) c->keys.push_back(extra);
         else Log("rooms: [rooms] keeper_key is not 128 hex digits; ignored");
     }
-    c->view.state = State::Connecting;
+    c->shared.view.state = State::Connecting;
     const uint8_t link = DetectLinkType();
     c->net = link == 1 ? "w" : link == 2 ? "f"
                                          : "u";
@@ -238,8 +238,8 @@ bool RoomsOpened() {
 
 bool RoomsCreate(const keeper::RoomSettings& settings) {
     return WithClient([&](Client& c) {
-        c.createAsk = settings;
-        c.createAskAt = NowMs();
+        c.shared.createAsk = settings;
+        c.shared.createAskAt = NowMs();
         return true;
     });
 }
@@ -248,22 +248,22 @@ bool RoomsJoin(const std::string& code) {
     std::string normal;
     if (!WeyveService::NormaliseCode(code, &normal)) return false;
     return WithClient([&](Client& c) {
-        c.joinAsk = normal;
+        c.shared.joinAsk = normal;
         return true;
     });
 }
 
 void RoomsLeave() {
     WithClient([](Client& c) {
-        c.leaveAsk = true;
+        c.shared.leaveAsk = true;
         return true;
     });
 }
 
 bool RoomsChat(const std::string& text) {
     return WithClient([&](Client& c) {
-        if (c.view.state != State::Room || !c.limiter.Allow(NowMs(), text)) return false;
-        c.chatOut.push_back(text);
+        if (c.shared.view.state != State::Room || !c.shared.limiter.Allow(NowMs(), text)) return false;
+        c.shared.chatOut.push_back(text);
         return true;
     });
 }
@@ -272,7 +272,7 @@ void RoomsSetCharacter(const std::string& code) {
     WithClient([&](Client& c) {
         if (c.chara == code) return true;
         c.chara = code;
-        if (c.view.state == State::Lobby || c.view.state == State::Room) c.svc->SetMemberData("ch", code);
+        if (c.shared.view.state == State::Lobby || c.shared.view.state == State::Room) c.svc->SetMemberData("ch", code);
         return true;
     });
 }
@@ -283,29 +283,29 @@ void RoomsSetSkills(int vskill, int vtrigger) {
         if (c.skills == value) return true;
         c.skills = value;
         Log("rooms: V-Skill and V-Trigger for the tables: %s", value.c_str());
-        if (c.view.state == State::Lobby || c.view.state == State::Room) c.svc->SetMemberData("vs", value);
+        if (c.shared.view.state == State::Lobby || c.shared.view.state == State::Room) c.svc->SetMemberData("vs", value);
         return true;
     });
 }
 
 void RoomsTable(const std::string& kind, const std::vector<std::string>& args) {
     WithClient([&](Client& c) {
-        c.tableAsks.push_back({kind, args});
+        c.shared.tableAsks.push_back({kind, args});
         return true;
     });
 }
 
 void RoomsWatch(int table) {
     WithClient([&](Client& c) {
-        if (c.view.state != State::Room) return false;
-        if (table >= c.view.tables) table = -1;
-        if (table == c.watchTable) return true;
-        if (c.watchSession && table != c.watchTable && NetViewNow().spectator) c.abortSession = true;
-        c.watchTable = table;
-        c.view.watching = table;
-        c.watchCode.clear();
-        c.watchTickets.clear();
-        c.watchSession = false;
+        if (c.shared.view.state != State::Room) return false;
+        if (table >= c.shared.view.tables) table = -1;
+        if (table == c.shared.watchTable) return true;
+        if (c.shared.watchSession && table != c.shared.watchTable && NetViewNow().spectator) c.abortSession = true;
+        c.shared.watchTable = table;
+        c.shared.view.watching = table;
+        c.shared.watchCode.clear();
+        c.shared.watchTickets.clear();
+        c.shared.watchSession = false;
         c.svc->SetMemberData("w", table >= 0 ? std::to_string(table + 1) : "");
         if (table >= 0) Log("rooms: watching table %d", table + 1);
         else Log("rooms: stopped watching");
@@ -319,19 +319,19 @@ bool RoomsIsKeeper(const std::string& room, uint32_t id, const std::string& proo
 
 bool RoomsTakeWatch(WatchTicket* out) {
     return WithClient([&](Client& c) {
-        if (c.watchTickets.empty()) return false;
-        *out = c.watchTickets.front();
-        c.watchTickets.erase(c.watchTickets.begin());
-        c.watchSession = true;
+        if (c.shared.watchTickets.empty()) return false;
+        *out = c.shared.watchTickets.front();
+        c.shared.watchTickets.erase(c.shared.watchTickets.begin());
+        c.shared.watchSession = true;
         return true;
     });
 }
 
 bool RoomsTakeTicket(keeper::TableTicket* out) {
     return WithClient([&](Client& c) {
-        if (c.tickets.empty()) return false;
-        *out = c.tickets.front();
-        c.tickets.erase(c.tickets.begin());
+        if (c.shared.tickets.empty()) return false;
+        *out = c.shared.tickets.front();
+        c.shared.tickets.erase(c.shared.tickets.begin());
         return true;
     });
 }
@@ -339,11 +339,11 @@ bool RoomsTakeTicket(keeper::TableTicket* out) {
 void RoomsTableSession(int table, bool host, const std::string& rules) {
     NetTakeForfeit();
     WithClient([&](Client& c) {
-        c.playing = {};
-        c.playing.table = table;
-        c.playing.host = host;
-        ParseRules(rules, &c.playing.rules);
-        c.playing.at = NowMs();
+        c.shared.playing = {};
+        c.shared.playing.table = table;
+        c.shared.playing.host = host;
+        ParseRules(rules, &c.shared.playing.rules);
+        c.shared.playing.at = NowMs();
         return true;
     });
 }
@@ -358,26 +358,26 @@ bool RoomsTakeAbort() {
 
 void RoomsCancelHandoff() {
     WithClient([](Client& c) {
-        if (c.playing.table >= 0 && c.playing.begun) return false;
-        Log("rooms: leaves table %d before its match", c.playing.table + 1);
-        c.tableAsks.push_back({"stand", {}});
-        if (c.playing.table >= 0) c.abortSession = true;
-        c.playing = {};
+        if (c.shared.playing.table >= 0 && c.shared.playing.begun) return false;
+        Log("rooms: leaves table %d before its match", c.shared.playing.table + 1);
+        c.shared.tableAsks.push_back({"stand", {}});
+        if (c.shared.playing.table >= 0) c.abortSession = true;
+        c.shared.playing = {};
         return true;
     });
 }
 
 void RoomsPeek(const std::string& code) {
     WithClient([&](Client& c) {
-        c.peekWanted = code;
+        c.shared.peekWanted = code;
         return true;
     });
 }
 
 void RoomsClearNotice() {
     WithClient([](Client& c) {
-        c.view.notice.clear();
-        c.view.tableNotice.clear();
+        c.shared.view.notice.clear();
+        c.shared.view.tableNotice.clear();
         return true;
     });
 }
@@ -385,7 +385,7 @@ void RoomsClearNotice() {
 RoomsView RoomsSnapshot() {
     RoomsView v;
     WithClient([&](Client& c) {
-        v = c.view;
+        v = c.shared.view;
         return true;
     });
     return v;

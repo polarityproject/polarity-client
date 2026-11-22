@@ -183,6 +183,41 @@ newest slides down into the top slot and pushes the others. Over the game's
 own menus, which are bright and busy, a notice gets a darker backing under
 its glass so the text behind doesn't show through.
 
+
+### What the overlay files share
+
+`overlay_internal.h` holds the overlay's shared state. Most of it belongs to
+the render thread, which draws the screens in the game's Present: the toasts,
+the fonts and their scale, the tables read on a worker and handed over, the
+preview, and the result of "Pack logs to share". Flags other threads set for
+it are atomics: the window thread's F1 (the keyboard's Back + Start), the
+XInput hook's last pad time, whether the hub may open (at the game's menus
+with no session), whether a spectator's Start tap opens the watch panel,
+whether the vote takes input, and whether a netplay match runs.
+
+The fonts each have a role: bold italic for headings, as the menus' entries;
+a large one for match codes; small and tiny ones for the player bars'
+details and their frame rate and rollback numbers; Barlow Bold for the
+screens' names, buttons and focused rows; a huge one for the select
+screen's character names; and the body font.
+
+A pick (`Choices`) keeps the game's values. The color id counts from 0 for
+the costume's colors and from 100 for its EX colors. V-Skill and V-Trigger
+count from 1. A variant of 0 is none, a V-Comment of 0 is Auto and the n-th
+otherwise. Eleven keeps the fighter it copies, rolled when it is picked. The
+stage is 1 for random and 2 on for the stage select's stages, and the
+setting is 0 for the stage's default and n for its n-th setting. The game's
+tables give, per character, the playable list, its labels ("CHUN-LI"), its
+V-Skills' names, its V-Comments after Auto, the `0C` costume Eleven wears in
+each fighter (or none) and each costume's color swatches; per stage, its
+label ("Bustling Side Street"), its settings' stage codes (The Grid: `S25`)
+and their names ("The Grid Alternative").
+
+The preview (`overlay preview ...`) draws the player bars, the corner line,
+the desync banner and either side's window after a match, as the rematch
+vote or as character select over the results, on a relayed or a peer to
+peer link, for a table's set (no vote) or a session.
+
 ## The hub and the rooms
 
 The hub shows over the game's menus after the title and when Start is held

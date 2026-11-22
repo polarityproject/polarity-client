@@ -16,6 +16,20 @@ other are atomics. What the game thread must act on (a new match, back to
 the lobby, the end) the network thread hands over as the next step, and the
 game thread takes it once it has let go of the match.
 
+Per session the driver also keeps what the lobby agreed: the input delay for
+the next match (unchanged until the player picks one), whether the player is
+locked in (their pick, and the host's stage, then hold), the host's stage
+rule set in the lobby (otherwise the options'), each player's win streak in
+the set, the game's win counts as the match started, and whether the other
+side sends desync reports (not heard yet, sends, or not). The round call
+takes 196 frames (flow event 5 to 6, 3.267 s, measured); once the match's
+fight has run, every stage outside the fight is a round transition. Time
+sync keeps the frames still to wait and a cooldown before the next wait,
+and the deepest rollback of the last 60 frames is the match figures'
+recent rollback. A table
+watch starts at game 1. The pace log counts rendered frames with the game's
+window in front.
+
 ## The server connection
 
 The Weyvelength service (`weyve_service.cpp`) holds the connection to the

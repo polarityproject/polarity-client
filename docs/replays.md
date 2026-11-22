@@ -222,6 +222,11 @@ Ticks after the takeover's fight take nobody's input: the recording's
 inputs there would include presses (Start among them) the game would act
 on.
 
+The KO screen plays for 2.5 s, as long as the game's slow motion and screen
+take, and the fade to black takes 350 ms. Behind the black the replay runs
+at most 3600 ticks looking for a fight, and the 60 frames before the start
+point run in full so the camera is where it was.
+
 ## Research options
 
 `rview` also sets research options for the viewer, each off unless noted:
@@ -232,6 +237,9 @@ ends, `callkeys 0` keeps round jumps from loading a round call's keyframe,
 `intro 1` plays the intro (`keysanywhere` and `callkeys` are on by
 default), and `callpace <k>` with `callafter <n>` limit a
 run to k ticks a rendered frame through a round's call and the first n
-frames of its fight. The test commands (`hold`, `trap`, `watch`, `keep`,
+frames of its fight. A trap's offset may be negative, into the owner's
+memory before the region. A check reports camera and pawn clock differences
+apart from failures, and lists at most 4 regions of the first frame that
+resimulated differently. The test commands (`hold`, `trap`, `watch`, `keep`,
 `mispredict`, `forcerollback`) are in [commands.md](commands.md) and
 [desync-replays.md](desync-replays.md).

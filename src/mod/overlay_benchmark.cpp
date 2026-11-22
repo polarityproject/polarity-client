@@ -22,7 +22,7 @@ void StartBenchmarkRun() {
 void StepBenchmarkLaunch() {
     BenchLaunch& l = g_benchLaunch;
     const double now = ImGui::GetTime();
-    if (l.step == 0) {
+    if (l.step == BenchStep::Reading) {
         if (l.drawn < 1) return;
         if (!BenchmarkStart(BuildVersion())) {
             g_benchModal = BenchModal::None;
@@ -31,14 +31,14 @@ void StepBenchmarkLaunch() {
             return;
         }
         l.switchesAt = FlowBattleSceneSwitches();
-        l.step = 1;
+        l.step = BenchStep::Loading;
         l.stepSince = now;
     }
-    if (l.step == 1 && FlowBattleSceneSwitches() != l.switchesAt) {
-        l.step = 2;
+    if (l.step == BenchStep::Loading && FlowBattleSceneSwitches() != l.switchesAt) {
+        l.step = BenchStep::Starting;
         l.stepSince = l.blackFrom = now;
     }
-    if (l.step == 1 && now - l.since > kBenchGiveUp) {
+    if (l.step == BenchStep::Loading && now - l.since > kBenchGiveUp) {
         Log("benchmark: no battle scene %.0f s after Run: stopping it", kBenchGiveUp);
         ReplayApplyControl(ReplayControl::Leave);
         g_benchModal = BenchModal::None;
@@ -46,7 +46,7 @@ void StepBenchmarkLaunch() {
         AddToast("The benchmark didn't start. Try again.", kRed, 5);
         return;
     }
-    if (l.step == 2 && g_benchModal == BenchModal::Loading && now - l.blackFrom >= kBenchToBlack) {
+    if (l.step == BenchStep::Starting && g_benchModal == BenchModal::Loading && now - l.blackFrom >= kBenchToBlack) {
         g_benchModal = BenchModal::None;
         g_benchReturn = true;
         SettingsScreenHide();
@@ -54,13 +54,13 @@ void StepBenchmarkLaunch() {
     }
     const ReplayView v = ReplayViewNow();
     const bool running = v.active && v.benchmark && v.frame > 0;
-    if (l.step == 2 && g_benchModal == BenchModal::None && (running || now - l.stepSince > kBenchGiveUp)) {
+    if (l.step == BenchStep::Starting && g_benchModal == BenchModal::None && (running || now - l.stepSince > kBenchGiveUp)) {
         if (!running) Log("benchmark: the round has not started %.0f s after its battle scene: showing it", kBenchGiveUp);
-        l.step = 3;
+        l.step = BenchStep::Fading;
         l.revealFrom = now;
     }
-    if (l.step == 3 && now - l.revealFrom >= kBenchReveal) l = {};
-    if (l.step == 2 && g_benchModal == BenchModal::None && !v.active) l = {};
+    if (l.step == BenchStep::Fading && now - l.revealFrom >= kBenchReveal) l = {};
+    if (l.step == BenchStep::Starting && g_benchModal == BenchModal::None && !v.active) l = {};
 }
 
 void DrawBenchmarkLaunch(const HubFonts& f) {
@@ -71,7 +71,7 @@ void DrawBenchmarkLaunch(const HubFonts& f) {
     ImFont* bold = f.bold ? f.bold : f.strong;
     double black = l.blackFrom < 0 ? 0 : std::min(1.0, (now - l.blackFrom) / kBenchToBlack);
     float alpha = 1;
-    if (l.step == 3) {
+    if (l.step == BenchStep::Fading) {
         const double out = std::min(1.0, (now - l.revealFrom) / kBenchReveal);
         black *= 1 - out;
         alpha = static_cast<float>(std::max(0.0, 1 - out * 2));
@@ -89,9 +89,10 @@ void DrawBenchmarkLaunch(const HubFonts& f) {
         Text(d, f.display, g_v.L(28), g_v.P(m.x0 + 28, y), look::kCream, "Getting the round ready");
         y += 62;
         const char* const kSteps[] = {"Reading the round", "Loading the characters and the stage", "Starting the round"};
-        for (int i = 0; i < 3; i++) {
-            const int state = i < l.step ? 2 : i == l.step ? 1
-                                                           : 0;
+        for (int i = 0; i < static_cast<int>(std::size(kSteps)); i++) {
+            const int at = static_cast<int>(l.step);
+            const int state = i < at ? 2 : i == at ? 1
+                                                   : 0;
             const ImVec2 c = g_v.P(m.x0 + 40, y + 11);
             const ImU32 ring = state == 2 ? look::kOk : state == 1 ? look::kRing
                                                                    : look::kEdgeControl;

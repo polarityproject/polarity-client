@@ -25,13 +25,13 @@ void DrawPreviews() {
         else if (w == "desync") p.desync = true;
         else if (w == "p1") p.side[0] = true;
         else if (w == "p2") p.side[1] = true;
-        else if (w == "select") p.sides = 1;
+        else if (w == "select") p.sidesPhase = NetView::Phase::Lobby;
         else if (w == "you1") p.you = 0;
         else if (w == "you2") p.you = 1;
         else if (w == "toasts") g_sampleToasts = true;
         else if (w == "relay") p.relayed = true;
         else if (w == "set") p.set = true;
-        else if (w == "vote") p.set = false, p.sides = 0;
+        else if (w == "vote") p.set = false, p.sidesPhase = NetView::Phase::PostMatch;
         else if (w == "p2p") p.relayed = false;
         else if (w == "fade") {
             p.hud = true;
@@ -57,7 +57,7 @@ void DrawPreviews() {
         DrawPlayerBars(PreviewView(over ? NetView::Phase::PostMatch : NetView::Phase::Running));
     }
     if (p.strip) DrawStrip(PreviewView(NetView::Phase::Running));
-    if (p.side[0] || p.side[1]) DrawSides(PreviewView(p.sides == 0 ? NetView::Phase::PostMatch : NetView::Phase::Lobby), p.side);
+    if (p.side[0] || p.side[1]) DrawSides(PreviewView(p.sidesPhase), p.side);
     g_previewing = false;
 }
 

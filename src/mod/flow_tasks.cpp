@@ -48,7 +48,7 @@ uint64_t TaskThunkDetour(void* closure, void* a2, void* a3, void* a4) {
                                                  *reinterpret_cast<const int32_t*>(c + kThunkAdjustOff));
             g_roundDirector = d;
             const bool mayEnd = g_directorPerTick && *reinterpret_cast<const int32_t*>(d + kDirectorState) == kDirectorStopped &&
-                                *reinterpret_cast<const int32_t*>(d + kDirectorStopKind) != 0;
+                                *reinterpret_cast<const int32_t*>(d + kDirectorStopKind) != kPlainStop;
             if (mayEnd && !g_roundEndRollback && g_roundFlow.stopTicks < kRoundOverAfterTicks) return 0;
             if (mayEnd && g_roundEndRollback) {
                 PrepareRoundOverUndo(d);

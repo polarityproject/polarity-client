@@ -18,7 +18,7 @@ std::pair<uint32_t, uint32_t> SwatchOf(int chara, int slot, int color) {
 }
 
 std::string CommentLine(int chara, int comment) {
-    if (comment == 0) return "Changes with your opponent's character.";
+    if (comment == kCommentAuto) return "Changes with your opponent's character.";
     const auto& names = g_tables.vcomments[chara];
     return comment <= static_cast<int>(names.size()) ? "\"" + names[comment - 1] + "\"" : "Comment " + std::to_string(comment);
 }
@@ -92,18 +92,18 @@ SelectSide SelectSideFor(const NetView& v, int i) {
     s.rows[3].hint = "";
     s.rows[4].value = SkillText(code, true, pick.vtrigger);
     s.rows[4].hint = "";
-    s.rows[5].value = pick.comment == 0 ? "AUTO" : std::to_string(pick.comment);
+    s.rows[5].value = pick.comment == kCommentAuto ? "AUTO" : std::to_string(pick.comment);
     s.rows[5].hint = CommentLine(chara, pick.comment);
     return s;
 }
 
 int SelectStageFor(const NetView& v, int* setting) {
     const int count = static_cast<int>(g_tables.stages.size());
-    *setting = 0;
+    *setting = kDefaultSetting;
     if (v.host) {
-        if (g_choices.stage < 2 || g_choices.stage - 2 >= count) return count;
+        if (g_choices.stage < kFirstStage || g_choices.stage - kFirstStage >= count) return count;
         *setting = g_choices.setting;
-        return g_choices.stage - 2;
+        return g_choices.stage - kFirstStage;
     }
     if (v.stageRule == lobby::kRandomStage || v.stageRule == lobby::kAnyStage) return count;
     const std::string code = FlowStageCode(v.stageRule);
@@ -224,7 +224,7 @@ void ApplySelectInput(const SelectInput& in, const NetView& v) {
         if (v.host && in.stage >= 0) {
             const int count = static_cast<int>(g_tables.stages.size());
             c.stage = in.stage < count ? 2 + in.stage : 1;
-            c.setting = 0;
+            c.setting = kDefaultSetting;
         }
         if (v.host && in.setting >= 0) c.setting = in.setting;
         PickValid(c);

@@ -1,10 +1,5 @@
 #pragma once
-// The netplay driver's class and what its source files share: the lobby,
-// heartbeats and messages (netplay_lobby.cpp), the session's course, sets
-// and end (netplay_course.cpp), getting into the battle and its frozen start
-// (netplay_jump.cpp), the match (netplay_match.cpp), and the rest with the
-// functions netplay_driver.h exposes (netplay_driver.cpp). docs/netplay.md
-// has how a session runs.
+// What the netplay driver's files share: its class, the lobby, the session's course, the jump and the match (docs/netplay.md).
 
 #include "mod/netplay_driver.h"
 
@@ -89,10 +84,14 @@ inline std::atomic<int> g_forfeitSeat{-1};
 constexpr size_t kMaxSpectators = 8;
 constexpr int kFramesPerSecond = 60;
 constexpr int kJumpPollMs = 100;
-constexpr int kWarmupLogEvery = 300; // neutral ticks
+constexpr int kWarmupLogEvery = 300;
 constexpr long long kSlowLinkQueryUs = 2000;
 constexpr int64_t kMaxRttMs = 10000;
-constexpr int kPaceLogFrames = 600; // rendered frames
+constexpr int kPaceLogFrames = 600;
+constexpr int kDelayUnchanged = -1, kStageRuleFromOptions = -1;
+enum class PeerReports { NotHeard,
+                         Sends,
+                         DoesNotSend };
 constexpr int kLoopsLogged = 200;
 constexpr int kRelayWatchDelayFrames = 120;
 constexpr int kStreamBatchesAhead = 4;
@@ -329,9 +328,9 @@ private:
 
     bool FrameWhileWatching(SfvGame& game);
 
-    static constexpr int kRoundCallFrames = 196; // measured: flow event 5 to 6 (3.267 s)
+    static constexpr int kRoundCallFrames = 196;
     bool loggedInFight_ = false;
-    bool sawFight_ = false; // this match's fight has run (from then on every stage outside the fight is a round transition)
+    bool sawFight_ = false;
     static constexpr int kEarlyMargin = 2;
 
     void UpdatePredictionWindow();
@@ -376,7 +375,7 @@ private:
     lobby::Link link_ = lobby::Link::Unknown;
 
     std::unique_ptr<ITransport> base_;
-    WeyveService* weyve_ = nullptr; // base_, when it is the Weyvelength client
+    WeyveService* weyve_ = nullptr;
     std::unique_ptr<ConditionedTransport> conditioned_;
     std::unique_ptr<Mux> mux_;
     ITransport* control_ = nullptr;
@@ -388,22 +387,22 @@ private:
     State state_ = State::Idle;
     std::string status_;
     std::string code_;
-    std::atomic<uint64_t> peer_{0}; // the host, or (host) the other player
+    std::atomic<uint64_t> peer_{0};
     uint16_t nonce_ = 0;
     std::atomic<uint64_t> matchId_{0};
-    std::atomic<bool> holdOverResults_{false}; // the lobby holds the last match's results screen (OnFrame)
-    std::atomic<int> nextDelay_{-1};           // the input delay for the next match (-1: unchanged)
-    std::atomic<bool> lockedIn_{false};        // the player said ready: their pick (and the host's stage) hold
+    std::atomic<bool> holdOverResults_{false};
+    std::atomic<int> nextDelay_{kDelayUnchanged};
+    std::atomic<bool> lockedIn_{false};
     uint32_t selectHover_ = 0;
     std::atomic<bool> beatNow_{false};
-    std::atomic<bool> againOffered_{false}; // the keeper's again mark on this player's table (rooms_client)
+    std::atomic<bool> againOffered_{false};
     std::atomic<Again> again_{Again::None};
     Clock::time_point againAskedAt_{};
     Rules againRules_;
-    bool againSelect_ = false;           // the vote said character select     // the next ControlTick beats at once (a select screen change)
-    std::atomic<int> hostStageRule_{-1}; // host: the stage rule set in the lobby (-1: from the options)
-    uint16_t streaks_[kNumPlayers] = {}; // host: each player's current win streak this set (session)
-    uint32_t winsAtStart_[2] = {};       // the game's match win counts as the match started
+    bool againSelect_ = false;
+    std::atomic<int> hostStageRule_{kStageRuleFromOptions};
+    uint16_t streaks_[kNumPlayers] = {};
+    uint32_t winsAtStart_[2] = {};
     uint64_t setKey_ = 0;
     uint16_t setGame_ = 0;
     uint8_t setWins_[2] = {};
@@ -412,15 +411,15 @@ private:
     std::vector<RoundResult> matchRounds_;
     uint8_t matchRoundWins_[2] = {};
     bool winsKnown_ = false;
-    int spectators_ = 0; // guest: as the host says
+    int spectators_ = 0;
     uint16_t stageRule_ = lobby::kAnyStage;
-    std::atomic<bool> stageLocked_{false}; // the host's stage confirmed (the host's own, or as last heard)
+    std::atomic<bool> stageLocked_{false};
     std::atomic<bool> ready_{false};
     std::atomic<Choice> myChoice_{Choice::None};
     std::atomic<Next> next_{Next::None};
-    std::atomic<bool> matchLive_{false}; // the game thread drives a match (frame driver set)
-    std::atomic<int> peerReports_{-1};   // the other side sends desync reports: 1 yes, 0 no, -1 not heard
-    std::atomic<uint64_t> liveMatch_{0}; // ... this one (matchId_ moves on to the next before it is let go)
+    std::atomic<bool> matchLive_{false};
+    std::atomic<PeerReports> peerReports_{PeerReports::NotHeard};
+    std::atomic<uint64_t> liveMatch_{0};
     bool joinedRoom_ = false;
     std::atomic<bool> serverLost_{false};
     Clock::time_point bothReadyAt_{};
@@ -431,8 +430,8 @@ private:
     uint32_t heardTime_ = 0;
     Clock::time_point heardTimeAt_{};
     std::atomic<unsigned> linkPingMs_{0};
-    int roundCallFrame_ = -1;   // game thread: the session frame the round call began, -1 outside it
-    bool loweredEarly_ = false; // ... and the delay is already back to the player's
+    int roundCallFrame_ = -1;
+    bool loweredEarly_ = false;
 
     std::thread thread_;
     const PickTables pickTables_ = BattleSetupPickTables();
@@ -444,43 +443,43 @@ private:
     bool warmedUp_ = false;
     int frozenFrames_ = 0;
     bool objectsReady_ = false;
-    MatchSetup loadedSetup_; // what this side's game loaded
+    MatchSetup loadedSetup_;
     static constexpr int kStartProbeFrames = 3;
-    MatchTicket ticket_;            // what brought this player here (core/match_ticket.h)
-    Clock::time_point decidedAt_{}; // when the last match was decided
+    MatchTicket ticket_;
+    Clock::time_point decidedAt_{};
     uint32_t frozenChecksum_ = 0;
     uint32_t peerChecksum_ = 0;
     std::atomic<bool> byePending_{false};
     std::atomic<bool> selfLoaded_{false};
     std::atomic<bool> peerLoaded_{false};
-    Clock::time_point startsDifferAt_{}; // game thread: when the frozen starts were found to differ
+    Clock::time_point startsDifferAt_{};
     std::atomic<bool> peerLeft_{false};
-    std::atomic<bool> peerLeftRoom_{false}; // the server said so while the link held (the match went on)
+    std::atomic<bool> peerLeftRoom_{false};
     uint64_t switchesAtJump_ = 0;
-    bool leftMidJump_ = false; // Stop found the jump under way and set up the menu return
+    bool leftMidJump_ = false;
     std::atomic<bool> sessionSyncing_{false};
 
     std::unique_ptr<NetplaySession> session_;
     int layoutAtStart_ = 0;
     int framesRun_ = 0;
-    int waitFrames_ = 0;   // time sync: frames still to wait
-    int waitCooldown_ = 0; // time sync: frames before the next wait may start
+    int waitFrames_ = 0;
+    int waitCooldown_ = 0;
     int desyncFrame_ = -1;
-    std::array<uint8_t, 60> recentRollbacks_{}; // frames rolled back in each of the last 60 frames
-    unsigned rollbacksSeen_ = 0;                // the session's rollback count at the last frame
+    std::array<uint8_t, 60> recentRollbacks_{};
+    unsigned rollbacksSeen_ = 0;
     uint8_t predictionWindow_ = 0;
-    uint8_t inputDelay_ = 0; // the local delay now (UpdatePredictionWindow)
+    uint8_t inputDelay_ = 0;
 
     struct Pace {
         std::chrono::steady_clock::time_point since{};
         int frame = 0;
         int rendered = 0;
         int waits = 0;
-        int focused = 0; // rendered frames with the game's window in front
+        int focused = 0;
         float aheadSum = 0;
     } pace_;
 
-    std::vector<uint64_t> streamOrder_; // oldest first, at most lobby::kKeptMatches
+    std::vector<uint64_t> streamOrder_;
 
     struct KeptMatch {
         MatchSetup setup;
@@ -490,15 +489,15 @@ private:
     };
 
     Clock::time_point matchListSentAt_{};
-    bool watchedFirst_ = false; // watchFromFirst done (a table watch starts at game 1)
+    bool watchedFirst_ = false;
     std::atomic<uint64_t> lastWatched_{0};
     std::atomic<bool> switchNow_{false};
     std::atomic<uint64_t> pickedMatch_{0};
     std::atomic<bool> pickWaits_{false};
-    int streamed_ = 0; // game thread
+    int streamed_ = 0;
     std::unique_ptr<SpectatorPlayback> spectate_;
     std::atomic<int> specWanted_{0};
-    std::atomic<int> specPlayed_{0}; // the next frame its playback shows (InputsAck.played)
+    std::atomic<int> specPlayed_{0};
     std::atomic<uint64_t> watchingMatch_{0};
 
     struct Shared {

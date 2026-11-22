@@ -164,7 +164,7 @@ bool NetplayDriver::Open(const NetplayOptions& o, const MatchTicket& ticket, std
     shared_.seats[0].present = host;
     if (host) shared_.seats[0].name = name_;
     ready_ = o.autoReady;
-    peerReports_ = -1;
+    peerReports_ = PeerReports::NotHeard;
     return true;
 }
 

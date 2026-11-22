@@ -417,6 +417,33 @@ the cache alone, from any thread. Lookups made while drawing (names,
 counts) and from the network thread only use what is cached, and start the
 walk or the load on another thread.
 
+
+### Offsets the flow files share
+
+`flow_internal.h` holds the offsets the flow files use together. Those not
+described above:
+
+| Offset | What |
+| --- | --- |
+| engine (rva 0x3D878C8) `+0x1E0` | the game singleton (`KiwiGameSingleton`) |
+| rva 0x710E40 | `(loader, step)`: the step is done and its loading finished. A new loader starts 30 frames after it is made. |
+| singleton `+0x68` | `KWStageEntryDataAsset`, entries at `+0x28`: 0x50 bytes each, five FStrings (the code, then level and asset paths) |
+| character cache `+0x1D0`, `+0x1E0` | the slots in use and the free slots (`TArray<Slot*>`) |
+| battle frame `+0x190` | two stop flag words |
+| round director `+0x108` | the stop's kind: 0 is a plain stop the next tick ends, anything else a KO or time over |
+| rva 0x2F02D0 | `(slot, &block)`: assigns a shared block, counting the new one up and the old one down (freed at zero) |
+| battle context `+0x1904`, `+0x1908` | the round's time, and the rounds recorded (at most 7) |
+| battle context `+0x1910` | 7 round records of 0x10FC8 bytes; the latest round's record is at `+0x787AC` |
+
+The round flow the snapshot carries (`RoundFlow`) keeps, besides the fight
+flag and the last flow code, who pressed Start and for how many ticks Start
+still goes to the game (presentation), the director's words (`+0xF8` to
+`+0x130`: its state, then the round's stop record), its four timers
+(`+0x110C4` to `+0x11104`), the counts the round's end adds to (`+0x11128`
+to `+0x1113C`), the ticks it has been stopped for a KO or time over, and the
+driven ticks run, which key the copies the round's end makes. The round-over
+undo is filled before a director tick that may end the round.
+
 ## Research tools
 
 The research commands that read the game's objects (`phases`, `roundinfo`,

@@ -249,13 +249,13 @@ void InitChoices() {
         g_choices.variant = o.pick.variation;
         g_choices.comment = o.pick.comment;
     }
-    g_choices.stage = 1;
+    g_choices.stage = kStageRandom;
     for (int i = 0; i < static_cast<int>(g_tables.stages.size()) && !o.stageCode.empty(); i++) {
-        if (g_tables.stages[i] == o.stageCode) g_choices.stage = 2 + i;
+        if (g_tables.stages[i] == o.stageCode) g_choices.stage = kFirstStage + i;
         const auto& settings = g_tables.settings[i];
         const auto it = std::find(settings.begin(), settings.end(), o.stageCode);
         if (it != settings.end()) {
-            g_choices.stage = 2 + i;
+            g_choices.stage = kFirstStage + i;
             g_choices.setting = 1 + static_cast<int>(it - settings.begin());
         }
     }
@@ -294,8 +294,8 @@ NetplayOptions ChosenOptions() {
         o.randomOff = g_randomOff;
         o.randomOffSaved = true;
     }
-    if (c.stage >= 2 && c.stage - 2 < static_cast<int>(g_tables.stages.size())) {
-        const int i = c.stage - 2;
+    if (c.stage >= kFirstStage && c.stage - kFirstStage < static_cast<int>(g_tables.stages.size())) {
+        const int i = c.stage - kFirstStage;
         const auto& settings = g_tables.settings[i];
         o.stageCode = c.setting > 0 && c.setting <= static_cast<int>(settings.size()) ? settings[c.setting - 1] : g_tables.stages[i];
     }
@@ -425,12 +425,12 @@ bool PickValid(Choices& c) {
             }
         }
     }
-    if (c.stage >= 2 && !StageOwned(c.stage - 2, c.setting)) {
-        if (StageOwned(c.stage - 2, 0)) {
-            c.setting = 0;
+    if (c.stage >= kFirstStage && !StageOwned(c.stage - kFirstStage, c.setting)) {
+        if (StageOwned(c.stage - kFirstStage, kDefaultSetting)) {
+            c.setting = kDefaultSetting;
         } else {
-            c.stage = 1;
-            c.setting = 0;
+            c.stage = kStageRandom;
+            c.setting = kDefaultSetting;
         }
     }
     return true;
@@ -484,7 +484,7 @@ void SwitchCharacter(Choices& c, int chara) {
 }
 
 std::string CommentText(const std::string& code, int comment) {
-    if (comment == 0) return "Auto";
+    if (comment == kCommentAuto) return "Auto";
     const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), code);
     if (it == g_tables.charas.end()) return "Comment " + std::to_string(comment);
     return "Comment " + std::to_string(comment);

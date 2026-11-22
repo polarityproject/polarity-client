@@ -20,18 +20,18 @@ int ReplayDriver::LoadableKey(int target) const {
     const int keyFrame = keys_[k].frame;
     const bool sameRound =
         std::none_of(roundEnds_.begin(), roundEnds_.end(), [&](int e) { return e >= keyFrame && e < frame_ - 1; });
-    const bool call = g_callKeys && keys_[k].call && wasFight_;
-    const bool crossFight = crossFight_ && keys_[k].fight && wasFight_;
+    const bool call = g_callKeys && keys_[k].beforeCall && wasFight_;
+    const bool crossFight = crossFight_ && keys_[k].inFight && wasFight_;
     if (g_anyKeys) return k;
     const bool opening = roundStarts_.empty() || keyFrame <= roundStarts_.front();
     if (!opening && g_keysAnywhere) return k;
-    return (keys_[k].fight && sameRound) || call || crossFight || (g_crossRounds && (keys_[k].fight || keys_[k].call)) ? k : -1;
+    return (keys_[k].inFight && sameRound) || call || crossFight || (g_crossRounds && (keys_[k].inFight || keys_[k].beforeCall)) ? k : -1;
 }
 
 int ReplayDriver::CallKeyFor(int target) const {
     auto it = std::upper_bound(keys_.begin(), keys_.end(), target - 1, [](int f, const Keyframe& k) { return f < k.frame; });
     if (it == keys_.begin() || !g_callKeys) return -1;
-    return std::prev(it)->call ? static_cast<int>(it - keys_.begin()) - 1 : -1;
+    return std::prev(it)->beforeCall ? static_cast<int>(it - keys_.begin()) - 1 : -1;
 }
 
 bool ReplayDriver::FightAhead() const {
@@ -63,22 +63,22 @@ std::vector<ReplayDriver::ActionRange> ReplayDriver::ActionRanges() const {
 int ReplayDriver::BackLimit() const {
     for (const Keyframe& k : keys_) {
         const bool thisRound = std::none_of(roundEnds_.begin(), roundEnds_.end(), [&](int e) { return e >= k.frame && e < frame_ - 1; });
-        if (k.fight && k.frame < frame_ && thisRound && LoadableKey(k.frame + 1) >= 0) return k.frame;
+        if (k.inFight && k.frame < frame_ && thisRound && LoadableKey(k.frame + 1) >= 0) return k.frame;
     }
     return std::max(0, frame_ - 1);
 }
 
 bool ReplayDriver::ViewerFrame(SfvGame& game) {
     if (!Valid(game)) return false;
-    hudTicks_ = 0;
+    ticksThisRender_ = 0;
     if (frame_ == 0 && keys_.empty()) {
         roundEndsSeen_ = FlowRoundEndEvents();
         BattleRecordSounds(true);
-        Log("replay: viewing %s, %d frames%s", title_.c_str(), last_ + 1, startAt_ > 0 ? " (restarted)" : "");
-        if (startAt_ > 0) {
+        Log("replay: viewing %s, %d frames%s", title_.c_str(), last_ + 1, restartTarget_ > 0 ? " (restarted)" : "");
+        if (restartTarget_ > 0) {
             UiSoundMuteGame(true);
-            target_ = startAt_;
-            startAt_ = -1;
+            seekTarget_ = restartTarget_;
+            restartTarget_ = -1;
         } else if (g_skipIntro) {
             Log("replay: on to round 1's call, past the intro");
             findRound_ = true;
@@ -90,9 +90,9 @@ bool ReplayDriver::ViewerFrame(SfvGame& game) {
     {
         std::lock_guard lock(g_viewMutex);
         commands.swap(g_viewCommands);
-        g_viewTaken += static_cast<uint32_t>(commands.size());
+        g_viewCommandsTaken += static_cast<uint32_t>(commands.size());
     }
-    handledNow_ += static_cast<int>(commands.size());
+    handledSincePublish_ += static_cast<int>(commands.size());
     for (const auto& [c, arg] : commands) {
         if (c == ReplayControl::Leave) {
             Log("replay: left the replay at frame %d", frame_ - 1);
@@ -103,11 +103,11 @@ bool ReplayDriver::ViewerFrame(SfvGame& game) {
             TakeoverControl(game, c, arg);
             continue;
         }
-        if (tk_.phase != TakeoverPhase::None) continue;
+        if (takeover_.phase != TakeoverPhase::None) continue;
         Control(game, c, arg);
         if (restarting_) break;
     }
-    if (tk_.phase != TakeoverPhase::None) {
+    if (takeover_.phase != TakeoverPhase::None) {
         TakeoverFrame(game);
         if (restarting_) {
             Finish(game);
@@ -131,17 +131,17 @@ bool ReplayDriver::ViewerFrame(SfvGame& game) {
         const bool banner = FlowRoundCallRunning() || (wasFight_ && !roundStarts_.empty() && frame_ - roundStarts_.back() <= g_callAfter);
         return !banner;
     };
-    if (target_ >= 0) {
+    if (seekTarget_ >= 0) {
         const ULONGLONG until = GetTickCount64() + 40;
-        while (frame_ < target_ - 1 && frame_ <= last_ && GetTickCount64() < until && koScreenOver() && room()) {
-            Simulate(game, frame_ < target_ - 1 - warm_);
+        while (frame_ < seekTarget_ - 1 && frame_ <= last_ && GetTickCount64() < until && koScreenOver() && room()) {
+            Simulate(game, frame_ < seekTarget_ - 1 - warmFrames_);
         }
-        if ((frame_ >= target_ - 1 || frame_ > last_) && koScreenOver()) {
-            if (!quiet_) UiSoundMuteGame(false);
-            if (frame_ == target_ - 1 && frame_ <= last_) Simulate(game, false);
+        if ((frame_ >= seekTarget_ - 1 || frame_ > last_) && koScreenOver()) {
+            if (!stepBackMuted_) UiSoundMuteGame(false);
+            if (frame_ == seekTarget_ - 1 && frame_ <= last_) Simulate(game, false);
             Log("replay: at frame %d (seek done), %s", frame_ - 1, HudStepReport().c_str());
-            target_ = -1;
-            warm_ = 0;
+            seekTarget_ = -1;
+            warmFrames_ = 0;
         }
     } else if (runToFight_ >= 0) {
         const ULONGLONG until = GetTickCount64() + 40;
@@ -179,16 +179,16 @@ bool ReplayDriver::ViewerFrame(SfvGame& game) {
             UiSoundMuteGame(false);
         }
     } else if (!paused_ && frame_ <= last_) {
-        for (int k = 0; k < std::max(1, fast_) && frame_ <= last_ && (k == 0 || wasFight_); k++) Simulate(game, false);
+        for (int k = 0; k < std::max(1, framesPerRender_) && frame_ <= last_ && (k == 0 || wasFight_); k++) Simulate(game, false);
     }
-    if (frame_ > last_ && target_ < 0 && !findRound_ && runToFight_ < 0) paused_ = true;
+    if (frame_ > last_ && seekTarget_ < 0 && !findRound_ && runToFight_ < 0) paused_ = true;
     Publish();
     FlowPumpGameThread();
     return true;
 }
 
 void ReplayDriver::Simulate(SfvGame& game, bool lean) {
-    if (viewer_ && hudTicks_++ > 0 &&
+    if (viewer_ && ticksThisRender_++ > 0 &&
         (FlowRoundCallRunning() || (wasFight_ && !roundStarts_.empty() && frame_ - roundStarts_.back() <= kHudFightFrames))) {
         HudStepAdvance(1.0f / 60.0f);
     }
@@ -196,7 +196,7 @@ void ReplayDriver::Simulate(SfvGame& game, bool lean) {
     if (due && (keys_.empty() || keys_.back().frame < frame_)) {
         Keyframe k;
         k.frame = frame_;
-        k.fight = wasFight_;
+        k.inFight = wasFight_;
         k.regions.resize(StateSize(game.Regions()));
         SaveRegions(game.Regions(), k.regions.data());
         if (!FlowSaveOutsideState(&k.outside, keys_.empty() ? nullptr : &keys_.back().outside) && keyWarnings_++ < 3) {
@@ -206,10 +206,10 @@ void ReplayDriver::Simulate(SfvGame& game, bool lean) {
     }
     const bool firstPass = keys_.empty() || keys_.back().frame <= frame_;
     if (!wasFight_ && firstPass) {
-        scratch_.regions.resize(StateSize(game.Regions()));
-        SaveRegions(game.Regions(), scratch_.regions.data());
-        FlowSaveOutsideState(&scratch_.outside, keys_.empty() ? nullptr : &keys_.back().outside);
-        scratch_.frame = frame_;
+        pendingCallKey_.regions.resize(StateSize(game.Regions()));
+        SaveRegions(game.Regions(), pendingCallKey_.regions.data());
+        FlowSaveOutsideState(&pendingCallKey_.outside, keys_.empty() ? nullptr : &keys_.back().outside);
+        pendingCallKey_.frame = frame_;
     }
     g_tickFrame = frame_;
     g_tickFight = wasFight_;
@@ -228,26 +228,26 @@ void ReplayDriver::Simulate(SfvGame& game, bool lean) {
     }
     const bool call = FlowRoundCallRunning();
     if (call && !wasCall_ && (roundCalls_.empty() || roundCalls_.back() < frame_)) roundCalls_.push_back(frame_);
-    if (call && !wasCall_ && scratch_.frame == frame_) {
-        if (!keys_.empty() && keys_.back().frame == frame_) keys_.back().call = true;
+    if (call && !wasCall_ && pendingCallKey_.frame == frame_) {
+        if (!keys_.empty() && keys_.back().frame == frame_) keys_.back().beforeCall = true;
         else if (keys_.empty() || keys_.back().frame < frame_) {
-            scratch_.call = true;
-            scratch_.fight = false;
-            keys_.push_back(std::move(scratch_));
+            pendingCallKey_.beforeCall = true;
+            pendingCallKey_.inFight = false;
+            keys_.push_back(std::move(pendingCallKey_));
         }
         Log("replay: round call keyframe at frame %d", frame_);
-        scratch_ = Keyframe{};
-        scratch_.frame = -1;
+        pendingCallKey_ = Keyframe{};
+        pendingCallKey_.frame = -1;
     }
     wasCall_ = call;
     if (!fight && wasFight_ && (roundEnds_.empty() || roundEnds_.back() < frame_)) roundEnds_.push_back(frame_);
     if (!fight && wasFight_) {
-        koMs_ = GetTickCount64();
+        lastKoMs_ = GetTickCount64();
         if (lean) Log("replay: a run passed the KO at frame %d", frame_);
     }
     if (const uint32_t ends = FlowRoundEndEvents(); ends != roundEndsSeen_) {
         roundEndsSeen_ = ends;
-        if (lean && koMs_) koHoldUntil_ = koMs_ + kKoScreenMs;
+        if (lean && lastKoMs_) koHoldUntil_ = lastKoMs_ + kKoScreenMs;
     }
     wasFight_ = fight;
     if (viewer_) MaybeHold(frame_);
@@ -258,7 +258,7 @@ void ReplayDriver::Seek(SfvGame& game, int target, bool quiet) {
     target = std::clamp(target, 1, last_ + 1);
     if (target == frame_ || keys_.empty()) return;
     UiSoundMuteGame(true);
-    quiet_ = quiet;
+    stepBackMuted_ = quiet;
     if (target < frame_) {
         const int shown = frame_ - 1;
         const auto end = std::upper_bound(roundEnds_.begin(), roundEnds_.end(), shown);
@@ -289,29 +289,29 @@ void ReplayDriver::Seek(SfvGame& game, int target, bool quiet) {
         game.OnStateLoaded(key.frame - 1);
         frame_ = key.frame;
         wasFight_ = FlowRoundInFight();
-        seeks_++;
+        keyframeLoads_++;
         logged_ = 0;
-        Log("replay: loaded the keyframe of frame %d (%s, %s)", key.frame, key.fight ? "fight" : key.call ? "round call"
-                                                                                                          : "between fights",
+        Log("replay: loaded the keyframe of frame %d (%s, %s)", key.frame, key.inFight ? "fight" : key.beforeCall ? "round call"
+                                                                                                                  : "between fights",
             FlowRoundEndState().c_str());
         postLoadLogs_ = 4;
     }
-    target_ = target;
-    if (target_ == frame_) {
-        if (!quiet_) UiSoundMuteGame(false);
-        target_ = -1;
+    seekTarget_ = target;
+    if (seekTarget_ == frame_) {
+        if (!stepBackMuted_) UiSoundMuteGame(false);
+        seekTarget_ = -1;
     }
 }
 
 void ReplayDriver::EndQuiet() {
-    if (!quiet_) return;
-    quiet_ = false;
+    if (!stepBackMuted_) return;
+    stepBackMuted_ = false;
     UiSoundMuteGame(false);
 }
 
 void ReplayDriver::RestartAt(SfvGame& game, int target) {
     Log("replay: restarting the battle to reach frame %d (from %d)", target - 1, frame_ - 1);
-    startAt_ = target;
+    restartTarget_ = target;
     restarting_ = true;
     (void)game;
 }
@@ -329,12 +329,12 @@ void ReplayDriver::Control(SfvGame& game, ReplayControl c, int arg) {
         case ReplayControl::Step:
             paused_ = true;
             if (arg < 0) {
-                if (target_ >= 0 || findRound_ || runToFight_ >= 0) break;
+                if (seekTarget_ >= 0 || findRound_ || runToFight_ >= 0) break;
                 const int to = std::max(frame_ + arg, BackLimit() + 1);
                 if (to < frame_) Seek(game, to, true);
                 break;
             }
-            if (target_ >= 0 || findRound_ || runToFight_ >= 0 || !CanStepForward()) break;
+            if (seekTarget_ >= 0 || findRound_ || runToFight_ >= 0 || !CanStepForward()) break;
             {
                 int to = frame_ + std::max(1, arg);
                 for (const ActionRange& r : ActionRanges()) {
@@ -361,7 +361,7 @@ void ReplayDriver::Control(SfvGame& game, ReplayControl c, int arg) {
                 }
             } else Seek(game, PreviousRoundTarget());
             break;
-        case ReplayControl::Fast: fast_ = std::clamp(arg, 0, 4); break;
+        case ReplayControl::Fast: framesPerRender_ = std::clamp(arg, 0, 4); break;
         case ReplayControl::HoldAt: Hold(arg, 5); break;
         case ReplayControl::OutOfSync:
             if (firstMismatch_ < 0) firstMismatch_ = std::max(0, frame_ - 1);
@@ -375,28 +375,28 @@ void ReplayDriver::Publish() {
     std::lock_guard lock(g_viewMutex);
     g_view.active = true;
     g_view.title = title_;
-    g_view.paused = paused_ && target_ < 0 && !findRound_ && runToFight_ < 0;
-    g_view.seeking = target_ >= 0 || findRound_ || runToFight_ >= 0 || tk_.phase == TakeoverPhase::FadeOut || tk_.phase == TakeoverPhase::ToFight;
+    g_view.paused = paused_ && seekTarget_ < 0 && !findRound_ && runToFight_ < 0;
+    g_view.seeking = seekTarget_ >= 0 || findRound_ || runToFight_ >= 0 || takeover_.phase == TakeoverPhase::FadeOut || takeover_.phase == TakeoverPhase::ToFight;
     g_view.opening = InOpeningRun();
-    g_view.handled += static_cast<uint32_t>(handledNow_);
-    handledNow_ = 0;
-    g_view.takeover = tk_.phase == TakeoverPhase::None ? -1 : tk_.side;
+    g_view.handled += static_cast<uint32_t>(handledSincePublish_);
+    handledSincePublish_ = 0;
+    g_view.takeover = takeover_.phase == TakeoverPhase::None ? -1 : takeover_.side;
     g_view.takeoverCountdown =
-        tk_.phase == TakeoverPhase::Countdown ? std::max(0.0f, static_cast<float>(tk_.until - std::min(tk_.until, GetTickCount64())) / 1000.0f) : 0.0f;
-    g_view.takeoverEnding = tk_.phase == TakeoverPhase::KoScreen || tk_.phase == TakeoverPhase::FadeOut || tk_.phase == TakeoverPhase::ToFight;
-    g_view.takeoverFading = tk_.phase == TakeoverPhase::FadeOut || tk_.phase == TakeoverPhase::ToFight;
+        takeover_.phase == TakeoverPhase::Countdown ? std::max(0.0f, static_cast<float>(takeover_.until - std::min(takeover_.until, GetTickCount64())) / 1000.0f) : 0.0f;
+    g_view.takeoverEnding = takeover_.phase == TakeoverPhase::KoScreen || takeover_.phase == TakeoverPhase::FadeOut || takeover_.phase == TakeoverPhase::ToFight;
+    g_view.takeoverFading = takeover_.phase == TakeoverPhase::FadeOut || takeover_.phase == TakeoverPhase::ToFight;
     g_view.frame = std::max(0, frame_ - 1);
     g_view.frames = last_ + 1;
-    g_view.fast = fast_;
+    g_view.fast = framesPerRender_;
     g_view.backLimit = BackLimit();
-    g_view.canStepForward = CanStepForward() && target_ < 0 && !findRound_ && runToFight_ < 0;
+    g_view.canStepForward = CanStepForward() && seekTarget_ < 0 && !findRound_ && runToFight_ < 0;
     g_view.canRoundForward = CanRoundForward();
     g_view.round = static_cast<int>(std::upper_bound(roundStarts_.begin(), roundStarts_.end(), frame_ - 1) - roundStarts_.begin());
     g_view.callRound = CallsThrough(frame_ - 1);
     g_view.mismatches = mismatchFrames_;
     g_view.outOfSync = firstMismatch_ < 0 ? -1
                                           : static_cast<int>(std::upper_bound(roundStarts_.begin(), roundStarts_.end(), firstMismatch_) - roundStarts_.begin());
-    g_view.seeks = seeks_;
+    g_view.seeks = keyframeLoads_;
     const int shown = frame_ - 1;
     g_view.roundFrame = -1;
     g_view.roundFrames = 0;
@@ -417,8 +417,8 @@ void ReplayDriver::Publish() {
 }
 
 bool ReplayDriver::InOpeningRun() const {
-    if (!g_skipIntro || (target_ < 0 && !findRound_)) return false;
-    return roundCalls_.empty() ? findRound_ : frame_ <= roundCalls_.front() && (findRound_ || target_ == roundCalls_.front() + 1);
+    if (!g_skipIntro || (seekTarget_ < 0 && !findRound_)) return false;
+    return roundCalls_.empty() ? findRound_ : frame_ <= roundCalls_.front() && (findRound_ || seekTarget_ == roundCalls_.front() + 1);
 }
 
 bool ReplayDriver::CanRoundForward() const {

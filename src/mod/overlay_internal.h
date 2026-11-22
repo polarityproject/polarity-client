@@ -1,4 +1,5 @@
 #pragma once
+// What the overlay's files share: the render thread's state, fonts, tables, picks and the preview (docs/overlay.md).
 
 #include "mod/overlay.h"
 
@@ -96,9 +97,9 @@ inline void** g_tablePresentSlot = nullptr;
 
 inline PresentFn g_tablePresentNext = nullptr;
 
-inline thread_local bool t_inTablePresent = false; // the code hook below passes the frame on
+inline thread_local bool t_inTablePresent = false;
 
-inline IDXGISwapChain* g_swapChain = nullptr; // the one ImGui was set up for
+inline IDXGISwapChain* g_swapChain = nullptr;
 
 inline ID3D11Device* g_device = nullptr;
 
@@ -112,43 +113,43 @@ inline bool g_imgui = false;
 
 inline std::atomic<bool> g_visible{false};
 
-inline std::atomic<bool> g_hubAllowed{false}; // at the game's menus with no session: Back + Start opens the hub
+inline std::atomic<bool> g_hubAllowed{false};
 
-inline std::atomic<bool> g_chordKey{false}; // F1, the keyboard's Back + Start (window thread -> FeedPads)
+inline std::atomic<bool> g_chordKey{false};
 
-inline std::atomic<bool> g_reloadChoices{false}; // OverlayReloadChoices: read the choices again
+inline std::atomic<bool> g_reloadChoices{false};
 
-inline std::atomic<bool> g_spectating{false}; // a spectator's session: a Start tap opens the watch panel (M5)
+inline std::atomic<bool> g_spectating{false};
 
-inline std::atomic<bool> g_watchPanelTap{false}; // ... tapped (the frame toggles the panel)
+inline std::atomic<bool> g_watchPanelTap{false};
 
-inline std::atomic<ULONGLONG> g_xinputAt{0}; // when the XInput hook last saw a pad (OverlayPad)
+inline std::atomic<ULONGLONG> g_xinputAt{0};
 
-inline std::atomic<bool> g_voting{false}; // the post-match vote is up and takes input
+inline std::atomic<bool> g_voting{false};
 
 inline std::atomic<bool> g_watchHold{false};
 
-inline std::atomic<HWND> g_inputWindow{nullptr}; // the window ImGui reads input for
+inline std::atomic<HWND> g_inputWindow{nullptr};
 
-inline std::string g_build; // the mod's version (OverlaySetBuild)
+inline std::string g_build;
 
 std::string BuildVersion();
 
-inline std::string g_restartError; // the update modal's last failed restart, why
+inline std::string g_restartError;
 
-inline std::atomic<float> g_fps{0}; // presented frames per second (OverlayRenderFps)
+inline std::atomic<float> g_fps{0};
 
-inline std::atomic<bool> g_inMatch{false}; // a netplay match runs (the frame-drop log, Start held for the panel)
+inline std::atomic<bool> g_inMatch{false};
 
-inline std::string g_packResult; // render thread: what the last "Pack logs to share" did
+inline std::string g_packResult;
 
-inline std::atomic<bool> g_noVsync{false}; // present without waiting for the display's refresh
+inline std::atomic<bool> g_noVsync{false};
 
-inline std::atomic<UINT> g_gameSyncInterval{0}; // the sync interval and flags the game presents with (OverlayVsyncInfo)
+inline std::atomic<UINT> g_gameSyncInterval{0};
 
 inline std::atomic<UINT> g_gamePresentFlags{0};
 
-inline std::atomic<int64_t> g_presentMicros{0}; // ... time in Present, summed with the frames (OverlayVsyncInfo)
+inline std::atomic<int64_t> g_presentMicros{0};
 
 inline std::atomic<int64_t> g_presentFrames{0};
 
@@ -202,27 +203,27 @@ const ImVec4 kGreen(0.55f, 0.86f, 0.45f, 1.0f);
 
 const ImVec4 kDim(0.66f, 0.65f, 0.59f, 1.0f);
 
-inline float g_uiScale = 1.0f; // sizes: 1 at 720 lines (render thread)
+inline float g_uiScale = 1.0f;
 
-inline float g_builtScale = 0.0f; // what the fonts were made for
+inline float g_builtScale = 0.0f;
 
-inline ImFont* g_fontHeading = nullptr; // bold italic, as the menus' entries
+inline ImFont* g_fontHeading = nullptr;
 
-inline ImFont* g_fontBig = nullptr; // match codes
+inline ImFont* g_fontBig = nullptr;
 
-inline ImFont* g_fontSmall = nullptr; // the player bars' details
+inline ImFont* g_fontSmall = nullptr;
 
-inline ImFont* g_fontTiny = nullptr; // ... their frame rate and rollback numbers
+inline ImFont* g_fontTiny = nullptr;
 
-inline ImFont* g_fontBold = nullptr; // Barlow Bold: the screens' names, buttons, focused rows
+inline ImFont* g_fontBold = nullptr;
 
-inline ImFont* g_fontHuge = nullptr; // the select screen's character names
+inline ImFont* g_fontHuge = nullptr;
 
-inline ImFont* g_fontBody = nullptr; // the default font
+inline ImFont* g_fontBody = nullptr;
 
-inline std::atomic<int> g_selectRequest{-1}; // OverlayRequestSelectPreview: the phase to open at (+4: watching)
+inline std::atomic<int> g_selectRequest{-1};
 
-inline std::atomic<bool> g_selectLive{false}; // a session's select screen is up (or held over the jump) and takes input
+inline std::atomic<bool> g_selectLive{false};
 
 float UiScaleFor(float height);
 
@@ -259,21 +260,21 @@ inline bool g_previewing = false;
 void Act(std::function<void()> action);
 
 struct Tables {
-    std::vector<std::string> charas; // playable characters
-    std::vector<int> charaIndex;     // each one's index in the game's character table
-    std::vector<std::string> labels; // "CHUN-LI"
+    std::vector<std::string> charas;
+    std::vector<int> charaIndex;
+    std::vector<std::string> labels;
     std::vector<std::vector<int>> costumes;
     std::vector<std::vector<std::string>> costumeNames;
     std::vector<std::vector<std::vector<int>>> colors;
-    std::vector<std::string> stages;                     // the stage select's stages
-    std::vector<std::string> stageLabels;                // "Bustling Side Street"
-    std::vector<std::vector<std::string>> settings;      // per stage: its settings' stage codes (The Grid: S25)
-    std::vector<std::vector<std::string>> settingLabels; // their names ("The Grid Alternative")
-    std::vector<std::vector<std::string>> vskills;       // per character, the game's names
+    std::vector<std::string> stages;
+    std::vector<std::string> stageLabels;
+    std::vector<std::vector<std::string>> settings;
+    std::vector<std::vector<std::string>> settingLabels;
+    std::vector<std::vector<std::string>> vskills;
     std::vector<std::vector<std::string>> vtriggers;
-    std::vector<std::vector<std::string>> vcomments;    // the V-Comments after Auto
-    std::vector<int> elevenCostume;                     // the 0C costume Eleven wears in each fighter (-1: none)
-    std::vector<std::vector<CostumeSwatches>> swatches; // per costume (as listed): the colors' swatches
+    std::vector<std::vector<std::string>> vcomments;
+    std::vector<int> elevenCostume;
+    std::vector<std::vector<CostumeSwatches>> swatches;
     std::vector<bool> charaOwned;
     std::vector<std::vector<bool>> costumeOwned;
     std::vector<std::vector<std::vector<bool>>> colorOwned;
@@ -288,7 +289,7 @@ Tables ReadTables();
 
 inline std::mutex g_tablesMutex;
 
-inline std::unique_ptr<Tables> g_readTables; // from the worker, taken by the render thread
+inline std::unique_ptr<Tables> g_readTables;
 
 inline std::atomic<bool> g_readingTables{false};
 
@@ -308,19 +309,22 @@ bool ColorOwnedAt(int chara, int slot, int at);
 
 bool StageOwned(int stage, int setting);
 
+constexpr int kStageRandom = 1, kFirstStage = 2;
+constexpr int kDefaultSetting = 0;
+
 struct Choices {
     bool initialised = false;
     bool pick = false;
     int chara = 0;
     int costume = 0;
-    int color = 0;     // the game's color id: 0.. the costume's colors, 100.. its EX colors
-    int vskill = 1;    // from 1
-    int vtrigger = 1;  // from 1
-    int variant = 0;   // the costume's variant (dress state), 0: none
-    int comment = 0;   // V-Comment: 0 Auto, n the n-th
-    int elevenAs = -1; // Eleven: the fighter it copies (a table index), rolled when picked
-    int stage = 1;     // 1 random, 2.. a stage
-    int setting = 0;   // 0 the stage's default, n its n-th setting
+    int color = 0;
+    int vskill = 1;
+    int vtrigger = 1;
+    int variant = 0;
+    int comment = 0;
+    int elevenAs = -1;
+    int stage = 1;
+    int setting = 0;
     int delay = 2;
     char code[64] = "";
     char name[lobby::kMaxName + 1] = "";
@@ -397,24 +401,24 @@ void SyncChoices(const NetView& v);
 std::string ShortCharaName(const std::string& code);
 
 struct Preview {
-    bool hud = false;                        // the player bars over the health bars
-    ULONGLONG fadeAt = 0;                    // their fade at the match's end, played from here
-    bool strip = false;                      // the corner line while the panel is closed
-    bool desync = false;                     // the red banner
-    bool side[kNumPlayers] = {false, false}; // P1's and P2's windows after a match
-    int sides = 0;                           // 0 the rematch vote, 1 character select over the results
-    int you = 0;                             // whose side is this player's
-    int choice[kNumPlayers] = {0, 1};        // each side's vote: none, rematch, character select
+    bool hud = false;
+    ULONGLONG fadeAt = 0;
+    bool strip = false;
+    bool desync = false;
+    bool side[kNumPlayers] = {false, false};
+    NetView::Phase sidesPhase = NetView::Phase::PostMatch;
+    int you = 0;
+    lobby::Choice choice[kNumPlayers] = {lobby::Choice::None, lobby::Choice::Rematch};
     bool ready[kNumPlayers] = {false, true};
-    bool relayed = true; // the link through Cloudflare's relay (else peer to peer)
-    bool set = false;    // the side windows of a table's set (no vote)
+    bool relayed = true;
+    bool set = false;
 
     bool Any() const { return hud || strip || desync || side[0] || side[1]; }
 };
 
 inline Preview g_preview;
 
-inline bool g_sampleToasts = false; // add a few toasts on the next frame
+inline bool g_sampleToasts = false;
 
 inline std::mutex g_textureMutex;
 
@@ -458,16 +462,16 @@ struct Toast {
     std::string text;
     ImVec4 color;
     ULONGLONG until;
-    ULONGLONG at = 0; // when it came (it slides in)
+    ULONGLONG at = 0;
 };
 
-inline std::vector<Toast> g_toasts; // render thread
+inline std::vector<Toast> g_toasts;
 
 void AddToast(const std::string& text, ImVec4 color = ImVec4(1, 1, 1, 1), int seconds = 4);
 
 bool OnMenuScreen();
 
-inline std::atomic<bool> g_migrated{false}; // OverlaySetMigratedNotice: not toasted yet
+inline std::atomic<bool> g_migrated{false};
 
 void ToastMigrated();
 
@@ -495,7 +499,7 @@ NetView PreviewView(NetView::Phase phase);
 
 inline std::mutex g_previewMutex;
 
-inline std::string g_previewWords; // from OverlayPreview, applied on the render thread
+inline std::string g_previewWords;
 
 void UseServer(const std::string& chosen);
 
@@ -516,12 +520,17 @@ inline int g_benchChoice = 0;
 
 inline BenchmarkResult g_benchShown;
 
-inline bool g_benchReturn = false; // a run is on: settings and its result again at the menus
+inline bool g_benchReturn = false;
+
+enum class BenchStep { Reading,
+                       Loading,
+                       Starting,
+                       Fading };
 
 struct BenchLaunch {
     bool active = false;
-    int step = 0;  // 0 reading the round, 1 loading, 2 starting, 3 fading into it
-    int drawn = 0; // frames the modal has been shown (the read waits for one)
+    BenchStep step = BenchStep::Reading;
+    int drawn = 0;
     uint64_t switchesAt = 0;
     double since = 0, stepSince = 0, blackFrom = -1, revealFrom = -1;
 };
@@ -551,7 +560,7 @@ void ApplySetting(const SettingsInput& in);
 
 inline std::mutex g_favoritesMutex;
 
-inline ProfileFavorites g_favorites; // read at the title's warm up
+inline ProfileFavorites g_favorites;
 
 inline int g_tableDelay = -1;
 
@@ -582,13 +591,13 @@ void StartTableWatch(const WatchTicket& w);
 void StartTableSession(const keeper::TableTicket& t);
 
 struct MyCharacter {
-    Choices saved;                          // the pick in effect: the card's, B's on the grid
-    bool fromProfile = false;               // nothing saved yet: the Fighter Profile's favorite
-    bool stagePage = false;                 // on the stage select
-    int stageBefore = 1, settingBefore = 0; // the stage as the stage select opened (its B)
-    bool savedNow = false;                  // SAVED: A goes back to the room, B changes again
-    int8_t delaySetting = kDelayAuto;       // the Input delay row (saved with the pick)
-    int openedFrame = 0;                    // the Y that opened it is not read again here
+    Choices saved;
+    bool fromProfile = false;
+    bool stagePage = false;
+    int stageBefore = 1, settingBefore = 0;
+    bool savedNow = false;
+    int8_t delaySetting = kDelayAuto;
+    int openedFrame = 0;
     float alpha = 0;
 };
 
@@ -612,11 +621,17 @@ void ApplyMyCharacterInput(const SelectInput& in);
 
 void DrawMyCharacter(const RoomsView& rooms, bool takeInput);
 
-inline bool g_roomsWhenReady = false; // Custom Rooms chosen before the lists were read: opens once they are
+inline bool g_roomsWhenReady = false;
 
 void DrawHubScreens(bool takeInput);
 
-inline int g_hubScreen = -1; // what DrawHubScreens drew: 0 the hub, 1 the room browser, 2 a room, 3 settings, 4 My character
+enum class HubScreen { None,
+                       Hub,
+                       RoomBrowser,
+                       Room,
+                       Settings,
+                       MyCharacter };
+inline HubScreen g_hubScreen = HubScreen::None;
 
 void DrawHubFrame(bool takeInput);
 
@@ -662,7 +677,7 @@ HRESULT DrawAndPresent(PresentFn next, IDXGISwapChain* self, UINT syncInterval, 
 
 inline std::mutex g_shotMutex;
 
-inline std::string g_shotPath; // asked for, taken on the next Present
+inline std::string g_shotPath;
 
 inline int g_shotScale = 1;
 

@@ -53,9 +53,9 @@ void ReplayDriver::SetViewer(std::string title, std::string path) {
 }
 
 void ReplayDriver::StartAt(const RestartPending& r) {
-    startAt_ = r.target;
+    restartTarget_ = r.target;
     paused_ = r.paused;
-    fast_ = r.fast;
+    framesPerRender_ = r.fast;
     roundStarts_ = r.starts;
     roundEnds_ = r.ends;
     roundCalls_ = r.calls;
@@ -103,7 +103,7 @@ bool ReplayDriver::OnFrame(SfvGame& game) {
 
 } // namespace replay
 
-void ReplaySetLatch(int latch) { g_latch = latch; }
+void ReplaySetLatch(PadLatch latch) { g_latch = latch; }
 
 void ReplaySetForcedRollbacks(std::vector<int> frames, uint32_t guessXor) {
     g_forcedGuessXor = guessXor;
@@ -119,7 +119,7 @@ void ReplayRequestView(const std::string& path, const std::string& title, std::f
     {
         std::lock_guard lock(g_viewMutex);
         g_viewCommands.clear();
-        g_viewTaken = g_view.handled;
+        g_viewCommandsTaken = g_view.handled;
         g_viewLeave = std::move(onLeave);
     }
     ReplayRequest(path, 0, -1, -1, "", -1, -1, true, "", holdAt, holdSeconds, 0, -1, title.empty() ? path : title);
@@ -135,7 +135,7 @@ bool ReplayRequestBenchmark(const std::string& path) {
         g_viewCommands.clear();
         g_viewLeave = nullptr;
         g_view = ReplayView{};
-        g_viewTaken = 0;
+        g_viewCommandsTaken = 0;
         g_view.active = true;
         g_view.benchmark = true;
         g_view.title = "Benchmark";
@@ -168,7 +168,7 @@ uint32_t ReplayApplyControl(ReplayControl c, int arg) {
     std::lock_guard lock(g_viewMutex);
     if (!g_view.active && c != ReplayControl::Leave) return 0;
     g_viewCommands.push_back({c, arg});
-    return g_viewTaken + static_cast<uint32_t>(g_viewCommands.size());
+    return g_viewCommandsTaken + static_cast<uint32_t>(g_viewCommands.size());
 }
 
 int ReplayTickFrame() { return g_tickFrame; }

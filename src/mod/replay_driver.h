@@ -136,10 +136,13 @@ int ReplayTickRound();
 // 8-frame rollback every frame, its FIGHT to its end measured; back to the
 // menus after, the result to BenchmarkFinish. B (ReplayControl::Leave) stops.
 bool ReplayRequestBenchmark(const std::string& path);
-// The pad latch of the next replay (research): 1 latches after every tick
-// (SfvGame::latchEachTick), 0 keeps the game's once-per-rendered-frame latch,
-// -1 (the default) picks by the recording's build and the replay's mode.
-void ReplaySetLatch(int latch);
+// The pad latch of the next replay (research): after every tick
+// (SfvGame::latchEachTick), the game's once-per-rendered-frame latch, or (the
+// default) picked by the recording's build and the replay's mode.
+enum class PadLatch { ByRecording,
+                      EachTick,
+                      PerRenderedFrame };
+void ReplaySetLatch(PadLatch latch);
 // Research: frames a mispredict replay rolls back to whatever the guess (empty: none).
 void ReplaySetForcedRollbacks(std::vector<int> frames, uint32_t guessXor);
 

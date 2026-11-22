@@ -40,6 +40,8 @@ struct FrameInputs {
     bool operator==(const FrameInputs&) const = default;
 };
 
+constexpr uint8_t kCommentAuto = 0;
+
 // Field values are the game's own (battle_setup.h documents them).
 struct PlayerSetup {
     uint32_t character = 0; // character code, up to 4 ASCII chars packed little-endian ("KEN", "Z37")

@@ -499,7 +499,7 @@ void NetplayDriver::OnHostMessage(uint64_t from, const lobby::Message& m, State 
                     shared_.seats[1].name = m.name;
                 }
                 Log("netplay: %s joined from %s", m.name.c_str(), Hex64(from).c_str());
-                peerReports_ = -1;
+                peerReports_ = PeerReports::NotHeard;
                 NotePeerReports(m.reports);
                 if (s == State::Hosting) SetState(State::Lobby);
                 accept.role = Role::Player;

@@ -34,7 +34,7 @@ void NetplayDriver::BeginJump() {
     switchNow_ = false;
     switchesAtJump_ = FlowBattleSceneSwitches();
     ReleaseResults();
-    if (nextDelay_ >= 0) options_.inputDelay = static_cast<uint8_t>(nextDelay_.exchange(-1));
+    if (nextDelay_ >= 0) options_.inputDelay = static_cast<uint8_t>(nextDelay_.exchange(kDelayUnchanged));
     const MatchSetup shown = ShownSetup(shared_.setup, ViewerSide(), BattleSetupLookRules());
     for (int p = 0; p < kNumPlayers; p++) {
         if (shown.players[p].color != shared_.setup.players[p].color) {

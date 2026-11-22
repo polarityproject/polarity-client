@@ -1,4 +1,5 @@
 #pragma once
+// What the replay driver's files share: its class, the viewer's controls and the run options (docs/replays.md).
 
 #include "mod/replay_driver.h"
 
@@ -50,15 +51,15 @@ inline std::mutex g_viewMutex;
 
 inline std::vector<std::pair<ReplayControl, int>> g_viewCommands;
 
-inline ReplayView g_view; // as the driver last published it
+inline ReplayView g_view;
 
 inline std::atomic<int> g_tickFrame{-1};
 
 inline std::atomic<bool> g_tickFight{false};
 
-inline std::atomic<int> g_tickRound{0}; // round calls up to the tick's starting frame (ReplayTickRound)
+inline std::atomic<int> g_tickRound{0};
 
-inline uint32_t g_viewTaken = 0; // commands the driver took from g_viewCommands (published later as g_view.handled)
+inline uint32_t g_viewCommandsTaken = 0;
 
 inline std::function<void()> g_viewLeave;
 
@@ -75,13 +76,12 @@ inline std::atomic<bool> g_callKeys{true}, g_crossRounds{false}, g_anyKeys{false
 
 inline std::atomic<bool> g_skipIntro{true};
 
-// A run behind the black takes at most this many ticks per rendered frame (docs/replays.md); 0: no cap.
 constexpr int kRunTicksPerFrame = 16;
 inline std::atomic<int> g_callPace{0}, g_callAfter{90}, g_runTicks{kRunTicksPerFrame};
 
-inline std::atomic<int> g_latch{-1}; // `latch tick|game`: the pad latch the next replay uses (-1: by recording)
+inline std::atomic<PadLatch> g_latch{PadLatch::ByRecording};
 
-inline std::atomic<uint32_t> g_forcedGuessXor{0}; // the forced frames first run on the remote input XOR this (a wrong guess)
+inline std::atomic<uint32_t> g_forcedGuessXor{0};
 
 bool ForcedRollback(int frame);
 
@@ -109,7 +109,7 @@ public:
     struct Trap {
         int frame;
         std::string region;
-        long long offset; // may be negative: the owner's memory before the region
+        long long offset;
         int bytes;
     };
 
@@ -123,9 +123,9 @@ private:
     static constexpr int kKeyEvery = 60;
 
     struct Keyframe {
-        int frame = 0;      // the state before this frame
-        bool fight = false; // taken in a round's fight (after FIGHT, before its end)
-        bool call = false;  // taken just before a round's call: a round jump back within the round loads it
+        int frame = 0;
+        bool inFight = false;
+        bool beforeCall = false;
         std::vector<uint8_t> regions;
         OutsideState outside;
     };
@@ -153,10 +153,10 @@ private:
                                FadeOut,
                                ToFight };
     static constexpr ULONGLONG kTakeoverCountdownMs = 3000;
-    static constexpr ULONGLONG kTakeoverKoScreenMs = 2500; // the KO's slow motion and screen, as the game plays them
-    static constexpr ULONGLONG kTakeoverFadeMs = 350;      // the stripe's fade to black (kFadeOut) and a little
-    static constexpr int kTakeoverRunMax = 60 * 60;        // ticks behind the black looking for a fight
-    static constexpr int kTakeoverWarm = 60;               // frames run in full before the start point (the camera)
+    static constexpr ULONGLONG kTakeoverKoScreenMs = 2500;
+    static constexpr ULONGLONG kTakeoverFadeMs = 350;
+    static constexpr int kTakeoverRunMax = 60 * 60;
+    static constexpr int kTakeoverWarm = 60;
     static constexpr int kTakeoverKoTicks = 56;
 
     struct Takeover {
@@ -168,7 +168,7 @@ private:
         int inputLogs = 0;
         int ticks = 0;
         int koFrame = -1;
-        std::vector<uint8_t> ko; // the state on the KO's frame (TakeoverRewind)
+        std::vector<uint8_t> ko;
     };
 
     void TakeoverControl(SfvGame& game, ReplayControl c, int arg);
@@ -213,32 +213,32 @@ private:
     std::vector<hitch::CapturedFrame> benchCaptured_;
     std::string title_;
     std::vector<Keyframe> keys_;
-    std::vector<int> roundStarts_; // frames whose tick began a round's fight
-    std::vector<int> roundCalls_;  // frames whose tick began a round's call (Round jumps land there)
+    std::vector<int> roundStarts_;
+    std::vector<int> roundCalls_;
     bool wasCall_ = false;
-    Keyframe scratch_{-1}; // the state before the last tick outside a fight (a call key in waiting)
+    Keyframe pendingCallKey_{-1};
     bool wasFight_ = false;
     bool paused_ = false;
     bool findRound_ = false;
-    bool quiet_ = false;                        // a step back's mute, kept while paused there (Seek)
-    int runToFight_ = -1;                       // a jump back waiting for a fight to load from (Seek)
-    Takeover tk_;                               // Replay Takeover (TakeoverControl)
-    bool crossFight_ = false;                   // LoadableKey: a takeover's rewind (fight keys across its round end)
-    int warm_ = 0;                              // a seek's last frames run in full (Seek's run, TakeoverLoad)
-    int handledNow_ = 0;                        // controls taken since the last Publish (ReplayView::handled)
-    int hudTicks_ = 0;                          // ticks simulated this rendered frame (Simulate: the HUD's step)
-    static constexpr int kHudFightFrames = 120; // "FIGHT!" plays out within them (90 measured clean)
+    bool stepBackMuted_ = false;
+    int runToFight_ = -1;
+    Takeover takeover_;
+    bool crossFight_ = false;
+    int warmFrames_ = 0;
+    int handledSincePublish_ = 0;
+    int ticksThisRender_ = 0;
+    static constexpr int kHudFightFrames = 120;
     static constexpr ULONGLONG kKoScreenMs = 1500;
-    ULONGLONG koMs_ = 0;         // when the last KO was simulated
-    ULONGLONG koHoldUntil_ = 0;  // a run waits until then
-    uint32_t roundEndsSeen_ = 0; // FlowRoundEndEvents as of the last tick
-    int target_ = -1;            // seeking: the frame to simulate next once there
-    int fast_ = 0;               // frames a rendered frame while playing (0, 1: as played)
+    ULONGLONG lastKoMs_ = 0;
+    ULONGLONG koHoldUntil_ = 0;
+    uint32_t roundEndsSeen_ = 0;
+    int seekTarget_ = -1;
+    int framesPerRender_ = 0;
     int keyWarnings_ = 0;
-    int seeks_ = 0;              // loads of a keyframe (testing)
-    std::vector<int> roundEnds_; // frames whose tick ended a round's fight
-    std::string path_;           // the file, for a restart
-    int startAt_ = -1;           // a restart's target (RestartAt)
+    int keyframeLoads_ = 0;
+    std::vector<int> roundEnds_;
+    std::string path_;
+    int restartTarget_ = -1;
     bool restarting_ = false;
 
     bool Warmup(SfvGame& game);
@@ -290,7 +290,7 @@ private:
     ReplayFile rf_;
     std::string name_;
     int keepFrom_ = -1, keepTo_ = -1;
-    std::vector<std::pair<int, uint64_t>> holds_; // tests' holds: frame, ms (Hold, `rview holdat`)
+    std::vector<std::pair<int, uint64_t>> holds_;
     uint64_t holdUntil_ = 0;
     std::vector<Trap> traps_;
     int trapSlots_ = 0;
@@ -304,14 +304,14 @@ private:
     int creationsAtJump_;
     int watchFrom_, watchTo_;
     std::string watchRegion_;
-    const uint8_t* camera_ = nullptr; // the battle's camera manager (CameraText)
+    const uint8_t* cameraManager_ = nullptr;
     int cameraTries_ = 0;
     int last_ = -1;
     bool jumped_ = false;
     bool ready_ = false;
     int layout_ = 0;
-    int postLoadLogs_ = 0;                  // research: the round's state on the ticks after a keyframe load
-    std::vector<StateRegion> checkRegions_; // CheckRegions
+    int postLoadLogs_ = 0;
+    std::vector<StateRegion> checkRegions_;
     int checkLayout_ = -1;
     size_t checkCount_ = 0;
     int frame_ = 0;
@@ -320,17 +320,17 @@ private:
     int framesChecked_ = 0;
     int firstMismatch_ = -1;
     int mismatchFrames_ = 0;
-    int presentationFrames_ = 0;              // camera / pawn clock differences (not a failure)
-    std::map<std::string, int> regionFrames_; // frames each region differed on
-    std::set<int> stressFrames_;              // frames resimulated differently (not the clocks)
-    int resimFirst_ = -1;                     // the first of them reported
-    std::vector<std::string> resimRegions_;   // its differing regions (at most 4)
-    std::vector<uint8_t> failDump_;           // the benchmark's first differing frame's state (TakeFailDump)
+    int presentationFrames_ = 0;
+    std::map<std::string, int> regionFrames_;
+    std::set<int> stressFrames_;
+    int resimFirst_ = -1;
+    std::vector<std::string> resimRegions_;
+    std::vector<uint8_t> failDump_;
     int failDumpFrame_ = -1;
     std::string failDumpLabel_;
     std::vector<RegionInfo> failRegions_;
     std::vector<uint64_t> failHashes_;
-    std::string benchSession_; // BenchmarkActivityText() as the benchmark began
+    std::string benchSession_;
     std::map<std::string, int> stressRegionFrames_;
     int stressLogged_ = 0;
     int logged_ = 0;

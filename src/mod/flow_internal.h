@@ -1,4 +1,5 @@
 #pragma once
+// What the flow files share: the game's objects, offsets and code sites, and the round's state (docs/flow.md).
 
 #include "mod/flow.h"
 
@@ -51,7 +52,7 @@ uint8_t* BattleContext(uint8_t* task);
 
 namespace sfv::mod::flow {
 
-constexpr uint32_t kEngineGlobal = 0x3D878C8; // engine; +0x1E0 KiwiGameSingleton
+constexpr uint32_t kEngineGlobal = 0x3D878C8;
 
 constexpr uint32_t kSingleton = 0x1E0;
 
@@ -61,9 +62,9 @@ constexpr uint32_t kBattleFlowLoader = 0x10;
 
 constexpr uint32_t kLoaderPhase = 0x8;
 
-constexpr int kLoaderStartDelay = 30; // frames
+constexpr int kLoaderStartDelay = 30;
 
-constexpr uint32_t kLoaderStepDone = 0x710E40; // bool (loader, step): step done and its loading finished
+constexpr uint32_t kLoaderStepDone = 0x710E40;
 
 constexpr int kStageWaitFrames = 60 * 30;
 
@@ -79,15 +80,15 @@ constexpr int kSceneSettleFrames = 60;
 
 constexpr int kLoaderWaitFrames = 60 * 20;
 
-constexpr uint32_t kSingletonStageTable = 0x68; // KWStageEntryDataAsset; entries at +0x28 (TArray)
+constexpr uint32_t kSingletonStageTable = 0x68;
 
-constexpr size_t kStageEntrySize = 0x50; // five FStrings: code, then level/asset paths
+constexpr size_t kStageEntrySize = 0x50;
 
 constexpr uint32_t kCharaCache = 0x68CEA0;
 
-constexpr uint32_t kCacheSlotsInUse = 0x1D0; // TArray<Slot*>
+constexpr uint32_t kCacheSlotsInUse = 0x1D0;
 
-constexpr uint32_t kCacheSlotsFree = 0x1E0; // TArray<Slot*>
+constexpr uint32_t kCacheSlotsFree = 0x1E0;
 
 constexpr uint32_t kKiwiSingleton = 0x521690;
 
@@ -141,17 +142,19 @@ constexpr int32_t kResults = 13;
 
 bool MatchOver(int32_t code);
 
+constexpr int kDirectorWords = 14, kDirectorTimerWords = 16, kDirectorCountWords = 5;
+
 struct RoundFlow {
     int32_t inFight;
     int32_t lastCode;
-    uint32_t startPressed; // presentation: who pressed Start (bit per player)
-    int32_t startTicks;    // presentation: ticks Start still goes to the game
+    uint32_t startPressed;
+    int32_t startTicks;
     int32_t directorSeen;
-    int32_t director[14];       // +0xF8..+0x130: state, then the round's stop record
-    int32_t directorTimers[16]; // +0x110C4..+0x11104: four timers its check advances
-    int32_t directorCounts[5];  // +0x11128..+0x1113C: counts the round's end adds to
-    int32_t stopTicks;          // ticks the director has been stopped for a KO (or time over)
-    uint32_t ticks;             // driven ticks run: keys the round's end copies (FlowBeginDrivenTick)
+    int32_t director[kDirectorWords];
+    int32_t directorTimers[kDirectorTimerWords];
+    int32_t directorCounts[kDirectorCountWords];
+    int32_t stopTicks;
+    uint32_t ticks;
     int32_t unused[2];
 };
 
@@ -165,7 +168,7 @@ constexpr int32_t kDirectorStopped = 2;
 
 constexpr int32_t kDirectorRoundOver = 3;
 
-constexpr uint32_t kStopFlags = 0x190; // battle frame: two flag words
+constexpr uint32_t kStopFlags = 0x190;
 
 constexpr uint32_t kStopBit = 0x20;
 
@@ -181,7 +184,8 @@ constexpr uint32_t kDirectorTimers = 0x110C4;
 
 constexpr uint32_t kDirectorCounts = 0x11128;
 
-constexpr uint32_t kDirectorStopKind = 0x108; // 0: a plain stop, ended by the next tick; else a KO or time over
+constexpr uint32_t kDirectorStopKind = 0x108;
+constexpr int32_t kPlainStop = 0;
 
 constexpr int32_t kRoundOverAfterTicks = 10;
 
@@ -199,25 +203,25 @@ inline std::atomic<bool> g_resultsHeld{false};
 
 uint8_t* LiveRoundDirector();
 
-inline std::atomic<int> g_taskCensus{0}; // calls still to record
+inline std::atomic<int> g_taskCensus{0};
 
 inline std::mutex g_censusMutex;
 
-inline std::vector<std::pair<uintptr_t, uintptr_t>> g_census; // (fn, object)
+inline std::vector<std::pair<uintptr_t, uintptr_t>> g_census;
 
 inline std::mutex g_mutex;
 
 inline std::vector<std::string> g_history;
 
-inline std::atomic<void*> g_manager{nullptr}; // the GameScene seen switching states
+inline std::atomic<void*> g_manager{nullptr};
 
 inline std::mutex g_sceneMutex;
 
 inline std::string g_lastScene;
 
-inline std::atomic<uint64_t> g_sceneChangedAt{0}; // queue run (about a frame) of the last scene change
+inline std::atomic<uint64_t> g_sceneChangedAt{0};
 
-inline std::atomic<uint64_t> g_battleSwitches{0}; // jumps switched to the battle scene (FlowBattleSceneSwitches)
+inline std::atomic<uint64_t> g_battleSwitches{0};
 
 void RememberScene(const std::string& stateClassName);
 
@@ -245,7 +249,7 @@ void PreloadTick();
 
 constexpr uint32_t kKoWaitCtor = 0x3C7AE0;
 
-constexpr uint32_t kSharedAssign = 0x2F02D0; // (slot, &block): the new block counted up, the old one down (freed at zero)
+constexpr uint32_t kSharedAssign = 0x2F02D0;
 
 constexpr uint8_t kSharedAssignBytes[16] = {0x48, 0x89, 0x74, 0x24, 0x18, 0x57, 0x48, 0x83,
                                             0xEC, 0x20, 0x48, 0x8B, 0x32, 0x48, 0x8B, 0xF9};
@@ -254,19 +258,19 @@ using SharedAssignFn = void (*)(void** slot, void* const* block);
 
 inline SharedAssignFn g_sharedAssign = nullptr;
 
-inline uint8_t* g_koWait = nullptr; // the newest such object
+inline uint8_t* g_koWait = nullptr;
 
-inline std::atomic<bool> g_roundEndRollback{false}; // on: no hold; the copies and the journal below instead
+inline std::atomic<bool> g_roundEndRollback{false};
 
-constexpr uint32_t kRoundCount = 0x1904; // +0x1904 the round's time, +0x1908 rounds recorded (at most 7)
+constexpr uint32_t kRoundCount = 0x1904;
 
 constexpr size_t kRoundCountSize = 0x0C;
 
-constexpr uint32_t kRoundHistory = 0x1910; // 7 records of 0x10FC8
+constexpr uint32_t kRoundHistory = 0x1910;
 
 constexpr size_t kRoundRecord = 0x10FC8;
 
-constexpr uint32_t kLastRecord = 0x787AC; // the latest round's record
+constexpr uint32_t kLastRecord = 0x787AC;
 
 constexpr uint32_t kRoundResult = 0x78788;
 
@@ -281,7 +285,7 @@ struct RoundOverUndo {
 
 inline std::vector<RoundOverUndo> g_roundOverJournal;
 
-inline RoundOverUndo g_roundOverPending; // filled before a director tick that may end the round
+inline RoundOverUndo g_roundOverPending;
 
 uint32_t TickNow();
 
@@ -318,9 +322,9 @@ struct FStringArg {
 
 std::wstring WideOf(const std::string& text);
 
-inline std::atomic<bool> g_preloading{false}; // a preload holds the asset queue
+inline std::atomic<bool> g_preloading{false};
 
-inline std::atomic<uint64_t> g_jumpRequestedAt{0}; // queue run (≈ frame) of the last jump request
+inline std::atomic<uint64_t> g_jumpRequestedAt{0};
 
 void* KnownObject(const std::string& name, const std::string& className);
 

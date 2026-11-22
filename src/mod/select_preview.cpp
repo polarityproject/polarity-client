@@ -2,6 +2,8 @@
 
 #include "mod/select_internal.h"
 
+#include "core/game.h"
+
 #include "mod/log.h"
 
 #include <algorithm>
@@ -97,14 +99,14 @@ SelectSide MockSide(int i) {
             s.rows[kRowVSkill + k].value = roman(n + 1) + (n < static_cast<int>(names.size()) && !names[n].empty() ? "  " + names[n] : "");
         }
         const int comment = v[kRowVComment] % (1 + static_cast<int>(c.vcomments.size()));
-        s.rows[kRowVComment].value = comment == 0 ? "AUTO" : std::to_string(comment);
+        s.rows[kRowVComment].value = comment == kCommentAuto ? "AUTO" : std::to_string(comment);
     }
     s.rows[kRowDelay].value = std::to_string(v[kRowDelay]) + (v[kRowDelay] == 1 ? " frame" : " frames");
     const char* hints[kSelectRows] = {"", "", "", "", "", "", "Suggested for a 38 ms ping: 2 frames. Lower feels sharper but rolls back more."};
     const int comment = v[kRowVComment] % (1 + static_cast<int>(c.vcomments.size()));
-    const std::string commentLine = eleven         ? "Plays a random character in silver, with a random V-Skill and V-Trigger."
-                                    : comment == 0 ? "Changes with your opponent's character."
-                                                   : "\"" + c.vcomments[comment - 1] + "\"";
+    const std::string commentLine = eleven                    ? "Plays a random character in silver, with a random V-Skill and V-Trigger."
+                                    : comment == kCommentAuto ? "Changes with your opponent's character."
+                                                              : "\"" + c.vcomments[comment - 1] + "\"";
     for (int r = 0; r < kSelectRows; r++) s.rows[r].hint = r == kRowVComment || eleven ? commentLine : hints[r];
     return s;
 }

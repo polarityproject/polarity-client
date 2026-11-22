@@ -137,19 +137,19 @@ void ReplayDriver::LogTrails(SfvGame& game, int f) {
 std::string ReplayDriver::CameraText() {
     constexpr size_t kPov = 0x370;
     constexpr size_t kPlayer = 0x360, kCameraManager = 0x390;
-    if (!camera_ && cameraTries_++ % 120 == 0 && ue4::EnsureObjects(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)))) {
+    if (!cameraManager_ && cameraTries_++ % 120 == 0 && ue4::EnsureObjects(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)))) {
         ue4::ForEachObject([&](const void* object) {
-            if (camera_ || ue4::ObjectName(ue4::ClassOf(object)).find("PlayerController") == std::string::npos) return;
+            if (cameraManager_ || ue4::ObjectName(ue4::ClassOf(object)).find("PlayerController") == std::string::npos) return;
             const auto* p = static_cast<const uint8_t*>(object);
             if (!IsReadable(p + kCameraManager, 8) || !*reinterpret_cast<const void* const*>(p + kPlayer)) return;
             const auto* manager = *reinterpret_cast<const uint8_t* const*>(p + kCameraManager);
-            if (manager && ue4::ObjectName(ue4::ClassOf(manager)).find("CameraManager") != std::string::npos) camera_ = manager;
+            if (manager && ue4::ObjectName(ue4::ClassOf(manager)).find("CameraManager") != std::string::npos) cameraManager_ = manager;
         });
-        if (camera_) Log("replay: camera manager %s (%p)", ue4::Describe(camera_).c_str(), static_cast<const void*>(camera_));
+        if (cameraManager_) Log("replay: camera manager %s (%p)", ue4::Describe(cameraManager_).c_str(), static_cast<const void*>(cameraManager_));
     }
     float v[7];
-    if (!camera_ || !IsReadable(camera_ + kPov, sizeof(v))) return "-";
-    std::memcpy(v, camera_ + kPov, sizeof(v));
+    if (!cameraManager_ || !IsReadable(cameraManager_ + kPov, sizeof(v))) return "-";
+    std::memcpy(v, cameraManager_ + kPov, sizeof(v));
     char b[128];
     std::snprintf(b, sizeof(b), "%.1f %.1f %.1f r %.2f %.2f %.2f fov %.2f", v[0], v[1], v[2], v[3], v[4], v[5], v[6]);
     return b;
@@ -399,7 +399,7 @@ void ReplayDriver::Finish(SfvGame& game) {
         std::lock_guard lock(g_viewMutex);
         g_view = ReplayView{};
         g_viewCommands.clear();
-        g_viewTaken = 0;
+        g_viewCommandsTaken = 0;
     }
     std::function<void()> leave;
     if (viewer_ && !restarting_) {
@@ -409,7 +409,7 @@ void ReplayDriver::Finish(SfvGame& game) {
         std::lock_guard lock(g_viewMutex);
         g_view = ReplayView{};
         g_viewCommands.clear();
-        g_viewTaken = 0;
+        g_viewCommandsTaken = 0;
         leave = std::move(g_viewLeave);
     } else if (viewer_) {
         const int stopped = BattleStopSounds();
@@ -417,11 +417,11 @@ void ReplayDriver::Finish(SfvGame& game) {
         std::lock_guard lock(g_viewMutex);
         g_view.seeking = true;
         g_view.paused = false;
-        g_view.handled += static_cast<uint32_t>(handledNow_);
-        handledNow_ = 0;
+        g_view.handled += static_cast<uint32_t>(handledSincePublish_);
+        handledSincePublish_ = 0;
     }
     const std::string restartPath = path_, restartTitle = title_;
-    const RestartPending restartWith{startAt_, paused_, fast_, roundStarts_, roundEnds_, roundCalls_};
+    const RestartPending restartWith{restartTarget_, paused_, framesPerRender_, roundStarts_, roundEnds_, roundCalls_};
     const bool restart = viewer_ && restarting_;
     FlowSetRoundDirectorPerTick(false, false);
     InputIsolatePads(false);

@@ -29,10 +29,9 @@ inline const ImU32 kRed = IM_COL32(255, 107, 94, 255);
 constexpr float kTablePitch = 190, kTableH = 182;
 constexpr int kTablesInView = 4;
 constexpr int kPlayersInView = 8;
-constexpr double kCardMarginSeconds = 1.5; // the call's time the card does not show (the trip to the keeper)
+constexpr double kCardMarginSeconds = 1.5;
 constexpr int kKeeperCallSeconds = 21;
 constexpr int kMaxCardDelay = 10;
-// The your-turn card's rows.
 constexpr int kCardVSkill = 0, kCardVTrigger = 1, kCardDelay = 2, kCardRows = 3;
 
 enum class Modal { None,
@@ -46,34 +45,34 @@ struct State {
     Modal modal = Modal::None;
     bool typing = false;
     std::string text;
-    float chatScroll = 0;      // design px up from the newest line
-    uint32_t chatSeenFrom = 0; // the newest line seen at the bottom
+    float chatScroll = 0;
+    uint32_t chatSeenFrom = 0;
     std::string chatSeenText;
-    bool chatHeard = false; // the newest line as last heard
+    bool chatHeard = false;
     uint32_t chatHeardFrom = 0;
     std::string chatHeardText;
     int cardTick = -1;
-    int choice = 0;   // a confirm's focused button (0 the first)
-    int seatSide = 0; // the seat A takes when both are open
+    int choice = 0;
+    int seatSide = 0;
     bool onPlayers = false;
     int player = 0;
     float playersFirst = 0;
     std::set<uint32_t> muted;
     uint32_t removing = 0;
     int cardTable = -1;
-    uint32_t cardCall = 0; // the keeper's number for the call
+    uint32_t cardCall = 0;
     double cardSince = 0;
     int cardDelay = 2;
     bool cardReady = false;
     int cardRow = kCardVSkill;
     int cardVs = 1, cardVt = 1;
-    int cardMouseRow = -1, cardMouseDir = 0; // a click on a row, acted on the next frame
+    int cardMouseRow = -1, cardMouseDir = 0;
     int oppVs = 0, oppVt = 0;
     double oppChangedAt = -10;
     int handoffTable = -1, handoffStep = -1;
     double handoffSince = 0;
     TableRulesEditor rules;
-    std::vector<int> rulesPending; // tables whose new rules are still to send
+    std::vector<int> rulesPending;
 };
 
 inline State g;
@@ -82,7 +81,6 @@ inline std::map<std::string, std::string> g_names;
 inline std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::string>>> g_skillNames;
 inline CardPick g_cardPick;
 
-// "II HAZANSHU" (as the select screen has it); "" for 0.
 std::string SkillLabel(const std::string& code, bool trigger, int index);
 int SkillCount(const std::string& code, bool trigger);
 const RoomMember* Member(const RoomsView& v, uint32_t id);
@@ -94,7 +92,6 @@ void Seat(ImDrawList* d, const HubFonts& f, float x, float y, const RoomMember* 
 void Table(ImDrawList* d, const HubFonts& f, const RoomsView& v, float y, int index, bool on, bool dim);
 void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v);
 void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox, bool* clickedSend);
-// A confirm: *pressed is the button clicked (0 the first, 1 the second).
 void Dialog(ImDrawList* d, const HubFonts& f, const std::string& kicker, const std::string& title, const std::string& text, bool danger,
             const char* yes, const char* no, const ui::PromptList& prompts, int* clicked, int* pressed);
 

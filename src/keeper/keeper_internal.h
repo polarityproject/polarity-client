@@ -1,4 +1,5 @@
 #pragma once
+// What the keeper's files share: its rooms, tables, timings and helpers (docs/keeper.md).
 
 #include "keeper/keeper.h"
 
@@ -30,15 +31,15 @@ void SendLobby(WeyveClient* c, uint64_t to, const lobby::Message& m);
 
 const char* RoomErrorText(WeyveRoomError e);
 
-constexpr int64_t kResendMs = 250; // an answer goes again until acknowledged
+constexpr int64_t kResendMs = 250;
 
 constexpr int64_t kAnswerForMs = 20000;
 
-constexpr int64_t kOwnerWaitMs = 30000; // a new room closes if its owner never comes
+constexpr int64_t kOwnerWaitMs = 30000;
 
 constexpr int64_t kEmptyCloseMs = 3000;
 
-constexpr int64_t kListEveryMs = 2000; // the public list and the lobby's count, at most this often
+constexpr int64_t kListEveryMs = 2000;
 
 constexpr int64_t kRoomAskEveryMs = 10000;
 
@@ -46,10 +47,10 @@ constexpr int64_t kPeekEveryMs = 500;
 
 constexpr int kCallSeconds = 21;
 
-constexpr int kBrokeOffCallSeconds = 26; // after a set that broke off: its players are still leaving the battle
+constexpr int kBrokeOffCallSeconds = 26;
 
-constexpr int64_t kConnectMs = 45000; // P1 opens the match room and says its code
+constexpr int64_t kConnectMs = 45000;
 
-constexpr int64_t kAfterMs = 5000; // the after-set panels, then the rotation
+constexpr int64_t kAfterMs = 5000;
 
 } // namespace sfv::keeper::internal

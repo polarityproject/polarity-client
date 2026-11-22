@@ -49,8 +49,6 @@ constexpr int64_t kSessionStartMs = 30000;
 constexpr int kPingMaxMs = 5000;
 constexpr size_t kProofsKept = 256, kSignaturesKept = 1024;
 
-// This game's Polarity version as rooms see it (the updater's: a test may
-// pretend another).
 std::string MyVersion();
 std::string OtherVersionNotice(const std::string& theirs);
 int64_t ClockUs();
@@ -59,37 +57,39 @@ int64_t NowMs();
 inline std::atomic<bool> g_wordFilter{true};
 
 struct Client {
-    std::mutex mutex; // guards view and the asks below
-    RoomsView view;
-    std::optional<keeper::RoomSettings> createAsk;
-    int64_t createAskAt = 0;
-    std::optional<std::string> joinAsk;
-    bool leaveAsk = false;
-    std::string leftRoom;
-    int64_t leftAtMs = 0;
-    std::vector<std::string> chatOut;
-    keeper::ChatLimiter limiter;
-    std::string peekWanted;
-    std::vector<std::pair<std::string, std::vector<std::string>>> tableAsks;
-    std::vector<keeper::TableTicket> tickets;
-    int watchTable = -1;
-    std::string watchCode; // the relay room last handed out: one ticket a set
-    std::vector<WatchTicket> watchTickets;
-    bool watchSession = false;
+    std::mutex mutex;
 
-    struct Playing {
-        int table = -1;
-        bool host = false;
-        Rules rules;
-        int64_t at = 0;
-        bool started = false, codeSent = false;
-        bool begun = false; // the match itself (the jump), not only the session
-        int sent[2] = {-1, -1};
-        uint16_t wins[2] = {0, 0}; // the score seen last while the session was live
-        bool againAsked = false;
-    } playing;
+    struct Shared {
+        RoomsView view;
+        std::optional<keeper::RoomSettings> createAsk;
+        int64_t createAskAt = 0;
+        std::optional<std::string> joinAsk;
+        bool leaveAsk = false;
+        std::string leftRoom;
+        int64_t leftAtMs = 0;
+        std::vector<std::string> chatOut;
+        keeper::ChatLimiter limiter;
+        std::string peekWanted;
+        std::vector<std::pair<std::string, std::vector<std::string>>> tableAsks;
+        std::vector<keeper::TableTicket> tickets;
+        int watchTable = -1;
+        std::string watchCode;
+        std::vector<WatchTicket> watchTickets;
+        bool watchSession = false;
 
-    // The thread's own.
+        struct Playing {
+            int table = -1;
+            bool host = false;
+            Rules rules;
+            int64_t at = 0;
+            bool started = false, codeSent = false;
+            bool begun = false;
+            int sent[2] = {-1, -1};
+            uint16_t wins[2] = {0, 0};
+            bool againAsked = false;
+        } playing;
+    } shared;
+
     std::unique_ptr<WeyveService> svc;
     std::vector<std::array<uint8_t, 64>> keys;
     std::string chara;
@@ -99,7 +99,7 @@ struct Client {
     uint32_t pendingSeq = 0;
     int64_t pendingUntil = 0;
     std::string target;
-    int64_t joinedAt = -1; // into a room that is still to show it is a custom room
+    int64_t joinedAt = -1;
 
     enum class Listed { None,
                         Desks,
@@ -126,7 +126,7 @@ struct Client {
     std::map<uint32_t, std::deque<int>> pings;
     std::set<uint32_t> pingLogged;
     int64_t lastPingMs = 0;
-    int64_t deskDialAt = 0, deskDialFrom = 0; // 0: linked
+    int64_t deskDialAt = 0, deskDialFrom = 0;
     std::string net = "u";
     std::string skills;
     std::map<uint32_t, int> mask;
@@ -139,14 +139,12 @@ struct Client {
     std::map<std::string, int64_t> staleLobbies;
     int64_t allListAt = -1;
     bool abortSession = false;
-    std::vector<std::pair<uint32_t, int64_t>> callSeen; // per table: the call, when it showed
+    std::vector<std::pair<uint32_t, int64_t>> callSeen;
     std::vector<std::string> tableLogged;
 
     void Set(State s);
-    // Whether `signature` (base64) signs `message` with one of the keeper keys.
     bool KeeperSigned(const std::string& message, const std::string& signature) const;
     bool Proven(const std::string& room, uint32_t id, const std::string& proof);
-    // The proven keeper among the room's members; 0 if none.
     uint32_t KeeperOf(const WeyveRoomView& v);
     bool Signed(const std::string& message, const keeper::Listing& listing);
 
@@ -156,9 +154,7 @@ struct Client {
     void OnRooms();
     void Peeks();
 
-    // `removed`: the owner took this player out; a match already playing ends too.
     void ForgetTables(bool removed = false);
-    // `inRoom`: still in the room (a failed join or a kick left us in none).
     void BackToLobby(const std::string& notice, bool inRoom, bool removed = false);
     void Line(uint32_t from, const std::string& shownName, const std::string& text, const std::string& realName = {});
     std::string MaskedName(uint32_t id, const std::string& name) const;
@@ -176,7 +172,7 @@ struct Client {
     void Run();
 };
 
-inline std::mutex g_clientMutex; // guards g_client itself
+inline std::mutex g_clientMutex;
 inline std::unique_ptr<Client> g_client;
 
 template <typename F>

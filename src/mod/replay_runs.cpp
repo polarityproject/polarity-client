@@ -15,7 +15,9 @@ bool ReplayDriver::Warmup(SfvGame& game) {
     InputIsolatePads(true);
     game.exclusiveTicks = true;
     game.latchEachTick = stress_ > 0 || delay_ > 0 || BuildAdapterVersion(rf_.gameBuild) >= 9;
-    if (const int latch = g_latch.exchange(-1); latch >= 0) game.latchEachTick = latch != 0;
+    if (const PadLatch latch = g_latch.exchange(PadLatch::ByRecording); latch != PadLatch::ByRecording) {
+        game.latchEachTick = latch == PadLatch::EachTick;
+    }
     if (!game.latchEachTick) Log("replay: %s predates adapter-9: the game's own pad latch", rf_.gameBuild.c_str());
     FlowSetRoundDirectorPerTick(true, true);
     BattleSetMatchDrawSeed(rf_.setup.seed);

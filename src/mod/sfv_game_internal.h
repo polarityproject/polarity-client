@@ -28,7 +28,6 @@
 
 namespace sfv::mod {
 
-// A pool's watch (`watchregion <name>.*`): armed on the first slot whose bytes change.
 void GameCheckChangeWatch(const std::vector<StateRegion>& regions, uintptr_t imageBase);
 
 } // namespace sfv::mod
@@ -42,15 +41,11 @@ T Read(const uint8_t* base, uint32_t offset) {
     return *reinterpret_cast<const T*>(base + offset);
 }
 
-// The battle camera that pans from frame 0: its sub-object (vtable rva
-// 0x2C5F520) at +0xE8; the game snapshots 112 bytes from +0x1C0.
 constexpr uint32_t kBattleCameraVtable = 0x2C5F520;
 constexpr size_t kBattleCameraRegionSize = 112, kBattleCameraRegionAt = 0x1C0, kBattleCameraSize = 0x400, kBattleCameraPartAt = 0xE8;
-// A fighter's simulation object: 300 bytes snapshot from +0x764.
 constexpr size_t kFighterSimRegionSize = 300, kFighterSimRegionAt = 0x764, kFighterSimSize = 0x1000;
 constexpr uintptr_t kImageSpan = 0x8000000;
 
-// The sound manager's post-restore callback (flow_tasks.cpp kSoundReconcileTask).
 constexpr uintptr_t kSoundRestoreCallback = 0x4B6230;
 
 } // namespace sfv::mod::snapshot

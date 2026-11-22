@@ -14,26 +14,23 @@
 namespace sfv::mod::selectui {
 
 inline std::mutex g_dataMutex;
-// The screen being drawn: the live one's lists (SetSelectData) or the preview's.
 inline const SelectData* g_draw = nullptr;
 inline bool g_myCharacter = false;
 
-// What the player is doing on the screen; a session only knows their pick
-// and whether they are ready.
 struct Ui {
     bool loadout = false;
     int row = 0;
     int cursorRow = 0, cursorX = 0;
     bool onRandom = false;
-    int lastChara = kNoChara; // the pick the cursor last followed
-    std::string lastStage;    // the stage behind the screen (the last real one while random is chosen)
+    int lastChara = kNoChara;
+    std::string lastStage;
     bool wasLocked = false;
     bool leaving = false;
     bool leaveChosen = false;
-    bool cameFromStage = false; // My character: back from its stage select
+    bool cameFromStage = false;
     bool randomList = false;
     int listCursor = 0;
-    int variantsOf = -1; // the tile whose settings list is up
+    int variantsOf = -1;
     int variantCursor = 0;
     std::string listNote;
     double listNoteUntil = 0;
@@ -43,8 +40,6 @@ struct Ui {
 
 inline Ui g_ui;
 
-// A grid slot: its character (-1 on the random tile), corners in design
-// coordinates (top left, top right, bottom right, bottom left) and lean.
 struct Slot {
     int chara = -1;
     bool random = false;
@@ -68,11 +63,9 @@ int CharaAt(const SelectData& data, const std::string& code);
 void BuildGrid(const SelectData& data);
 
 const SelectChara* Chara(int i);
-// Stage `stage` in setting `setting` (0: the stage itself); null for random.
 const SelectStage* Shown(int stage, int setting);
 
 void DrawBackdrop(ImDrawList* d, int stage, int setting, ImU32 tint);
-// `highlight`: the row lit up (this player's, or the row the other is on), -1 none.
 void DrawLoadout(ImDrawList* d, const SelectFonts& f, bool right, const SelectSide& side, int highlight, bool interactive, SelectInput* in);
 void DrawTile(ImDrawList* d, const Slot& t, bool p1, bool p2, const SelectFonts& f);
 void DrawPlayerLine(ImDrawList* d, const SelectFonts& f, const SelectLive& live, int i);
@@ -85,7 +78,6 @@ void DrawLeaveDialog(ImDrawList* d, const SelectFonts& f, const SelectLive& live
 void DrawRandomList(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectInput* in);
 void DrawStageSelect(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectInput* in);
 
-// The whole screen for a lobby's state; what the player does goes to `in`.
 void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectInput* in);
 
 } // namespace sfv::mod::selectui
