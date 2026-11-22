@@ -1,5 +1,7 @@
 #include "mod/netplay_internal.h"
 
+#include "core/text.h"
+
 namespace sfv::mod::netplay {
 
 bool NetplayDriver::FrameWhileRunning(SfvGame& game) {
@@ -7,12 +9,12 @@ bool NetplayDriver::FrameWhileRunning(SfvGame& game) {
     game.RefreshRegions();
     if (game.LayoutVersion() != layoutAtStart_ || game.Regions().empty()) {
         FinishMatch(game);
-        if (s == State::Running) EndSession("match over");
+        if (s == State::Running) EndSession(Say(Str::net_end_match_over));
         return false;
     }
     if (s == State::Running && (peerLeft_ || session_->Phase() == NetplayPhase::Ended)) {
         FinishMatch(game);
-        EndSession("the other player left");
+        EndSession(Say(Str::net_end_player_left));
         return true;
     }
 
@@ -158,7 +160,7 @@ bool NetplayDriver::WatchNext() {
 }
 
 void NetplayDriver::Publish(float ahead) {
-    std::string status;
+    Said status;
     std::unique_lock lock(mutex_);
     shared_.live.syncing = sessionSyncing_;
     shared_.live.frame = session_->NextFrame();
@@ -185,7 +187,7 @@ void NetplayDriver::Publish(float ahead) {
         std::snprintf(buf, sizeof(buf), "P%d | frame %d | ping %u ms | rollbacks %u (max %u) | ahead %.1f%s",
                       host_ ? 1 : 2, session_->NextFrame(), net.last_ping, rb.total_count, rb.max_frames, ahead,
                       desyncFrame_ >= 0 ? (" | DESYNC at " + std::to_string(desyncFrame_)).c_str() : "");
-        status = sessionSyncing_ ? "connecting to the other player" : buf;
+        status = sessionSyncing_ ? Say(Str::net_status_syncing) : Said(buf);
     }
     lock.unlock();
     if (!status.empty()) SetStatus(status);
@@ -226,8 +228,8 @@ bool NetplayDriver::FrameWhileWatching(SfvGame& game) {
         FlowSetHoldResults(true);
         Log("netplay: the match is decided at frame %d", spectate_->NextFrame());
         if ((next_ == Next::None || next_ == Next::Lobby) && peerLeftRoom_) {
-            const std::string over = SetOverText();
-            EndSession(!over.empty() ? over : "the host left");
+            const Said over = SetOverText();
+            EndSession(!over.empty() ? over : Say(Str::net_end_host_left));
         } else if (next_ == Next::None || next_ == Next::Lobby) WatchNext();
     }
     {
@@ -241,7 +243,7 @@ bool NetplayDriver::FrameWhileWatching(SfvGame& game) {
         std::snprintf(buf, sizeof(buf), "watching | frame %d | %d frames in hand%s", spectate_->NextFrame(),
                       spectate_->Buffered(),
                       desyncFrame_ >= 0 ? (" | DESYNC at " + std::to_string(desyncFrame_)).c_str() : "");
-        SetStatus(buf);
+        SetStatus(Said(buf));
     }
     return true;
 }

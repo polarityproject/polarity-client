@@ -162,11 +162,11 @@ void DrawVariantList(ImDrawList* d, const SelectFonts& f, const std::vector<List
         ui::Control(d, x0, y, x1, y + kRowH, false);
         StagePicture(d, v.code, x0 + 1, y + 1, x0 + 1 + kPic, y + kRowH - 1, !vOn);
         const float tx = x0 + kPic + 16, room = x1 - 52 - tx;
-        Text(d, bold, g_v.L(17), g_v.P(tx, y + 11), vOn ? look::kGold : look::kMuted, "Setting " + std::to_string(k + 1));
+        Text(d, bold, g_v.L(17), g_v.P(tx, y + 11), vOn ? look::kGold : look::kMuted, TRF(Str::choices_setting_n, k + 1));
         Text(d, medium, g_v.L(18), g_v.P(tx, y + 37), vOn ? look::kCream : look::kMuted, Ellipsize(medium, 18, v.name, room));
         if (v.locked) {
             d->AddRectFilled(g_v.P(x0, y), g_v.P(x1, y + kRowH), Rgba(0, 0, 0, 110));
-            Text(d, f.text, g_v.L(15), g_v.P(x1 - 18, y + 27), look::kMuted, "Not owned", 1.0f);
+            Text(d, f.text, g_v.L(15), g_v.P(x1 - 18, y + 27), look::kMuted, TR(Str::select_not_owned_tile), 1.0f);
         } else CheckBox(d, x1 - 40, y + (kRowH - 24) / 2, vOn ? 1 : 0, 1);
         if (k == g_ui.variantCursor) ui::Ring(d, x0, y, x1, y + kRowH);
         if (Clicked() && MouseIn(g_v.P(x0, y), g_v.P(x1, y + kRowH))) {

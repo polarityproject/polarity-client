@@ -1,5 +1,7 @@
 #include "mod/netplay_internal.h"
 
+#include "core/text.h"
+
 namespace sfv::mod::netplay {
 
 void NetplayDriver::ReleaseResults() {
@@ -87,8 +89,8 @@ void NetplayDriver::RunJump() {
     }
     if (stop_ || Stopping() || GetState() != State::Jumping || BattleSetupCreations() != creationsAtJump_) return;
     Log("netplay: no battle %d s after the jump", kDirectJumpSeconds);
-    SetStatus("could not start the battle (see the log)");
-    EndSession("could not start the battle (see the log)");
+    SetStatus(Say(Str::net_end_no_battle));
+    EndSession(Say(Str::net_end_no_battle));
 }
 
 bool NetplayDriver::FrameWhileLoading(SfvGame& game) {
@@ -139,8 +141,8 @@ bool NetplayDriver::FrameWhileLoading(SfvGame& game) {
         selfLoaded_ = true;
         Log("netplay: loaded; waiting for the %s", role_ == Role::Spectator ? "host" : "other player");
     }
-    SetStatus(peerLoaded_ ? "starting" : selfLoaded_ ? "waiting for the other player"
-                                                     : "loading");
+    SetStatus(Say(peerLoaded_ ? Str::net_status_starting : selfLoaded_ ? Str::net_status_waiting
+                                                                       : Str::net_status_loading));
     if (selfLoaded_ && peerLoaded_ && !session_ && !spectate_) {
         MatchSetup peer;
         uint32_t peerChecksum;
@@ -155,7 +157,7 @@ bool NetplayDriver::FrameWhileLoading(SfvGame& game) {
         if (!mismatch.empty()) {
             Log("netplay: the battles differ (%s); here %s | there %s", mismatch.c_str(),
                 BattleSetupDescribe(loadedSetup_).c_str(), BattleSetupDescribe(peer).c_str());
-            EndSession("battles differ: " + mismatch);
+            EndSession(Say(Str::net_end_differ, mismatch.c_str()));
             return true;
         }
         if (frozenChecksum_ != peerChecksum) {
@@ -163,7 +165,7 @@ bool NetplayDriver::FrameWhileLoading(SfvGame& game) {
                 startsDifferAt_ = Clock::now();
                 SaveDifferentStart(game, peerChecksum);
             }
-            if (Clock::now() - startsDifferAt_ >= kDifferentStartGrace) EndSession("battles differ: starting state");
+            if (Clock::now() - startsDifferAt_ >= kDifferentStartGrace) EndSession(Say(Str::net_end_differ_start));
             return true;
         }
         Log("netplay: frozen state checksums %08X here and there", frozenChecksum_);
@@ -206,7 +208,7 @@ void NetplayDriver::StartSession(SfvGame& game) {
     if (!session_->Start(&error)) {
         Log("netplay: cannot start the session: %s", error.c_str());
         session_.reset();
-        EndSession("could not start");
+        EndSession(Say(Str::net_end_could_not_start));
         return;
     }
     layoutAtStart_ = game.LayoutVersion();
@@ -262,7 +264,7 @@ void NetplayDriver::StartWatching(SfvGame& game) {
     if (!spectate_->Start(&error)) {
         Log("netplay: cannot watch: %s", error.c_str());
         spectate_.reset();
-        EndSession("could not start");
+        EndSession(Say(Str::net_end_could_not_start));
         return;
     }
     layoutAtStart_ = game.LayoutVersion();

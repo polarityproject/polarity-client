@@ -1,5 +1,7 @@
 #include "mod/replay_internal.h"
 
+#include "core/text.h"
+
 namespace sfv::mod {
 
 using namespace replay;
@@ -138,7 +140,7 @@ bool ReplayRequestBenchmark(const std::string& path) {
         g_viewCommandsTaken = 0;
         g_view.active = true;
         g_view.benchmark = true;
-        g_view.title = "Benchmark";
+        g_view.title = TR(Str::stripe_benchmark_title);
     }
     ReplayRequest(path, 8, -1, -1, "", -1, -1, true, "", -1, 0, 0, -1, "", false, true);
     if (BattleCurrentFrameDriver()) return true;

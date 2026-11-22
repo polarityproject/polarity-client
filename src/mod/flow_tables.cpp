@@ -1,5 +1,7 @@
 #include "mod/flow_internal.h"
 
+#include "core/text.h"
+
 namespace sfv::mod {
 
 using namespace flow;
@@ -318,18 +320,33 @@ std::optional<uint8_t> FlowCostumeVariantsKnown(int index, int costume) {
     return std::nullopt;
 }
 
-const char* FlowSpecialVariantName(const std::string& code) {
-    if (code == "URN") return "Thong";
-    if (code == "Z41") return "Helmet off";
-    return nullptr;
+namespace {
+
+std::optional<Str> SpecialVariantKey(const std::string& code) {
+    if (code == "URN") return Str::flow_variant_thong;
+    if (code == "Z41") return Str::flow_variant_helmet_off;
+    return std::nullopt;
 }
 
-std::string FlowVariantLabel(const std::string& code, uint8_t variation) {
-    const char* special = FlowSpecialVariantName(code);
+std::string VariantLabelIn(size_t language, const std::string& code, uint8_t variation) {
+    const std::optional<Str> special = SpecialVariantKey(code);
     const bool dress = variation & kVariantDress, other = (variation & kVariantSpecial) && special;
-    if (dress && other) return std::string("Variant + ") + special;
-    if (other) return special;
-    return dress ? "Variant" : "Normal";
+    if (dress && other) return TextFormat(language, Str::flow_variant_both, TextIn(language, *special));
+    if (other) return TextIn(language, *special);
+    return TextIn(language, dress ? Str::flow_variant_dress : Str::flow_variant_normal);
+}
+
+} // namespace
+
+const char* FlowSpecialVariantName(const std::string& code) {
+    const std::optional<Str> key = SpecialVariantKey(code);
+    return key ? TextIn(0, *key) : nullptr;
+}
+
+std::string FlowVariantLabel(const std::string& code, uint8_t variation) { return VariantLabelIn(0, code, variation); }
+
+std::string FlowVariantText(const std::string& code, uint8_t variation) {
+    return VariantLabelIn(TextLanguage(), code, variation);
 }
 
 namespace {

@@ -159,9 +159,11 @@ uint8_t FlowCostumeVariants(int index, int costume);
 std::optional<uint8_t> FlowCostumeVariantsKnown(int index, int costume);
 // The character's special variant ("Thong", "Helmet off"), or nullptr.
 const char* FlowSpecialVariantName(const std::string& code);
-// A variation's name for the panel and logs: "Normal", "Variant", "Thong",
-// "Variant + Thong".
+// A variation's name: "Normal", "Variant", "Thong", "Variant + Thong".
+// FlowVariantLabel is the English, for logs; FlowVariantText is in the
+// player's language, for the screens.
 std::string FlowVariantLabel(const std::string& code, uint8_t variation);
+std::string FlowVariantText(const std::string& code, uint8_t variation);
 
 // The game's own name and color ids of each costume of character `index`
 // (by costume index): colors 0.. are the costume's colors, 100.. its EX

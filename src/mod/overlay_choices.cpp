@@ -25,7 +25,7 @@ Tables ReadTables() {
             costumes.push_back(k);
             const auto spec = specs.find(k);
             const bool named = spec != specs.end() && !spec->second.name.empty() && spec->second.name.rfind("ID_", 0) != 0;
-            names.push_back(named ? spec->second.name : "Costume " + std::to_string(costumes.size()));
+            names.push_back(named ? spec->second.name : TRF(Str::choices_costume_n, static_cast<int>(costumes.size())));
             std::vector<int> ids = spec != specs.end() ? spec->second.colors : std::vector<int>{};
             if (ids.empty()) {
                 for (int c = 0; c < n; c++) ids.push_back(c);
@@ -327,7 +327,7 @@ std::string SkillText(const std::string& code, bool vtrigger, unsigned index) {
 }
 
 std::string ColorLabel(int id) {
-    return id >= 100 ? "EX Color " + std::to_string(id - 99) : "Color " + std::to_string(id + 1);
+    return id >= 100 ? TRF(Str::choices_ex_color_n, id - 99) : TRF(Str::choices_color_n, id + 1);
 }
 
 std::string StageText(uint16_t index) {
@@ -485,11 +485,8 @@ void SwitchCharacter(Choices& c, int chara) {
     AvoidTakenColor(c);
 }
 
-std::string CommentText(const std::string& code, int comment) {
-    if (comment == kCommentAuto) return "Auto";
-    const auto it = std::find(g_tables.charas.begin(), g_tables.charas.end(), code);
-    if (it == g_tables.charas.end()) return "Comment " + std::to_string(comment);
-    return "Comment " + std::to_string(comment);
+std::string CommentText(const std::string&, int comment) {
+    return comment == kCommentAuto ? std::string(TR(Str::common_auto)) : TRF(Str::select_hint_comment_n, comment);
 }
 
 std::string FramesText(int n) { return TRF(n == 1 ? Str::common_frame : Str::common_frames, n); }

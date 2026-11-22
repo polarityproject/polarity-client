@@ -1,10 +1,25 @@
 #include "mod/netplay_internal.h"
 
+#include "core/text.h"
+
 namespace sfv::mod::netplay {
 
-void SetResult(const std::string& text) {
+Said Say(Str key, ...) {
+    va_list args;
+    va_start(args, key);
+    va_list again;
+    va_copy(again, args);
+    Said s;
+    s.english = TextFormatV(0, key, args);
+    s.shown = TextFormatV(TextLanguage(), key, again);
+    va_end(again);
+    va_end(args);
+    return s;
+}
+
+void SetResult(const Said& text) {
     std::lock_guard lock(g_resultMutex);
-    g_lastResult = text;
+    g_lastResult = text.shown;
 }
 
 std::string LastResult() {
@@ -92,16 +107,16 @@ std::string SetupMismatch(const MatchSetup& a, const MatchSetup& b) {
     return out;
 }
 
-const char* RejectText(lobby::RejectReason r) {
+Str RejectKey(lobby::RejectReason r) {
     switch (r) {
-        case lobby::RejectReason::WrongCode: return "wrong code";
-        case lobby::RejectReason::BuildMismatch: return "different mod build";
-        case lobby::RejectReason::Busy: return "the session is full";
-        case lobby::RejectReason::ProtocolMismatch: return "different protocol";
-        case lobby::RejectReason::NoSpectators: return "the host does not allow spectators";
-        case lobby::RejectReason::ViaKeeper: return "table sets are watched from the room";
+        case lobby::RejectReason::WrongCode: return Str::net_rejected_wrong_code;
+        case lobby::RejectReason::BuildMismatch: return Str::net_rejected_build;
+        case lobby::RejectReason::Busy: return Str::net_rejected_busy;
+        case lobby::RejectReason::ProtocolMismatch: return Str::net_rejected_protocol;
+        case lobby::RejectReason::NoSpectators: return Str::net_rejected_no_spectators;
+        case lobby::RejectReason::ViaKeeper: return Str::net_rejected_via_keeper;
     }
-    return "?";
+    return Str::net_rejected_protocol;
 }
 
 void ReturnToMenuOnceBattleRuns(SfvGame& game, uint64_t switchesAtJump, NoBattle none, int framesLeft) {
@@ -404,7 +419,7 @@ void NetplayDriver::Stop() {
         std::snprintf(summary, sizeof(summary), "left at frame %d: %u rollbacks (max %u), %d desync events",
                       session_->NextFrame(), rb.total_count, rb.max_frames, session_->DesyncCount());
         WriteMatchLog(path, rf, summary);
-        SetResult("left at frame " + std::to_string(session_->NextFrame()));
+        SetResult(Say(Str::net_end_left_at, session_->NextFrame()));
         session_.reset();
     }
     spectate_.reset();
@@ -501,7 +516,8 @@ void NetplayDriver::MaybeStartMatch() {
 
 void NetplayDriver::StartMatch(bool rematch) {
     MatchSetup setup = ChooseSetup(rematch);
-    std::string here, there;
+    Said here;
+    std::string there;
     if (LacksVersion(setup, &here, &there)) {
         EndSessionFor(here, there);
         return;
@@ -528,7 +544,7 @@ void NetplayDriver::MaybeResolve() {
     }
     Choice mine = myChoice_;
     if (ticket_.after == AfterMatch::Set) {
-        if (const std::string over = SetOverText(); !over.empty()) {
+        if (const Said over = SetOverText(); !over.empty()) {
             if (AgainOn()) {
                 ResolveAgain(mine, theirs);
                 return;
@@ -573,21 +589,21 @@ void NetplayDriver::SetState(State s) {
         std::lock_guard lock(mutex_);
         state_ = s;
     }
-    if (s == State::Connecting) SetStatus("connecting to " + options_.server);
-    else if (s == State::Hosting) SetStatus("HOST " + code_ + " (copied) - waiting for a player");
-    else if (s == State::Joining) SetStatus("joining " + code_);
-    else if (s == State::Lobby) SetStatus(role_ == Role::Spectator ? "watching: waiting for a match" : "lobby");
+    if (s == State::Connecting) SetStatus(Say(Str::net_status_connecting, options_.server.c_str()));
+    else if (s == State::Hosting) SetStatus(Say(Str::net_status_hosting, code_.c_str()));
+    else if (s == State::Joining) SetStatus(Say(Str::net_status_joining, code_.c_str()));
+    else if (s == State::Lobby) SetStatus(Say(role_ == Role::Spectator ? Str::net_status_watching : Str::net_status_lobby));
     if (s == State::Lobby && host_) stageLocked_ = ticket_.after == AfterMatch::Set;
-    else if (s == State::Jumping) SetStatus("jumping into battle");
-    else if (s == State::PostMatch) SetStatus("match over: rematch or character select?");
+    else if (s == State::Jumping) SetStatus(Say(Str::net_status_jumping));
+    else if (s == State::PostMatch) SetStatus(Say(Str::net_status_post_match));
 }
 
-void NetplayDriver::SetStatus(const std::string& text) {
+void NetplayDriver::SetStatus(const Said& text) {
     {
         std::lock_guard lock(mutex_);
-        status_ = text;
+        status_ = text.shown;
     }
-    sfv::mod::StatusSet(text);
+    sfv::mod::StatusSet(text.english);
 }
 
 } // namespace sfv::mod::netplay
@@ -654,10 +670,10 @@ void NetPlayTicket(const MatchTicket& ticket, const NetplayOptions& options) {
     auto d = std::make_unique<NetplayDriver>(*g_game, g_reportDir, g_modVersion);
     std::string error;
     if (!d->Open(options, ticket, &error)) {
-        const std::string what = ticket.host ? "cannot host: " : "cannot join: ";
-        Log("netplay: %s%s", what.c_str(), error.c_str());
-        StatusSet(what + error);
-        SetResult(what + error);
+        const Said why = Say(ticket.host ? Str::net_end_cannot_host : Str::net_end_cannot_join, error.c_str());
+        Log("netplay: %s", why.english.c_str());
+        StatusSet(why.english);
+        SetResult(why);
         return;
     }
     if (ticket.host) {
@@ -668,8 +684,9 @@ void NetPlayTicket(const MatchTicket& ticket, const NetplayOptions& options) {
     const std::string& code = ticket.roomCode;
     if (!d->StartJoin(code)) {
         Log("netplay: not a valid match code: %s", code.c_str());
-        StatusSet("not a valid match code");
-        SetResult("not a valid match code");
+        const Said why = Say(Str::net_end_bad_code);
+        StatusSet(why.english);
+        SetResult(why);
         return;
     }
     Replace(std::move(d));

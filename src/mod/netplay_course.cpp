@@ -1,5 +1,7 @@
 #include "mod/netplay_internal.h"
 
+#include "core/text.h"
+
 namespace sfv::mod::netplay {
 
 bool NetplayDriver::AgainOn() const {
@@ -24,7 +26,7 @@ void NetplayDriver::ResolveAgain(Choice mine, Choice theirs) {
     }
     const bool late = now - decidedAt_ >= kSetVote;
     if (late && mine == Choice::None && theirs == Choice::None) {
-        Log("netplay: %s; neither chose by the vote's end: back to the room", SetOverText().c_str());
+        Log("netplay: %s; neither chose by the vote's end: back to the room", SetOverText().english.c_str());
         again_ = Again::Refused;
         return;
     }
@@ -37,7 +39,7 @@ void NetplayDriver::ResolveAgain(Choice mine, Choice theirs) {
     againSelect_ = select;
     againAskedAt_ = now;
     again_ = Again::Ask;
-    Log("netplay: %s; both play on (%s)%s: asking the keeper for the next set", SetOverText().c_str(),
+    Log("netplay: %s; both play on (%s)%s: asking the keeper for the next set", SetOverText().english.c_str(),
         select ? "character select" : "rematch", late ? ", the vote's time up" : "");
 }
 
@@ -144,11 +146,10 @@ void NetplayDriver::Transitions() {
 void NetplayDriver::RefuseFromPeer(const std::string& why) {
     if (GetState() == State::Ended || next_ == Next::End) return;
     Log("netplay: refused from the other side: %s", why.c_str());
-    EndSessionFor("the other side sent a pick this game does not have (" + why + ")",
-                  "the other side's game does not have a pick sent from here (" + why + ")");
+    EndSessionFor(Say(Str::net_end_no_pick, why.c_str()), Say(Str::net_end_no_pick_theirs, why.c_str()).english);
 }
 
-void NetplayDriver::EndSessionFor(const std::string& why, const std::string& theirs) {
+void NetplayDriver::EndSessionFor(const Said& why, const std::string& theirs) {
     {
         std::lock_guard lock(mutex_);
         shared_.byeText = theirs;
@@ -157,7 +158,7 @@ void NetplayDriver::EndSessionFor(const std::string& why, const std::string& the
     EndSession(why);
 }
 
-bool NetplayDriver::LacksVersion(const MatchSetup& s, std::string* here, std::string* there) {
+bool NetplayDriver::LacksVersion(const MatchSetup& s, Said* here, std::string* there) {
     for (const PlayerSetup& p : s.players) {
         const std::string code = UnpackCode(p.character);
         if (p.version < 0 || FlowHasCharaVersion(code, p.version)) continue;
@@ -165,10 +166,8 @@ bool NetplayDriver::LacksVersion(const MatchSetup& s, std::string* here, std::st
         const std::string name = index >= 0 ? FlowCharaName(index) : code;
         const int newest = FlowNewestLocalVersion(code);
         Log("netplay: this game lacks %s version %d (its newest: %d)", code.c_str(), p.version, newest);
-        *here = "this game lacks " + name + "'s final version (" + std::to_string(p.version) + ", newest here " +
-                std::to_string(newest) + "): verify the game files in Steam";
-        *there = "the other player's game lacks " + name + "'s final version (" + std::to_string(p.version) +
-                 "): they should verify their game files in Steam";
+        *here = Say(Str::net_end_lacks_version, name.c_str(), p.version, newest);
+        *there = Say(Str::net_end_lacks_version_theirs, name.c_str(), p.version).english;
         return true;
     }
     return false;
@@ -203,25 +202,25 @@ bool NetplayDriver::TookForfeit(int seat) {
         shared_.forfeitSeat = seat;
     }
     g_forfeitSeat = seat;
-    EndSession("the other player left: the set ends here");
+    EndSession(Say(Str::net_end_set_forfeit));
     return true;
 }
 
-std::string NetplayDriver::SetOverText() {
-    if (ticket_.after != AfterMatch::Set) return "";
+Said NetplayDriver::SetOverText() {
+    if (ticket_.after != AfterMatch::Set) return {};
     uint16_t wins[kNumPlayers];
     {
         std::lock_guard lock(mutex_);
         for (int i = 0; i < kNumPlayers; i++) wins[i] = shared_.seats[i].wins;
     }
     const int winner = SetWinner(ticket_.rules, wins);
-    if (winner < 0) return "";
-    return "P" + std::to_string(winner + 1) + " won the set " + std::to_string(wins[winner]) + " - " + std::to_string(wins[1 - winner]);
+    if (winner < 0) return {};
+    return Say(Str::net_end_set_won, winner + 1, static_cast<int>(wins[winner]), static_cast<int>(wins[1 - winner]));
 }
 
-void NetplayDriver::EndSession(const std::string& why) {
+void NetplayDriver::EndSession(const Said& why) {
     if (GetState() == State::Ended || next_ == Next::End) return;
-    Log("netplay: session over: %s", why.c_str());
+    Log("netplay: session over: %s", why.english.c_str());
     SetStatus(why);
     SetResult(why);
     if (!peerLeft_) byePending_ = true;

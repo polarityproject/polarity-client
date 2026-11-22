@@ -390,8 +390,6 @@ void AvoidTakenColor(Choices& c);
 
 void SwitchCharacter(Choices& c, int chara);
 
-std::string CommentText(const std::string& code, int comment);
-
 constexpr int kMaxDelayFrames = 10;
 
 std::string FramesText(int n);

@@ -1,5 +1,7 @@
 #include "mod/netplay_internal.h"
 
+#include "core/text.h"
+
 namespace sfv::mod::netplay {
 
 void NetplayDriver::StartThread() {
@@ -80,10 +82,8 @@ void NetplayDriver::ControlTick() {
     const State s = GetState();
     if (s == State::Ended || s == State::Idle) return;
     if (s == State::Connecting && now - connectingSince_ > kConnectTimeout) {
-        EndSession(weyve_ && weyve_->View().server != WeyveRoomView::Server::Connected
-                       ? "cannot reach the server " + options_.server +
-                             " (a firewall, antivirus or this network may block its port: allow StreetFighterV.exe, or try another network)"
-                       : "no answer from the room");
+        EndSession(weyve_ && weyve_->View().server != WeyveRoomView::Server::Connected ? Say(Str::net_end_no_server, options_.server.c_str())
+                                                                                       : Say(Str::net_end_no_room_answer));
         return;
     }
     if (CheckSilence(now)) return;
@@ -91,7 +91,7 @@ void NetplayDriver::ControlTick() {
 
     if (s == State::Joining) {
         if (now - helloSince_ > kJoinTimeout) {
-            EndSession("could not reach the host");
+            EndSession(Say(Str::net_end_no_host));
             return;
         }
         lobby::Message hello;
@@ -128,7 +128,7 @@ void NetplayDriver::RoomEvents() {
                 }
                 break;
             case WeyveEvent::Type::RoomError:
-                if (GetState() == State::Connecting) EndSession(host_ ? "cannot create a room: " + e.text : "cannot join: " + e.text);
+                if (GetState() == State::Connecting) EndSession(Say(host_ ? Str::net_end_cannot_create : Str::net_end_cannot_join, e.text.c_str()));
                 break;
             case WeyveEvent::Type::PeerLeft:
                 if (e.peer == peer_) {
@@ -142,7 +142,7 @@ void NetplayDriver::RoomEvents() {
                     if (s != State::Ended) {
                         Log("netplay: the other %s left the room", host_ || role_ == Role::Player ? "player" : "side");
                         peerLeft_ = true;
-                        EndSession(host_ || role_ == Role::Player ? "the other player left" : "the host left");
+                        EndSession(Say(host_ || role_ == Role::Player ? Str::net_end_player_left : Str::net_end_host_left));
                     }
                 } else {
                     std::lock_guard lock(mutex_);
@@ -158,7 +158,7 @@ void NetplayDriver::RoomEvents() {
                     serverLost_ = true;
                     break;
                 }
-                EndSession(e.text);
+                EndSession(Said(e.text));
                 break;
             }
             case WeyveEvent::Type::Chat:
@@ -183,12 +183,11 @@ void NetplayDriver::RoomEvents() {
                 const std::string theirs = version == v.data.end() ? "" : version->second;
                 Log("netplay: the room's build is %s (Polarity %s), this one %s (Polarity %s)", build->second.c_str(),
                     theirs.empty() ? "?" : theirs.c_str(), Hex64(build_).c_str(), modVersion_.c_str());
-                std::string why = "rejected: different mod build";
+                Said why = Say(Str::net_rejected_build);
                 if (theirs.empty() || CompareVersions(theirs, modVersion_) < 0) {
-                    why = "the host runs an older Polarity" + (theirs.empty() ? std::string() : " (" + theirs + ")") +
-                          "; they need to update";
+                    why = theirs.empty() ? Say(Str::net_end_older_host) : Say(Str::net_end_older_host_version, theirs.c_str());
                 } else if (CompareVersions(theirs, modVersion_) > 0) {
-                    why = "the host runs Polarity " + theirs + "; update from Polarity settings, Updates";
+                    why = Say(Str::net_end_newer_host, theirs.c_str());
                 } else {
                     const auto game = v.data.find("game");
                     const std::string theirGame = game == v.data.end() ? "" : game->second;
@@ -199,11 +198,11 @@ void NetplayDriver::RoomEvents() {
                     };
                     if (!theirGame.empty()) Log("netplay: the room's game build is %s, this one %s", theirGame.c_str(), mine.c_str());
                     if (!theirGame.empty() && part(theirGame, "sfv-") != part(mine, "sfv-")) {
-                        why = "the host's Street Fighter V is another version (check for a game update in Steam)";
+                        why = Say(Str::net_end_other_game);
                     } else if (!theirGame.empty() && part(theirGame, "noise-") != part(mine, "noise-")) {
-                        why = "the host's Polarity " + theirs + " checks the game state differently; one of you should reinstall it";
+                        why = Say(Str::net_end_other_noise, theirs.c_str());
                     } else {
-                        why = "the host runs another build of Polarity " + theirs + "; one of you should reinstall it";
+                        why = Say(Str::net_end_other_build, theirs.c_str());
                     }
                 }
                 EndSession(why);
@@ -241,8 +240,8 @@ bool NetplayDriver::CheckSilence(Clock::time_point now) {
     if (!waiting && peer_ && now - heard_ > kSilence) {
         Log("netplay: nothing from the other side for %lld s",
             static_cast<long long>(std::chrono::duration_cast<std::chrono::seconds>(now - heard_).count()));
-        const std::string over = SetOverText();
-        EndSession(!over.empty() ? over : "connection lost");
+        const Said over = SetOverText();
+        EndSession(!over.empty() ? over : Say(Str::net_end_lost));
         return true;
     }
     if (host_) {
@@ -389,7 +388,7 @@ void NetplayDriver::HostBeat(State s) {
 void NetplayDriver::GuestBeat(State s) {
     if (role_ == Role::Player && s == State::PostMatch && ticket_.after == AfterMatch::Set && !againOffered_ &&
         Clock::now() - decidedAt_ > kSetNextGameAfter + std::chrono::seconds(1)) {
-        if (const std::string over = SetOverText(); !over.empty()) {
+        if (const Said over = SetOverText(); !over.empty()) {
             EndSession(over);
             return;
         }
@@ -599,9 +598,9 @@ void NetplayDriver::OnHostMessage(uint64_t from, const lobby::Message& m, State 
                 Log("netplay: the other player left%s%s%s", m.text.empty() ? "" : ": ", m.text.c_str(), m.forfeit ? " (a forfeit)" : "");
                 peerLeft_ = true;
                 if (m.forfeit && TookForfeit(1)) break;
-                const std::string over = SetOverText();
-                EndSession(!over.empty() ? over : m.text.empty() ? "the other player left"
-                                                                 : m.text);
+                const Said over = SetOverText();
+                EndSession(!over.empty() ? over : m.text.empty() ? Say(Str::net_end_player_left)
+                                                                 : Said(m.text));
             } else if (w) {
                 std::lock_guard l(mutex_);
                 Log("netplay: spectator %s left", w->name.c_str());
@@ -631,8 +630,9 @@ void NetplayDriver::OnGuestMessage(uint64_t from, const lobby::Message& m, State
             break;
         case lobby::Type::Reject:
             if (s == State::Joining) {
-                Log("netplay: rejected: %s", RejectText(m.reason));
-                EndSession(std::string("rejected: ") + RejectText(m.reason));
+                const Said why = Say(RejectKey(m.reason));
+                Log("netplay: %s", why.english.c_str());
+                EndSession(why);
             }
             break;
         case lobby::Type::SessionState: {
@@ -668,7 +668,8 @@ void NetplayDriver::OnGuestMessage(uint64_t from, const lobby::Message& m, State
                 if (WatchNext()) break;
             }
             if (role_ == Role::Player) {
-                std::string here, there;
+                Said here;
+                std::string there;
                 if (LacksVersion(m.setup, &here, &there)) {
                     EndSessionFor(here, there);
                     break;
@@ -731,10 +732,11 @@ void NetplayDriver::OnGuestMessage(uint64_t from, const lobby::Message& m, State
                 Log("netplay: the host left%s%s%s", m.text.empty() ? "" : ": ", m.text.c_str(), m.forfeit ? " (a forfeit)" : "");
                 peerLeft_ = true;
                 if (m.forfeit && TookForfeit(0)) break;
-                const std::string over = SetOverText();
-                EndSession(!over.empty() ? over : !m.text.empty()     ? m.text
-                                              : role_ == Role::Player ? "the other player left"
-                                                                      : "the host left");
+                const Said over = SetOverText();
+                EndSession(!over.empty()           ? over
+                           : !m.text.empty()       ? Said(m.text)
+                           : role_ == Role::Player ? Say(Str::net_end_player_left)
+                                                   : Say(Str::net_end_host_left));
             }
             break;
         default:

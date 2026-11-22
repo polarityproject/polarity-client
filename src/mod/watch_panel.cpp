@@ -2,6 +2,7 @@
 
 #include "mod/watch_panel.h"
 
+#include "core/text.h"
 #include "mod/rooms_screen.h"
 #include "mod/ui_kit.h"
 
@@ -41,17 +42,17 @@ void WatchPanelDraw(const HubFonts& f, const WatchPanelLive& live, float alpha, 
     m.h = 44 + 20 + 34 + 18 + 52 + 24 + 48;
     m.y0 = 440;
     m.glass = Glass::Fight;
-    m.kicker = live.table >= 0 ? "WATCHING \xC2\xB7 TABLE " + std::to_string(live.table + 1) : "WATCHING";
-    m.aside = "GAME " + std::to_string(at >= 0 ? at + 1 : std::max(count, 1));
+    m.kicker = live.table >= 0 ? TRF(Str::watch_kicker_table, live.table + 1) : std::string(TR(Str::watch_kicker));
+    m.aside = TRF(Str::watch_game_n, at >= 0 ? at + 1 : std::max(count, 1));
     m.asideCol = look::kGold;
-    m.hint = "Each game plays from the start. Results stay hidden.";
-    m.prompts = {{"button_a", "Go"}, {"button_y", "Stop watching"}, {"button_b", "Resume"}};
+    m.hint = TR(Str::watch_hint);
+    m.prompts = {{"button_a", TR(Str::watch_go)}, {"button_y", TR(Str::watch_stop)}, {"button_b", TR(Str::watch_resume)}};
     int prompt = -1;
     float y = Modal(d, bold, f.body, m, &prompt) + 20;
     std::string names[2];
-    for (int i = 0; i < 2; i++) names[i] = live.players[i].empty() ? (i == 0 ? "P1" : "P2") : live.players[i];
+    for (int i = 0; i < 2; i++) names[i] = live.players[i].empty() ? TR(i == 0 ? Str::fight_vote_p1 : Str::fight_vote_p2) : live.players[i];
     auto lineW = [&](float size) {
-        return TextW(f.display, size, names[0]) + TextW(f.display, size, names[1]) + TextW(f.display, size, "vs") + 4 * 12 + 2 * 32;
+        return TextW(f.display, size, names[0]) + TextW(f.display, size, names[1]) + TextW(f.display, size, TR(Str::watch_vs)) + 4 * 12 + 2 * 32;
     };
     float size = 28;
     while (size > 18 && lineW(size) > 704) size -= 1;
@@ -62,8 +63,8 @@ void WatchPanelDraw(const HubFonts& f, const WatchPanelLive& live, float alpha, 
     const float ty = y + (28 - size) / 2;
     for (int i = 0; i < 2; i++) {
         if (i == 1) {
-            Text(d, f.display, g_v.L(size), g_v.P(x, ty), look::kSoft, "vs");
-            x += TextW(f.display, size, "vs") + 12;
+            Text(d, f.display, g_v.L(size), g_v.P(x, ty), look::kSoft, TR(Str::watch_vs));
+            x += TextW(f.display, size, TR(Str::watch_vs)) + 12;
         }
         if (const float fw = RoomsScreenDrawFlag(d, f.strong, live.countries[i], x, y + 11, 15)) x += fw + 12;
         Text(d, f.display, g_v.L(size), g_v.P(x, ty), look::kCream, names[i]);
@@ -71,7 +72,7 @@ void WatchPanelDraw(const HubFonts& f, const WatchPanelLive& live, float alpha, 
     }
     y += 34 + 18;
     static const char* const kGlyphs[kButtons] = {"button_lb", "button_x", "button_rb"};
-    static const char* const kLabels[kButtons] = {"Previous game", "Current game", "Next game"};
+    const char* const kLabels[kButtons] = {TR(Str::watch_previous), TR(Str::watch_current), TR(Str::watch_next)};
     if (!can[g_focus]) g_focus = kCurrent;
     int pressed = -1;
     const float bw = (704 - (kButtons - 1) * 12) / float(kButtons);

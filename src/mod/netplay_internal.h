@@ -7,6 +7,7 @@
 #include "mod/benchmark.h"
 #include "mod/entitlements.h"
 #include "core/display_name.h"
+#include "core/text.h"
 #include "core/match_code.h"
 #include "core/match_ticket.h"
 #include "core/netplay.h"
@@ -107,10 +108,21 @@ enum class Next { None,
                   Lobby,
                   End };
 
+struct Said {
+    std::string english, shown;
+    Said() = default;
+
+    explicit Said(const std::string& received) : english(received), shown(received) {}
+
+    bool empty() const { return english.empty(); }
+};
+
+Said Say(Str key, ...);
+
 inline std::mutex g_resultMutex;
 inline std::string g_lastResult;
 
-void SetResult(const std::string& text);
+void SetResult(const Said& text);
 
 std::string LastResult();
 
@@ -126,7 +138,7 @@ bool LeaveBattleForStageSelect(SfvGame& game, const std::atomic<bool>& stop);
 
 std::string SetupMismatch(const MatchSetup& a, const MatchSetup& b);
 
-const char* RejectText(lobby::RejectReason r);
+Str RejectKey(lobby::RejectReason r);
 
 struct Watcher {
     std::string name;
@@ -274,9 +286,9 @@ private:
 
     void RefuseFromPeer(const std::string& why);
 
-    void EndSessionFor(const std::string& why, const std::string& theirs);
+    void EndSessionFor(const Said& why, const std::string& theirs);
 
-    static bool LacksVersion(const MatchSetup& s, std::string* here, std::string* there);
+    static bool LacksVersion(const MatchSetup& s, Said* here, std::string* there);
 
     std::string SetScoreText();
 
@@ -286,9 +298,9 @@ private:
 
     bool TookForfeit(int seat);
 
-    std::string SetOverText();
+    Said SetOverText();
 
-    void EndSession(const std::string& why);
+    void EndSession(const Said& why);
 
     PlayerSetup RollEleven(const PlayerSetup& before);
 
@@ -361,7 +373,7 @@ private:
 
     void SetState(State s);
 
-    void SetStatus(const std::string& text);
+    void SetStatus(const Said& text);
 
     SfvGame& game_;
     std::wstring reportDir_;

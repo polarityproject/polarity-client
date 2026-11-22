@@ -2,6 +2,7 @@
 
 #include "mod/watch_chat.h"
 
+#include "core/text.h"
 #include "core/keeper_protocol.h"
 #include "mod/log.h"
 #include "mod/room_screen.h"
@@ -160,7 +161,7 @@ void WatchChatDraw(const HubFonts& f, const RoomsView& v, bool takeInput, WatchC
         while (!shownText.empty() && TextW(f.body, kTextSize, shownText) > wrap - 20) shownText.erase(0, 1);
         const bool caret = static_cast<int>(ImGui::GetTime() * 2) % 2 == 0;
         Text(d, f.body, g_v.L(kTextSize), g_v.P(kX0 + kPad + 2, fy + 1), kCream, shownText + (caret ? "|" : ""));
-        if (g_text.empty()) Text(d, f.body, g_v.L(kTextSize), g_v.P(kX0 + kPad + 8, fy + 1), IM_COL32(198, 193, 180, 160), "Enter sends, Escape cancels");
+        if (g_text.empty()) Text(d, f.body, g_v.L(kTextSize), g_v.P(kX0 + kPad + 8, fy + 1), IM_COL32(198, 193, 180, 160), TR(Str::watch_chat_hint));
     }
 }
 

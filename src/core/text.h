@@ -6,6 +6,7 @@
 
 #include "strings_table.h"
 
+#include <cstdarg>
 #include <cstddef>
 #include <string>
 
@@ -15,6 +16,13 @@ const char* TR(Str key);
 
 // TR(key) as a printf format with the arguments after it.
 std::string TRF(Str key, ...);
+
+// The key's text in a given language column (English where that column is
+// empty), and that text as a printf format with the arguments in args. Log
+// lines that say what a screen says use column 0.
+const char* TextIn(size_t language, Str key);
+std::string TextFormatV(size_t language, Str key, va_list args);
+std::string TextFormat(size_t language, Str key, ...);
 
 // The language by its column in the table (0: English); out of range: English.
 void TextSetLanguage(size_t language);

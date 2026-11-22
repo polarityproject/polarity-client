@@ -15,21 +15,18 @@ std::atomic<size_t> g_language{0};
 
 } // namespace
 
-const char* TR(Str key) {
+const char* TextIn(size_t language, Str key) {
     const size_t k = static_cast<size_t>(key);
     if (k >= kStringCount) return "";
-    const char* text = kStrings[g_language.load(std::memory_order_relaxed)][k];
+    const char* text = kStrings[language < kLanguageCount ? language : 0][k];
     return *text ? text : kStrings[0][k];
 }
 
-std::string TRF(Str key, ...) {
-    const char* format = TR(key);
-    va_list args;
-    va_start(args, key);
+std::string TextFormatV(size_t language, Str key, va_list args) {
+    const char* format = TextIn(language, key);
     va_list again;
     va_copy(again, args);
     const int n = std::vsnprintf(nullptr, 0, format, args);
-    va_end(args);
     std::string out;
     if (n > 0) {
         std::vector<char> buf(static_cast<size_t>(n) + 1);
@@ -37,6 +34,24 @@ std::string TRF(Str key, ...) {
         out.assign(buf.data(), static_cast<size_t>(n));
     }
     va_end(again);
+    return out;
+}
+
+std::string TextFormat(size_t language, Str key, ...) {
+    va_list args;
+    va_start(args, key);
+    std::string out = TextFormatV(language, key, args);
+    va_end(args);
+    return out;
+}
+
+const char* TR(Str key) { return TextIn(g_language.load(std::memory_order_relaxed), key); }
+
+std::string TRF(Str key, ...) {
+    va_list args;
+    va_start(args, key);
+    std::string out = TextFormatV(g_language.load(std::memory_order_relaxed), key, args);
+    va_end(args);
     return out;
 }
 

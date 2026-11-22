@@ -806,3 +806,84 @@ hud.vote.leave_room	Leave returns to the room.
 hud.vote.leave_set	Leave ends the set here.
 hud.vote.their_delay	Input delay %d frame
 hud.vote.their_delays	Input delay %d frames
+
+# How a session ended and what it is doing: the "Session over" toast, table notices and the loading strip (netplay_*.cpp). The log and the window title keep the English, and the *_theirs rows go to the other player in English.
+net.end.no_pick	the other side sent a pick this game does not have (%s)
+net.end.no_pick_theirs	the other side's game does not have a pick sent from here (%s)
+net.end.lacks_version	this game lacks %s's final version (%d, newest here %d): verify the game files in Steam
+net.end.lacks_version_theirs	the other player's game lacks %s's final version (%d): they should verify their game files in Steam
+net.end.set_forfeit	the other player left: the set ends here
+net.end.set_won	P%d won the set %d - %d
+net.end.no_battle	could not start the battle (see the log)
+net.end.differ	battles differ: %s
+net.end.differ_start	battles differ: starting state
+net.end.could_not_start	could not start
+net.end.no_server	cannot reach the server %s (a firewall, antivirus or this network may block its port: allow StreetFighterV.exe, or try another network)
+net.end.no_room_answer	no answer from the room
+net.end.no_host	could not reach the host
+net.end.cannot_create	cannot create a room: %s
+net.end.cannot_host	cannot host: %s
+net.end.cannot_join	cannot join: %s
+net.end.player_left	the other player left
+net.end.host_left	the host left
+net.end.older_host	the host runs an older Polarity; they need to update
+net.end.older_host_version	the host runs an older Polarity (%s); they need to update
+net.end.newer_host	the host runs Polarity %s; update from Polarity settings, Updates
+net.end.other_game	the host's Street Fighter V is another version (check for a game update in Steam)
+net.end.other_noise	the host's Polarity %s checks the game state differently; one of you should reinstall it
+net.end.other_build	the host runs another build of Polarity %s; one of you should reinstall it
+net.end.lost	connection lost
+net.end.match_over	match over
+net.end.bad_code	not a valid match code
+net.end.left_at	left at frame %d
+net.rejected.wrong_code	rejected: wrong code
+net.rejected.build	rejected: different mod build
+net.rejected.busy	rejected: the session is full
+net.rejected.protocol	rejected: different protocol
+net.rejected.no_spectators	rejected: the host does not allow spectators
+net.rejected.via_keeper	rejected: table sets are watched from the room
+net.status.connecting	connecting to %s
+net.status.hosting	HOST %s (copied) - waiting for a player
+net.status.joining	joining %s
+net.status.watching	watching: waiting for a match
+net.status.lobby	lobby
+net.status.jumping	jumping into battle
+net.status.post_match	match over: rematch or character select?
+net.status.starting	starting
+net.status.waiting	waiting for the other player
+net.status.loading	loading
+net.status.syncing	connecting to the other player
+
+# The watch panel and spectator chat while watching a set (watch_panel.cpp, watch_chat.cpp).
+watch.kicker	WATCHING
+watch.kicker_table	WATCHING · TABLE %d
+watch.game_n	GAME %d
+watch.hint	Each game plays from the start. Results stay hidden.
+watch.go	Go
+watch.stop	Stop watching
+watch.resume	Resume
+watch.vs	vs
+watch.previous	Previous game
+watch.current	Current game
+watch.next	Next game
+watch.chat_hint	Enter sends, Escape cancels
+
+# Labels for picks without a name in the game data: costumes, colors, stage settings and costume variants (overlay_choices.cpp, select_stages.cpp, flow_tables.cpp). Logs keep the English variant names.
+choices.costume_n	Costume %d
+choices.color_n	Color %d
+choices.ex_color_n	EX Color %d
+choices.setting_n	Setting %d
+flow.variant.normal	Normal
+flow.variant.dress	Variant
+flow.variant.thong	Thong
+flow.variant.helmet_off	Helmet off
+flow.variant.both	Variant + %s
+
+# The status line over a direct match (overlay_select.cpp), and the benchmark's title in the stripe (replay_*.cpp).
+strip.hosting	Hosting %s: waiting for the other player
+strip.lobby	Lobby
+strip.match_over	Match over
+strip.watching	watching  frame %d  %d in hand
+strip.playing	%s  ping %u ms  ahead %.1f  rollbacks %u (max %u)  delay %d
+strip.desync	%s  DESYNC at %d
+stripe.benchmark_title	Benchmark

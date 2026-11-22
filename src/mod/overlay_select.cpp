@@ -87,7 +87,7 @@ SelectSide SelectSideFor(const NetView& v, int i) {
     s.rows[1].swatch2 = swatch.second;
     s.rows[1].hint = "";
     const int variants = mine ? VariantsOf(chara, pick.costume) : 1;
-    s.rows[2].value = variants < 0 ? std::string(TR(Str::select_checking)) : FlowVariantLabel(code, pick.variation);
+    s.rows[2].value = variants < 0 ? std::string(TR(Str::select_checking)) : FlowVariantText(code, pick.variation);
     s.rows[2].fixed = mine && variants <= 0;
     s.rows[2].hint = variants == 0 ? TR(Str::select_no_variants) : "";
     s.rows[3].value = SkillText(code, false, pick.vskill);
@@ -242,26 +242,24 @@ void ApplySelectInput(const SelectInput& in, const NetView& v) {
 void DrawStrip(const NetView& v) {
     std::string text;
     ImVec4 color = kDim;
-    char buf[160];
     switch (v.phase) {
-        case NetView::Phase::Hosting: text = "Hosting " + v.code + ": waiting for the other player"; break;
+        case NetView::Phase::Hosting: text = TRF(Str::strip_hosting, v.code.c_str()); break;
         case NetView::Phase::Connecting:
         case NetView::Phase::Joining:
         case NetView::Phase::Jumping:
         case NetView::Phase::Loading: text = v.status; break;
-        case NetView::Phase::Lobby: text = "Lobby"; break;
-        case NetView::Phase::PostMatch: text = "Match over"; break;
+        case NetView::Phase::Lobby: text = TR(Str::strip_lobby); break;
+        case NetView::Phase::PostMatch: text = TR(Str::strip_match_over); break;
         case NetView::Phase::Running:
             if (v.syncing) {
-                text = "connecting...";
+                text = TR(Str::hud_bar_connecting);
                 break;
             }
-            if (v.spectator) std::snprintf(buf, sizeof(buf), "watching  frame %d  %d in hand", v.frame, v.behind);
-            else std::snprintf(buf, sizeof(buf), "%s  ping %u ms  ahead %.1f  rollbacks %u (max %u)  delay %d", v.host ? "P1" : "P2",
-                               v.pingMs, v.framesAhead, v.rollbacks, v.longestRollback, v.inputDelay);
-            text = buf;
+            text = v.spectator ? TRF(Str::strip_watching, v.frame, v.behind)
+                               : TRF(Str::strip_playing, TR(v.host ? Str::fight_vote_p1 : Str::fight_vote_p2), v.pingMs, v.framesAhead,
+                                     v.rollbacks, v.longestRollback, v.inputDelay);
             if (v.desyncFrame >= 0) {
-                text += "  DESYNC at " + std::to_string(v.desyncFrame);
+                text = TRF(Str::strip_desync, text.c_str(), v.desyncFrame);
                 color = kRed;
             }
             break;

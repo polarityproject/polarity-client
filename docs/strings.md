@@ -53,6 +53,13 @@ bad one has to fail.
 language, and `TRF(Str::fight_vote_of_set, 3)`, the text used as a printf
 format. `TextSetLanguage` picks the language by its column (0 is English).
 
+Log lines stay in English. Where a log line says what a screen says,
+`TextIn(0, key)` and `TextFormat(0, key, ...)` give the English of that row.
+The netplay driver keeps each session-end reason and status as a `Said`: the
+English for the log, the window title and the other player, and the
+translation for the screens. Text that arrives from the server or the other
+player is shown as it came.
+
 Adding a language is a column in the table. Text in the screens has to fit
 in every language, so a new or longer string means a screenshot of each
 window it appears in, at the narrowest size that window gets.

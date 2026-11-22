@@ -1,5 +1,7 @@
 #include "mod/replay_internal.h"
 
+#include "core/text.h"
+
 namespace sfv::mod {
 
 using namespace replay;
@@ -148,7 +150,7 @@ bool ReplayDriver::StressFrame(SfvGame& game) {
         g_view.benchmark = true;
         g_view.frame = std::max(0, session_->NextFrame() - 1);
         g_view.frames = last_ + 1;
-        g_view.title = "Benchmark";
+        g_view.title = TR(Str::stripe_benchmark_title);
     }
     if (session_->NextFrame() > last_) {
         Finish(game);

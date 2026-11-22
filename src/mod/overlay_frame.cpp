@@ -1,5 +1,7 @@
 #include "mod/overlay_internal.h"
 
+#include "core/text.h"
+
 namespace sfv::mod::overlay {
 
 bool OnMenuScreen() {
@@ -324,7 +326,7 @@ void Draw(IDXGISwapChain* swapChain) {
                 WatchChatDraw(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, rooms, !watchPanel && !g_visible, &ci);
                 if (!ci.send.empty() && !RoomsChat(ci.send)) {
                     Log("watch chat: a line held back (one a second)");
-                    AddToast("Slow down. One message per second.", ImVec4(1, 0.8f, 0.4f, 1), 2);
+                    AddToast(TR(Str::hub_toast_slow_down), ImVec4(1, 0.8f, 0.4f, 1), 2);
                 }
             }
         }
