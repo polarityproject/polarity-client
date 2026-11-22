@@ -115,6 +115,58 @@ the regions that differ, then shows how the difference evolves at a few
 sample frames (the next two, frames 30 and 100, and the last), each with
 the bytes from 8 before the difference in both passes.
 
+## Rooms without the game
+
+`polarity-bot` (`src/tools/polarity_bot.cpp`) is a headless rooms player. It
+finds the lobby channel, makes or joins a custom room and runs its script,
+without the game:
+
+```
+polarity-bot --name Bot1 [--server 127.0.0.1:5555] [--auto] [--set-ms 3000] [--wins p1|p2|random]
+             [--version v] [--hub | --browse] [--script "create 2 1 0; wait 1000; sit 0 0; ..."]
+```
+
+With `--auto` it answers its table calls (Ready, after a short random
+pause), opens a made-up match room when it is player 1, and reports the
+set's result `--set-ms` later, so bots cycle a table's rotation by
+themselves. `--version` sets the version it gives as member data (`''` for
+none).
+
+Between rooms it waits at the keeper's desk by default, where it can ask for
+rooms. `--hub` and `--browse` wait in no room at all, as the game does:
+`--hub` polls the desk's listing every 5 s (the hub open), and `--browse`
+every 2 s, listing the public rooms whenever the desk's revision moves (the
+rooms screen open, without its desk). It asks for one listing at a time, a
+second apart, which is the server's limit.
+
+Commands come from the script, then from stdin, so a test can drive a bot
+live; `;` or a newline separates them:
+
+| Command | What it does |
+| --- | --- |
+| `create <tables> <public 0\|1> <title>` | makes a room, for example `create 5 1 3,RYU,KEN` |
+| `join <code>`, `joinpublic`, `leave` | joins by code, joins the first room the server's listing has (the keeper's order), leaves |
+| `sit <table> <seat 0\|1\|-1>`, `stand`, `queue <table>`, `unqueue`, `ready <table>`, `decline <table>`, `rules <table> <rules...>` | table requests, sent as typed: what the keeper answers to one it refuses is the test |
+| `kick <member id>`, `kickname <name>` | the owner's kicks |
+| `chat <text>`, `flood <n>` | a chat line, or n lines at once (10 by default) |
+| `chara <code>` | the character others see beside the name (member data `ch`) |
+| `setdata <key> <value>` | any member data, to test what the server refuses (such as `@cc`) |
+| `forge` | a room of its own, listed with a real room's signed listing copied on. The game must not show it, since the signature names the other room. It needs a room list first (`joinpublic` or `--browse`). |
+| `watch <table>`, `unwatch` | a headless viewer: each set of the table through the keeper's relay room, from its first game, played at 60 frames a second. Like the game's table viewer it waits for 120 frames in hand before playing, and again after running dry, and logs each game and the set. |
+| `status`, `wait <ms>`, `quit` | the bot's state, a pause, the end |
+
+The bot logs one line per happening on stdout (`bot Bot1: ...`). It answers
+players' pings as the game does, since the room's player list shows the
+round trip, and its room carries its version as a game's does.
+
+`weyve_probe` (`src/tools/weyve_probe.cpp`) checks a Weyvelength server and
+the peer to peer path without the game. `weyve_probe host [server[:port]]`
+creates a room, prints its code and echoes every datagram back until the
+room empties. `weyve_probe join <code> [server[:port]]` joins, pings the
+host 20 times over the peer to peer link and prints the round trips. The
+server defaults to `127.0.0.1:5555`. Both raise the timer resolution to
+1 ms, as the mod's network thread has it.
+
 ## The replay regression check
 
 `scripts\replay-regression.ps1` replays the reference recordings in

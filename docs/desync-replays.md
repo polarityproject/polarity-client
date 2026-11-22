@@ -136,6 +136,29 @@ Rollback stress with real recorded inputs is a stronger sync test than random
 inputs: it replays the situation the player was in (same characters, same
 moves at the same moments) with rollbacks at every frame.
 
+## The polarity tool
+
+`polarity` (`src/tools/polarity.cpp`) reads recordings and reports. Run it
+with no arguments for the usage. Its commands:
+
+| Command | What it does |
+| --- | --- |
+| `info <file> [-v]` | what was recorded: the setup, the regions, events and dumps |
+| `inputs <file> [first] [last]` | each frame's inputs, the direction in numpad notation from the P1-left side, then the attacks (LP MP HP LK MK HK); other bits are shown raw in hex |
+| `presses <file> <player>` | the player's button presses in order: the button bits (`0x0FF0`, without directions and Start) each time they go from none to some. `scripts\layout-test.ps1` compares them with each PC's layout. |
+| `diff <a> <b> --all` | also every frame both files hold region hashes for whose regions differ, for two kept runs of one recording |
+| `peers <a> <b>` | the words that differ between the two peers' dumps of the same frame, with identical inputs before it: values that only mean something in one process, such as truncated addresses, uninitialised buffers and engine clocks. `--write` merges them into a noise mask file (the `sfv_noise.txt` format), keeping its comment lines. `--initial` learns only from the state before frame 0, before any input mattered. `--pointers` learns only words that hold an address on both sides, from every dump: fields that are pointers, since a live process may test a dangling one as data; `--max-frame` stops at a frame before any divergence. Where the two masks differ it names the words masked on one side only, then compares with both. It also shows what changed since the first dump (the divergence, not the noise), how many regions of each size have no equal on the other side frame by frame, and with `--first-change` the frames where each region size first changes on each side, to tell which side reached an event first. |
+| `changes <file> <region size>` | for each region of that size, on how many frames its hash changed, and the first and last such frame. A region that never changes is not touched by the simulation (an unused slot). |
+| `find <file> <frame> <value>` | every int32 equal to the value in that frame's dump, by region and offset, with that word in the other dumps |
+| `images <file> <frame or all> <base> <size>` | the words of a dump that point into a module (`[base, base + size)`, such as the game's image). They are equal between two processes on one PC, since a boot loads the module at one address, and differ between PCs. `--write` adds them to a noise mask file. |
+| `region <file> <frame> <name>` | one region of a dump, word by word |
+| `compact <file> <out>` | the recording in the current format, with region hashes only around its desyncs (what the mod saves for players) |
+| `cut <file> <out> <frames>` | the first frames as a compact recording, with only the state before frame 0 (the benchmark's round, `data/benchmark.sfvr`) |
+| `thin <file> <out> <every>` | the recording compact, with the state before frame 0 and a dump only every so many frames: the replay regression corpus (`tests/replays`). A replay starts from the first state, and on a build whose region table differs the dumps are what it is checked against. |
+| `export <file> <dir>` | `regions.txt` (each region's name, size, offset in the dump, and the words left out of its checksum as a hex bit mask, or `-`) and every dump as `frame_<n>.bin`, for scripts that look for fields |
+| `verify <file>` | plays the recording back. Recordings made with the mock fighter verify here; the game's recordings verify inside the game, whose playback runs the same verifier. |
+| `demo <dir>` | mock-fighter recordings of each kind of bug (`clean`, `machine-value`, `outside-snapshot`, `effect-rng`) for both players |
+
 ## Replaying a recording in the game
 
 Every netplay match leaves a recording on each PC in

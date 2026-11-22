@@ -1,26 +1,4 @@
-// polarity-bot: a headless rooms player for tests (custom-rooms-plan.md M7),
-// grown from weyve_probe: it finds the lobby channel, makes or joins a custom
-// room and does what its script says, without the game. With --auto it
-// answers its table calls (Ready), opens a made-up match room when it is P1
-// and reports the set's result a moment later, so bots cycle a table's
-// rotation by themselves.
-//
-//   polarity-bot --name Bot1 [--server 127.0.0.1:5555] [--auto] [--set-ms 3000] [--wins p1|p2|random]
-//            [--hub | --browse] [--script "create 2 1 0; wait 1000; sit 0 0; ..."]
-// Where it waits between rooms (docs/room-listing-plan.md): the keeper's desk
-// (the default: it can ask for rooms), or in no room at all as the game does:
-// --hub polls the desk's listing every 5 s (the hub open), --browse every
-// 2 s and lists the public rooms whenever the desk's revision moves (the
-// rooms screen open, without its desk).
-// Commands (script, then stdin; ';' or newlines between them):
-//   create <tables> <public 0|1> <title: 5, 3,RYU,KEN>   join <code>   joinpublic   leave
-//   sit <table> <seat 0|1|-1>   stand   queue <table>   unqueue   ready <table>   decline <table>
-//   rules <table> <rules...>    kick <member id>   kickname <name>   chat <text>   flood <n>   status   wait <ms>   quit
-//   chara <code> (the character others see beside the name, member data "ch")
-//   watch <table>   unwatch   (a headless viewer: each set of the table through
-//   the keeper's relay room, from its first game, played at 60 frames a
-//   second; logs each game and the set.)
-// Logs one line per happening on stdout ("bot Bot1: ...").
+// polarity-bot: a headless rooms player for tests, run from a script (docs/testing.md).
 
 #include "core/keeper_protocol.h"
 #include "core/lobby.h"
@@ -50,14 +28,24 @@ using namespace sfv::keeper;
 
 namespace {
 
+constexpr uint16_t kDefaultPort = 5555;
+constexpr int64_t kDefaultSetMs = 3000;
+constexpr int64_t kHelloEveryMs = 1000, kAckEveryMs = 250, kStateLogEveryMs = 15000;
+constexpr size_t kWatchDelayFrames = 120;
+constexpr int64_t kListingGapMs = 1100, kListingAnswerMs = 3000;
+constexpr int64_t kBrowseEveryMs = 2000, kHubEveryMs = 5000;
+constexpr int64_t kRetryListMs = 1500;
+constexpr int kFloodLines = 10;
+constexpr int64_t kCodeAfterMs = 800;
+constexpr int64_t kReadyAfterMs = 300, kReadySpreadMs = 400;
+constexpr int kCodeLength = 6;
+
 int64_t NowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
 std::string Str(const char* p, uint32_t len) { return p ? std::string(p, len) : std::string(); }
 
-// A viewer with no game (watch): what a spectator's netplay driver says to the
-// relay, and the stream played at 60 frames a second.
 struct Viewer {
     std::string name, code;
     WeyveClient* c = nullptr;
@@ -68,9 +56,9 @@ struct Viewer {
     std::vector<lobby::MatchEntry> slices, list;
     uint64_t match = 0;
     int gameIndex = -1;
-    bool hostLoaded = false; // the host's Loaded is in hand: the game can be watched
+    bool hostLoaded = false;
     uint32_t hostChecksum = 0;
-    bool gameDone = false; // this game watched through (counted once)
+    bool gameDone = false;
     std::vector<lobby::FrameRecord> frames;
     std::map<uint32_t, lobby::FrameRecord> ahead;
     double played = 0;
@@ -84,7 +72,7 @@ struct Viewer {
     void Send(const lobby::Message& m) {
         const std::vector<uint8_t> bytes = lobby::Encode(m);
         std::vector<uint8_t> tagged(bytes.size() + 1);
-        tagged[0] = 1; // the driver's control channel
+        tagged[0] = 1;
         std::copy(bytes.begin(), bytes.end(), tagged.begin() + 1);
         weyve_send_p2p(c, host, tagged.data(), static_cast<uint32_t>(tagged.size()));
     }
@@ -141,7 +129,7 @@ struct Viewer {
         ahead.clear();
         played = 0;
         playedAtMs = NowMs();
-        stalled = true; // fills its buffer first
+        stalled = true;
         log("loads game " + std::to_string(index + 1));
         SendLoaded();
     }
@@ -169,7 +157,6 @@ struct Viewer {
                 for (size_t i = 0; i < m.matches.size() && m.sliceAt + i < slices.size(); i++) slices[m.sliceAt + i] = m.matches[i];
                 if (!std::all_of(slices.begin(), slices.end(), [](const lobby::MatchEntry& e) { return e.id != 0; })) break;
                 list = slices;
-                // Its game by id (the list may have moved it).
                 if (match) {
                     for (size_t i = 0; i < list.size(); i++) {
                         if (list[i].id == match) gameIndex = static_cast<int>(i);
@@ -237,7 +224,7 @@ struct Viewer {
                 build = std::strtoull(Str(b, len).c_str(), nullptr, 16);
             }
         }
-        if (host && !accepted && now - helloMs >= 1000) {
+        if (host && !accepted && now - helloMs >= kHelloEveryMs) {
             helloMs = now;
             lobby::Message hello;
             hello.type = lobby::Type::Hello;
@@ -252,13 +239,10 @@ struct Viewer {
             if (auto m = lobby::Decode(d + 1, len - 1)) OnMessage(*m);
             if (done) return;
         }
-        // Play at 60 a second, from the frames in hand.
         if (gameIndex >= 0 && hostLoaded) {
-            // As the driver's table viewer: 120 frames in hand before
-            // playing, and again after running dry (kRelayWatchDelayFrames).
             const lobby::MatchEntry& entry = list[gameIndex];
             const bool all = entry.finished && frames.size() >= entry.frames;
-            if (stalled && (frames.size() - played >= 120 || all)) stalled = false;
+            if (stalled && (frames.size() - played >= kWatchDelayFrames || all)) stalled = false;
             const double want = played + (now - playedAtMs) * 0.06;
             playedAtMs = now;
             if (!stalled) {
@@ -272,7 +256,6 @@ struct Viewer {
                     played = want;
                 }
             }
-            // Through a finished game: the next one, once there is one.
             if (!gameDone && entry.finished && played >= entry.frames && frames.size() >= entry.frames) {
                 gameDone = true;
                 gamesWatched++;
@@ -281,11 +264,11 @@ struct Viewer {
             }
             if (gameDone && gameIndex + 1 < static_cast<int>(list.size())) Load(gameIndex + 1);
         }
-        if (now - stateMs >= 15000) {
+        if (now - stateMs >= kStateLogEveryMs) {
             stateMs = now;
             log(State());
         }
-        if (host && accepted && now - beatMs >= 250) {
+        if (host && accepted && now - beatMs >= kAckEveryMs) {
             beatMs = now;
             lobby::Message ack;
             ack.type = lobby::Type::InputsAck;
@@ -301,11 +284,11 @@ struct Viewer {
 
 struct Bot {
     std::string name = "Bot";
-    std::string version = sfv::kPolarityVersion; // member data `ver` ("--version ''": none)
+    std::string version = sfv::kPolarityVersion;
     std::string host = "127.0.0.1";
-    uint16_t port = 5555;
+    uint16_t port = kDefaultPort;
     bool autoPlay = false;
-    int64_t setMs = 3000;
+    int64_t setMs = kDefaultSetMs;
     std::string wins = "random";
     int watchTable = -1;
     std::string watchedCode;
@@ -313,29 +296,27 @@ struct Bot {
     WeyveClient* c = nullptr;
     std::string lobby, room;
     bool inLobby = false, inRoom = false;
-    // --hub / --browse: in no room between rooms, polling the listings.
     enum class Mode { Desk,
                       Hub,
                       Browse } mode = Mode::Desk;
     enum class Listed { None,
                         Desks,
                         Rooms } listed = Listed::None;
-    int64_t listedAt = -2000, nextDesksMs = 0;
+    int64_t listedAt = -2 * kListingGapMs, nextDesksMs = 0;
     bool deskSeen = false, roomsWanted = false;
     uint64_t rev = 0, roomsRev = 0;
     std::vector<ListedRoom> publicRooms;
     int64_t roomLists = 0, deskLists = 0;
-    Listing firstListing; // the first public room's listing as listed (forge)
+    Listing firstListing;
     bool forging = false;
     uint32_t seq = 0;
-    std::string madeRoom;   // the room the keeper made for this bot (answered once)
-    std::mutex scriptMutex; // stdin's thread adds to the script
+    std::string madeRoom;
+    std::mutex scriptMutex;
     std::deque<std::string> script;
     int64_t waitUntil = 0;
-    std::map<std::string, std::string> shown; // table keys as last logged
+    std::map<std::string, std::string> shown;
     std::mt19937 rng{std::random_device{}()};
-    // Auto play.
-    std::map<int, int64_t> readyAt; // table -> when to ready
+    std::map<int, int64_t> readyAt;
 
     struct Hosting {
         int table = -1;
@@ -388,11 +369,10 @@ struct Bot {
         roomLists++;
     }
 
-    // One listing at a time, a second apart (the server's limit).
     void Listings() {
         const int64_t now = NowMs();
-        if (listed != Listed::None && now - listedAt < 3000) return;
-        if (now - listedAt < 1100) return;
+        if (listed != Listed::None && now - listedAt < kListingAnswerMs) return;
+        if (now - listedAt < kListingGapMs) return;
         listed = Listed::None;
         if (roomsWanted) {
             roomsWanted = false;
@@ -400,7 +380,7 @@ struct Bot {
             return;
         }
         if (mode == Mode::Desk || now < nextDesksMs) return;
-        nextDesksMs = now + (mode == Mode::Browse ? 2000 : 5000);
+        nextDesksMs = now + (mode == Mode::Browse ? kBrowseEveryMs : kHubEveryMs);
         ListDesks();
     }
 
@@ -431,7 +411,6 @@ struct Bot {
             int pub = 1;
             std::string title = "0";
             ss >> s.tables >> pub >> title;
-            // Sent as typed (even one the keeper refuses: what it answers is the test).
             if (!ParseTitle(title, &s.title)) {
                 const size_t comma = title.find(',');
                 s.title.id = std::atoi(title.c_str());
@@ -441,7 +420,6 @@ struct Bot {
             Ask(RoomRequest(++seq, s));
             Log("asks for a room");
         } else if (cmd == "setdata") {
-            // setdata <key> <value>: any member data (testing what the server refuses, e.g. "@cc").
             std::string key, value;
             ss >> key >> value;
             weyve_set_member_data(c, key.c_str(), value.c_str());
@@ -457,17 +435,16 @@ struct Bot {
             weyve_leave_room(c);
             weyve_join_room(c, code.c_str(), nullptr);
         } else if (cmd == "joinpublic") {
-            // The first room the server's listing has (the keeper's order).
             if (publicRooms.empty()) {
                 Log("no public room listed yet; trying again");
                 roomsWanted = true;
                 std::lock_guard lock(scriptMutex);
                 script.push_front(line);
-                waitUntil = NowMs() + 1500;
+                waitUntil = NowMs() + kRetryListMs;
                 return;
             }
             const std::string code = publicRooms[0].code;
-            publicRooms.clear(); // listed again next time
+            publicRooms.clear();
             weyve_leave_room(c);
             weyve_join_room(c, code.c_str(), nullptr);
         } else if (cmd == "kickname") {
@@ -507,7 +484,7 @@ struct Bot {
             if (!text.empty() && text[0] == ' ') text.erase(0, 1);
             weyve_send_chat(c, text.c_str());
         } else if (cmd == "flood") {
-            int n = 10;
+            int n = kFloodLines;
             ss >> n;
             for (int i = 0; i < n; i++) weyve_send_chat(c, ("flood " + std::to_string(i)).c_str());
             Log("sent " + std::to_string(n) + " chat lines at once");
@@ -527,14 +504,11 @@ struct Bot {
             if (viewer) viewer->Stop();
             viewer.reset();
         } else if (cmd == "forge") {
-            // A room of its own, listed with a real room's signed listing
-            // copied on (the game must not show it: the signature names the
-            // other room). Needs a room list first (joinpublic or --browse).
             if (firstListing.empty()) {
                 roomsWanted = true;
                 std::lock_guard lock(scriptMutex);
                 script.push_front(line);
-                waitUntil = NowMs() + 1500;
+                waitUntil = NowMs() + kRetryListMs;
                 return;
             }
             forging = true;
@@ -572,11 +546,11 @@ struct Bot {
                     }
                     if (n == 0) {
                         Log("no desk listed");
-                        if (mode == Mode::Desk) ListDesks(); // again (one a second)
+                        if (mode == Mode::Desk) ListDesks();
                         break;
                     }
                     uint32_t len = 0;
-                    const char* id = weyve_room_list_id(c, 0, &len); // len is set by the call: read it after
+                    const char* id = weyve_room_list_id(c, 0, &len);
                     const std::string first = Str(id, len);
                     DeskSummary summary;
                     const Listing l = ListingOf(0);
@@ -598,7 +572,6 @@ struct Bot {
                     inLobby = code == lobby;
                     inRoom = !inLobby;
                     room = inRoom ? code : std::string();
-                    // Its version, as a game's: the keeper gives a room its maker's.
                     if (!version.empty()) weyve_set_member_data(c, kVersion, version.c_str());
                     shown.clear();
                     Log(inLobby ? "in the lobby " + code : "in room " + code + " as member " + std::to_string(weyve_id(c)));
@@ -629,7 +602,6 @@ struct Bot {
         }
         uint32_t from = 0, len = 0;
         while (const uint8_t* data = weyve_next_p2p(c, &from, &len)) {
-            // A player's ping (the room's player list shows the round trip): answered as the game does.
             bool pong = false;
             uint64_t clock = 0;
             if (ParsePing(data, len, &pong, &clock)) {
@@ -644,8 +616,6 @@ struct Bot {
             if (!ParseAnswer(data, len, &a)) continue;
             weyve_set_member_data(c, kAck, std::to_string(a.seq).c_str());
             if (a.kind == "room" && a.ok) {
-                // Once (the keeper resends until the ack lands; each join
-                // would leave and rejoin, the owner handing the room on).
                 if (a.text == madeRoom) continue;
                 madeRoom = a.text;
                 Log("the keeper made room " + a.text);
@@ -656,7 +626,7 @@ struct Bot {
                 if (!ParseTicket(a.text, &t)) continue;
                 Log("ticket: " + a.text);
                 if (autoPlay && t.host && hosting.table != t.table) {
-                    hosting = {t.table, NowMs() + 800, 0, false};
+                    hosting = {t.table, NowMs() + kCodeAfterMs, 0, false};
                 }
             } else if (!a.ok) {
                 Log("the keeper says no to #" + std::to_string(a.seq) + " " + a.kind + ": " + a.text);
@@ -664,7 +634,6 @@ struct Bot {
         }
     }
 
-    // Logs each table's state as it changes, and plays it with --auto.
     void Tables() {
         if (!inRoom) return;
         const uint32_t self = weyve_id(c);
@@ -684,7 +653,7 @@ struct Bot {
                                                                          : -1;
             if (st.phase == TablePhase::Call && seat >= 0 && !st.ready[seat]) {
                 auto it = readyAt.find(t);
-                if (it == readyAt.end()) readyAt[t] = NowMs() + 300 + rng() % 400;
+                if (it == readyAt.end()) readyAt[t] = NowMs() + kReadyAfterMs + rng() % kReadySpreadMs;
                 else if (NowMs() >= it->second) {
                     Ask("ready", {std::to_string(t)});
                     readyAt.erase(it);
@@ -693,13 +662,12 @@ struct Bot {
                 readyAt.erase(t);
             }
         }
-        // P1: the made-up match room's code, then the set's result.
         if (hosting.table >= 0) {
             const int64_t now = NowMs();
             if (!hosting.codeSent && now >= hosting.codeAt) {
                 static const char kAlphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
                 std::string code;
-                for (int i = 0; i < 6; i++) code += kAlphabet[rng() % 32];
+                for (int i = 0; i < kCodeLength; i++) code += kAlphabet[rng() % (sizeof(kAlphabet) - 1)];
                 Ask("code", {std::to_string(hosting.table), code});
                 hosting.codeSent = true;
                 hosting.resultAt = now + setMs;
@@ -713,8 +681,6 @@ struct Bot {
         }
     }
 
-    // watch: each set of the table, through its relay room (`watch` in the
-    // table's state), one after another.
     void Watch() {
         if (viewer) {
             viewer->Step();
@@ -806,7 +772,6 @@ int main(int argc, char** argv) {
         }
     }
     if (!bot.Connect()) return 1;
-    // stdin: more commands as they come (a test can drive a bot live).
     std::thread([&bot] {
         std::string line;
         while (std::getline(std::cin, line)) {

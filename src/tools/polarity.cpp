@@ -1,19 +1,4 @@
-// polarity: inspect, compare and verify .sfvr match recordings / desync reports.
-//
-//   polarity info    <file> [-v]
-//   polarity inputs  <file> [first] [last]
-//   polarity presses <file> <player 0|1>
-//   polarity diff    <a.sfvr> <b.sfvr>
-//   polarity peers   <a.sfvr> <b.sfvr> [--initial | --pointers [--max-frame N]] [--raw] [--write noise.txt] [--show region]
-//   polarity verify  <file> [--stress N] [--every K] [--dump out.bin] [--mock-bug B] [--machine-value V]
-//   polarity compact <file> <out.sfvr>
-//   polarity thin    <file> <out.sfvr> <every>
-//   polarity export  <file> <out-dir>
-//   polarity demo    <out-dir>
-//
-// `verify` plays a recording back deterministically. Recordings made with the
-// mock fighter verify here; Street Fighter V recordings are verified inside the
-// game by the mod's playback mode, which runs the same verifier.
+// polarity: inspect, compare and verify .sfvr match recordings and desync reports (docs/desync-replays.md).
 
 #include "core/replay_diff.h"
 #include "core/replay_file.h"
@@ -35,18 +20,31 @@ using namespace sfv;
 
 namespace {
 
+constexpr PackedInput kDirectionsAndAttacks = 0x3FF;
+constexpr PackedInput kPressButtons = 0x0FF0;
+constexpr uint64_t kLowestPointer = 0x10000000000ull, kUserSpaceEnd = 0x800000000000ull;
+constexpr int kChangesListed = 40;
+constexpr uint64_t kDemoSeed = 14;
+constexpr int kDemoFrames = 6000;
+constexpr int kDemoLatencyFrames = 5, kDemoJitterFrames = 3;
+constexpr double kDemoLoss = 0.05;
+
 int Usage() {
     std::fprintf(stderr,
                  "usage:\n"
                  "  polarity info    <file> [-v]\n"
                  "  polarity inputs  <file> [first] [last]\n"
                  "  polarity presses <file> <player 0|1>\n"
-                 "  polarity diff    <a.sfvr> <b.sfvr>\n"
-                 "  polarity peers   <a.sfvr> <b.sfvr> [--initial | --pointers [--max-frame N]] [--raw] [--write noise.txt] [--show region]\n"
+                 "  polarity diff    <a.sfvr> <b.sfvr> [--all]\n"
+                 "  polarity peers   <a.sfvr> <b.sfvr> [--initial | --pointers [--max-frame N]] [--raw] [--write noise.txt] [--show region] [--first-change]\n"
                  "  polarity verify  <file> [--stress N] [--every K] [--dump out.bin]\n"
                  "               [--mock-bug none|outside-snapshot|machine-value|effect-rng] [--machine-value V]\n"
                  "  polarity changes <file> <region size>\n"
+                 "  polarity find    <file> <frame> <int32 value>\n"
+                 "  polarity images  <file> <frame|all> <base hex> <size hex> [--write noise.txt]\n"
+                 "  polarity region  <file> <frame> <region name>\n"
                  "  polarity compact <file> <out.sfvr>\n"
+                 "  polarity cut     <file> <out.sfvr> <frames>\n"
                  "  polarity thin    <file> <out.sfvr> <every>   (state dumps only every <every> frames)\n"
                  "  polarity export  <file> <out-dir>\n"
                  "  polarity demo    <out-dir>\n");
@@ -61,7 +59,6 @@ bool Load(const char* path, ReplayFile& rf) {
 }
 
 std::string InputText(PackedInput in) {
-    // Numpad notation for the direction, from P1-left perspective.
     int dir = 5;
     const bool up = in & kUp, down = in & kDown, left = in & kLeft, right = in & kRight;
     if (up) dir = left ? 7 : right ? 9
@@ -76,8 +73,7 @@ std::string InputText(PackedInput in) {
     for (int b = 0; b < 6; b++) {
         if (in & (kLP << b)) s += std::string("+") + kButtons[b];
     }
-    // Bits outside the directions and six buttons, raw.
-    if (const PackedInput other = in & ~PackedInput(0x3FF)) {
+    if (const PackedInput other = in & ~kDirectionsAndAttacks) {
         char buf[16];
         std::snprintf(buf, sizeof(buf), "+%x", other);
         s += buf;
@@ -195,19 +191,15 @@ int CmdInputs(int argc, char** argv) {
     return 0;
 }
 
-// A player's button presses: the button bits (SFV: X..RT, 0x0FF0; directions
-// and start left out) each time they go from none to some, in hex, in order
-// (scripts\layout-test.ps1 compares them with each PC's layout).
 int CmdPresses(int argc, char** argv) {
     if (argc < 2) return Usage();
     ReplayFile rf;
     if (!Load(argv[0], rf)) return 1;
     const int player = std::atoi(argv[1]) == 1 ? 1 : 0;
-    constexpr PackedInput kButtons = 0x0FF0;
     PackedInput before = 0;
     bool first = true;
     for (int f = 0; f < rf.FrameCount(); f++) {
-        const PackedInput now = rf.inputs[f].p[player] & kButtons;
+        const PackedInput now = rf.inputs[f].p[player] & kPressButtons;
         if (now && !before) {
             std::printf(first ? "%x" : " %x", now);
             first = false;
@@ -218,8 +210,6 @@ int CmdPresses(int argc, char** argv) {
     return 0;
 }
 
-// Rewrites a recording in the current format, keeping region hashes only
-// around its desyncs (what the mod saves for players).
 int CmdCompact(int argc, char** argv) {
     if (argc < 2) return Usage();
     ReplayFile rf;
@@ -244,10 +234,6 @@ int CmdCompact(int argc, char** argv) {
     return mismatches ? 1 : 0;
 }
 
-// thin <in> <out> <every>: the recording compact, with the state before
-// frame 0 and a state dump only every <every> frames (the replay regression
-// corpus, tests/replays: a replay starts from the first, and on a build
-// whose region table differs the dumps are what it is checked against).
 int CmdThin(int argc, char** argv) {
     if (argc < 3) return Usage();
     ReplayFile rf;
@@ -266,8 +252,6 @@ int CmdThin(int argc, char** argv) {
     return 0;
 }
 
-// cut <in> <out> <frames>: the first <frames> frames as a compact recording
-// (the benchmark's round, data/benchmark.sfvr).
 int CmdCut(int argc, char** argv) {
     if (argc < 3) return Usage();
     ReplayFile rf;
@@ -286,7 +270,6 @@ int CmdCut(int argc, char** argv) {
     if (!rf.hashesKept.empty()) rf.hashesKept.resize(n);
     rf.finalThrough = std::min(rf.finalThrough, n - 1);
     rf.events.erase(std::remove_if(rf.events.begin(), rf.events.end(), [n](const ReplayEvent& e) { return e.frame >= n; }), rf.events.end());
-    // Only the state before frame 0 (a replay starts from it).
     rf.dumps.erase(std::remove_if(rf.dumps.begin(), rf.dumps.end(), [](const StateDump& d) { return d.frame >= 0; }), rf.dumps.end());
     rf.summary = MatchSummary{};
     std::string error;
@@ -304,8 +287,6 @@ int CmdDiff(int argc, char** argv) {
     if (!Load(argv[0], a) || !Load(argv[1], b)) return 1;
     const DiffReport d = DiffReplays(a, b);
     std::printf("%s", FormatDiff(d, a).c_str());
-    // --all: every frame both files hold region hashes for whose regions
-    // differ (two kept runs of one recording: not only the first).
     if (argc > 2 && std::string(argv[2]) == "--all" && a.regions.size() == b.regions.size()) {
         int frames = 0;
         for (int f = 0; f < std::min(a.FrameCount(), b.FrameCount()); f++) {
@@ -325,17 +306,7 @@ int CmdDiff(int argc, char** argv) {
     return (d.comparable && d.firstInputMismatch < 0 && d.firstStateMismatch < 0 && !d.setupDiffers) ? 0 : 1;
 }
 
-// Words that differ between the two peers' dumps of the same frame (with
-// identical inputs before it): values that only mean something in one process,
-// such as truncated addresses, uninitialised buffers and engine clocks. With
-// --write they are merged into a noise mask file (sfv_noise.txt format).
-// How each region of one size lives through a match: on how many frames its
-// hash changed, and the first and last such frame. A region that never
-// changes is not touched by the simulation (an unused slot).
-// Merges word offsets into a noise mask file (sfv_noise.txt format), keeping
-// its comment lines.
 int WriteNoise(const char* out, const std::map<uint64_t, std::set<uint64_t>>& words) {
-    // Merge with what the file already holds.
     std::map<uint64_t, std::set<uint64_t>> merged = words;
     std::vector<std::string> header;
     if (FILE* f = std::fopen(out, "r")) {
@@ -372,7 +343,7 @@ int CmdChanges(int argc, char** argv) {
         int changes = 0, first = -1, last = -1;
         const uint64_t* prev = rf.FrameHashes(-1);
         for (int f = 0; f < rf.FrameCount(); f++) {
-            if (!rf.HasRegionHashes(f)) continue; // compact: between kept frames only
+            if (!rf.HasRegionHashes(f)) continue;
             const uint64_t* h = rf.FrameHashes(f);
             if (h[i] != prev[i]) {
                 changes++;
@@ -392,11 +363,9 @@ int CmdLearnPeers(int argc, char** argv) {
     ReplayFile a, b;
     if (!Load(argv[0], a) || !Load(argv[1], b)) return 1;
     const char* out = nullptr;
-    bool initialOnly = false; // learn only from the state before frame 0 (before any input mattered)
-    // learn only words that hold an address on both sides, from every dump:
-    // fields that are pointers (a live process may test a dangling one as data)
+    bool initialOnly = false;
     bool pointersOnly = false;
-    int maxFrame = INT32_MAX; // only dumps up to this frame (before any divergence)
+    int maxFrame = INT32_MAX;
     for (int k = 2; k < argc; k++) {
         if (!std::strcmp(argv[k], "--write") && k + 1 < argc) out = argv[k + 1];
         if (!std::strcmp(argv[k], "--initial")) initialOnly = true;
@@ -416,8 +385,6 @@ int CmdLearnPeers(int argc, char** argv) {
             return 1;
         }
         if (ra.ignore == rb.ignore) continue;
-        // Same layout, different masks: name the words masked on one side
-        // only, then compare with both masks.
         ra.ignore.resize(std::max(ra.ignore.size(), rb.ignore.size()));
         rb.ignore.resize(ra.ignore.size());
         for (size_t i = 0; i < ra.ignore.size(); i++) {
@@ -432,9 +399,9 @@ int CmdLearnPeers(int argc, char** argv) {
         rb.ignore = ra.ignore;
     }
 
-    std::map<uint64_t, std::set<uint64_t>> words; // region size -> word offsets
+    std::map<uint64_t, std::set<uint64_t>> words;
     if (pointersOnly) {
-        auto plausible = [](uint64_t v) { return v >= 0x10000000000ull && v < 0x800000000000ull; };
+        auto plausible = [](uint64_t v) { return v >= kLowestPointer && v < kUserSpaceEnd; };
         std::vector<size_t> offsets(a.regions.size());
         size_t total = 0;
         for (size_t r = 0; r < a.regions.size(); r++) {
@@ -456,7 +423,7 @@ int CmdLearnPeers(int argc, char** argv) {
         }
     }
     int frames = 0;
-    std::map<std::string, size_t> firstCounts; // differing words per region in the first common dump
+    std::map<std::string, size_t> firstCounts;
     for (const auto& da : a.dumps) {
         const StateDump* db = b.FindDump(da.frame);
         if (!db) continue;
@@ -469,7 +436,6 @@ int CmdLearnPeers(int argc, char** argv) {
             counts[a.regions[r.region].name] += (r.length + 7) / 8;
         }
         std::printf("frame %d (%s): %zu differing ranges\n", da.frame, da.label.c_str(), ranges.size());
-        // What changed since the first dump: the divergence, not the noise.
         if (frames++ == 0) {
             firstCounts = counts;
             continue;
@@ -494,16 +460,13 @@ int CmdLearnPeers(int argc, char** argv) {
         return 1;
     }
 
-    // Frame by frame from the per-region hashes: per region size, how many
-    // regions of one peer have no equal on the other (orders may differ).
-    // Changes in that count show when and where the states start to differ.
     {
         std::map<uint64_t, std::vector<size_t>> bySize;
         for (size_t i = 0; i < a.regions.size(); i++) bySize[a.regions[i].size].push_back(i);
         std::map<uint64_t, size_t> last;
         int changes = 0;
         const int lastFrame = std::min(a.FrameCount(), b.FrameCount()) - 1;
-        for (int f = -1; f <= lastFrame && changes < 40; f++) {
+        for (int f = -1; f <= lastFrame && changes < kChangesListed; f++) {
             if (!a.HasRegionHashes(f) || !b.HasRegionHashes(f)) continue;
             const uint64_t* ha = a.FrameHashes(f);
             const uint64_t* hb = b.FrameHashes(f);
@@ -521,7 +484,7 @@ int CmdLearnPeers(int argc, char** argv) {
                     last[size] = unmatched;
                     continue;
                 }
-                if (f >= 0 && changes++ < 40) {
+                if (f >= 0 && changes++ < kChangesListed) {
                     std::printf("  frame %5d: size %6" PRIu64 " x%zu: %zu differ (was %zu)\n", f, size, idx.size(),
                                 unmatched, prev == last.end() ? 0 : prev->second);
                 }
@@ -530,8 +493,6 @@ int CmdLearnPeers(int argc, char** argv) {
         }
     }
 
-    // Per peer on its own: the frames where each region size first changes,
-    // to tell which side reached an event (round start, ...) first.
     for (int k = 2; k < argc; k++) {
         if (std::strcmp(argv[k], "--first-change")) continue;
         for (const ReplayFile* rf : {&a, &b}) {
@@ -567,8 +528,6 @@ int CmdLearnPeers(int argc, char** argv) {
     return WriteNoise(out, words);
 }
 
-// Where a value sits in a state dump: every int32 equal to `value` in the dump
-// of `frame`, by region and offset, with that word in the other dumps.
 int CmdFind(int argc, char** argv) {
     if (argc < 3) return Usage();
     ReplayFile rf;
@@ -603,9 +562,6 @@ int CmdFind(int argc, char** argv) {
     return 0;
 }
 
-// Words of a dump that point into a module ([base, base + size), for example
-// the game's image): equal between two processes on one PC (one load address
-// per boot), different between PCs. Per region size: offsets and how many.
 int CmdImagePointers(int argc, char** argv) {
     if (argc < 4) return Usage();
     ReplayFile rf;
@@ -615,7 +571,7 @@ int CmdImagePointers(int argc, char** argv) {
     const uint64_t base = std::strtoull(argv[2], nullptr, 16);
     const uint64_t size = std::strtoull(argv[3], nullptr, 16);
     const char* out = argc >= 6 && !std::strcmp(argv[4], "--write") ? argv[5] : nullptr;
-    std::map<uint64_t, std::set<uint64_t>> offsets; // region size -> word offsets
+    std::map<uint64_t, std::set<uint64_t>> offsets;
     size_t words = 0, dumps = 0;
     for (const auto& dump : rf.dumps) {
         if (!all && dump.frame != frame) continue;
@@ -643,7 +599,6 @@ int CmdImagePointers(int argc, char** argv) {
     return out ? WriteNoise(out, offsets) : 0;
 }
 
-// One region of a dump, word by word (int32 pairs and the 64-bit value).
 int CmdRegion(int argc, char** argv) {
     if (argc < 3) return Usage();
     ReplayFile rf;
@@ -669,9 +624,6 @@ int CmdRegion(int argc, char** argv) {
     return 1;
 }
 
-// Writes the region table (regions.txt: name, size, offset in the dump and
-// the words left out of its checksum as a hex bit mask, or "-") and
-// every state dump (frame_<n>.bin) for scripts that look for fields.
 int CmdExport(int argc, char** argv) {
     if (argc < 2) return Usage();
     ReplayFile rf;
@@ -795,9 +747,9 @@ int CmdDemo(int argc, char** argv) {
 
     for (const auto& s : scenarios) {
         MockMatchOptions mo;
-        mo.seed = 14;
-        mo.renderedFrames = 6000;
-        mo.link = {5, 3, 0.05};
+        mo.seed = kDemoSeed;
+        mo.renderedFrames = kDemoFrames;
+        mo.link = {kDemoLatencyFrames, kDemoJitterFrames, kDemoLoss};
         mo.bug[0] = mo.bug[1] = s.bug;
         mo.machineValue[1] = s.p2MachineValue;
         const MockMatchResult r = RunMockMatch(mo);
