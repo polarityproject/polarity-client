@@ -179,7 +179,7 @@ DWORD WINAPI ModMain(LPVOID self) {
     NetInstall(&game, config.reportDir, kModVersion, config.netplay);
     WeyveService::SetHideCountry(!config.netplay.shareCountry);
     SetStreamerMode(config.netplay.streamerMode);
-    SetRoomsWordFilter(config.netplay.wordFilter);
+    RoomsSetWordFilter(config.netplay.wordFilter);
     InstallReportUploads(config.reportDir, Narrow(config.reportUrl), kModVersion, config.netplay.uploadReports);
 
     switch (config.mode) {

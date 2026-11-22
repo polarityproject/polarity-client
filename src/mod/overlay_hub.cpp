@@ -276,7 +276,7 @@ void ApplySetting(const SettingsInput& in) {
         SaveChoices();
     } else if (in.row == "wordfilter" && in.delta) {
         g_choices.wordFilter = !g_choices.wordFilter;
-        SetRoomsWordFilter(g_choices.wordFilter);
+        RoomsSetWordFilter(g_choices.wordFilter);
         SaveChoices();
     } else if (in.row == "streamer" && in.delta) {
         g_choices.streamerMode = !g_choices.streamerMode;

@@ -285,6 +285,9 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/commands_battle.cpp
     src/mod/udp_transport.cpp
     src/mod/rooms_client.cpp
+    src/mod/rooms_events.cpp
+    src/mod/rooms_listing.cpp
+    src/mod/rooms_tables.cpp
     src/mod/ui_kit.cpp
     src/mod/ui_sound.cpp
     src/mod/hub_screen.cpp

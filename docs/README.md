@@ -11,6 +11,7 @@
 | [flow.md](flow.md) | the game's scenes, battles and tables as the mod follows and drives them |
 | [desync-replays.md](desync-replays.md) | match recordings (`.sfvr`), desync reports, the `polarity` tool, replaying a recording in the game |
 | [keeper.md](keeper.md) | polarity-keeper: rooms, the public list, tables, spectator relays |
+| [rooms-client.md](rooms-client.md) | the hub's rooms connection: listings, the desk, rooms, table sets, watching |
 | [replays.md](replays.md) | the replay driver: run modes, checks, the Battle Log's viewer, Replay Takeover |
 | [replay-versioning.md](replay-versioning.md) | which recordings play in the Battle Log, and the replay regression check |
 | [rollback-presentation.md](rollback-presentation.md) | the round's stages and cinematic cameras under rollback, online and in the Battle Log |

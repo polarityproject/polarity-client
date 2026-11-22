@@ -213,7 +213,7 @@ void RoomsCommand(const std::string&, std::stringstream& ss) {
         if (!RoomsChat(text)) Log("rooms: chat not sent (not in a room, or past the limits)");
     } else {
         const RoomsView v = RoomsSnapshot();
-        Log("rooms: %s", DescribeRooms(v).c_str());
+        Log("rooms: %s", RoomsDescribe(v).c_str());
         for (const keeper::ListedRoom& r : v.publicRooms)
             Log("rooms:   public %s '%s' by %s, %d members, %d tables, %d open seats", r.code.c_str(),
                 keeper::TitleText(r.title).c_str(), r.owner.c_str(), r.members, r.tables, r.openSeats);
@@ -445,7 +445,7 @@ void CountryflagCommand(const std::string&, std::stringstream& ss) {
 void WordfilterCommand(const std::string&, std::stringstream& ss) {
     std::string what;
     ss >> what;
-    SetRoomsWordFilter(what != "off");
+    RoomsSetWordFilter(what != "off");
 }
 
 void RelayonlyCommand(const std::string&, std::stringstream& ss) {

@@ -348,7 +348,7 @@ void SaveChoices() {
         NetOptions().streamerMode = o.streamerMode;
         SetStreamerMode(o.streamerMode);
         NetOptions().wordFilter = o.wordFilter;
-        SetRoomsWordFilter(o.wordFilter);
+        RoomsSetWordFilter(o.wordFilter);
         NetOptions().inputDelay = o.inputDelay;
         if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, o, o.stageCode);
     });

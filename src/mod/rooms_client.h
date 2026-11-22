@@ -111,7 +111,7 @@ const char* RoomsStateName(RoomsView::State state);
 // The Word filter setting (Polarity settings): in public rooms,
 // names the keeper masks show as "Player 1234" and chat has the keeper's
 // words starred. Off: names and chat as they are. Any thread.
-void SetRoomsWordFilter(bool on);
+void RoomsSetWordFilter(bool on);
 bool RoomsWordFilter();
 
 // Opens the hub's connection (`server` "host[:port]", `alsoPort` as
@@ -173,6 +173,6 @@ void RoomsSetCharacter(const std::string& code);
 // the others' your-turn cards (member data `vs`).
 void RoomsSetSkills(int vskill, int vtrigger);
 RoomsView RoomsSnapshot();
-std::string DescribeRooms(const RoomsView& v);
+std::string RoomsDescribe(const RoomsView& v);
 
 } // namespace sfv::mod
