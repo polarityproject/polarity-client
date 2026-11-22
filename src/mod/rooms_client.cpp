@@ -128,6 +128,13 @@ void Client::Run() {
                     Set(State::Lobby);
                 }
                 Listings();
+                if (joinAgainAt && NowMs() >= joinAgainAt) {
+                    joinAgainAt = 0;
+                    if ((deskJoining || shared.view.state == State::Joining) && !target.empty()) {
+                        svc->JoinRoom(target);
+                        Log("rooms: joining %s again (asked too soon after a failed join)", target.c_str());
+                    }
+                }
                 if (shared.view.state == State::Browsing && wantDesk && shared.view.keeper && !shared.view.lobby.empty() && !deskJoining) {
                     deskJoining = true;
                     deskJoinAt = NowMs();

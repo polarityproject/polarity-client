@@ -113,6 +113,7 @@ struct Client {
     bool wantDesk = false;
     bool deskJoining = false;
     int64_t deskJoinAt = 0;
+    int64_t joinAgainAt = 0; // a join the server's cooldown refused, sent again then (0 = none)
     int64_t lastHandMs = -kHandBackEveryMs;
     std::map<std::string, bool> proofs;
     std::map<uint32_t, std::string> names;

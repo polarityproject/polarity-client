@@ -58,7 +58,9 @@ the player which build the server has.
 
 The desk is joined while the rooms screen is open and left once it closes.
 The client picks the fullest desk with room. A desk it cannot join (full,
-or gone since it was listed) is passed over for 120 s. A desk with no keeper
+or gone since it was listed) is passed over for 120 s. The server refuses
+any join for 1 s after a failed one; a desk or room join refused that way
+is sent again 1.1 s later. A desk with no keeper
 for 30 s is left and passed over too. That is a channel an earlier keeper
 left: the players' presence kept it alive while the keeper hosted another,
 and the hubs chose the busiest.

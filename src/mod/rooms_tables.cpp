@@ -189,6 +189,7 @@ void Client::Asks(const WeyveRoomView& v) {
         if ((shared.view.state == State::Lobby || shared.view.state == State::Browsing || shared.view.state == State::Room) && code != shared.view.room) {
             SetNotice(RoomsView::Notice::None, "");
             target = code;
+            deskJoining = false; // a desk join still out is given up for this one
             ForgetTables();
             svc->LeaveRoom();
             shared.view.room.clear();

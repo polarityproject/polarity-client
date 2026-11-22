@@ -108,9 +108,13 @@ void Client::OnEvent(const WeyveEvent& e, const WeyveRoomView& v) {
             break;
         case WeyveEvent::Type::RoomError:
             if (e.error == WeyveEvent::Error::RateLimited) {
+                // A list asked too soon, or a join within the server's wait after a failed one.
                 listed = Listed::None;
+                if (deskJoining || shared.view.state == State::Joining) joinAgainAt = NowMs() + kListGapMs;
                 break;
             }
+            // A leave sent before a join (out of a desk not yet joined): not about the join.
+            if (e.error == WeyveEvent::Error::Other && e.text == "not in a room") break;
             if (deskJoining) {
                 Log("rooms: cannot join desk %s (%s); looking again", shared.view.lobby.c_str(), e.text.c_str());
                 deskJoining = false;
@@ -120,7 +124,6 @@ void Client::OnEvent(const WeyveEvent& e, const WeyveRoomView& v) {
                 break;
             }
             if (shared.view.state != State::Joining) break;
-            if (e.error == WeyveEvent::Error::Other && e.text == "not in a room") break;
             if (e.error == WeyveEvent::Error::NoSuchRoom) BackToLobby(RoomsView::Notice::NoRoom, TR(Str::rooms_notice_no_room), false);
             else if (e.error == WeyveEvent::Error::Closed) BackToLobby(RoomsView::Notice::Full, TR(Str::rooms_notice_full), false);
             else if (e.error == WeyveEvent::Error::Banned) BackToLobby(RoomsView::Notice::Removed, TR(Str::rooms_notice_removed_by_owner), false);
