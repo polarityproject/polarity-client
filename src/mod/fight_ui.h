@@ -28,9 +28,12 @@ struct VoteSide {
     int slot = 0;      // 0 P1, 1 P2
     std::string name, country;
     int wins = 0;
-    int firstTo = 0;                // a set's; 0 a Direct Match (wins this session)
-    std::string status;             // "Wins the set", "Choosing...", "Rematch"
-    int statusKind = 0;             // 0 soft, 1 ok, 2 muted
+    int firstTo = 0;    // a set's; 0 a Direct Match (wins this session)
+    std::string status; // "Wins the set", "Choosing...", "Rematch"
+    enum class Tone { Choosing,
+                      Chosen,
+                      Done };
+    Tone tone = Tone::Choosing;
     std::vector<std::string> lines; // what follows, under the status
     bool choosing = false;          // the buttons are up
     int chosen = -1;                // 0 Rematch, 1 Character select: already chosen

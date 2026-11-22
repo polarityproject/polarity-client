@@ -27,7 +27,8 @@ fight.vote.delay_frames	%d frames
   is one row with a printf conversion (`%d`, `%s`), never pieces joined in
   the code, so each language can order its own words. A count gets two rows,
   one for 1 and one for the rest (`delay_frame`, `delay_frames`).
-- A percent sign in the text is written `%%`.
+- A percent sign in the text is written `%%`, and such a row is shown with
+  `TRF`, which turns it back into one.
 
 ## The check
 

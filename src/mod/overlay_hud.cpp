@@ -1,5 +1,7 @@
 #include "mod/overlay_internal.h"
 
+#include "core/text.h"
+
 namespace sfv::mod::overlay {
 
 void AddToast(const std::string& text, ImVec4 color, int seconds) {
@@ -11,7 +13,7 @@ void AddToast(const std::string& text, ImVec4 color, int seconds) {
 void ToastMigrated() {
     if (!g_migrated || !OnMenuScreen()) return;
     g_migrated = false;
-    AddToast("SFVR is now Polarity. Your settings, replays and logs are in the Polarity folder.", kGold, 12);
+    AddToast(TR(Str::hud_toast_migrated), kGold, 12);
 }
 
 void ToastReports() {
@@ -21,14 +23,14 @@ void ToastReports() {
         if (!g_panelPath.empty() && NetOptions().uploadReports &&
             !GetPrivateProfileIntW(L"report", L"notice_shown", 0, g_panelPath.c_str())) {
             WritePrivateProfileStringW(L"report", L"notice_shown", L"1", g_panelPath.c_str());
-            AddToast("Polarity sends desync and crash reports to help fix bugs. You can turn this off in Polarity settings.", kGold, 15);
+            AddToast(TR(Str::hud_toast_reports), kGold, 15);
         }
     }
     static int toasted = 0;
     const int sent = ReportsSent();
     if (sent == toasted) return;
     toasted = sent;
-    AddToast("Bug report sent", kDim, 6);
+    AddToast(TR(Str::hud_toast_report_sent), kDim, 6);
 }
 
 void ToastUpdate() {
@@ -39,7 +41,7 @@ void ToastUpdate() {
     toasted = u.latest;
     const bool inRoom = RoomsScreenOpen() && RoomsSnapshot().state == RoomsView::State::Room;
     Log("overlay: Polarity %s is out: a toast (%s)", u.latest.c_str(), inRoom ? "in a room" : "at the game's menus");
-    AddToast("Polarity " + u.latest + " is out. " + (inRoom ? "Leave the room to update." : "Press Back + Start to update."), kGold, 10);
+    AddToast(TRF(inRoom ? Str::hud_toast_update_room : Str::hud_toast_update_menu, u.latest.c_str()), kGold, 10);
 }
 
 void ToastChanges(const NetView& now) {
@@ -52,28 +54,27 @@ void ToastChanges(const NetView& now) {
     }
     using P = NetView::Phase;
     if (now.phase == P::Hosting && before.phase != P::Hosting && !g_visible && !now.setPlay) {
-        AddToast("Hosting. Code " + now.code + " copied", kGreen, 10);
+        AddToast(TRF(Str::hud_toast_hosting, now.code.c_str()), kGreen, 10);
     }
     for (int i = 0; i < kNumPlayers; i++) {
         const lobby::Seat &a = before.seats[i], &b = now.seats[i];
         if (i == now.you) continue;
-        if (now.host && b.present && !a.present && !b.name.empty() && !now.setPlay) AddToast(b.name + " joined");
+        if (now.host && b.present && !a.present && !b.name.empty() && !now.setPlay) AddToast(TRF(Str::hud_toast_joined, b.name.c_str()));
         if (now.phase == P::PostMatch && before.phase == P::PostMatch && b.choice != a.choice &&
             b.choice != lobby::Choice::None) {
-            AddToast(b.name + (b.choice == lobby::Choice::Rematch ? " wants a rematch" : " wants character select"));
+            AddToast(TRF(b.choice == lobby::Choice::Rematch ? Str::hud_toast_wants_rematch : Str::hud_toast_wants_select, b.name.c_str()));
         }
     }
     if (now.spectator && now.spectators != before.spectators && now.phase != P::Idle && now.phase != P::Ended) {
-        AddToast(now.spectators > before.spectators ? "A spectator joined (" + std::to_string(now.spectators) + " watching)"
-                                                    : std::to_string(now.spectators) + " watching",
+        AddToast(TRF(now.spectators > before.spectators ? Str::hud_toast_spectator_joined : Str::hud_toast_watching, now.spectators),
                  kDim);
     }
-    if (now.phase == P::Ended && before.phase != P::Ended && !now.result.empty() && !now.setPlay) AddToast("Session over: " + now.result, kRed, 6);
+    if (now.phase == P::Ended && before.phase != P::Ended && !now.result.empty() && !now.setPlay) AddToast(TRF(Str::hud_toast_session_over, now.result.c_str()), kRed, 6);
     before = now;
 }
 
 Notice DesyncNotice(const NetView& v) {
-    return {"DESYNC AT FRAME " + std::to_string(v.desyncFrame), v.desyncReport.empty() ? "saving the recording..." : "recording saved",
+    return {TRF(Str::hud_desync, v.desyncFrame), TR(v.desyncReport.empty() ? Str::hud_desync_saving : Str::hud_desync_saved),
             IM_COL32(255, 107, 94, 255), 1, 99};
 }
 
@@ -138,28 +139,26 @@ void DrawPlayerBars(const NetView& v) {
         };
 
         std::vector<Part> parts;
-        std::string name = s.name.empty() ? std::string("Player") : s.name;
-        const std::string you = v.you == i ? " (you)" : "";
+        std::string name = s.name.empty() ? std::string(TR(Str::common_player)) : s.name;
+        const std::string you = v.you == i ? TR(Str::hud_bar_you) : "";
         parts.push_back({name + you, big, color(Rgb(242, 240, 230))});
-        parts.push_back({"(" + std::to_string(s.wins) + "/" + std::to_string(v.played) + ")", big, color(detail)});
+        parts.push_back({TRF(Str::hud_bar_score, static_cast<int>(s.wins), v.played), big, color(detail)});
         if (s.link != lobby::Link::Unknown) parts.push_back({"", text, color(detail), Kind::Link});
         const bool relayed = v.linkPath == NetView::Path::Relayed;
         if (v.spectator) {
             if (i == 1) {
                 if (relayed) parts.push_back({"", text, color(PathColor(v)), Kind::Relay});
-                parts.push_back({"watching, " + std::to_string(v.behind) + " in hand", text, color(detail)});
+                parts.push_back({TRF(Str::hud_bar_watching, v.behind), text, color(detail)});
             }
         } else if (v.you != i) {
-            char line[48];
             if (v.syncing) {
-                parts.push_back({"connecting...", text, color(detail)});
+                parts.push_back({TR(Str::hud_bar_connecting), text, color(detail)});
             } else {
                 if (relayed) parts.push_back({"", text, color(PathColor(v)), Kind::Relay});
-                std::snprintf(line, sizeof(line), "%ums \xC2\xB1%.0f", ping, v.jitterMs);
-                parts.push_back({line, text, color(PingColorVec(ping, static_cast<unsigned>(v.jitterMs + 0.5f)))});
+                parts.push_back({TRF(Str::hud_bar_ping, ping, v.jitterMs), text, color(PingColorVec(ping, static_cast<unsigned>(v.jitterMs + 0.5f)))});
             }
-            if (s.fps) parts.push_back({std::to_string(SmoothedFps(i, s.fps)) + " fps", g_fontTiny, color(detail)});
-            parts.push_back({std::to_string(v.recentRollback) + " RBF", g_fontTiny, color(detail)});
+            if (s.fps) parts.push_back({TRF(Str::hud_bar_fps, static_cast<int>(SmoothedFps(i, s.fps))), g_fontTiny, color(detail)});
+            parts.push_back({TRF(Str::hud_bar_rbf, static_cast<int>(v.recentRollback)), g_fontTiny, color(detail)});
         }
         auto width = [textSize](const Part& part) {
             return part.kind != Kind::Text ? textSize : part.font->CalcTextSizeA(part.font->LegacySize, FLT_MAX, 0, part.text.c_str()).x;
@@ -193,11 +192,11 @@ void DrawPlayerBars(const NetView& v) {
 
 const char* VoteText(lobby::Choice c) {
     switch (c) {
-        case lobby::Choice::Rematch: return "Rematch";
-        case lobby::Choice::CharacterSelect: return "Character select";
+        case lobby::Choice::Rematch: return TR(Str::hud_vote_rematch);
+        case lobby::Choice::CharacterSelect: return TR(Str::hud_vote_select);
         case lobby::Choice::None: break;
     }
-    return "Choosing...";
+    return TR(Str::hud_vote_choosing);
 }
 
 void DrawSides(const NetView& v, const bool (&show)[kNumPlayers]) {
@@ -229,41 +228,37 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers]) {
         o.firstTo = v.setPlay ? v.firstTo : 0;
         const bool voting = setWinner < 0 || v.againVote;
         if (setWinner >= 0) {
-            o.status = setWinner == i ? "Wins the set" : "Set over";
-            o.statusKind = setWinner == i ? 1 : 2;
+            o.status = TR(setWinner == i ? Str::hud_vote_wins_set : Str::hud_vote_set_over);
+            o.tone = setWinner == i ? VoteSide::Tone::Chosen : VoteSide::Tone::Done;
             const std::string next = v.againVote ? std::string() : RoomsAfterSet(i, setWinner);
             if (!next.empty()) o.lines.push_back(next);
         }
         if (voting) {
             if (setWinner < 0) {
                 o.status = VoteText(s.choice);
-                o.statusKind = s.choice == lobby::Choice::None ? 0 : 1;
+                o.tone = s.choice == lobby::Choice::None ? VoteSide::Tone::Choosing : VoteSide::Tone::Chosen;
             }
-            if (v.againVote && o.mine) o.lines.push_back("No one's waiting, so you can keep playing.");
+            if (v.againVote && o.mine) o.lines.push_back(TR(Str::hud_vote_keep_playing));
             o.choosing = o.mine;
             o.chosen = s.choice == lobby::Choice::Rematch ? 0 : s.choice == lobby::Choice::CharacterSelect ? 1
                                                                                                            : -1;
         }
-        char line[160];
         if (o.mine) {
             o.delay = g_choices.delay;
             const int fixed = NetOptions().delaySetting, suggested = v.SuggestedDelay();
             if (v.spectator) {
-            } else if (fixed >= 0) std::snprintf(line, sizeof(line), "Delay %d, from Polarity settings", fixed), o.suggestion = line;
-            else if (suggested >= 0) std::snprintf(line, sizeof(line), "Suggested delay %d (ping %u ms)", suggested, v.link.pingMs), o.suggestion = line;
+            } else if (fixed >= 0) o.suggestion = TRF(Str::hud_vote_delay_settings, fixed);
+            else if (suggested >= 0) o.suggestion = TRF(Str::hud_vote_delay_suggested, suggested, v.link.pingMs);
             if (voting && v.voteSecondsLeft >= 0 && s.choice == lobby::Choice::None) {
                 const bool neither = v.seats[1 - i].choice == lobby::Choice::None;
-                std::snprintf(line, sizeof(line),
-                              !v.setPlay || !v.againVote ? "Rematch in %d s"
-                              : neither                  ? "Back to the room in %d s"
-                                                         : "Next set in %d s",
-                              v.voteSecondsLeft);
-                o.hint = line;
-            } else o.hint = !v.setPlay ? "Leave ends the session." : v.againVote ? "Leave returns to the room."
-                                                                                 : "Leave ends the set here.";
+                o.hint = TRF(!v.setPlay || !v.againVote ? Str::hud_vote_rematch_in : neither ? Str::hud_vote_room_in
+                                                                                             : Str::hud_vote_next_set_in,
+                             v.voteSecondsLeft);
+            } else o.hint = TR(!v.setPlay ? Str::hud_vote_leave_session : v.againVote ? Str::hud_vote_leave_room
+                                                                                      : Str::hud_vote_leave_set);
         } else {
             o.delay = s.inputDelay;
-            o.hint = "Input delay " + std::to_string(s.inputDelay) + (s.inputDelay == 1 ? " frame" : " frames");
+            o.hint = TRF(s.inputDelay == 1 ? Str::hud_vote_their_delay : Str::hud_vote_their_delays, static_cast<int>(s.inputDelay));
         }
     }
     VoteInput in;

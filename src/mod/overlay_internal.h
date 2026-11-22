@@ -548,7 +548,11 @@ void StepBenchmarkLaunch();
 void DrawBenchmarkLaunch(const HubFonts& f);
 
 struct BenchDataLine {
-    int kind = -1;
+    enum class Kind { None,
+                      Clean,
+                      ModsChange,
+                      DataChanged };
+    Kind kind = Kind::None;
     std::string head, body;
 };
 

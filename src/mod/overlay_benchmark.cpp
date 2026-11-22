@@ -1,5 +1,7 @@
 #include "mod/overlay_internal.h"
 
+#include "core/text.h"
+
 namespace sfv::mod::overlay {
 
 void OpenBenchmarkModal(bool result) {
@@ -27,7 +29,7 @@ void StepBenchmarkLaunch() {
         if (!BenchmarkStart(BuildVersion())) {
             g_benchModal = BenchModal::None;
             l = {};
-            AddToast("The benchmark can't start now.", kRed, 4);
+            AddToast(TR(Str::bench_cant_start), kRed, 4);
             return;
         }
         l.switchesAt = FlowBattleSceneSwitches();
@@ -43,7 +45,7 @@ void StepBenchmarkLaunch() {
         ReplayApplyControl(ReplayControl::Leave);
         g_benchModal = BenchModal::None;
         l = {};
-        AddToast("The benchmark didn't start. Try again.", kRed, 5);
+        AddToast(TR(Str::bench_didnt_start), kRed, 5);
         return;
     }
     if (l.step == BenchStep::Starting && g_benchModal == BenchModal::Loading && now - l.blackFrom >= kBenchToBlack) {
@@ -82,13 +84,13 @@ void DrawBenchmarkLaunch(const HubFonts& f) {
         g_inputOn = false;
         ModalSpec m;
         m.x0 = 480, m.y0 = 270, m.w = 640, m.h = 290;
-        m.kicker = "BENCHMARK";
-        m.hint = "It starts by itself.";
+        m.kicker = TR(Str::bench_kicker);
+        m.hint = TR(Str::bench_starts_itself);
         int clicked = -1;
         float y = Modal(d, bold, f.body, m, &clicked);
-        Text(d, f.display, g_v.L(28), g_v.P(m.x0 + 28, y), look::kCream, "Getting the round ready");
+        Text(d, f.display, g_v.L(28), g_v.P(m.x0 + 28, y), look::kCream, TR(Str::bench_getting_ready));
         y += 62;
-        const char* const kSteps[] = {"Reading the round", "Loading the characters and the stage", "Starting the round"};
+        const char* const kSteps[] = {TR(Str::bench_step_reading), TR(Str::bench_step_loading), TR(Str::bench_step_starting)};
         for (int i = 0; i < static_cast<int>(std::size(kSteps)); i++) {
             const int at = static_cast<int>(l.step);
             const int state = i < at ? 2 : i == at ? 1
@@ -105,7 +107,7 @@ void DrawBenchmarkLaunch(const HubFonts& f) {
                 d->AddCircleFilled(g_v.P(m.x0 + 40 + 7 * std::cos(turn), y + 11 + 7 * std::sin(turn)), g_v.L(2.6f), look::kRing);
             }
             std::string text = kSteps[i];
-            if (state == 1 && now - l.stepSince >= 3) text += " \xC2\xB7 " + std::to_string(static_cast<int>(now - l.stepSince)) + " s";
+            if (state == 1 && now - l.stepSince >= 3) text = TRF(Str::bench_step_seconds, text.c_str(), static_cast<int>(now - l.stepSince));
             Text(d, f.body, g_v.L(17), g_v.P(m.x0 + 66, y), state == 0 ? look::kMuted : look::kCream, text);
             y += 36;
         }
@@ -131,36 +133,39 @@ BenchDataLine BenchmarkDataLine(const BenchmarkResult& b) {
             from = comma == std::string::npos ? codes.size() : comma + 1;
             if (code.empty()) continue;
             const char* name = keeper::CharacterName(code);
-            out.push_back(code == "CMN" ? "every character's shared data" : code == "?" ? "a mod that can't be read"
-                                                                        : *name         ? name
-                                                                                        : code);
+            out.push_back(code == "CMN" ? std::string(TR(Str::bench_shared_data))
+                          : code == "?" ? std::string(TR(Str::bench_unreadable_mod))
+                          : *name       ? std::string(name)
+                                        : code);
         }
         std::string s;
-        for (size_t i = 0; i < out.size(); i++) s += (i == 0 ? "" : i + 1 == out.size() ? " and "
-                                                                                        : ", ") +
-                                                     out[i];
+        for (size_t i = 0; i < out.size(); i++) {
+            if (i == 0) s = out[i];
+            else if (i + 1 == out.size()) s = TRF(Str::common_list_and, s.c_str(), out[i].c_str());
+            else s += TR(Str::common_list_comma) + out[i];
+        }
         return s;
     };
     BenchDataLine l;
     if (b.DataChanged()) {
-        l.kind = 2;
-        l.head = "This round's battle data isn't the game's own: " + names(b.data.substr(8)) + ".";
-        l.body = "A mod changes it. Matches with these characters fall out of sync against players without that mod.";
+        l.kind = BenchDataLine::Kind::DataChanged;
+        l.head = TRF(Str::bench_data_changed, names(b.data.substr(8)).c_str());
+        l.body = TR(Str::bench_data_changed_body);
         return l;
     }
     if (b.ModsChangeBattle()) {
         const size_t colon = b.mods.find(':');
-        l.kind = 1;
-        l.head = "Mods change the battle data of " + (colon == std::string::npos ? std::string("some characters") : names(b.mods.substr(colon + 1))) + ".";
-        l.body = "Matches with them fall out of sync against players who don't have the same mods.";
+        l.kind = BenchDataLine::Kind::ModsChange;
+        l.head = TRF(Str::bench_mods_change, (colon == std::string::npos ? std::string(TR(Str::bench_some_characters)) : names(b.mods.substr(colon + 1))).c_str());
+        l.body = TR(Str::bench_mods_change_body);
         return l;
     }
     if (b.mods.empty()) return l;
-    l.kind = 0;
-    if (b.mods == "none") l.head = "No mods are installed.";
+    l.kind = BenchDataLine::Kind::Clean;
+    if (b.mods == "none") l.head = TR(Str::bench_no_mods);
     else {
         const int count = std::atoi(b.mods.c_str());
-        l.head = std::to_string(count) + (count == 1 ? " mod is installed. It doesn't" : " mods are installed. None of them") + " change battle data.";
+        l.head = count == 1 ? std::string(TR(Str::bench_one_mod)) : TRF(Str::bench_mods, count);
     }
     return l;
 }
@@ -175,21 +180,21 @@ void DrawBenchmarkModal(const HubFonts& f, bool takeInput) {
     if (g_benchModal == BenchModal::Confirm) {
         ModalSpec m;
         m.x0 = 480, m.y0 = 250, m.w = 640, m.h = 330;
-        m.kicker = "BENCHMARK";
-        m.prompts = {{"button_a", "Choose"}, {"button_b", "Back"}};
+        m.kicker = TR(Str::bench_kicker);
+        m.prompts = {{"button_a", TR(Str::common_prompt_choose)}, {"button_b", TR(Str::common_prompt_back)}};
         float y = Modal(d, bold, f.body, m, &clicked);
-        Text(d, f.display, g_v.L(28), g_v.P(m.x0 + 28, y), look::kCream, "Run the benchmark?");
+        Text(d, f.display, g_v.L(28), g_v.P(m.x0 + 28, y), look::kCream, TR(Str::bench_run_title));
         y += 50;
         ImGui::PushFont(f.body);
         const float wrap = g_v.L(m.w - 56);
         d->AddText(f.body, TextPx(19), g_v.P(m.x0 + 28, y), look::kCream,
-                   "You watch one round played with a rollback on every frame, the most a match can have. It takes about a minute.",
+                   TR(Str::bench_run_text),
                    nullptr, wrap);
-        d->AddText(f.body, TextPx(19), g_v.P(m.x0 + 28, y + 62), look::kSoft, "Close other programs for a fair result.", nullptr, wrap);
+        d->AddText(f.body, TextPx(19), g_v.P(m.x0 + 28, y + 62), look::kSoft, TR(Str::bench_close_programs), nullptr, wrap);
         ImGui::PopFont();
         const float by = m.y0 + m.h - 46 - 22 - 48;
-        const bool run = Button(d, bold, m.x0 + 28, by, m.x0 + m.w / 2 - 6, by + 48, "Run", g_benchChoice == 0);
-        const bool later = Button(d, bold, m.x0 + m.w / 2 + 6, by, m.x0 + m.w - 28, by + 48, "Not now", g_benchChoice == 1);
+        const bool run = Button(d, bold, m.x0 + 28, by, m.x0 + m.w / 2 - 6, by + 48, TR(Str::bench_run), g_benchChoice == 0);
+        const bool later = Button(d, bold, m.x0 + m.w / 2 + 6, by, m.x0 + m.w - 28, by + 48, TR(Str::bench_not_now), g_benchChoice == 1);
         if (takeInput) {
             if (Left() || Right()) g_benchChoice = 1 - g_benchChoice;
             if ((Confirm() && g_benchChoice == 0) || run) StartBenchmarkRun();
@@ -200,33 +205,31 @@ void DrawBenchmarkModal(const HubFonts& f, bool takeInput) {
         const bool pass = b.Pass();
         const BenchDataLine data = BenchmarkDataLine(b);
         ModalSpec m;
-        m.x0 = 350, m.y0 = 120, m.w = 900, m.h = (b.matched ? (pass ? 470.0f : 510.0f) : 510.0f) + (data.kind < 0 ? 0.0f : data.body.empty() ? 44.0f
-                                                                                                                                             : 74.0f);
+        m.x0 = 350, m.y0 = 120, m.w = 900, m.h = (b.matched ? (pass ? 470.0f : 510.0f) : 510.0f) + (data.kind == BenchDataLine::Kind::None ? 0.0f : data.body.empty() ? 44.0f
+                                                                                                                                                                      : 74.0f);
         const std::time_t t = static_cast<std::time_t>(b.when);
         std::tm tm{};
         localtime_s(&tm, &t);
-        static const char* const kMon[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
+
         char kick[64];
-        std::snprintf(kick, sizeof(kick), "BENCHMARK \xC2\xB7 %s %d, %02d:%02d", kMon[tm.tm_mon], tm.tm_mday, tm.tm_hour, tm.tm_min);
+        const std::string month = Upper(TR(static_cast<Str>(static_cast<int>(Str::common_month_1) + std::clamp(tm.tm_mon, 0, 11))));
+        std::snprintf(kick, sizeof(kick), "%s", TRF(Str::bench_result_kicker, month.c_str(), tm.tm_mday, tm.tm_hour, tm.tm_min).c_str());
         m.kicker = kick;
-        m.aside = "Polarity " + b.version;
+        m.aside = TRF(Str::common_version, b.version.c_str());
         m.danger = !b.matched;
-        m.prompts = {{"button_a", "Choose"}, {"button_b", "Back"}};
+        m.prompts = {{"button_a", TR(Str::common_prompt_choose)}, {"button_b", TR(Str::common_prompt_back)}};
         float y = Modal(d, bold, f.body, m, &clicked);
         const ImU32 verdict = pass ? look::kOk : !b.matched ? look::kDanger
                                                             : look::kGold;
-        Text(d, f.display, g_v.L(64), g_v.P(m.x0 + 28, y - 4), verdict, pass ? "PASS" : "FAIL");
-        const float vx = m.x0 + 28 + TextW(f.display, 64, pass ? "PASS" : "FAIL") + 28;
-        char avg[48];
-        std::snprintf(avg, sizeof(avg), "%.1f fps average", b.averageFps);
+        Text(d, f.display, g_v.L(64), g_v.P(m.x0 + 28, y - 4), verdict, TR(pass ? Str::bench_pass : Str::bench_fail));
+        const float vx = m.x0 + 28 + TextW(f.display, 64, TR(pass ? Str::bench_pass : Str::bench_fail)) + 28;
+        const std::string avg = TRF(Str::bench_average, b.averageFps);
         Text(d, f.display, g_v.L(28), g_v.P(vx, y + 6), look::kCream, avg);
-        Text(d, f.body, g_v.L(19), g_v.P(vx, y + 44), look::kSoft, "A pass needs 59 or more.");
+        Text(d, f.body, g_v.L(19), g_v.P(vx, y + 44), look::kSoft, TR(Str::bench_pass_needs));
         y += 92;
-        char a[32], s2[32], c[48];
-        std::snprintf(a, sizeof(a), "%.1f fps", b.lowFps);
-        std::snprintf(s2, sizeof(s2), "%.1f ms", b.slowestMs);
-        std::snprintf(c, sizeof(c), "%d of %d", b.slowFrames, b.frames);
-        const std::pair<const char*, std::string> figures[] = {{"1% low", a}, {"Slowest frame", s2}, {"Frames over 20 ms", c}};
+        const std::pair<std::string, std::string> figures[] = {{TRF(Str::bench_low), TRF(Str::bench_fps, b.lowFps)},
+                                                               {std::string(TR(Str::bench_slowest)), TRF(Str::bench_ms, b.slowestMs)},
+                                                               {std::string(TR(Str::bench_over_20)), TRF(Str::bench_of, b.slowFrames, b.frames)}};
         const float fw = (m.w - 56 - 24) / 3;
         for (int i = 0; i < 3; i++) {
             const float x0 = m.x0 + 28 + i * (fw + 12);
@@ -235,9 +238,7 @@ void DrawBenchmarkModal(const HubFonts& f, bool takeInput) {
             Text(d, f.display, g_v.L(26), g_v.P(x0 + 18, y + 38), look::kCream, figures[i].second);
         }
         y += 98;
-        char times[128];
-        std::snprintf(times, sizeof(times), "Each frame: rollbacks %.1f ms \xC2\xB7 presenting %.1f ms \xC2\xB7 %.1f ms in all", b.rollbackMs + b.gameMs,
-                      b.drawMs, b.seconds * 1000.0 / std::max(1, b.frames));
+        const std::string times = TRF(Str::bench_each_frame, b.rollbackMs + b.gameMs, b.drawMs, b.seconds * 1000.0 / std::max(1, b.frames));
         Text(d, bold, g_v.L(19), g_v.P(m.x0 + 28, y), look::kSoft, times);
         y += 40;
         d->AddLine(g_v.P(m.x0 + 28, y), g_v.P(m.x0 + m.w - 28, y), Rgba(236, 228, 206, 36), std::max(1.0f, g_v.L(1)));
@@ -245,27 +246,25 @@ void DrawBenchmarkModal(const HubFonts& f, bool takeInput) {
         if (b.matched) {
             d->AddLine(g_v.P(m.x0 + 30, y + 13), g_v.P(m.x0 + 36, y + 19), look::kOk, g_v.L(2.4f));
             d->AddLine(g_v.P(m.x0 + 36, y + 19), g_v.P(m.x0 + 46, y + 7), look::kOk, g_v.L(2.4f));
-            Text(d, bold, g_v.L(19), g_v.P(m.x0 + 56, y), look::kCream, "The round played exactly as recorded.");
+            Text(d, bold, g_v.L(19), g_v.P(m.x0 + 56, y), look::kCream, TR(Str::bench_matched));
             if (!pass) {
                 const bool rollbacks = b.rollbackMs + b.gameMs >= b.drawMs;
                 Text(d, f.body, g_v.L(19), g_v.P(m.x0 + 56, y + 30), look::kSoft,
-                     rollbacks ? "Rollbacks took the most time. With 1 or 2 frames of input delay, a match rolls back less."
-                               : "Drawing the game took the most time. Lower graphics settings may help.");
+                     TR(rollbacks ? Str::bench_rollbacks_most : Str::bench_drawing_most));
             }
         } else {
             d->AddLine(g_v.P(m.x0 + 30, y + 7), g_v.P(m.x0 + 44, y + 21), look::kDanger, g_v.L(2.4f));
             d->AddLine(g_v.P(m.x0 + 44, y + 7), g_v.P(m.x0 + 30, y + 21), look::kDanger, g_v.L(2.4f));
             Text(d, bold, g_v.L(19), g_v.P(m.x0 + 56, y), look::kCream,
-                 "The round played differently from frame " + std::to_string(b.firstDiffer) + ".");
+                 TRF(Str::bench_differed, b.firstDiffer));
             Text(d, f.body, g_v.L(19), g_v.P(m.x0 + 56, y + 30), look::kSoft,
-                 data.kind == 2 ? "This PC would fall out of sync online."
-                                : "This PC would fall out of sync online. Pack logs in Polarity settings and send them in.");
+                 TR(data.kind == BenchDataLine::Kind::DataChanged ? Str::bench_out_of_sync : Str::bench_out_of_sync_pack));
         }
-        if (data.kind >= 0) {
+        if (data.kind != BenchDataLine::Kind::None) {
             float dy = y + (b.matched && pass ? 44 : 74);
-            const ImU32 mark = data.kind == 0 ? look::kOk : data.kind == 1 ? look::kGold
-                                                                           : look::kDanger;
-            if (data.kind == 0) {
+            const ImU32 mark = data.kind == BenchDataLine::Kind::Clean ? look::kOk : data.kind == BenchDataLine::Kind::ModsChange ? look::kGold
+                                                                                                                                  : look::kDanger;
+            if (data.kind == BenchDataLine::Kind::Clean) {
                 d->AddLine(g_v.P(m.x0 + 30, dy + 13), g_v.P(m.x0 + 36, dy + 19), mark, g_v.L(2.4f));
                 d->AddLine(g_v.P(m.x0 + 36, dy + 19), g_v.P(m.x0 + 46, dy + 7), mark, g_v.L(2.4f));
             } else {
@@ -276,8 +275,8 @@ void DrawBenchmarkModal(const HubFonts& f, bool takeInput) {
             if (!data.body.empty()) Text(d, f.body, g_v.L(19), g_v.P(m.x0 + 56, dy + 30), look::kSoft, data.body);
         }
         const float by = m.y0 + m.h - 46 - 22 - 48;
-        const bool done = Button(d, bold, m.x0 + 28, by, m.x0 + m.w / 2 - 6, by + 48, "Done", g_benchChoice == 0);
-        const bool again = Button(d, bold, m.x0 + m.w / 2 + 6, by, m.x0 + m.w - 28, by + 48, "Run again", g_benchChoice == 1);
+        const bool done = Button(d, bold, m.x0 + 28, by, m.x0 + m.w / 2 - 6, by + 48, TR(Str::bench_done), g_benchChoice == 0);
+        const bool again = Button(d, bold, m.x0 + m.w / 2 + 6, by, m.x0 + m.w - 28, by + 48, TR(Str::bench_again), g_benchChoice == 1);
         if (takeInput) {
             if (Left() || Right()) g_benchChoice = 1 - g_benchChoice;
             if ((Confirm() && g_benchChoice == 1) || again) StartBenchmarkRun();

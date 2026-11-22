@@ -115,7 +115,7 @@ void FightUiDrawVote(const HubFonts& f, const VoteSide (&sides)[2], bool armed, 
         Text(d, f.body, g_v.L(16), g_v.P(x0 + 22 + TextW(f.display, 40, wins) + 10, y + 16), look::kSoft, of);
         y += 40 + 10;
         static const ImU32 kStatus[3] = {look::kSoft, look::kOk, look::kMuted};
-        Text(d, bold, g_v.L(16), g_v.P(x0 + 22, y), kStatus[std::clamp(s.statusKind, 0, 2)], s.status);
+        Text(d, bold, g_v.L(16), g_v.P(x0 + 22, y), kStatus[static_cast<int>(s.tone)], s.status);
         y += 22;
         for (const std::string& line : s.lines) {
             Wrapped(d, f.body, 15, x0 + 22, y + 2, kInner, look::kSoft, line);

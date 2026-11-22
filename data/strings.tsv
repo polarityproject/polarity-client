@@ -718,3 +718,91 @@ stripe.take_p2	Control P2
 stripe.frame	Frame
 stripe.out_of_sync_round	Out of sync with the recording from round %d
 stripe.out_of_sync	Out of sync with the recording
+
+# The benchmark modals (overlay_benchmark.cpp).
+common.list_comma	, 
+common.list_and	%s and %s
+bench.kicker	BENCHMARK
+bench.starts_itself	It starts by itself.
+bench.getting_ready	Getting the round ready
+bench.step.reading	Reading the round
+bench.step.loading	Loading the characters and the stage
+bench.step.starting	Starting the round
+bench.step_seconds	%s · %d s
+bench.shared_data	every character's shared data
+bench.unreadable_mod	a mod that can't be read
+bench.data_changed	This round's battle data isn't the game's own: %s.
+bench.data_changed_body	A mod changes it. Matches with these characters fall out of sync against players without that mod.
+bench.some_characters	some characters
+bench.mods_change	Mods change the battle data of %s.
+bench.mods_change_body	Matches with them fall out of sync against players who don't have the same mods.
+bench.no_mods	No mods are installed.
+bench.one_mod	1 mod is installed. It doesn't change battle data.
+bench.mods	%d mods are installed. None of them change battle data.
+bench.run_title	Run the benchmark?
+bench.run_text	You watch one round played with a rollback on every frame, the most a match can have. It takes about a minute.
+bench.close_programs	Close other programs for a fair result.
+bench.run	Run
+bench.not_now	Not now
+bench.result_kicker	BENCHMARK · %s %d, %02d:%02d
+bench.pass	PASS
+bench.fail	FAIL
+bench.average	%.1f fps average
+bench.pass_needs	A pass needs 59 or more.
+bench.fps	%.1f fps
+bench.ms	%.1f ms
+bench.of	%d of %d
+bench.low	1%% low
+bench.slowest	Slowest frame
+bench.over_20	Frames over 20 ms
+bench.each_frame	Each frame: rollbacks %.1f ms · presenting %.1f ms · %.1f ms in all
+bench.matched	The round played exactly as recorded.
+bench.rollbacks_most	Rollbacks took the most time. With 1 or 2 frames of input delay, a match rolls back less.
+bench.drawing_most	Drawing the game took the most time. Lower graphics settings may help.
+bench.differed	The round played differently from frame %d.
+bench.out_of_sync	This PC would fall out of sync online.
+bench.out_of_sync_pack	This PC would fall out of sync online. Pack logs in Polarity settings and send them in.
+bench.done	Done
+bench.again	Run again
+bench.cant_start	The benchmark can't start now.
+bench.didnt_start	The benchmark didn't start. Try again.
+
+# The HUD during a match, its toasts and the post-match panes (overlay_hud.cpp).
+hud.toast.migrated	SFVR is now Polarity. Your settings, replays and logs are in the Polarity folder.
+hud.toast.reports	Polarity sends desync and crash reports to help fix bugs. You can turn this off in Polarity settings.
+hud.toast.report_sent	Bug report sent
+hud.toast.update_room	Polarity %s is out. Leave the room to update.
+hud.toast.update_menu	Polarity %s is out. Press Back + Start to update.
+hud.toast.hosting	Hosting. Code %s copied
+hud.toast.joined	%s joined
+hud.toast.wants_rematch	%s wants a rematch
+hud.toast.wants_select	%s wants character select
+hud.toast.spectator_joined	A spectator joined (%d watching)
+hud.toast.watching	%d watching
+hud.toast.session_over	Session over: %s
+hud.desync	DESYNC AT FRAME %d
+hud.desync_saving	saving the recording...
+hud.desync_saved	recording saved
+hud.bar.you	 (you)
+hud.bar.score	(%d/%d)
+hud.bar.watching	watching, %d in hand
+hud.bar.connecting	connecting...
+hud.bar.ping	%ums ±%.0f
+hud.bar.fps	%d fps
+hud.bar.rbf	%d RBF
+hud.vote.rematch	Rematch
+hud.vote.select	Character select
+hud.vote.choosing	Choosing...
+hud.vote.wins_set	Wins the set
+hud.vote.set_over	Set over
+hud.vote.keep_playing	No one's waiting, so you can keep playing.
+hud.vote.delay_settings	Delay %d, from Polarity settings
+hud.vote.delay_suggested	Suggested delay %d (ping %u ms)
+hud.vote.rematch_in	Rematch in %d s
+hud.vote.room_in	Back to the room in %d s
+hud.vote.next_set_in	Next set in %d s
+hud.vote.leave_session	Leave ends the session.
+hud.vote.leave_room	Leave returns to the room.
+hud.vote.leave_set	Leave ends the set here.
+hud.vote.their_delay	Input delay %d frame
+hud.vote.their_delays	Input delay %d frames
