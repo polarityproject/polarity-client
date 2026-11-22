@@ -197,8 +197,8 @@ Sent SendFile(const std::string& url, const char* path, const std::wstring& dir,
         MarkSent(dir, name);
         return Sent::Now;
     }
-    if (status == HTTP_STATUS_BAD_REQUEST || status == HTTP_STATUS_NOT_FOUND || status == HTTP_STATUS_LENGTH_REQUIRED ||
-        status == HTTP_STATUS_REQUEST_TOO_LARGE) {
+    if (status == HTTP_STATUS_BAD_REQUEST || status == HTTP_STATUS_NOT_FOUND || status == HTTP_STATUS_CONFLICT ||
+        status == HTTP_STATUS_LENGTH_REQUIRED || status == HTTP_STATUS_REQUEST_TOO_LARGE) {
         Log("reports: the server refused %s (%lu)", name.c_str(), status);
         MarkSent(dir, name);
         return Sent::Refused;

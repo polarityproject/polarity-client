@@ -153,7 +153,7 @@ Desync reports and crash reports go to the report server (`[report] url`, else `
 - Files over 16 MB (the server's limit, such as a full recording made in testing) stay home, and so do reports older than 14 days.
 - `uploaded.txt` lists the files sent. `kept.txt` lists files made while uploads were off, which are never sent.
 - The first look comes 30 seconds after the mod's start, then every 5 minutes while something is left (the server not reached, a match log to come), but not during a match, where the upload would share the line with it.
-- A file the server refuses for what it is (400, 404, 411, 413) is marked sent, since sending it again would not help. A server that can't be reached or is busy ends the round; the rest waits for the next.
+- A file the server refuses for what it is (400, 404, 409, 411, 413) is marked sent, since sending it again would not help. A server that can't be reached or is busy ends the round; the rest waits for the next.
 
 ## Logs
 
