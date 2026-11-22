@@ -38,8 +38,17 @@ latest is the one every install is offered, and publishing a release is what
 offers it. Drafts and pre-releases are never the latest.
 
 A file's `path` is a plain name in `Binaries\Win64` with a `.dll`, `.pdb` or
-`.txt` extension, or a `.ttc` font under `Polarity/fonts/`. The client
-refuses update info with any other path.
+`.txt` extension, or a `.ttc` font under `Polarity/fonts/` (or the old site's
+`SFVR/fonts/`). A name is at most 64 characters of letters, digits, `_`,
+`-` and `.`, with no `..` and no leading dot. The client refuses update info
+with any other path, a `sha256` that is not 64 hex digits, or a size over
+256 MB. The product may also be "SFVR": the old site's update info, which
+SFVR's updaters require, was frozen at the first Polarity release.
+
+Versions compare by their numbers first. A version with a suffix
+(`0.5.0-beta`) is below the same version without one. Suffixes compare part
+by part, split at dots, as semver does: numbers as numbers and below any
+text, text as text, and a suffix that runs out first is the lower.
 
 ## The release key
 
