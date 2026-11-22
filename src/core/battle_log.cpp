@@ -1,3 +1,5 @@
+// The Battle Log's sets: matches grouped, ordered and scored.
+
 #include "core/battle_log.h"
 
 #include <algorithm>
@@ -45,7 +47,6 @@ std::vector<Entry> Merge(std::vector<Entry> entries, const std::string& myName) 
             out.push_back(std::move(e));
             continue;
         }
-        // The player's own copy wins over the opponent's.
         Entry& kept = out[it->second];
         const bool keptMine = kept.header.localPlayer >= 0 && kept.header.localPlayer == MySide(kept, myName);
         const bool thisMine = e.header.localPlayer >= 0 && e.header.localPlayer == MySide(e, myName);
@@ -81,7 +82,6 @@ std::vector<Set> GroupSets(const std::vector<const Entry*>& entries) {
         sets[it->second].games.push_back(e);
     }
     for (Set& s : sets) {
-        // Oldest first: by the game number, then by time.
         std::sort(s.games.begin(), s.games.end(), [](const Entry* a, const Entry* b) {
             if (a->header.summary.setGame != b->header.summary.setGame) return a->header.summary.setGame < b->header.summary.setGame;
             return a->header.createdUnix < b->header.createdUnix;
@@ -92,7 +92,6 @@ std::vector<Set> GroupSets(const std::vector<const Entry*>& entries) {
         if (last.present && last.setGame) {
             for (int i = 0; i < kNumPlayers; i++) s.wins[i] = last.setWins[i];
         } else {
-            // No set score kept: the matches won in these games.
             for (int i = 0; i < kNumPlayers; i++) s.wins[i] = 0;
             for (const Entry* g : s.games) {
                 if (g->header.summary.winner >= 0) s.wins[g->header.summary.winner & 1]++;
@@ -114,7 +113,7 @@ std::vector<std::pair<uint32_t, int>> Characters(const std::vector<Entry>& entri
 }
 
 std::vector<std::pair<std::string, int>> Opponents(const std::vector<Entry>& entries, const std::string& myName) {
-    std::map<std::string, std::pair<std::string, int>> counts; // by lower case: shown name, count
+    std::map<std::string, std::pair<std::string, int>> counts;
     for (const Entry& e : entries) {
         const std::string name = NameOf(e, 1 - MySide(e, myName));
         auto& c = counts[Lower(name)];

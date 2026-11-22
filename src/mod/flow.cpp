@@ -110,7 +110,7 @@ void RememberScene(const std::string& stateClassName) {
     g_holdResults = false;
     g_resultsHeld = false;
     std::lock_guard lock(g_sceneMutex);
-    if (stateClassName == "TrainingBattleState" && g_lastScene != stateClassName) NoteSessionActivity("training");
+    if (stateClassName == "TrainingBattleState" && g_lastScene != stateClassName) BenchmarkNoteActivity("training");
     g_lastScene = stateClassName;
     g_sceneChangedAt = g_pumps.load();
 }

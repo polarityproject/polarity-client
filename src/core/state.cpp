@@ -1,3 +1,5 @@
+// State regions: saving, loading, masked hashing and the checksum fold (docs/snapshot.md).
+
 #include "core/state.h"
 
 #include <algorithm>
@@ -135,9 +137,6 @@ namespace {
 
 AddressTest g_addressTest = nullptr;
 
-// Hash64 of `len` bytes with every byte of a masked 8-byte word read as zero:
-// the same value as Hash64 over a copy with those words cleared, without the
-// copy (which doubled the cost over SFV's 436 KB of mostly masked regions).
 uint64_t Hash64Masked(const uint8_t* data, size_t len, const std::vector<uint8_t>& ignore) {
     auto word = [&](size_t offset) { return IsIgnored(ignore, offset) ? 0 : Read64(data + offset); };
     size_t at = 0;
@@ -145,7 +144,6 @@ uint64_t Hash64Masked(const uint8_t* data, size_t len, const std::vector<uint8_t
     if (len >= 32) {
         uint64_t v1 = P1 + P2, v2 = P2, v3 = 0, v4 = 0 - P1;
         do {
-            // A stripe is 4 words, half a mask byte; most have no bit set.
             const size_t byte = at / 64;
             const unsigned bits = byte < ignore.size() ? (ignore[byte] >> ((at / 32) % 2 * 4)) & 0xF : 0;
             if (bits == 0) {
@@ -174,7 +172,6 @@ uint64_t Hash64Masked(const uint8_t* data, size_t len, const std::vector<uint8_t
         h ^= Round(0, word(at));
         h = Rotl(h, 27) * P1 + P4;
     }
-    // A partial last word: masked bytes read as zero too.
     const bool tailMasked = at < len && IsIgnored(ignore, at);
     if (at + 4 <= len) {
         h ^= static_cast<uint64_t>(tailMasked ? 0 : Read32(data + at)) * P1;
@@ -215,8 +212,6 @@ void SetAddressTest(AddressTest test) { g_addressTest = test; }
 bool IsProcessAddress(uint64_t value) { return g_addressTest && g_addressTest(value); }
 
 void HashRegions(const std::vector<StateRegion>& regions, uint64_t* out) {
-    // The regions lie all over the heap, mostly out of cache: the start of
-    // the next ones is fetched while this one hashes.
     constexpr size_t kAhead = 2, kLines = 4;
     for (size_t i = 0; i < regions.size(); i++) {
         if (i + kAhead < regions.size()) {
@@ -237,7 +232,6 @@ void HashSavedState(const std::vector<StateRegion>& regions, const uint8_t* stat
 }
 
 uint32_t FoldChecksum(const uint64_t* regionHashes, size_t count) {
-    // Order-independent: peers may list the same regions in a different order.
     thread_local std::vector<uint64_t> sorted;
     sorted.assign(regionHashes, regionHashes + count);
     std::sort(sorted.begin(), sorted.end());

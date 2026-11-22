@@ -17,6 +17,17 @@ between machines without meaning anything. The code is
 
 Addresses are offsets in the game image (rva) or in an object (+).
 
+## Region hashes
+
+Region hashes are Hash64 with every byte of a masked word read as zero,
+which gives the same value as hashing a copy with those words cleared,
+without the copy, which doubled the cost over SFV's 436 KB of mostly masked
+regions. The mask is read 4 words at a time (half a mask byte), since most
+stripes have no bit set. The regions lie all over the heap, mostly out of
+cache, so the start of the next ones is fetched while one hashes. The fold
+into the frame's checksum is order-independent, since peers may list the
+same regions in a different order.
+
 ## Region order and names
 
 The game registers its regions in an order that differs between battles,

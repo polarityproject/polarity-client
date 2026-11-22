@@ -266,7 +266,7 @@ void DrawStrip(const NetView& v) {
         case NetView::Phase::Ended:
         case NetView::Phase::Idle: return;
     }
-    DrawStatusNote(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, text, ImGui::ColorConvertFloat4ToU32(color));
+    FightUiDrawStatusNote(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, text, ImGui::ColorConvertFloat4ToU32(color));
 }
 
 } // namespace sfv::mod::overlay

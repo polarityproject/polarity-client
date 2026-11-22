@@ -1,3 +1,5 @@
+// Research commands on the game's objects, memory and tables (docs/commands.md).
+
 #include "mod/commands.h"
 
 #include "mod/local_input.h"
@@ -19,15 +21,13 @@ namespace sfv::mod {
 
 namespace {
 
-// Field offsets of the game's UE4 objects these commands read
-// (docs/commands.md has what each holds).
 namespace ufield {
 constexpr uint32_t kNext = 0x28;
-constexpr uint32_t kRaw = 0x30; // the words logged after a field's name
+constexpr uint32_t kRaw = 0x30;
 constexpr uint32_t kOffset = 0x4C;
-constexpr uint32_t kChildren = 0x38; // a UStruct's first field
+constexpr uint32_t kChildren = 0x38;
 constexpr uint32_t kStructSize = 0x40;
-constexpr uint32_t kInner = 0x70; // an ArrayProperty's inner property, a StructProperty's struct
+constexpr uint32_t kInner = 0x70;
 constexpr uint32_t kReadable = 0x80;
 } // namespace ufield
 
@@ -37,7 +37,6 @@ constexpr uint32_t kCount = 0x48;
 constexpr uint32_t kSize = 0x50;
 } // namespace uenum
 
-// ScaleformUtilGFxPlayer.
 namespace gfxplayer {
 constexpr uint32_t kMoviePath = 0x300, kMoviePathLength = 0x308;
 constexpr uint32_t kAsset2 = 0x310;
@@ -49,15 +48,13 @@ constexpr uint32_t kStepMode = 0x3A0;
 constexpr uint32_t kSize = 0x3A8;
 } // namespace gfxplayer
 
-// KWUserProfileDetails.
 namespace profile {
-constexpr uint32_t kFlags = 0x28; // bit 0: the main profile
+constexpr uint32_t kFlags = 0x28;
 constexpr uint32_t kKeyConfig = 0xB0;
 constexpr uint32_t kSize = 0xC0;
 } // namespace profile
 
 constexpr int kMembersBytes = 0x400;
-// Where heap pointers lie (user space above the low 1 TB).
 constexpr uint64_t kHeapLow = 0x10000000000ull, kHeapHigh = 0x800000000000ull;
 constexpr uintptr_t kAllocationGranularity = 0x10000;
 
@@ -113,7 +110,7 @@ void PackagesCommand(const std::string&, std::stringstream& ss) {
     std::string what;
     ss >> what;
     if (!ue4::EnsureObjects(ImageBase())) return;
-    std::map<std::string, int> packages; // name -> objects inside
+    std::map<std::string, int> packages;
     ue4::ForEachObject([&](const void* object) {
         const void* root = object;
         while (const void* outer = ue4::OuterOf(root)) root = outer;
@@ -387,7 +384,7 @@ void GfxCommand(const std::string&, std::stringstream& ss) {
                 w += b;
             }
             Log("gfx   native vtable:%s", w.c_str());
-            words = 0; // once
+            words = 0;
         }
     });
 }
@@ -542,7 +539,7 @@ void Input2Command(const std::string&, std::stringstream& ss) {
         return;
     }
     if (key.empty() || value.empty()) return;
-    CopyFileW(path.c_str(), backup.c_str(), TRUE); // only the first time
+    CopyFileW(path.c_str(), backup.c_str(), TRUE);
     const bool ok = WritePrivateProfileStringW(L"AssignKeyboard", std::wstring(key.begin(), key.end()).c_str(),
                                                std::wstring(value.begin(), value.end()).c_str(), path.c_str());
     Log("input2: [AssignKeyboard] %s=%s %s (from the next start)", key.c_str(), value.c_str(), ok ? "set" : "failed");

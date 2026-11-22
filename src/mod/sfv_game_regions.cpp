@@ -165,7 +165,7 @@ void GameCheckChangeWatch(const std::vector<StateRegion>& regions, uintptr_t ima
             ThreadGuard running;
             int slot = 0;
             for (int done = 0; done < length && slot < 4; done += 8, slot++) {
-                ArmWatch(slot, at + done, std::min(8, length - done), imageBase);
+                WatchArm(slot, at + done, std::min(8, length - done), imageBase);
             }
         }).detach();
         Log("watch: region %s at %p changed at +0x%zx; watching it", r.name.c_str(), static_cast<void*>(r.ptr),
@@ -183,7 +183,7 @@ void GameArmPendingRegionWatch(const std::vector<StateRegion>& regions, uintptr_
         if (r.name != g_regionWatchName || g_regionWatchOffset >= r.size) continue;
         int slot = 0;
         for (int done = 0; done < g_regionWatchLength && slot < 4; done += 8, slot++) {
-            ArmWatch(slot, r.ptr + g_regionWatchOffset + done, std::min(8, g_regionWatchLength - done), imageBase);
+            WatchArm(slot, r.ptr + g_regionWatchOffset + done, std::min(8, g_regionWatchLength - done), imageBase);
         }
         Log("watch: region %s at %p, watching +0x%zx", r.name.c_str(), static_cast<void*>(r.ptr), g_regionWatchOffset);
         g_regionWatchName.clear();

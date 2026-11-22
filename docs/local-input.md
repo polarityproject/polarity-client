@@ -64,6 +64,20 @@ ahead of the Steam overlay's patch there: Steam answers for its own pads
 without calling on, so hooked further in they never showed. Without the
 import it hooks the real XInput.
 
+The proxy (`src/proxy/xinput_proxy.cpp`) exports `XInputGetState` and
+`XInputSetState` by ordinal (2 and 3) as `XINPUT1_3.dll` does. That DLL is
+not a KnownDLL and no system DLL preloads it, so the copy next to the exe is
+the one the loader binds. Every export passes the call on to the real XInput
+at its original ordinal (`real_xinput.h`: System32's `xinput1_3`, or Wine's
+`xinput1_4`), the unnamed ordinals 100 to 103 included (`XInputGetStateEx`
+with the guide button, the guide button wait and its cancel, a
+controller's power off). An export the real XInput lacks answers "not
+connected". They were linker forwards to System32 until Proton loaded that
+one as the useless native copy. A call that comes back into the proxy while
+one is still running on the thread came through a hook on the real XInput
+(Special K's), and goes to the fallback; a third time round it goes nowhere
+("not connected").
+
 The game only polls pads it has seen connected. After a hot reload it has
 seen the virtual pads disconnect, so a device change message makes it
 enumerate them again.
@@ -86,3 +100,10 @@ The mod's window procedure runs ahead of the game's:
 
 The game sets its own window title for a while after starting, so the mod
 sets its own again every second.
+
+The window's title shows the instance and the mod's status
+(`StreetFighterV [sfv N] ...`), converted from UTF-8 so names in any script
+show. It is read with `InternalGetWindowText`, since `GetWindowText` would
+send `WM_GETTEXT` to the game thread, which may be waiting for the status
+lock, and set with `SendMessageTimeout`, since the window thread may be
+busy.

@@ -66,3 +66,58 @@ The probe's hook runs at the start of a battle tick, before the game opens the t
 ## The call tracer
 
 `trace <rva>...` hooks game functions with small stubs that count calls and keep the last `rcx` and return address; `tracereport` logs them. Each stub increments its count (`lock inc`), stores `rcx`, loads the return address from the stack and stores it, then jumps to the original function. The stubs are allocated near the image so MinHook's relative jumps reach them.
+
+## Data breakpoints
+
+`watch` (`watch.cpp`) sets a hardware data breakpoint in the debug registers
+of every other thread: up to 4 slots, each a length of 1, 2, 4 or 8 bytes at
+an address aligned to it, trapping on writes or on reads too. Data
+breakpoints trap after the write, so the trap's `Rip` is the next
+instruction; the trap logs the callers, unwound from its context. A trap can
+still arrive after disarming, when a thread hit it while the registers were
+being cleared: the handler swallows it and clears that thread's registers.
+The handler stays installed after disarming, since a thread may already be
+dispatching a trap, and on removal waits 250 ms for traps in flight.
+
+## Frame drops
+
+`hitch.cpp` keeps, per presented frame, the time each part of the frame took
+in microseconds, and the current second's slow frames with their time over
+1/60 s summed. Game and render threads overlap, so "elsewhere" is what the
+longer of the two leaves unaccounted. A frame over 2 s is a pause (loading,
+a breakpoint), not a drop.
+
+## The stress test and the noise mask
+
+`stress` (`stress_driver.cpp`) runs every frame of a battle again
+`distance` deep, as a netplay session would: the round director per tick
+and the round's end rolled back, so every round's end is crossed. It stops
+when the battle ends or changes under it (a KO, a menu). `learnnoise` learns
+the checksum noise mask on the way: noise is a few isolated words, and a
+real divergence spreads into many, so only frames that differ in a few words
+are learned and the rest fail the run.
+
+## The mock fighter
+
+`src/testbed/mock_game.cpp` is a small deterministic fighter for the netplay
+tests and `polarity demo`. The character choice changes health, so a setup
+mismatch shows in the state. Walking toward the screen edge is slowed, so
+the camera matters every frame. A projectile does its own damage. Effects
+are presentation and are skipped while resimulating.
+
+## Battle data
+
+`battle_data.cpp` hashes the battle's move data as the game loaded it: the
+objects of the classes KWBAC, KWBCM and KWBCH (not their default objects),
+whose parsed file's bytes are at +0x28 and their size at +0x30 (found with
+`ofclass KWBattleResource`, 2026-11-12). It compares them with
+`data/battle_data.txt`, one `<key> <size> <hash hex>` a line with `#`
+comments, and lists the mod paks under `Content\Paks` with what they change.
+
+## The benchmark
+
+The benchmark's results record what the install's battle data is (stock,
+changed and for which characters, or unknown), since a round that played
+differently is explained by a mod that changes it, and the minutes since
+the game started. The first 2 frames after FIGHT are left out of the frame
+times, since they may carry the switch into the capture.

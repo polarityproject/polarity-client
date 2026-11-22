@@ -19,17 +19,20 @@
 
 namespace sfv::mod {
 
-// Checks the plugin code the step relies on; false: StepHudMovies does nothing.
-bool InstallHudStep(const GameImage& image);
+// Checks the plugin code the step relies on; false: HudStepAdvance does nothing.
+bool HudStepInstall(const GameImage& image);
 // A new battle: finds its HUD movies (walks the object array: once a battle).
-void FindHudMovies();
-void ForgetHudMovies();
+void HudStepFindMovies();
+void HudStepForgetMovies();
 // Advances the HUD movies by `seconds` (game thread, between ticks).
-void StepHudMovies(float seconds);
+void HudStepAdvance(float seconds);
 // "N HUD steps, T ms" since the last report (a jump's cost, in its log line).
 std::string HudStepReport();
 // On by default; `hudstep 0|1|2` (research; 2: the Announce movie only).
-void SetHudStep(int mode);
+enum class HudStepMode { Off,
+                         AnnounceAndCockpit,
+                         AnnounceOnly };
+void HudStepSet(HudStepMode mode);
 bool HudStepOn();
 
 } // namespace sfv::mod

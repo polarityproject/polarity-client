@@ -1,3 +1,5 @@
+// The benchmark: the built-in round under rollback stress, timed (docs/research.md).
+
 #include "mod/benchmark.h"
 #include "mod/battle_data.h"
 
@@ -86,13 +88,12 @@ std::map<std::string, int> g_activity;
 std::atomic<int> g_dumpFrame{-1};
 } // namespace
 
-void NoteSessionActivity(const char* kind) {
+void BenchmarkNoteActivity(const char* kind) {
     std::lock_guard lock(g_activityMutex);
     g_activity[kind ? kind : "?"]++;
 }
 
-std::string SessionActivityText() {
-    // Minutes since the game started (its process's creation).
+std::string BenchmarkActivityText() {
     FILETIME created{}, exited{}, kernel{}, user{};
     long long minutes = -1;
     if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user)) {
@@ -113,14 +114,14 @@ std::string SessionActivityText() {
     return b;
 }
 
-void SetBenchmarkDumpFrame(int frame) {
+void BenchmarkSetDumpFrame(int frame) {
     g_dumpFrame = frame;
     Log("benchmark: %s", frame >= 0 ? ("runs save frame " + std::to_string(frame) + "'s state").c_str() : "runs save no reference state");
 }
 
 int BenchmarkDumpFrame() { return g_dumpFrame; }
 
-bool StartBenchmark(const std::string& modVersion) {
+bool BenchmarkStart(const std::string& modVersion) {
     if (sizeof(kBenchmarkRound) < 64) {
         Log("benchmark: this build has no benchmark round");
         return false;
@@ -150,7 +151,7 @@ bool BenchmarkRunning(int* frame, int* frames) {
     return true;
 }
 
-void FinishBenchmark(const CapturedRun& run) {
+void BenchmarkFinish(const CapturedRun& run) {
     if (run.stopped || run.micros.size() < 30) {
         Log("benchmark: %s (%zu frames measured): no result", run.stopped ? "stopped" : "too short", run.micros.size());
         return;
@@ -168,10 +169,8 @@ void FinishBenchmark(const CapturedRun& run) {
     r.session = run.session;
     r.dump = run.dump;
     r.when = static_cast<uint64_t>(std::time(nullptr));
-    // What this install's battle data is: a round that played differently is
-    // explained by a mod that changes it.
-    r.mods = ScanModPaks().Short();
-    const DataCheck check = LastDataCheck();
+    r.mods = BattleDataScanModPaks().Short();
+    const DataCheck check = BattleDataLastCheck();
     r.data = !check.done || !check.table ? "unknown"
              : check.changed.empty()     ? "stock"
                                          : "changed:" + [&] {
@@ -183,8 +182,7 @@ void FinishBenchmark(const CapturedRun& run) {
         std::lock_guard lock(g_mutex);
         r.version = g_version;
     }
-    // The first frames after FIGHT may carry the switch into the capture: left out.
-    const size_t skip = 2;
+    constexpr size_t skip = 2;
     std::vector<double> ms;
     double total = 0, net = 0, battle = 0, draw = 0;
     for (size_t i = skip; i < run.micros.size(); i++) {
@@ -221,7 +219,7 @@ void FinishBenchmark(const CapturedRun& run) {
     g_fresh = true;
 }
 
-BenchmarkResult LastBenchmark() {
+BenchmarkResult BenchmarkLast() {
     std::lock_guard lock(g_mutex);
     if (!g_lastRead) {
         g_lastRead = true;
@@ -235,7 +233,7 @@ BenchmarkResult LastBenchmark() {
     return g_last;
 }
 
-bool TakeBenchmarkResult(BenchmarkResult* out) {
+bool BenchmarkTakeResult(BenchmarkResult* out) {
     std::lock_guard lock(g_mutex);
     if (!g_fresh) return false;
     g_fresh = false;

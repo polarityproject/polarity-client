@@ -31,6 +31,6 @@ void WatchChatTestText(const std::string& text, bool send);
 
 // `takeInput`: nothing else over the fight takes the input (the watch panel,
 // the leave modal).
-void DrawWatchChat(const HubFonts& fonts, const RoomsView& rooms, bool takeInput, WatchChatInput* input);
+void WatchChatDraw(const HubFonts& fonts, const RoomsView& rooms, bool takeInput, WatchChatInput* input);
 
 } // namespace sfv::mod

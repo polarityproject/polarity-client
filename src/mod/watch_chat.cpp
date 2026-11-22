@@ -1,3 +1,5 @@
+// The room chat while watching a table set (docs/overlay.md).
+
 #include "mod/watch_chat.h"
 
 #include "core/keeper_protocol.h"
@@ -6,7 +8,7 @@
 #include "mod/ui_kit.h"
 
 #include <imgui.h>
-#include <imgui_internal.h> // ImTextCharToUtf8
+#include <imgui_internal.h>
 
 #include <algorithm>
 #include <atomic>
@@ -23,8 +25,6 @@ const ImU32 kGold = IM_COL32(233, 196, 106, 255);
 const ImU32 kCream = IM_COL32(244, 241, 232, 255);
 const ImU32 kSoft = IM_COL32(228, 224, 212, 255);
 
-// The box (design units, 1600 x 900): between the V-gauges at the bottom,
-// clear of the round timer and the health bars at the top.
 constexpr float kX0 = 540, kX1 = 1060, kBottom = 858, kTextSize = 17, kLines = 6, kPad = 10;
 
 std::atomic<bool> g_shown{true};
@@ -50,19 +50,17 @@ void WatchChatTestText(const std::string& text, bool send) {
     g_testPending = true;
 }
 
-void DrawWatchChat(const HubFonts& f, const RoomsView& v, bool takeInput, WatchChatInput* in) {
+void WatchChatDraw(const HubFonts& f, const RoomsView& v, bool takeInput, WatchChatInput* in) {
     *in = WatchChatInput{};
     if (!f.body || !f.strong) return;
     BeginScreen();
     g_inputOn = takeInput;
-    // Show and hide: a Back tap (the overlay's pad reading) or Tab.
     const bool toggle = g_toggle.exchange(false) || (takeInput && !g_typing && Pressed({ImGuiKey_Tab}, false));
     if (toggle && takeInput) {
         g_shown = !g_shown;
         if (!g_shown) g_typing = false;
         Log("watch chat: %s", g_shown ? "shown" : "hidden");
     }
-    // Typing: Back + Y, or T (a letter the game does not take as a button).
     const bool type = g_type.exchange(false) || (takeInput && !g_typing && Pressed({ImGuiKey_T}, false));
     if (type && takeInput && !g_typing) {
         g_shown = true;
@@ -85,7 +83,7 @@ void DrawWatchChat(const HubFonts& f, const RoomsView& v, bool takeInput, WatchC
         }
     }
     if (g_typing) {
-        ui::g_textEntry = true; // every key is itself, not the game's
+        ui::g_textEntry = true;
         for (ImWchar c : ImGui::GetIO().InputQueueCharacters) {
             if (c < 32 || c == 127) continue;
             char utf8[5] = {};
@@ -109,7 +107,6 @@ void DrawWatchChat(const HubFonts& f, const RoomsView& v, bool takeInput, WatchC
     g_inputOn = false;
     if (!g_shown) return;
 
-    // The last lines that fit (muted members' left out), newest at the bottom.
     ImDrawList* d = ImGui::GetBackgroundDrawList();
     ImFont* bold = f.bold ? f.bold : f.strong;
     const float wrap = kX1 - kX0 - 2 * kPad;
@@ -131,8 +128,6 @@ void DrawWatchChat(const HubFonts& f, const RoomsView& v, bool takeInput, WatchC
         const std::string& text = v.wordFilter ? line.censored : line.text;
         std::string all = text;
         if (line.from) {
-            // The name first (bold), the message after it: its first line
-            // indented by the name, the rest wrapping under.
             const float nameW = TextW(bold, kTextSize, name) + 8;
             std::string pad;
             while (TextW(f.body, kTextSize, pad) < nameW) pad += ' ';
@@ -145,7 +140,7 @@ void DrawWatchChat(const HubFonts& f, const RoomsView& v, bool takeInput, WatchC
     }
     const float inputH = g_typing ? lineH + 8 : 0;
     const float top = kBottom - kPad - inputH - used - kPad;
-    if (shown.empty() && !g_typing) return; // nothing said yet: no box
+    if (shown.empty() && !g_typing) return;
     d->AddRectFilled(g_v.P(kX0, top), g_v.P(kX1, kBottom), IM_COL32(8, 10, 14, 120), g_v.L(6));
     float y = kBottom - kPad - inputH;
     for (const Shown& s : shown) {
@@ -158,7 +153,6 @@ void DrawWatchChat(const HubFonts& f, const RoomsView& v, bool takeInput, WatchC
         }
     }
     if (g_typing) {
-        // The line being typed, with its caret, in a field of its own.
         const float fy = kBottom - kPad - lineH - 4;
         d->AddRectFilled(g_v.P(kX0 + kPad - 4, fy - 2), g_v.P(kX1 - kPad + 4, fy + lineH + 2), IM_COL32(0, 0, 0, 150), g_v.L(4));
         d->AddRect(g_v.P(kX0 + kPad - 4, fy - 2), g_v.P(kX1 - kPad + 4, fy + lineH + 2), kGold, g_v.L(4), 0, std::max(1.0f, g_v.L(1)));

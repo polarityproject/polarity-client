@@ -1,3 +1,5 @@
+// The mock fighter for netplay tests (docs/research.md).
+
 #include "testbed/mock_game.h"
 
 #include <algorithm>
@@ -24,7 +26,6 @@ struct AttackData {
     int32_t push;
 };
 
-// LP MP HP LK MK HK
 constexpr AttackData kAttacks[6] = {
     {3, 2, 6, 70, 30, 12, 6},
     {5, 3, 10, 90, 60, 16, 8},
@@ -57,7 +58,6 @@ bool MockGame::BeginMatch(const MatchSetup& setup) {
     camera_ = {};
     rng_ = static_cast<uint32_t>(setup.seed ^ (setup.seed >> 32)) | 1u;
     round_.roundsToWin = setup.roundsToWin ? setup.roundsToWin : 2;
-    // Character choice changes health, so a setup mismatch shows in the state.
     for (int p = 0; p < kNumPlayers; p++) fighters_[p].meter = setup.players[p].character;
     ResetRound();
     for (int p = 0; p < kNumPlayers; p++) fighters_[p].hp = 1000 + setup.players[p].character * 10;
@@ -159,7 +159,7 @@ void MockGame::StepFighter(int p, PackedInput in) {
                     f.state = kAttack;
                     f.attack = 5;
                     f.timer = 0;
-                    f.attackHit = 1; // the projectile does the damage
+                    f.attackHit = 1;
                     break;
                 }
             } else if (attack >= 0) {
@@ -192,7 +192,6 @@ void MockGame::StepFighter(int p, PackedInput in) {
         }
     }
 
-    // Walking toward the screen edge is slowed, so the camera matters every frame.
     if (f.state == kWalk && std::abs(f.x + f.vx - camera_.x) > kScreenHalfWidth / 2) f.vx /= 2;
     f.x += f.vx;
     f.x = std::clamp(f.x, -kStageHalfWidth, kStageHalfWidth);
@@ -251,7 +250,6 @@ void MockGame::Hit(int victim, int damage, int stun, int push, bool rollingBack)
     o.vx = push;
     fighters_[1 - victim].meter = std::min(fighters_[1 - victim].meter + 8, 100);
 
-    // Effects are presentation: skipped while resimulating.
     if (!rollingBack) {
         sparks_ = options_.bug == MockBug::EffectUsesGameplayRng ? NextRng() : sparks_ * 1664525u + 1013904223u;
     }

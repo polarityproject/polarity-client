@@ -1,3 +1,5 @@
+// The rollback stress test and noise learning (docs/research.md).
+
 #include "mod/stress_driver.h"
 
 #include "core/netplay.h"
@@ -20,6 +22,8 @@
 namespace sfv::mod {
 
 namespace {
+
+constexpr int kWordsLogged = 40;
 
 class NoTransport : public ITransport {
 public:
@@ -49,8 +53,7 @@ public:
             session_->onStressDiff = [this, &game](int frame, size_t region, size_t offset) {
                 diffWords_++;
                 pending_.push_back({frame, region, offset});
-                // Which words, for the first few (a learning run logs them as it learns).
-                if (!learn_ && diffWords_ <= 40 && region < game.Regions().size()) {
+                if (!learn_ && diffWords_ <= kWordsLogged && region < game.Regions().size()) {
                     Log("stress:   frame %d %s +0x%zx differs", frame, game.Regions()[region].name.c_str(), offset);
                 }
             };
@@ -62,13 +65,9 @@ public:
             }
             start_ = std::chrono::steady_clock::now();
             layout_ = game.LayoutVersion();
-            // As in a netplay session: the round director per tick, and the
-            // round's end rolled back (flow.h); every frame is replayed
-            // `distance` deep, so every round's end is crossed.
             FlowSetRoundDirectorPerTick(true, true);
         }
 
-        // The battle ended or changed under the test (a KO, a menu): stop.
         game.RefreshRegions();
         if (game.LayoutVersion() != layout_ || game.Regions().empty()) {
             Log("stress: the battle ended after %d frames; stopping", frame_);
@@ -101,13 +100,11 @@ private:
             }
             static const uint16_t kAttack[] = {XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y, XINPUT_GAMEPAD_RIGHT_SHOULDER,
                                                XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B};
-            if ((h >> 8) % 3 == 0) b |= kAttack[(h >> 16) % 5];
+            if ((h >> 8) % 3 == 0) b |= kAttack[(h >> 16) % std::size(kAttack)];
             InputScriptedPad(p, true, b, 0);
         }
     }
 
-    // Noise is a few isolated words; a real divergence spreads into many. Only
-    // frames that differ in a few words are learned, the rest fail the run.
     void LearnPending(SfvGame& game) {
         if (pending_.empty()) return;
         std::map<int, int> perFrame;
@@ -180,9 +177,9 @@ private:
 
 } // namespace
 
-void SetNoisePath(const std::wstring& path) { g_noisePath = path; }
+void StressSetNoisePath(const std::wstring& path) { g_noisePath = path; }
 
-void RequestStressTest(int frames, int distance, uint64_t seed, bool learnNoise) {
+void StressRequest(int frames, int distance, uint64_t seed, bool learnNoise) {
     if (BattleCurrentFrameDriver()) {
         Log("stress: another driver is active");
         return;

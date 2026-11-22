@@ -173,6 +173,16 @@ sound; in a fight they are small notes at the bottom centre. A desync note
 stays until the match is over. Update toasts show once per version and only
 at the menus.
 
+The leave modal (`fight_ui.cpp`) opens on Stay. The post-match pane grows up
+from the bottom: the other player's flag and name, the score (the set's, or
+this session's wins), Rematch, Character select and Leave, then the delay
+row, which left and right change while it has the focus. Its footer shows
+the vote's timer or the other player's delay. Notices in a fight stack up
+from 92 design units above the bottom, the newest lowest; out of a fight the
+newest slides down into the top slot and pushes the others. Over the game's
+own menus, which are bright and busy, a notice gets a darker backing under
+its glass so the text behind doesn't show through.
+
 ## The hub and the rooms
 
 The hub shows over the game's menus after the title and when Start is held
@@ -233,6 +243,21 @@ watch panel. Training while waiting runs the game's own Training until the
 table calls; then the main menu, where the room screen comes back with the
 your-turn card. A watched match's jump, load and play keep the input from
 the room screen until the battle takes it.
+
+The watch panel (`watch_panel.cpp`) is a modal over the dimmed match: the
+table and the game in its header, the two players (names shrink down to 18
+design units when two long ones would run past the pane, then are cut),
+and Previous game, Current game and Next game, the focused one gold. It
+opens on the current game. LB, X and RB go straight to a button. Previous
+and Next show only where there is a game that way; the panel shows no
+results and no list of games, so nothing about the set is spoiled. The
+room chat while watching (`watch_chat.cpp`) sits between the V-gauges at
+the bottom, clear of the round timer and the health bars: a tap of Back or
+Tab shows and hides it, and Back + Y or T starts typing (T is a letter the
+game doesn't take as a button), with every key itself while typing. It
+shows the last lines that fit, newest at the bottom, without muted members'
+lines: each name in bold, its message indented by the name on the first
+line and wrapping under it. With nothing said yet there is no box.
 
 My character is the select screen for one player, with the current loadout
 card where the other player would be. Confirm saves the pick (the menus'

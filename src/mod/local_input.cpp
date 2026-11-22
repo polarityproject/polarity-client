@@ -406,13 +406,13 @@ void InputTick() {
             g_gameWindow = w;
             g_activePending = false;
             KeepWindowActive();
-            RefreshStatus();
+            StatusRefresh();
             Log("control: always active on (window %p)", w);
         }
     }
     if (!g_activePending && GetTickCount64() - lastTitle > kTitleEveryMs) {
         lastTitle = GetTickCount64();
-        RefreshStatus();
+        StatusRefresh();
     }
     if (GetTickCount64() - lastReport > kPollReportEveryMs) {
         lastReport = GetTickCount64();

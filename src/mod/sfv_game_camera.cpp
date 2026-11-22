@@ -33,10 +33,10 @@ void* CameraCtorDetour(void* self, void* a, void* b, void* c) {
             GetCurrentThreadId());
         std::thread arm([cam, base] {
             ThreadGuard running;
-            ArmWatch(0, cam + 0x90, 8, base);
-            ArmWatch(1, cam + 0xE0, 8, base);
-            ArmWatch(2, cam + 0x1D0, 8, base);
-            ArmWatch(3, cam + 0x1F0, 8, base);
+            WatchArm(0, cam + 0x90, 8, base);
+            WatchArm(1, cam + 0xE0, 8, base);
+            WatchArm(2, cam + 0x1D0, 8, base);
+            WatchArm(3, cam + 0x1F0, 8, base);
         });
         arm.join();
     }
@@ -111,8 +111,8 @@ void SfvGame::WatchCameraIfAsked() {
     Log("watch: battle camera at %p (%s); watching +0x90 and +0xE0", static_cast<const void*>(cam), CameraSetupText().c_str());
     std::thread([cam, base] {
         ThreadGuard running;
-        ArmWatch(0, cam + 0x90, 8, base);
-        ArmWatch(1, cam + 0xE0, 8, base);
+        WatchArm(0, cam + 0x90, 8, base);
+        WatchArm(1, cam + 0xE0, 8, base);
     }).detach();
 }
 

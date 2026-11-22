@@ -53,7 +53,7 @@ extern "C" __declspec(dllexport) void SfvShutdown() {
     g_stopping = true;
     NetLeave();
     CrashRemoveHandler();
-    RemoveWatchHandler();
+    WatchRemoveHandler();
     InputRestoreWindowProc();
     OverlayUnhookPresentTable();
     MH_DisableHook(MH_ALL_HOOKS);

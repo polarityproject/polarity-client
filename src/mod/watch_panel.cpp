@@ -1,6 +1,8 @@
+// The watch panel: previous, current and next game of a watched set (docs/overlay.md).
+
 #include "mod/watch_panel.h"
 
-#include "mod/rooms_screen.h" // RoomsScreenDrawFlag
+#include "mod/rooms_screen.h"
 #include "mod/ui_kit.h"
 
 #include <imgui.h>
@@ -13,14 +15,15 @@ using namespace ui;
 
 namespace {
 
-int g_focus = 1; // 0 Previous, 1 Current, 2 Next
+constexpr int kPrevious = 0, kCurrent = 1, kNext = 2, kButtons = 3;
+int g_focus = kCurrent;
 
 } // namespace
 
-void DrawWatchPanel(const HubFonts& f, const WatchPanelLive& live, float alpha, bool takeInput, WatchPanelInput* in) {
+void WatchPanelDraw(const HubFonts& f, const WatchPanelLive& live, float alpha, bool takeInput, WatchPanelInput* in) {
     *in = WatchPanelInput{};
     if (!f.display || !f.strong || !f.body || alpha <= 0) {
-        g_focus = 1; // it opens on the current game
+        g_focus = kCurrent;
         return;
     }
     BeginScreen();
@@ -30,12 +33,8 @@ void DrawWatchPanel(const HubFonts& f, const WatchPanelLive& live, float alpha, 
     ImFont* bold = f.bold ? f.bold : f.strong;
     const int count = static_cast<int>(live.games.size());
     const int at = std::clamp(live.at, -1, count - 1);
-    // Previous and Next only where there is a game that way; no results, no
-    // list of games, so nothing about the set is spoiled.
     const bool can[3] = {at > 0, true, at >= 0 && at < count - 1};
 
-    // A modal over the dimmed match: the table and the game in its header,
-    // the two players, the three buttons; its prompts in its footer.
     ModalSpec m;
     m.x0 = 420;
     m.w = 760;
@@ -49,8 +48,6 @@ void DrawWatchPanel(const HubFonts& f, const WatchPanelLive& live, float alpha, 
     m.prompts = {{"button_a", "Go"}, {"button_y", "Stop watching"}, {"button_b", "Resume"}};
     int prompt = -1;
     float y = Modal(d, bold, f.body, m, &prompt) + 20;
-    // Flag, name, "vs", flag, name: smaller (down to 18) when two long names
-    // would run past the pane, then cut.
     std::string names[2];
     for (int i = 0; i < 2; i++) names[i] = live.players[i].empty() ? (i == 0 ? "P1" : "P2") : live.players[i];
     auto lineW = [&](float size) {
@@ -73,13 +70,12 @@ void DrawWatchPanel(const HubFonts& f, const WatchPanelLive& live, float alpha, 
         x += TextW(f.display, size, names[i]) + 12;
     }
     y += 34 + 18;
-    // The three buttons, the focused one gold; LB, X and RB go straight there.
-    static const char* const kGlyphs[3] = {"button_lb", "button_x", "button_rb"};
-    static const char* const kLabels[3] = {"Previous game", "Current game", "Next game"};
-    if (!can[g_focus]) g_focus = 1;
+    static const char* const kGlyphs[kButtons] = {"button_lb", "button_x", "button_rb"};
+    static const char* const kLabels[kButtons] = {"Previous game", "Current game", "Next game"};
+    if (!can[g_focus]) g_focus = kCurrent;
     int pressed = -1;
-    const float bw = (704 - 2 * 12) / 3.0f;
-    for (int i = 0; i < 3; i++) {
+    const float bw = (704 - (kButtons - 1) * 12) / float(kButtons);
+    for (int i = 0; i < kButtons; i++) {
         const float bx = 448 + i * (bw + 12);
         const bool on = i == g_focus;
         Control(d, bx, y, bx + bw, y + 52, on);
@@ -101,23 +97,23 @@ void DrawWatchPanel(const HubFonts& f, const WatchPanelLive& live, float alpha, 
             }
         }
         if (Right()) {
-            for (int i = g_focus + 1; i < 3; i++) {
+            for (int i = g_focus + 1; i < kButtons; i++) {
                 if (can[i]) {
                     g_focus = i;
                     break;
                 }
             }
         }
-        if (Pressed({ImGuiKey_GamepadL1}, false) && can[0]) pressed = 0;
-        if (Pressed({ImGuiKey_GamepadFaceLeft}, false)) pressed = 1;
-        if (Pressed({ImGuiKey_GamepadR1}, false) && can[2]) pressed = 2;
+        if (Pressed({ImGuiKey_GamepadL1}, false) && can[kPrevious]) pressed = kPrevious;
+        if (Pressed({ImGuiKey_GamepadFaceLeft}, false)) pressed = kCurrent;
+        if (Pressed({ImGuiKey_GamepadR1}, false) && can[kNext]) pressed = kNext;
         if (Confirm()) pressed = g_focus;
         if (Pressed({ImGuiKey_GamepadFaceUp}, false)) in->stop = true;
         if (Back() || Pressed({ImGuiKey_GamepadStart}, false)) in->resume = true;
         if (pressed >= 0) {
             g_focus = pressed;
-            in->watch = pressed == 0 ? at - 1 : pressed == 2 ? at + 1
-                                                             : -1;
+            in->watch = pressed == kPrevious ? at - 1 : pressed == kNext ? at + 1
+                                                                         : -1;
         }
     }
     g_inputOn = false;

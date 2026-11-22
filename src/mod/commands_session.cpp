@@ -60,13 +60,13 @@ void BenchmarkCommand(const std::string&, std::stringstream& ss) {
     if (what == "dump") {
         std::string frame;
         ss >> frame;
-        SetBenchmarkDumpFrame(frame.empty() || frame == "off" ? -1 : std::atoi(frame.c_str()));
+        BenchmarkSetDumpFrame(frame.empty() || frame == "off" ? -1 : std::atoi(frame.c_str()));
     } else if (what == "file") {
         std::string file;
         std::getline(ss >> std::ws, file);
         const std::string path = file.find(':') != std::string::npos ? file : FilesUtf8Path(FilesMatchesDir()) + "\\" + file;
         if (!ReplayRequestBenchmark(path)) Log("benchmark: not started");
-    } else if (!StartBenchmark(kPolarityVersion)) Log("benchmark: not started");
+    } else if (!BenchmarkStart(kPolarityVersion)) Log("benchmark: not started");
 }
 
 void HostCommand(const std::string&, std::stringstream& ss) {

@@ -7,10 +7,10 @@
 
 namespace sfv::mod {
 
-void SetStatusInstance(int instance);
-void SetStatus(const std::string& text);
+void StatusSetInstance(int instance);
+void StatusSet(const std::string& text);
 // Writes the title again (the window may not have existed, or the game reset it).
-void RefreshStatus();
+void StatusRefresh();
 // The current text and instance number (for the overlay).
 std::string StatusText();
 int StatusInstance();

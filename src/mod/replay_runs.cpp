@@ -42,10 +42,10 @@ bool ReplayDriver::Warmup(SfvGame& game) {
     Log("replay: battle objects ready after %d neutral ticks (%s); state before frame 0 %s", game.ObjectsAt(),
         FlowRoundEndState().c_str(),
         differ ? ("differs in " + std::to_string(differ) + " regions").c_str() : "equal");
-    if (viewer_) FindHudMovies();
-    CheckBattleDataSoon(bench_ ? "benchmark" : "replay");
-    if (bench_) benchSession_ = SessionActivityText();
-    NoteSessionActivity(bench_ ? "benchmark" : "replay");
+    if (viewer_) HudStepFindMovies();
+    BattleDataCheckSoon(bench_ ? "benchmark" : "replay");
+    if (bench_) benchSession_ = BenchmarkActivityText();
+    BenchmarkNoteActivity(bench_ ? "benchmark" : "replay");
     if (stress_ > 0) {
         NetplayConfig nc;
         nc.stressCheckDistance = static_cast<unsigned char>(stress_);

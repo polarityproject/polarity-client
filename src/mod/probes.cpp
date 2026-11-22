@@ -86,20 +86,20 @@ void HandleHotkeys() {
     if (cmd == GameCommand::Watch) {
         if (request.arg0 >= 0 && size_t(request.arg0) < regions.size() &&
             size_t(request.arg1) + request.arg2 <= regions[request.arg0].size) {
-            ArmWatch(0, regions[request.arg0].ptr + request.arg1, request.arg2, g.image.base);
+            WatchArm(0, regions[request.arg0].ptr + request.arg1, request.arg2, g.image.base);
         } else {
             Log("watch: no region %d with offset 0x%x", request.arg0, request.arg1);
         }
     }
     if (cmd == GameCommand::WatchAddr) {
-        ArmWatch(0, reinterpret_cast<const void*>(request.address), request.arg2, g.image.base, request.flag);
+        WatchArm(0, reinterpret_cast<const void*>(request.address), request.arg2, g.image.base, request.flag);
     }
     if (cmd == GameCommand::WatchReport) WatchReport();
     if (cmd == GameCommand::Stress || cmd == GameCommand::LearnNoise) {
-        RequestStressTest(request.arg0, request.arg1, static_cast<uint64_t>(request.arg2),
-                          cmd == GameCommand::LearnNoise);
+        StressRequest(request.arg0, request.arg1, static_cast<uint64_t>(request.arg2),
+                      cmd == GameCommand::LearnNoise);
     }
-    if (cmd == GameCommand::Unwatch) DisarmWatches();
+    if (cmd == GameCommand::Unwatch) WatchDisarmAll();
     const bool keys = g.config.savestateHotkeys;
     const bool save = (keys && Pressed(VK_F5)) || cmd == GameCommand::Save;
     const bool load = (keys && Pressed(VK_F9)) || cmd == GameCommand::Load;

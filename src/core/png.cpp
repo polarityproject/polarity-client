@@ -1,6 +1,8 @@
+// A minimal PNG writer: RGB rows in stored zlib blocks.
+
 #include "core/png.h"
 
-#include "core/state.h" // Crc32 (the standard CRC-32, as PNG's)
+#include "core/state.h"
 
 #include <algorithm>
 #include <cstring>
@@ -8,6 +10,11 @@
 namespace sfv {
 
 namespace {
+
+constexpr uint8_t kBitDepth = 8, kColorRgb = 2;
+constexpr size_t kRgbBytes = 3;
+constexpr size_t kMaxStoredBlock = 65535;
+constexpr uint8_t kZlibHeader[] = {0x78, 0x01};
 
 void Put32(std::vector<uint8_t>& out, uint32_t v) {
     out.push_back(static_cast<uint8_t>(v >> 24));
@@ -31,22 +38,20 @@ std::vector<uint8_t> EncodePng(int width, int height, const uint8_t* rgb) {
     std::vector<uint8_t> ihdr;
     Put32(ihdr, static_cast<uint32_t>(width));
     Put32(ihdr, static_cast<uint32_t>(height));
-    ihdr.insert(ihdr.end(), {8, 2, 0, 0, 0}); // 8 bits, RGB, deflate, no filter, no interlace
+    ihdr.insert(ihdr.end(), {kBitDepth, kColorRgb, 0, 0, 0});
     Chunk(out, "IHDR", ihdr);
 
-    // The rows, each after its filter byte (0: none).
-    const size_t stride = static_cast<size_t>(width) * 3;
+    const size_t stride = static_cast<size_t>(width) * kRgbBytes;
     std::vector<uint8_t> raw;
     raw.reserve((stride + 1) * height);
     for (int y = 0; y < height; y++) {
         raw.push_back(0);
         raw.insert(raw.end(), rgb + y * stride, rgb + (y + 1) * stride);
     }
-    // zlib: header, stored blocks of up to 65535 bytes, Adler-32.
-    std::vector<uint8_t> z = {0x78, 0x01};
+    std::vector<uint8_t> z(std::begin(kZlibHeader), std::end(kZlibHeader));
     size_t at = 0;
     do {
-        const size_t n = std::min<size_t>(65535, raw.size() - at);
+        const size_t n = std::min<size_t>(kMaxStoredBlock, raw.size() - at);
         const bool last = at + n == raw.size();
         z.push_back(last ? 1 : 0);
         z.push_back(static_cast<uint8_t>(n));

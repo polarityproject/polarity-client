@@ -547,8 +547,8 @@ void NetplayDriver::WriteMatchLog(const std::string& recording, const ReplayFile
                  options_.inputDelay);
     std::fprintf(f, "%s\n", summary.c_str());
     std::fprintf(f, "game files: %s\n", FilesGameText().c_str());
-    std::fprintf(f, "mods: %s\n", ScanModPaks().Text().c_str());
-    std::fprintf(f, "battle data: %s\n", LastDataCheck().Text().c_str());
+    std::fprintf(f, "mods: %s\n", BattleDataScanModPaks().Text().c_str());
+    std::fprintf(f, "battle data: %s\n", BattleDataLastCheck().Text().c_str());
     std::fprintf(f, "character versions: %s\n", FlowCharaVersionsText().c_str());
     const int peerReports = peerReports_;
     std::fprintf(f, "desync reports: %s from this side, %s from the other side\n", ReportsOn() ? "sent" : "not sent",

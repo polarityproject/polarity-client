@@ -112,7 +112,7 @@ DWORD WINAPI ModMain(LPVOID self) {
         return 0;
     }
     Log("game image at %p verified", reinterpret_cast<void*>(image.base));
-    SetStatusInstance(instance);
+    StatusSetInstance(instance);
 
     static StateMap stateMap;
     const std::wstring stateMapPath = dir + L"\\sfv_statemap.bin";
@@ -123,7 +123,7 @@ DWORD WINAPI ModMain(LPVOID self) {
     static SfvGame game(image);
     if (haveMap) game.SetStateMap(&stateMap);
     const std::wstring noisePath = dir + L"\\" + (config.noiseFile.empty() ? L"sfv_noise.txt" : config.noiseFile);
-    SetNoisePath(noisePath);
+    StressSetNoisePath(noisePath);
     if (!config.noiseFile.empty() && game.LoadNoise(noisePath)) {
         Log("noise mask: %s (%zu words; not the built-in one: peers need the same file)", Narrow(config.noiseFile).c_str(),
             game.NoiseWords());
@@ -135,7 +135,7 @@ DWORD WINAPI ModMain(LPVOID self) {
     Log("game files: %s", FilesGameText().c_str());
     std::thread([] {
         ThreadGuard running;
-        Log("mods: %s", ScanModPaks().Text().c_str());
+        Log("mods: %s", BattleDataScanModPaks().Text().c_str());
     }).detach();
 
     if (!ProbesInstall(image, config, &game, &stateMap, stateMapPath)) return 0;
@@ -155,7 +155,7 @@ DWORD WINAPI ModMain(LPVOID self) {
     BootWatchLoginStatus();
     BattleInstallDriver(image, &game);
     CameraInstall(image);
-    InstallHudStep(image);
+    HudStepInstall(image);
     CameraSetRollback(config.netplay.cameraRollback);
     if (config.netplay.skipLoadCallbacks) GameSetSkippedLoadCallbacks(GameDefaultSkippedLoadCallbacks());
     GameSetLeanResim(config.netplay.leanResim);

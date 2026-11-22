@@ -330,7 +330,7 @@ private:
     std::string failDumpLabel_;
     std::vector<RegionInfo> failRegions_;
     std::vector<uint64_t> failHashes_;
-    std::string benchSession_; // SessionActivityText() as the benchmark began
+    std::string benchSession_; // BenchmarkActivityText() as the benchmark began
     std::map<std::string, int> stressRegionFrames_;
     int stressLogged_ = 0;
     int logged_ = 0;

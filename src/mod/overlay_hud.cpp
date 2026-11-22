@@ -90,8 +90,8 @@ void DrawNotices(bool fight, const NetView& v) {
     if (fight && v.desyncFrame >= 0) notices.push_back(DesyncNotice(v));
     else if (g_preview.desync) notices.push_back(DesyncNotice(PreviewView(NetView::Phase::Running)));
     if (notices.empty()) return;
-    if (fight) DrawFightNotes(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, notices);
-    else DrawToasts(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, notices, HubOpen());
+    if (fight) FightUiDrawNotes(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, notices);
+    else FightUiDrawToasts(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, notices, HubOpen());
 }
 
 void DrawPlayerBars(const NetView& v) {
@@ -207,7 +207,7 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers]) {
     if (shownFor != key) {
         shownFor = key;
         shownAt = GetTickCount64();
-        ResetVote();
+        FightUiResetVote();
     }
     const bool armed = GetTickCount64() - shownAt >= 750;
     const int setWinner = !v.setPlay ? -1 : v.seats[0].wins >= v.firstTo ? 0
@@ -267,7 +267,7 @@ void DrawSides(const NetView& v, const bool (&show)[kNumPlayers]) {
         }
     }
     VoteInput in;
-    DrawVote(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, sides, armed, !g_previewing, &in);
+    FightUiDrawVote(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, sides, armed, !g_previewing, &in);
     if (in.choose == 0) Act([] { NetChoose(lobby::Choice::Rematch); });
     else if (in.choose == 1) Act([] { NetChoose(lobby::Choice::CharacterSelect); });
     else if (in.choose == 2) Act([] { NetLeave(); });

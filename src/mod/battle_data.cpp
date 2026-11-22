@@ -1,3 +1,5 @@
+// Battle data: the loaded move data hashed against data/battle_data.txt, and the mod paks (docs/research.md).
+
 #include "mod/battle_data.h"
 
 #include "core/pak_index.h"
@@ -24,10 +26,11 @@ namespace sfv::mod {
 
 namespace {
 
-// A battle resource object's data (KWBAC, KWBCM, KWBCH; research `ofclass
-// KWBattleResource`, 2026-11-12): the parsed file's bytes at +0x28, their
-// size at +0x30.
 constexpr size_t kResourceData = 0x28, kResourceSize = 0x30;
+constexpr uint32_t kMaxResourceBytes = 64u << 20;
+constexpr uint64_t kFnvPrime = 1099511628211ull;
+constexpr size_t kPaksListed = 12, kCharactersListed = 20;
+constexpr wchar_t kPaksFolder[] = L"\\Content\\Paks\\";
 const char* const kMoveDataClasses[] = {"KWBAC", "KWBCM", "KWBCH"};
 
 std::string Join(const std::vector<std::string>& items, const char* sep, size_t max = 8) {
@@ -42,7 +45,6 @@ struct StockEntry {
     uint64_t hash = 0;
 };
 
-// data/battle_data.txt: "<key> <size> <hash hex>" per line, '#' comments.
 const std::map<std::string, StockEntry>& StockTable() {
     static const std::map<std::string, StockEntry> table = [] {
         std::map<std::string, StockEntry> t;
@@ -69,7 +71,6 @@ struct Loaded {
     uint64_t hash = 0;
 };
 
-// The battle's move data objects now (the classes' default objects left out).
 std::vector<Loaded> ReadLoaded() {
     std::vector<Loaded> out;
     if (!ue4::EnsureObjects(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)))) return out;
@@ -78,11 +79,11 @@ std::vector<Loaded> ReadLoaded() {
         if (std::none_of(std::begin(kMoveDataClasses), std::end(kMoveDataClasses), [&](const char* c) { return cls == c; })) return;
         if (ue4::ObjectName(object).rfind("Default__", 0) == 0) return;
         const auto* o = static_cast<const uint8_t*>(object);
-        if (!IsReadable(o + kResourceData, 16)) return;
+        if (!IsReadable(o + kResourceData, kResourceSize + sizeof(uint64_t) - kResourceData)) return;
         const auto* data = *reinterpret_cast<const uint8_t* const*>(o + kResourceData);
         const uint32_t size = *reinterpret_cast<const uint32_t*>(o + kResourceSize);
         const std::string key = PakIndexBattleDataKey(ue4::ObjectName(ue4::OuterOf(object)));
-        if (key.empty() || !data || size == 0 || size > (64u << 20) || !IsReadable(data, size)) return;
+        if (key.empty() || !data || size == 0 || size > kMaxResourceBytes || !IsReadable(data, size)) return;
         out.push_back({key, size, Hash64(data, size)});
     });
     std::sort(out.begin(), out.end(), [](const Loaded& a, const Loaded& b) { return a.key < b.key; });
@@ -115,7 +116,7 @@ std::string ModScan::Text() const {
         }
         parts.push_back(s);
     }
-    return std::to_string(paks.size()) + " mod pak" + (paks.size() == 1 ? "" : "s") + ": " + Join(parts, " | ", 12);
+    return std::to_string(paks.size()) + " mod pak" + (paks.size() == 1 ? "" : "s") + ": " + Join(parts, " | ", kPaksListed);
 }
 
 std::string ModScan::Short() const {
@@ -130,17 +131,17 @@ std::string ModScan::Short() const {
         if (!p.readable) characters.insert("?");
     }
     std::string s = std::to_string(paks.size()) + (battle ? "," + std::to_string(battle) + "-battle" : "");
-    if (!characters.empty()) s += ":" + Join(std::vector<std::string>(characters.begin(), characters.end()), ",", 20);
+    if (!characters.empty()) s += ":" + Join(std::vector<std::string>(characters.begin(), characters.end()), ",", kCharactersListed);
     return s;
 }
 
-const ModScan& ScanModPaks() {
+const ModScan& BattleDataScanModPaks() {
     static const ModScan scan = [] {
         ModScan s;
         for (const std::wstring& full : FilesOtherPaks()) {
             ModPak p;
-            const size_t at = full.find(L"\\Content\\Paks\\");
-            p.name = FilesUtf8Path(at == std::wstring::npos ? full : full.substr(at + 14));
+            const size_t at = full.find(kPaksFolder);
+            p.name = FilesUtf8Path(at == std::wstring::npos ? full : full.substr(at + std::size(kPaksFolder) - 1));
             PakIndex index;
             p.readable = PakIndexRead(FilesUtf8Path(full), &index, &p.error);
             if (p.readable) {
@@ -178,16 +179,16 @@ std::string DataCheck::Text() const {
 std::string DataCheck::Characters() const {
     std::set<std::string> c;
     for (const std::string& k : changed) c.insert(k.substr(0, k.find('/')));
-    return Join(std::vector<std::string>(c.begin(), c.end()), ", ", 20);
+    return Join(std::vector<std::string>(c.begin(), c.end()), ", ", kCharactersListed);
 }
 
-DataCheck CheckLoadedBattleData() {
+DataCheck BattleDataCheckLoaded() {
     DataCheck c;
     const auto& table = StockTable();
     c.table = !table.empty();
     for (const Loaded& l : ReadLoaded()) {
         c.files++;
-        c.sum = c.sum * 1099511628211ull ^ l.hash;
+        c.sum = c.sum * kFnvPrime ^ l.hash;
         const auto it = table.find(l.key);
         if (it == table.end()) {
             c.unknown.push_back(l.key);
@@ -200,11 +201,11 @@ DataCheck CheckLoadedBattleData() {
     return c;
 }
 
-void CheckBattleDataSoon(const char* why) {
+void BattleDataCheckSoon(const char* why) {
     const std::string reason = why ? why : "";
     std::thread([reason] {
         ThreadGuard running;
-        const DataCheck c = CheckLoadedBattleData();
+        const DataCheck c = BattleDataCheckLoaded();
         {
             std::lock_guard lock(g_mutex);
             g_last = c;
@@ -213,12 +214,12 @@ void CheckBattleDataSoon(const char* why) {
     }).detach();
 }
 
-DataCheck LastDataCheck() {
+DataCheck BattleDataLastCheck() {
     std::lock_guard lock(g_mutex);
     return g_last;
 }
 
-void DumpLoadedBattleData() {
+void BattleDataDumpLoaded() {
     const std::vector<Loaded> loaded = ReadLoaded();
     const std::wstring dir = FilesResearchDir();
     const std::string path = FilesUtf8Path(dir + L"\\battle_data.txt");

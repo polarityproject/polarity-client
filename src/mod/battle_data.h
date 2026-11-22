@@ -41,7 +41,7 @@ struct ModScan {
 };
 
 // Read once (the first call reads the paks' indexes: a few ms each).
-const ModScan& ScanModPaks();
+const ModScan& BattleDataScanModPaks();
 
 struct DataCheck {
     bool done = false;
@@ -59,15 +59,15 @@ struct DataCheck {
 
 // The battle's loaded move data against the game's own (walks the game's
 // objects: up to a second; off the game thread is fine).
-DataCheck CheckLoadedBattleData();
+DataCheck BattleDataCheckLoaded();
 // The same on a worker thread, logged ("battle data (<why>): ..."); the last
-// result stays (LastDataCheck).
-void CheckBattleDataSoon(const char* why);
-DataCheck LastDataCheck();
+// result stays (BattleDataLastCheck).
+void BattleDataCheckSoon(const char* why);
+DataCheck BattleDataLastCheck();
 
 // Research (`battledata dump`): the loaded move data's keys, sizes and hashes
 // appended to Polarity\research\battle_data.txt in data/battle_data.txt's
 // format; `battledata`: the check now, logged.
-void DumpLoadedBattleData();
+void BattleDataDumpLoaded();
 
 } // namespace sfv::mod

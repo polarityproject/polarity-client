@@ -132,8 +132,8 @@ bool NetplayDriver::FrameWhileLoading(SfvGame& game) {
             game.CameraNotStarted() ? "; the camera has not begun its setup" : "");
         game.ArmStartProbe();
         Log("netplay: loaded %s", BattleSetupDescribe(loadedSetup_).c_str());
-        CheckBattleDataSoon("match");
-        NoteSessionActivity("match");
+        BattleDataCheckSoon("match");
+        BenchmarkNoteActivity("match");
     }
     if (++frozenFrames_ == kSettleFrames) {
         selfLoaded_ = true;
@@ -195,7 +195,7 @@ void NetplayDriver::StartSession(SfvGame& game) {
     session_ = std::make_unique<NetplaySession>(game, *gekko_, nc);
     game.CaptureStartProbe("at the session's start");
     session_->onDesync = [this, &game](const DesyncInfo& d, const ReplayFile& rf) {
-        NoteSessionActivity("desync");
+        BenchmarkNoteActivity("desync");
         desyncFrame_ = d.frame;
         if (d.frame <= kStartProbeFrames) game.LogStartProbe(("a desync at frame " + std::to_string(d.frame)).c_str());
         const std::string path = SaveReport(rf, "desync", true);

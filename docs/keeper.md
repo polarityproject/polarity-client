@@ -19,6 +19,24 @@ shared constants in `keeper_internal.h`:
 The messages themselves are in `src/core/keeper_protocol.h`;
 [netplay.md](netplay.md) covers a table set from the players' side.
 
+## Running the keeper
+
+```
+polarity-keeper --key <file> [--server host:port] [--state <file>] [--words <file>] [--ports A-B] [--per-link-ports] [--protocol N]
+                [--metrics <file.prom>] [--status <file.json>] [--server-stats <file.json>]
+polarity-keeper --new-key <file>    writes a key and prints its public half
+```
+
+The keeper logs to stdout (the journal on the server), and keeps count of
+the time spent writing log lines, since a slow journal or Docker log driver
+holds up the whole loop. When asked, it writes every 5 s its metrics in the
+Prometheus text format (`--metrics`, for node_exporter's textfile collector)
+and the public room list as JSON (`--status`, for the rooms API), each to a
+temporary file renamed over the old one, so readers never see half a file.
+`--server-stats` reads the rooms server's own counts (its `--stats`) for the
+players online in `--status`. The word list (one entry a line) is read again
+on SIGHUP (`docker compose kill -s HUP keeper`), without a restart.
+
 ## Connections
 
 Each room the keeper holds has a connection of its own to the rooms server,

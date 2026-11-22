@@ -1,3 +1,5 @@
+// The check on another PC's picks: characters, costumes, colors, V-Skills and stages.
+
 #include "core/pick_check.h"
 
 #include <algorithm>
@@ -6,7 +8,6 @@ namespace sfv {
 
 namespace {
 
-// A character code as text for logs and messages (it came from another PC).
 std::string Printable(const std::string& code) {
     std::string out = code;
     for (char& c : out) {
@@ -38,7 +39,6 @@ PickVerdict PickCheck(const PlayerSetup& pick, const PickTables& tables) {
     };
     if (pick.vskill >= skills(false)) return PickVerdict::Bad(code + " has no V-Skill " + std::to_string(pick.vskill + 1));
     if (pick.vtrigger >= skills(true)) return PickVerdict::Bad(code + " has no V-Trigger " + std::to_string(pick.vtrigger + 1));
-    // No variant and Auto need nothing more; the rest may wait for the game.
     bool later = false;
     if (pick.variation) {
         const std::optional<uint8_t> variants = tables.variants(index, pick.costume);
@@ -61,7 +61,6 @@ PickVerdict SetupCheck(const MatchSetup& setup, const PickTables& tables) {
         if (v.kind == PickVerdict::Kind::Bad) return v;
         if (v.kind == PickVerdict::Kind::NotYet) later = v;
     }
-    // A setup's stage is the one to play: never random.
     if (setup.stage == lobby::kRandomStage) return PickVerdict::Bad("no stage " + std::to_string(setup.stage));
     const PickVerdict stage = StageRuleCheck(setup.stage, tables);
     return stage.Fine() ? later : stage;
@@ -73,7 +72,6 @@ PickVerdict StageRuleCheck(uint16_t stage, const PickTables& tables) {
 }
 
 PickVerdict MessageCheck(const lobby::Message& m, const PickTables& tables) {
-    // A seat's pick before it is made can be empty.
     const auto seat = [&](const lobby::Seat& s) { return s.hasPick || s.pick.character ? PickCheck(s.pick, tables) : PickVerdict{}; };
     PickVerdict later;
     const auto bad = [&later](const PickVerdict& v) {

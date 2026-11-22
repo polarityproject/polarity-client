@@ -169,6 +169,14 @@ extra tick's time as well, so a banner plays out as it did. This happens
 only where banners play: the round's call ("ROUND n") and the first 120
 frames of its fight ("FIGHT!").
 
+`hud_step.cpp` advances the Announce and CockpitTop movies through the
+manager's own per-frame advance (rva 0x17CA7AC: the movie at the wrapper's
++0x70, the time, 2 catch-up frames, and no capture, since the manager's
+own advance that frame captures for drawing). A movie is stepped only
+while its player plays (the native player's wrapper at +0x150, its
+playing flag at +0xA6, as `SetPause` at rva 0x17C72F0 uses them).
+`hudstep 0|1|2` turns it off, on, or on for the Announce movie only.
+
 The stripe is the viewer's bar along the bottom of the screen, with its
 controls and a per-round counter. The counter counts action frames: 0 on a round's
 first action frame, its last on the KO's. They are empty before a round's

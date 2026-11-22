@@ -51,14 +51,14 @@ struct BenchmarkResult {
 
 // Starts a run from the menus (the built-in round written to Polarity\benchmark.sfvr
 // first). False when it cannot (no round in this build, a driver busy).
-bool StartBenchmark(const std::string& modVersion);
+bool BenchmarkStart(const std::string& modVersion);
 // The run's progress, for the stripe (frame, of frames; false when none).
 bool BenchmarkRunning(int* frame = nullptr, int* frames = nullptr);
 // The last result (this session's, else the last one logged in
 // Polarity\logs\benchmark.txt); valid false when there is none.
-BenchmarkResult LastBenchmark();
+BenchmarkResult BenchmarkLast();
 // A run just ended: its result once (then false).
-bool TakeBenchmarkResult(BenchmarkResult* out);
+bool BenchmarkTakeResult(BenchmarkResult* out);
 
 // From the replay driver: the measured frames, how the round played.
 struct CapturedRun {
@@ -69,20 +69,20 @@ struct CapturedRun {
     int straightFirst = -1, resimFirst = -1; // the first frame of each kind of difference
     int straightFrames = 0, resimFrames = 0;
     std::string regions; // the first resimulated frame's differing regions, comma-separated
-    std::string session; // SessionActivityText() as the run began
+    std::string session; // BenchmarkActivityText() as the run began
     std::string dump;    // the state dump's file name, "" none
 };
 
 // What this game session did before (the benchmark's result says): counts
 // of each kind ("match", "replay", "training", "benchmark", "desync") and
 // the battles, with the time since the game started.
-void NoteSessionActivity(const char* kind);
-std::string SessionActivityText();
+void BenchmarkNoteActivity(const char* kind);
+std::string BenchmarkActivityText();
 // Research (`benchmark dump <frame>`): the next runs save that frame's state
 // as a failing run saves its first differing frame's (a reference to compare
 // a player's dump with); -1 off.
-void SetBenchmarkDumpFrame(int frame);
+void BenchmarkSetDumpFrame(int frame);
 int BenchmarkDumpFrame();
-void FinishBenchmark(const CapturedRun& run);
+void BenchmarkFinish(const CapturedRun& run);
 
 } // namespace sfv::mod

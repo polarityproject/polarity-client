@@ -35,6 +35,6 @@ struct WatchPanelInput {
 };
 
 // `alpha` 0..1 (it fades in); with `takeInput` it reads the pad and keys.
-void DrawWatchPanel(const HubFonts& fonts, const WatchPanelLive& live, float alpha, bool takeInput, WatchPanelInput* input);
+void WatchPanelDraw(const HubFonts& fonts, const WatchPanelLive& live, float alpha, bool takeInput, WatchPanelInput* input);
 
 } // namespace sfv::mod

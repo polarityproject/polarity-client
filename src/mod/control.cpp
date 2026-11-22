@@ -252,11 +252,11 @@ void Run(const Step& s) {
             const GameCommand c = s.request.command;
             if (c == GameCommand::WatchAddr || c == GameCommand::WatchReport || c == GameCommand::Unwatch) {
                 if (c == GameCommand::WatchAddr) {
-                    ArmWatch(0, reinterpret_cast<const void*>(s.request.address), s.request.arg2, ImageBase(),
+                    WatchArm(0, reinterpret_cast<const void*>(s.request.address), s.request.arg2, ImageBase(),
                              s.request.flag);
                 }
                 if (c == GameCommand::WatchReport) WatchReport();
-                if (c == GameCommand::Unwatch) DisarmWatches();
+                if (c == GameCommand::Unwatch) WatchDisarmAll();
                 break;
             }
             std::lock_guard lock(g_mutex);

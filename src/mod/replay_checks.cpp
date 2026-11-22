@@ -18,7 +18,7 @@ namespace replay {
 void ReplayDriver::ArmFromHelper(int slot, const void* address, int length, uintptr_t base) {
     std::thread([=] {
         ThreadGuard running;
-        ArmWatch(slot, address, length, base);
+        WatchArm(slot, address, length, base);
     }).join();
 }
 
@@ -339,10 +339,10 @@ int ReplayDriver::Compare(SfvGame& game, const uint64_t* ours, const uint64_t* r
 }
 
 void ReplayDriver::Finish(SfvGame& game) {
-    ForgetHudMovies();
+    HudStepForgetMovies();
     if (trapSlots_) {
         WatchReport();
-        DisarmWatches();
+        WatchDisarmAll();
         trapSlots_ = 0;
     }
     if (stress_ == 0 && keepFrom_ >= 0 && kept_.FrameCount() > 0) {
@@ -395,7 +395,7 @@ void ReplayDriver::Finish(SfvGame& game) {
             failDump_.clear();
         }
         run.stopped = benchStopped_;
-        FinishBenchmark(run);
+        BenchmarkFinish(run);
         std::lock_guard lock(g_viewMutex);
         g_view = ReplayView{};
         g_viewCommands.clear();

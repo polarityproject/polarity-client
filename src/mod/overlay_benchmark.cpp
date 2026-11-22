@@ -5,7 +5,7 @@ namespace sfv::mod::overlay {
 void OpenBenchmarkModal(bool result) {
     g_benchChoice = 0;
     if (result) {
-        g_benchShown = LastBenchmark();
+        g_benchShown = BenchmarkLast();
         g_benchModal = g_benchShown.valid ? BenchModal::Result : BenchModal::None;
     } else {
         g_benchModal = BenchModal::Confirm;
@@ -24,7 +24,7 @@ void StepBenchmarkLaunch() {
     const double now = ImGui::GetTime();
     if (l.step == 0) {
         if (l.drawn < 1) return;
-        if (!StartBenchmark(BuildVersion())) {
+        if (!BenchmarkStart(BuildVersion())) {
             g_benchModal = BenchModal::None;
             l = {};
             AddToast("The benchmark can't start now.", kRed, 4);

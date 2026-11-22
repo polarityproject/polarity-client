@@ -178,7 +178,7 @@ std::vector<SettingsRow> SettingsRows() {
         r.hint = "Plays one round with a rollback on every frame.";
     }
     {
-        const BenchmarkResult b = LastBenchmark();
+        const BenchmarkResult b = BenchmarkLast();
         SettingsRow& r = row("benchlast", "BENCHMARK", "Last result");
         if (b.valid) {
             const std::time_t t = static_cast<std::time_t>(b.when);

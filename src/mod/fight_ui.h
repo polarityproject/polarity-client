@@ -16,10 +16,10 @@
 namespace sfv::mod {
 
 // ----- the leave modal ------------------------------------------------------------
-void ResetLeaveModal(); // it opens on Stay
+void FightUiResetLeaveModal(); // it opens on Stay
 // `set`: a table's set (else a Direct Match). *leave: Leave chosen; *stay:
 // Stay, B or Back + Start again.
-void DrawLeaveModal(const HubFonts& f, bool set, bool takeInput, bool* leave, bool* stay);
+void FightUiDrawLeaveModal(const HubFonts& f, bool set, bool takeInput, bool* leave, bool* stay);
 
 // ----- the vote after a game ----------------------------------------------------
 struct VoteSide {
@@ -44,9 +44,9 @@ struct VoteInput {
     int delayStep = 0; // -1 or 1
 };
 
-void ResetVote(); // a new vote: the focus on Rematch
+void FightUiResetVote(); // a new vote: the focus on Rematch
 // `armed`: presses count (a button held from the match does nothing).
-void DrawVote(const HubFonts& f, const VoteSide (&sides)[2], bool armed, bool takeInput, VoteInput* in);
+void FightUiDrawVote(const HubFonts& f, const VoteSide (&sides)[2], bool armed, bool takeInput, VoteInput* in);
 
 // ----- notices ----------------------------------------------------------------------
 struct Notice {
@@ -61,14 +61,14 @@ struct Notice {
 // sliding down as they come.
 // `overScreen`: over one of the mod's screens (glass over its stage), else
 // over the game.
-void DrawToasts(const HubFonts& f, const std::vector<Notice>& toasts, bool overScreen);
+void FightUiDrawToasts(const HubFonts& f, const std::vector<Notice>& toasts, bool overScreen);
 // In a fight: small notes at the bottom centre.
-void DrawFightNotes(const HubFonts& f, const std::vector<Notice>& notes);
+void FightUiDrawNotes(const HubFonts& f, const std::vector<Notice>& notes);
 // During a session outside a fight (connecting, loading, the lobby): one
 // line at the bottom right, what is going on.
-void DrawStatusNote(const HubFonts& f, const std::string& text, uint32_t color);
+void FightUiDrawStatusNote(const HubFonts& f, const std::string& text, uint32_t color);
 // At the game's menus (Play Offline): a note at the top centre, how to get
 // back to the hub.
-void DrawMenuNote(const HubFonts& f);
+void FightUiDrawMenuNote(const HubFonts& f);
 
 } // namespace sfv::mod

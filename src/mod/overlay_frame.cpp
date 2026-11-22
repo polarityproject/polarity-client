@@ -8,7 +8,7 @@ bool OnMenuScreen() {
 }
 
 void DrawMenuHint() {
-    DrawMenuNote(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold});
+    FightUiDrawMenuNote(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold});
 }
 
 void DrawPreviews() {
@@ -260,7 +260,7 @@ void Draw(IDXGISwapChain* swapChain) {
         HubShow();
         SettingsScreenShow("bench");
         BenchmarkResult r;
-        if (TakeBenchmarkResult(&r)) {
+        if (BenchmarkTakeResult(&r)) {
             g_benchShown = r;
             g_benchChoice = 0;
             g_benchModal = BenchModal::Result;
@@ -299,9 +299,9 @@ void Draw(IDXGISwapChain* swapChain) {
     }
     static bool leaveWas = false;
     if (leaveUp) {
-        if (!leaveWas) ResetLeaveModal();
+        if (!leaveWas) FightUiResetLeaveModal();
         bool leave = false, stay = false;
-        DrawLeaveModal(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, view.setPlay, true, &leave, &stay);
+        FightUiDrawLeaveModal(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, view.setPlay, true, &leave, &stay);
         if (stay) OverlaySetVisible(false);
         if (leave) {
             OverlaySetVisible(false);
@@ -321,7 +321,7 @@ void Draw(IDXGISwapChain* swapChain) {
             const RoomsView rooms = RoomsSnapshot();
             if (rooms.state == RoomsView::State::Room) {
                 WatchChatInput ci;
-                DrawWatchChat(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, rooms, !watchPanel && !g_visible, &ci);
+                WatchChatDraw(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, rooms, !watchPanel && !g_visible, &ci);
                 if (!ci.send.empty() && !RoomsChat(ci.send)) {
                     Log("watch chat: a line held back (one a second)");
                     AddToast("Slow down. One message per second.", ImVec4(1, 0.8f, 0.4f, 1), 2);
@@ -350,7 +350,7 @@ void Draw(IDXGISwapChain* swapChain) {
                 }
             }
             WatchPanelInput wi;
-            DrawWatchPanel(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, wl, watchAlpha, watchPanel && !g_visible, &wi);
+            WatchPanelDraw(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, wl, watchAlpha, watchPanel && !g_visible, &wi);
             if (wi.resume) watchPanel = false;
             if (wi.stop) {
                 watchPanel = false;

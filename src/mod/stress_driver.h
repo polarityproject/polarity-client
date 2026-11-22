@@ -17,7 +17,7 @@ namespace sfv::mod {
 // Starts a test on the next battle frame. Called from any thread. With
 // learnNoise, words that resimulate differently are added to the game's noise
 // mask (and saved to noisePath at the end) instead of failing the test.
-void RequestStressTest(int frames, int distance, uint64_t seed, bool learnNoise = false);
-void SetNoisePath(const std::wstring& path);
+void StressRequest(int frames, int distance, uint64_t seed, bool learnNoise = false);
+void StressSetNoisePath(const std::wstring& path);
 
 } // namespace sfv::mod

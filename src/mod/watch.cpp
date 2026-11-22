@@ -1,3 +1,5 @@
+// Hardware data breakpoints on every thread, for research (docs/research.md).
+
 #include "mod/watch.h"
 
 #include "mod/log.h"
@@ -16,14 +18,20 @@ namespace {
 constexpr int kMaxSites = 32;
 
 constexpr int kStackDepth = 12;
+constexpr int kSlots = 4;
+constexpr uint64_t kDr6Hits = 0xF;
+constexpr uint64_t kDr7LocalEnable = 1, kDr7SlotEnableMask = 3, kDr7Write = 1, kDr7ReadWrite = 3, kDr7SlotFieldMask = 0xF;
+constexpr int kDr7ControlShift = 16, kDr7LengthShift = 2;
+constexpr uint64_t kLength1 = 0, kLength2 = 1, kLength8 = 2, kLength4 = 3;
+constexpr DWORD kTrapDrainMs = 250;
+constexpr uintptr_t kImageSpan = 0x5000000;
 
 struct Site {
     std::atomic<uintptr_t> rip{0};
     std::atomic<uint64_t> hits{0};
-    uintptr_t stack[kStackDepth] = {}; // callers at the first hit (absolute addresses)
+    uintptr_t stack[kStackDepth] = {};
 };
 
-// The callers of the trapping code, unwound from its context.
 void UnwindFrom(CONTEXT c, uintptr_t* out) {
     for (int i = 0; i < kStackDepth; i++) {
         DWORD64 imageBase = 0;
@@ -45,8 +53,8 @@ Site g_sites[kMaxSites];
 std::atomic<uint64_t> g_dropped{0};
 uintptr_t g_imageBase = 0;
 PVOID g_handler = nullptr;
-std::atomic<uint64_t> g_armed{0}; // DR7 bits we set; 0 once disarmed
-uint64_t g_everArmed = 0;         // DR7 bits we ever set
+std::atomic<uint64_t> g_armed{0};
+uint64_t g_everArmed = 0;
 
 void Record(uintptr_t rip, const CONTEXT& ctx) {
     for (auto& s : g_sites) {
@@ -74,17 +82,13 @@ void Record(uintptr_t rip, const CONTEXT& ctx) {
 LONG CALLBACK Handler(EXCEPTION_POINTERS* info) {
     if (info->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP) return EXCEPTION_CONTINUE_SEARCH;
     CONTEXT* ctx = info->ContextRecord;
-    if (!(ctx->Dr6 & 0xF)) return EXCEPTION_CONTINUE_SEARCH;
-    // A trap can still arrive after disarming (the thread hit it while we were
-    // clearing the registers): swallow it and clear this thread's registers.
+    if (!(ctx->Dr6 & kDr6Hits)) return EXCEPTION_CONTINUE_SEARCH;
     if (g_armed == 0) ctx->Dr7 &= ~g_everArmed;
-    // Data breakpoints trap after the write: Rip is the next instruction.
     else Record(static_cast<uintptr_t>(ctx->Rip), *ctx);
     ctx->Dr6 = 0;
     return EXCEPTION_CONTINUE_EXECUTION;
 }
 
-// Applies `update` to the debug registers of every other thread.
 template <typename F>
 int ForEachThread(F update) {
     const DWORD pid = GetCurrentProcessId(), self = GetCurrentThreadId();
@@ -113,15 +117,14 @@ int ForEachThread(F update) {
 
 } // namespace
 
-bool ArmWatch(int slot, const void* address, int length, uintptr_t imageBase, bool readsToo) {
-    if (slot < 0 || slot > 3) return false;
-    // DR7 length encoding: 1 -> 00, 2 -> 01, 8 -> 10, 4 -> 11. Address must be aligned to it.
+bool WatchArm(int slot, const void* address, int length, uintptr_t imageBase, bool readsToo) {
+    if (slot < 0 || slot >= kSlots) return false;
     uint64_t len;
     switch (length) {
-        case 1: len = 0; break;
-        case 2: len = 1; break;
-        case 4: len = 3; break;
-        case 8: len = 2; break;
+        case 1: len = kLength1; break;
+        case 2: len = kLength2; break;
+        case 4: len = kLength4; break;
+        case 8: len = kLength8; break;
         default: return false;
     }
     const auto addr = reinterpret_cast<uintptr_t>(address);
@@ -136,9 +139,10 @@ bool ArmWatch(int slot, const void* address, int length, uintptr_t imageBase, bo
         s.hits = 0;
     }
 
-    const uint64_t enable = 1ull << (slot * 2);
-    const uint64_t control = ((readsToo ? 3ull : 1ull) | (len << 2)) << (16 + slot * 4);
-    const uint64_t mask = (3ull << (slot * 2)) | (0xFull << (16 + slot * 4));
+    const uint64_t enable = kDr7LocalEnable << (slot * 2);
+    const int field = kDr7ControlShift + slot * 4;
+    const uint64_t control = ((readsToo ? kDr7ReadWrite : kDr7Write) | (len << kDr7LengthShift)) << field;
+    const uint64_t mask = (kDr7SlotEnableMask << (slot * 2)) | (kDr7SlotFieldMask << field);
     const int threads = ForEachThread([&](CONTEXT& ctx) {
         (&ctx.Dr0)[slot] = addr;
         ctx.Dr7 = (ctx.Dr7 & ~mask) | enable | control;
@@ -150,17 +154,15 @@ bool ArmWatch(int slot, const void* address, int length, uintptr_t imageBase, bo
     return threads > 0;
 }
 
-void DisarmWatches() {
+void WatchDisarmAll() {
     const uint64_t armed = g_armed.exchange(0);
     if (armed) ForEachThread([&](CONTEXT& ctx) { ctx.Dr7 &= ~armed; });
-    // The handler stays installed: a thread may already be dispatching a trap.
 }
 
-void RemoveWatchHandler() {
-    DisarmWatches();
+void WatchRemoveHandler() {
+    WatchDisarmAll();
     if (!g_handler) return;
-    // Give in-flight traps time to reach the handler before it goes away.
-    Sleep(250);
+    Sleep(kTrapDrainMs);
     RemoveVectoredExceptionHandler(g_handler);
     g_handler = nullptr;
 }
@@ -170,7 +172,7 @@ void WatchReport() {
     for (const auto& s : g_sites) {
         const uintptr_t rip = s.rip;
         if (!rip) continue;
-        const bool inImage = rip >= g_imageBase && rip < g_imageBase + 0x5000000;
+        const bool inImage = rip >= g_imageBase && rip < g_imageBase + kImageSpan;
         Log("watch: write before rip %s0x%llX, %llu hits", inImage ? "rva " : "",
             static_cast<unsigned long long>(inImage ? rip - g_imageBase : rip),
             static_cast<unsigned long long>(s.hits.load()));

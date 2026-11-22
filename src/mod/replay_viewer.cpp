@@ -190,7 +190,7 @@ bool ReplayDriver::ViewerFrame(SfvGame& game) {
 void ReplayDriver::Simulate(SfvGame& game, bool lean) {
     if (viewer_ && hudTicks_++ > 0 &&
         (FlowRoundCallRunning() || (wasFight_ && !roundStarts_.empty() && frame_ - roundStarts_.back() <= kHudFightFrames))) {
-        StepHudMovies(1.0f / 60.0f);
+        HudStepAdvance(1.0f / 60.0f);
     }
     const bool due = frame_ % kKeyEvery == 0 || std::binary_search(roundStarts_.begin(), roundStarts_.end(), frame_ - 1);
     if (due && (keys_.empty() || keys_.back().frame < frame_)) {

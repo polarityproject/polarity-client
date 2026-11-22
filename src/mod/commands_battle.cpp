@@ -33,7 +33,7 @@ void WatchphaseCommand(const std::string&, std::stringstream&) {
     constexpr uint32_t kRequestedPhaseOff = 0x134;
     uint8_t* m = FlowPhaseMachineObject();
     if (!m) Log("watchphase: no phase machine");
-    else Log("watchphase: %s", ArmWatch(1, m + kRequestedPhaseOff, 4, ImageBase()) ? "armed on the requested phase" : "not armed");
+    else Log("watchphase: %s", WatchArm(1, m + kRequestedPhaseOff, 4, ImageBase()) ? "armed on the requested phase" : "not armed");
 }
 
 void CamrollbackCommand(const std::string& cmd, std::stringstream& ss) {
@@ -46,7 +46,9 @@ void CamrollbackCommand(const std::string& cmd, std::stringstream& ss) {
 void HudstepCommand(const std::string&, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    FlowRunOnGameThread([on] { SetHudStep(on); });
+    const HudStepMode mode = on == 2 ? HudStepMode::AnnounceOnly : on ? HudStepMode::AnnounceAndCockpit
+                                                                      : HudStepMode::Off;
+    FlowRunOnGameThread([mode] { HudStepSet(mode); });
 }
 
 void CamtraceCommand(const std::string&, std::stringstream& ss) {
@@ -135,9 +137,9 @@ void FramemeterCommand(const std::string&, std::stringstream& ss) {
 void BattledataCommand(const std::string&, std::stringstream& ss) {
     std::string what;
     ss >> what;
-    if (what == "dump") FlowRunOnGameThread([] { DumpLoadedBattleData(); });
-    else CheckBattleDataSoon("asked");
-    Log("battledata: mod paks: %s", ScanModPaks().Text().c_str());
+    if (what == "dump") FlowRunOnGameThread([] { BattleDataDumpLoaded(); });
+    else BattleDataCheckSoon("asked");
+    Log("battledata: mod paks: %s", BattleDataScanModPaks().Text().c_str());
 }
 
 void FmlogCommand(const std::string&, std::stringstream& ss) {

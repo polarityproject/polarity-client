@@ -1,3 +1,5 @@
+// Frame drops: where each slow frame went (docs/research.md).
+
 #include "mod/hitch.h"
 
 #include "mod/log.h"
@@ -14,8 +16,12 @@ namespace sfv::mod::hitch {
 
 namespace {
 
+constexpr int64_t kPauseMicros = 2000000, kFrameMicros = 16667;
+constexpr int64_t kWindowMs = 1000;
+constexpr size_t kCapturedReserve = 4096;
+
 constexpr int kParts = static_cast<int>(Part::Count);
-std::atomic<int64_t> g_parts[kParts]; // microseconds since the last presented frame
+std::atomic<int64_t> g_parts[kParts];
 std::atomic<int> g_ticks{0};
 std::atomic<int> g_replayed{0};
 
@@ -26,18 +32,15 @@ struct Frame {
     int replayed = 0;
 };
 
-// The render thread's: the current second's slow frames.
 ULONGLONG g_windowStart = 0;
 int g_slow = 0;
-int64_t g_slowExtraMicros = 0; // time over 1/60 s, summed
+int64_t g_slowExtraMicros = 0;
 Frame g_slowest;
 
 std::string Describe(const Frame& f) {
     auto ms = [&](Part p) { return f.parts[static_cast<int>(p)] / 1000.0; };
     const double game = ms(Part::NetFrame) + ms(Part::BattleFrame) + ms(Part::Pacing);
     const double render = ms(Part::Overlay) + ms(Part::Present);
-    // Game and render threads overlap, so "elsewhere" is what the longer of
-    // the two leaves unaccounted.
     const double elsewhere = f.micros / 1000.0 - (game > render ? game : render);
     char buf[340];
     std::snprintf(buf, sizeof(buf),
@@ -67,7 +70,7 @@ std::vector<CapturedFrame> g_captured;
 void BeginCapture() {
     std::lock_guard lock(g_captureMutex);
     g_captured.clear();
-    g_captured.reserve(4096);
+    g_captured.reserve(kCapturedReserve);
     g_capturing = true;
 }
 
@@ -93,16 +96,16 @@ void FramePresented(int64_t frameMicros, const char* where) {
         g_captured.push_back(c);
     }
     const ULONGLONG now = GetTickCount64();
-    if (!where || frameMicros > 2'000'000) return; // a pause (loading, a breakpoint), not a drop
+    if (!where || frameMicros > kPauseMicros) return;
     const bool menus = std::strcmp(where, "menus") == 0;
     const double ms = frameMicros / 1000.0;
     if (ms >= kHitchMs) Log("hitch%s: one frame took %s", menus ? " (menus)" : "", Describe(f).c_str());
     if (ms >= kSlowMs) {
         g_slow++;
-        g_slowExtraMicros += frameMicros - 16667;
+        g_slowExtraMicros += frameMicros - kFrameMicros;
         if (f.micros > g_slowest.micros) g_slowest = f;
     }
-    if (now - g_windowStart >= 1000) {
+    if (now - g_windowStart >= kWindowMs) {
         if (g_slow > 0) {
             Log("hitch%s: %d slow frames in the last second (%.0f ms lost), the slowest %s", menus ? " (menus)" : "", g_slow,
                 g_slowExtraMicros / 1000.0, Describe(g_slowest).c_str());

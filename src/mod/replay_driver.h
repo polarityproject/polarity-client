@@ -134,7 +134,7 @@ bool ReplayTickInFight();
 int ReplayTickRound();
 // The benchmark's run of its round (benchmark.h): a stress replay with an
 // 8-frame rollback every frame, its FIGHT to its end measured; back to the
-// menus after, the result to FinishBenchmark. B (ReplayControl::Leave) stops.
+// menus after, the result to BenchmarkFinish. B (ReplayControl::Leave) stops.
 bool ReplayRequestBenchmark(const std::string& path);
 // The pad latch of the next replay (research): 1 latches after every tick
 // (SfvGame::latchEachTick), 0 keeps the game's once-per-rendered-frame latch,

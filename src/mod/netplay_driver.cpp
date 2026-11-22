@@ -587,7 +587,7 @@ void NetplayDriver::SetStatus(const std::string& text) {
         std::lock_guard lock(mutex_);
         status_ = text;
     }
-    sfv::mod::SetStatus(text);
+    sfv::mod::StatusSet(text);
 }
 
 } // namespace sfv::mod::netplay
@@ -656,7 +656,7 @@ void NetPlayTicket(const MatchTicket& ticket, const NetplayOptions& options) {
     if (!d->Open(options, ticket, &error)) {
         const std::string what = ticket.host ? "cannot host: " : "cannot join: ";
         Log("netplay: %s%s", what.c_str(), error.c_str());
-        SetStatus(what + error);
+        StatusSet(what + error);
         SetResult(what + error);
         return;
     }
@@ -668,7 +668,7 @@ void NetPlayTicket(const MatchTicket& ticket, const NetplayOptions& options) {
     const std::string& code = ticket.roomCode;
     if (!d->StartJoin(code)) {
         Log("netplay: not a valid match code: %s", code.c_str());
-        SetStatus("not a valid match code");
+        StatusSet("not a valid match code");
         SetResult("not a valid match code");
         return;
     }
@@ -684,7 +684,7 @@ void NetJoin(const std::string& code, const NetplayOptions& options, bool specta
 void NetLeave() {
     Replace(nullptr);
     if (g_options.menuAfterMatch && g_game && g_game->BattleRunning()) FlowReturnToMainMenu(1);
-    SetStatus("");
+    StatusSet("");
     Log("netplay: left");
 }
 

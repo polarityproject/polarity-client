@@ -63,7 +63,7 @@ std::string BattleRegionOwner(const void* region) {
 void BattleWatchRegionNamed(const std::string& name, size_t offset, int length) {
     const StateRegion* r = FindRegion(name);
     if (!r || offset + length > r->size) return Log("watchname: no region %s with +0x%zx", name.c_str(), offset);
-    Log("watchname: %s +0x%zx (%d bytes): %s", name.c_str(), offset, length, ArmWatch(2, r->ptr + offset, length, g_imageBase) ? "armed" : "not armed");
+    Log("watchname: %s +0x%zx (%d bytes): %s", name.c_str(), offset, length, WatchArm(2, r->ptr + offset, length, g_imageBase) ? "armed" : "not armed");
 }
 
 void BattleFindInRegions(const std::string& kind, const std::string& a, const std::string& b) {
