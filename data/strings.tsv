@@ -615,3 +615,106 @@ my.saved_room	Saved. The room sees your pick next to your name.
 my.saved	Saved. Custom Rooms play this pick.
 my.in_room_note	You keep your place in the room. If you're called now, your last saved pick plays.
 my.note	What you play at Custom Rooms' tables.
+
+# The Battle Log screen (battle_log_screen.cpp).
+common.day.0	SUN
+common.day.1	MON
+common.day.2	TUE
+common.day.3	WED
+common.day.4	THU
+common.day.5	FRI
+common.day.6	SAT
+common.match	%d match
+common.matches	%d matches
+common.set	%d set
+common.sets	%d sets
+common.prompt.choose	Choose
+common.prompt.any	Any
+common.prompt.search	Search
+common.prompt.open	Open
+common.prompt.watch	Watch
+log.today	TODAY
+log.yesterday	YESTERDAY
+log.day	%s · %s %d
+log.any	Any
+log.no_matches_yet	No matches yet
+log.watch_title	%s vs %s
+log.watch_title_game	%s vs %s · game %d of %d
+log.title	BATTLE LOG
+log.info	%s · %s
+log.filter_characters	Characters
+log.filter_opponent	Opponent
+log.filter_vs	%s vs %s
+log.timeline	Timeline
+log.sets_tab	Sets
+log.sets_head	SETS
+log.matches_head	MATCHES
+log.direct_match	DIRECT MATCH
+log.set_info_game	%s · %d GAME · %s
+log.set_info_games	%s · %d GAMES · %s
+log.reading	Reading your matches...
+log.empty	No matches yet. Your online matches are kept here.
+log.none_filtered	No matches with these filters.
+log.when	%s %d, %s
+log.kicker_game	GAME %d OF %d · %s · %s
+log.kicker_match	MATCH · %s
+log.rounds	ROUNDS
+log.draw	Draw
+log.match	MATCH
+log.seconds	%d seconds
+log.duration	%d min %d s
+log.not_finished	not finished
+log.made_with	Made with Polarity %s: can't be played on this version
+log.hint_game	Game %d of %d against %s.
+log.hint_against	Against %s.
+log.close_set	Close set
+log.open_set	Open set
+log.open_folder	Open folder
+log.loading	Loading the match...
+log.filter_kicker	FILTER
+log.filter_any_character	Any character.
+log.filter_as_one	%d match as %s.
+log.filter_as	%d matches as %s.
+log.filter_against_one	%d match against %s.
+log.filter_against	%d matches against %s.
+log.your_character	YOUR CHARACTER
+log.their_character	OPPONENT'S CHARACTER
+log.played	%d played
+log.faced	%d faced
+log.type_name	Type a name. Enter to keep it.
+log.no_opponent	No opponent with that name.
+log.search_names	Search names
+log.of	%d of %d
+
+# The Battle Log viewer's stripe (battle_log_stripe.cpp).
+stripe.benchmark	BENCHMARK
+stripe.benchmark_wait	Please wait, and keep the game window in focus · 0:%02d left
+stripe.stop	Stop
+stripe.you_p1	YOU ARE PLAYER 1
+stripe.you_p2	YOU ARE PLAYER 2
+stripe.control_p1	CONTROL P1
+stripe.control_p2	CONTROL P2
+stripe.back_to_start	Back to the start
+stripe.get_ready	Get ready
+stripe.round_over	Round over: back to where you took control
+stripe.until_ko	Until the round's KO
+stripe.title_line	%s · %s
+stripe.seeking	SEEKING
+stripe.paused	PAUSED
+stripe.fast	FAST
+stripe.playing	PLAYING
+stripe.frame_of	 · Frame %d / %d
+stripe.frame_at	 · Frame %d
+stripe.play	Play
+stripe.pause	Pause
+stripe.round	Round
+stripe.fast_forward	Hold to fast forward
+stripe.hide_hitboxes	Hide hitboxes
+stripe.show_hitboxes	Show hitboxes
+stripe.hide_meter	Hide frame meter
+stripe.show_meter	Show frame meter
+stripe.take_p1	Control P1
+stripe.take_p2	Control P2
+stripe.frame	Frame
+stripe.out_of_sync_round	Out of sync with the recording from round %d
+stripe.out_of_sync	Out of sync with the recording

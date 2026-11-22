@@ -1,6 +1,7 @@
 // The Battle Log: the recordings listed by day or set, their details and the filters.
 
 #include "mod/battle_log_screen.h"
+#include "core/text.h"
 #include "mod/frame_meter.h"
 #include "mod/hitbox_display.h"
 
@@ -132,20 +133,16 @@ std::string Clock(uint64_t unix) {
     return b;
 }
 
-const char* const kMonths[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
-const char* const kMonthNames[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-const char* const kDays[] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
+std::string MonthUpper(int month) { return Upper(TR(static_cast<Str>(static_cast<int>(Str::common_month_1) + std::clamp(month, 0, 11)))); }
 
 std::string DayLabel(uint64_t unix) {
     const std::tm tm = LocalTime(unix);
     const std::tm now = LocalTime(static_cast<uint64_t>(std::time(nullptr)));
     const std::tm yesterday = LocalTime(static_cast<uint64_t>(std::time(nullptr) - 86400));
-    std::string head = kDays[tm.tm_wday];
-    if (tm.tm_year == now.tm_year && tm.tm_yday == now.tm_yday) head = "TODAY";
-    else if (tm.tm_year == yesterday.tm_year && tm.tm_yday == yesterday.tm_yday) head = "YESTERDAY";
-    char b[48];
-    std::snprintf(b, sizeof(b), "%s \xC2\xB7 %s %d", head.c_str(), kMonths[tm.tm_mon], tm.tm_mday);
-    return b;
+    std::string head = TR(static_cast<Str>(static_cast<int>(Str::common_day_0) + std::clamp(tm.tm_wday, 0, 6)));
+    if (tm.tm_year == now.tm_year && tm.tm_yday == now.tm_yday) head = TR(Str::log_today);
+    else if (tm.tm_year == yesterday.tm_year && tm.tm_yday == yesterday.tm_yday) head = TR(Str::log_yesterday);
+    return TRF(Str::log_day, head.c_str(), MonthUpper(tm.tm_mon).c_str(), tm.tm_mday);
 }
 
 int DayKey(uint64_t unix) {
@@ -211,7 +208,7 @@ void MatchLine(ImDrawList* d, const HubFonts& f, const Entry& e, float x0, float
 }
 
 std::string CharaLabelOf(const BattleLogLive& live, uint32_t c) {
-    if (!c) return "Any";
+    if (!c) return TR(Str::log_any);
     const std::string n = live.charaName ? live.charaName(c) : std::string();
     return n.empty() ? UnpackCode(c) : n;
 }
@@ -251,7 +248,7 @@ std::string BattleLogInfo() {
         if (e.header.matchId && ids[e.header.matchId]++) continue;
         n++;
     }
-    return n == 0 ? "No matches yet" : std::to_string(n) + (n == 1 ? " match" : " matches");
+    return n == 0 ? std::string(TR(Str::log_no_matches_yet)) : TRF(n == 1 ? Str::common_match : Str::common_matches, n);
 }
 
 void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput, BattleLogInput* in) {
@@ -384,10 +381,12 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
                     UiSoundPlay(UiSound::Error);
                 } else {
                     in->watch = e.path;
-                    in->watchTitle = Upper2(battlelog::NameOf(e, 0)) + " vs " + Upper2(battlelog::NameOf(e, 1));
+                    const std::string p1 = Upper2(battlelog::NameOf(e, 0)), p2 = Upper2(battlelog::NameOf(e, 1));
                     if (e.header.summary.setGame && focused->set && focused->set->games.size() > 1) {
-                        in->watchTitle += " \xC2\xB7 game " + std::to_string(e.header.summary.setGame) + " of " +
-                                          std::to_string(focused->set->games.size());
+                        in->watchTitle = TRF(Str::log_watch_title_game, p1.c_str(), p2.c_str(), static_cast<int>(e.header.summary.setGame),
+                                             static_cast<int>(focused->set->games.size()));
+                    } else {
+                        in->watchTitle = TRF(Str::log_watch_title, p1.c_str(), p2.c_str());
                     }
                 }
             }
@@ -396,11 +395,11 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         focused = selectable.empty() ? nullptr : &rows[selectable[std::clamp(g_focus, 0, static_cast<int>(selectable.size()) - 1)]];
     }
 
-    StageText(d, f.display, 40, 48, 22, kCream, "BATTLE LOG");
+    StageText(d, f.display, 40, 48, 22, kCream, TR(Str::log_title));
     {
         size_t matches = shown.size();
-        const std::string info = std::to_string(matches) + (matches == 1 ? " match" : " matches") + " \xC2\xB7 " + std::to_string(sets.size()) +
-                                 (sets.size() == 1 ? " set" : " sets");
+        const std::string info = TRF(Str::log_info, TRF(matches == 1 ? Str::common_match : Str::common_matches, static_cast<int>(matches)).c_str(),
+                                     TRF(sets.size() == 1 ? Str::common_set : Str::common_sets, static_cast<int>(sets.size())).c_str());
         StageText(d, bold, 20, 1552, 34, kCream, info, 1);
     }
     auto filterButton = [&](float x0, float x1, const char* glyph, const std::string& label, const std::string& value) {
@@ -412,10 +411,10 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         Text(d, bold, g_v.L(18), g_v.P(vx, 94), kCream, Ellipsize(bold, 18, value, x1 - x0 - 190), 1);
         d->AddTriangleFilled(g_v.P(x1 - 24, 101), g_v.P(x1 - 12, 101), g_v.P(x1 - 18, 109), kGold);
     };
-    filterButton(48, 452, "button_lt", "Characters", CharaLabelOf(live, g_filter.mine) + " vs " + CharaLabelOf(live, g_filter.theirs));
-    filterButton(464, 868, "button_rt", "Opponent", g_filter.opponent.empty() ? std::string("Any") : Upper2(g_filter.opponent));
+    filterButton(48, 452, "button_lt", TR(Str::log_filter_characters), TRF(Str::log_filter_vs, CharaLabelOf(live, g_filter.mine).c_str(), CharaLabelOf(live, g_filter.theirs).c_str()));
+    filterButton(464, 868, "button_rt", TR(Str::log_filter_opponent), g_filter.opponent.empty() ? std::string(TR(Str::log_any)) : Upper2(g_filter.opponent));
     {
-        const float w0 = TextW(bold, 17, "Timeline") + 28, w1 = TextW(bold, 17, "Sets") + 28;
+        const float w0 = TextW(bold, 17, TR(Str::log_timeline)) + 28, w1 = TextW(bold, 17, TR(Str::log_sets_tab)) + 28;
         const float x1 = 1552, x0 = x1 - (6 + 36 + 6 + w0 + 6 + w1 + 6 + 36 + 6);
         Pane(d, x0, 84, x1, 128);
         Control(d, x0, 84, x1, 128, false);
@@ -425,7 +424,7 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
             const bool sel = (i == 1) == g_bySets;
             const float w = i == 0 ? w0 : w1;
             if (sel) d->AddRectFilled(g_v.P(tx, 90), g_v.P(tx + w, 122), Rgba(236, 228, 206, 56));
-            Text(d, bold, g_v.L(17), g_v.P(tx + w / 2, 96), sel ? kCream : kMuted, i == 0 ? "Timeline" : "Sets", 0.5f);
+            Text(d, bold, g_v.L(17), g_v.P(tx + w / 2, 96), sel ? kCream : kMuted, TR(i == 0 ? Str::log_timeline : Str::log_sets_tab), 0.5f);
             tx += w + 6;
         }
         Glyph(d, "button_rb", g_v.P(x1 - 42, 92), g_v.P(x1 - 6, 120));
@@ -444,9 +443,11 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         if (r.kind == RowKind::Day && r.y <= g_scroll + 1) topDay = r.day;
     }
     Strip(d, kListX0 + 2, kListY0 + 2, kListX1 - 2, kListY0 + 32, false);
-    Text(d, bold, g_v.L(16), g_v.P(kListX0 + 20, kListY0 + 8), kGold, topDay.empty() ? std::string(g_bySets ? "SETS" : "MATCHES") : topDay);
+    Text(d, bold, g_v.L(16), g_v.P(kListX0 + 20, kListY0 + 8), kGold, topDay.empty() ? std::string(TR(g_bySets ? Str::log_sets_head : Str::log_matches_head)) : topDay);
     Text(d, f.body, g_v.L(16), g_v.P(kListX1 - 20, kListY0 + 8), kSoft,
-         g_bySets ? std::to_string(sets.size()) + (sets.size() == 1 ? " set" : " sets") : std::to_string(shown.size()) + (shown.size() == 1 ? " match" : " matches"), 1);
+         g_bySets ? TRF(sets.size() == 1 ? Str::common_set : Str::common_sets, static_cast<int>(sets.size()))
+                  : TRF(shown.size() == 1 ? Str::common_match : Str::common_matches, static_cast<int>(shown.size())),
+         1);
     d->PushClipRect(g_v.P(kListX0 + 2, kRowsTop), g_v.P(kListX1 - 2, kRowsBottom), true);
     const float lx0 = kListX0 + 12, lx1 = kListX1 - 18;
     for (size_t i = 0; i < rows.size(); i++) {
@@ -474,9 +475,9 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
                 const bool open = g_expanded == s.key;
                 if (open) d->AddTriangleFilled(g_v.P(lx0 + 12, ry + 13), g_v.P(lx0 + 24, ry + 13), g_v.P(lx0 + 18, ry + 21), kick);
                 else d->AddTriangleFilled(g_v.P(lx0 + 14, ry + 11), g_v.P(lx0 + 22, ry + 17), g_v.P(lx0 + 14, ry + 23), kick);
-                const std::string rule = s.rule.empty() ? "DIRECT MATCH" : Upper(s.rule);
-                const std::string info = rule + " \xC2\xB7 " + std::to_string(s.games.size()) + (s.games.size() == 1 ? " GAME" : " GAMES") +
-                                         " \xC2\xB7 " + Clock(s.games.front()->header.createdUnix);
+                const std::string rule = s.rule.empty() ? std::string(TR(Str::log_direct_match)) : Upper(s.rule);
+                const std::string info = TRF(s.games.size() == 1 ? Str::log_set_info_game : Str::log_set_info_games, rule.c_str(),
+                                             static_cast<int>(s.games.size()), Clock(s.games.front()->header.createdUnix).c_str());
                 Text(d, bold, g_v.L(15), g_v.P(lx0 + 34, ry + 9), kick, info);
                 const int me = battlelog::MySide(*s.games.back(), live.myName);
                 const bool won = s.wins[me] > s.wins[1 - me], lost = s.wins[me] < s.wins[1 - me];
@@ -498,9 +499,8 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
     d->PopClipRect();
     if (total > view) ScrollBar(d, kListX1 - 8, kRowsTop + 4, kRowsBottom - 4, g_scroll, view, total, false);
     if (rows.empty()) {
-        const std::string msg = !g_read            ? "Reading your matches..."
-                                : g_merged.empty() ? "No matches yet. Your online matches are kept here."
-                                                   : "No matches with these filters.";
+        const std::string msg = TR(!g_read ? Str::log_reading : g_merged.empty() ? Str::log_empty
+                                                                                 : Str::log_none_filtered);
         Text(d, bold, g_v.L(20), g_v.P((kListX0 + kListX1) / 2, 420), kSoft, msg, 0.5f);
     }
 
@@ -510,13 +510,12 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         const MatchSummary& s = de->header.summary;
         std::string kicker;
         const std::tm tm = LocalTime(de->header.createdUnix);
-        char when[32];
-        std::snprintf(when, sizeof(when), "%s %d, %s", kMonths[tm.tm_mon], tm.tm_mday, Clock(de->header.createdUnix).c_str());
+        const std::string when = TRF(Str::log_when, MonthUpper(tm.tm_mon).c_str(), tm.tm_mday, Clock(de->header.createdUnix).c_str());
         if (s.setGame && focused->set && focused->set->games.size() > 1) {
-            kicker = "GAME " + std::to_string(s.setGame) + " OF " + std::to_string(focused->set->games.size()) + " \xC2\xB7 " +
-                     (s.setRule.empty() ? std::string("DIRECT MATCH") : Upper(s.setRule)) + " \xC2\xB7 " + when;
+            const std::string rule = s.setRule.empty() ? std::string(TR(Str::log_direct_match)) : Upper(s.setRule);
+            kicker = TRF(Str::log_kicker_game, static_cast<int>(s.setGame), static_cast<int>(focused->set->games.size()), rule.c_str(), when.c_str());
         } else {
-            kicker = std::string("MATCH \xC2\xB7 ") + when;
+            kicker = TRF(Str::log_kicker_match, when.c_str());
         }
         Strip(d, kDetailX0 + 2, kListY0 + 2, kDetailX1 - 2, kListY0 + 46, false);
         Text(d, bold, g_v.L(16), g_v.P(kDetailX0 + 24, kListY0 + 14), kGold, kicker);
@@ -549,7 +548,7 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         d->AddLine(g_v.P(kDetailX0 + 2, ay1), g_v.P(kDetailX1 - 2, ay1), Rgba(236, 228, 206, 36), std::max(1.0f, g_v.L(1)));
         float ry = ay1 + 16;
         if (!s.rounds.empty() && s.ending == 0) {
-            Text(d, bold, g_v.L(16), g_v.P(kDetailX0 + 24, ry), kGold, "ROUNDS");
+            Text(d, bold, g_v.L(16), g_v.P(kDetailX0 + 24, ry), kGold, TR(Str::log_rounds));
             ry += 28;
             for (size_t i = 0; i < s.rounds.size() && i < 7; i++) {
                 const int w = s.rounds[i].winner;
@@ -558,33 +557,32 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
                     Face(d, de->header.setup.players[w].character, kDetailX0 + 60, ry + 4, 32, w == 1);
                     Text(d, bold, g_v.L(19), g_v.P(kDetailX0 + 104, ry + 9), kCream, Upper2(battlelog::NameOf(*de, w)));
                 } else {
-                    Text(d, bold, g_v.L(19), g_v.P(kDetailX0 + 60, ry + 9), kSoft, "Draw");
+                    Text(d, bold, g_v.L(19), g_v.P(kDetailX0 + 60, ry + 9), kSoft, TR(Str::log_draw));
                 }
                 d->AddLine(g_v.P(kDetailX0 + 24, ry + 41), g_v.P(kDetailX1 - 24, ry + 41), Rgba(236, 228, 206, 36), std::max(1.0f, g_v.L(1)));
                 ry += 42;
             }
             ry += 10;
         }
-        Text(d, bold, g_v.L(16), g_v.P(kDetailX0 + 24, ry), kGold, "MATCH");
+        Text(d, bold, g_v.L(16), g_v.P(kDetailX0 + 24, ry), kGold, TR(Str::log_match));
         ry += 28;
         std::string line;
         const std::string stage = live.stageName ? live.stageName(de->header.setup.stage) : std::string();
-        if (!stage.empty()) line += stage + " \xC2\xB7 ";
-        line += std::to_string(de->header.setup.timerSeconds) + " seconds";
-        if (s.seconds) {
-            line += " \xC2\xB7 " + std::to_string(s.seconds / 60) + " min " + std::to_string(s.seconds % 60) + " s";
-        }
-        if (s.present && s.ending == 1) line += " \xC2\xB7 not finished";
+        const std::string dot = TR(Str::common_list_separator);
+        if (!stage.empty()) line += stage + dot;
+        line += TRF(Str::log_seconds, static_cast<int>(de->header.setup.timerSeconds));
+        if (s.seconds) line += dot + TRF(Str::log_duration, static_cast<int>(s.seconds / 60), static_cast<int>(s.seconds % 60));
+        if (s.present && s.ending == 1) line += dot + TR(Str::log_not_finished);
         Text(d, bold, g_v.L(19), g_v.P(kDetailX0 + 24, ry), kSoft, Ellipsize(bold, 19, line, kDetailX1 - kDetailX0 - 48));
         ry += 32;
         const bool playable = ReplayCompatible(de->header.gameBuild, live.buildId);
-        const std::string ver = "Polarity " + de->header.modVersion;
+        const std::string ver = TRF(Str::common_version, de->header.modVersion.c_str());
         if (playable) {
             d->AddLine(g_v.P(kDetailX0 + 26, ry + 12), g_v.P(kDetailX0 + 31, ry + 17), look::kOk, g_v.L(2.4f));
             d->AddLine(g_v.P(kDetailX0 + 31, ry + 17), g_v.P(kDetailX0 + 40, ry + 6), look::kOk, g_v.L(2.4f));
             Text(d, bold, g_v.L(19), g_v.P(kDetailX0 + 50, ry), kSoft, ver);
         } else {
-            Text(d, bold, g_v.L(19), g_v.P(kDetailX0 + 24, ry), kMuted, Ellipsize(bold, 19, "Made with " + ver + ": can't be played on this version", kDetailX1 - kDetailX0 - 48));
+            Text(d, bold, g_v.L(19), g_v.P(kDetailX0 + 24, ry), kMuted, Ellipsize(bold, 19, TRF(Str::log_made_with, de->header.modVersion.c_str()), kDetailX1 - kDetailX0 - 48));
         }
     }
 
@@ -594,18 +592,18 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         const Entry& e = *focused->entry;
         const int me = battlelog::MySide(e, live.myName);
         hint = (e.header.summary.setGame && focused->set && focused->set->games.size() > 1)
-                   ? "Game " + std::to_string(e.header.summary.setGame) + " of " + std::to_string(focused->set->games.size()) + " against " +
-                         core::DisplayName(battlelog::NameOf(e, 1 - me)) + "."
-                   : "Against " + core::DisplayName(battlelog::NameOf(e, 1 - me)) + ".";
-        if (ReplayCompatible(e.header.gameBuild, live.buildId)) prompts.push_back({"button_a", "Watch"});
+                   ? TRF(Str::log_hint_game, static_cast<int>(e.header.summary.setGame), static_cast<int>(focused->set->games.size()),
+                         core::DisplayName(battlelog::NameOf(e, 1 - me)).c_str())
+                   : TRF(Str::log_hint_against, core::DisplayName(battlelog::NameOf(e, 1 - me)).c_str());
+        if (ReplayCompatible(e.header.gameBuild, live.buildId)) prompts.push_back({"button_a", TR(Str::common_prompt_watch)});
     } else if (focused && focused->kind == RowKind::SetHeader) {
-        prompts.push_back({"button_a", "Open"});
+        prompts.push_back({"button_a", TR(Str::common_prompt_open)});
     }
-    if (g_bySets && focused && focused->set) prompts.push_back({"button_x", g_expanded == focused->set->key ? "Close set" : "Open set"});
-    prompts.push_back({"button_y", "Open folder"});
-    prompts.push_back({"button_b", "Back"});
+    if (g_bySets && focused && focused->set) prompts.push_back({"button_x", TR(g_expanded == focused->set->key ? Str::log_close_set : Str::log_open_set)});
+    prompts.push_back({"button_y", TR(Str::log_open_folder)});
+    prompts.push_back({"button_b", TR(Str::common_prompt_back)});
     if (live.launching) {
-        hint = "Loading the match...";
+        hint = TR(Str::log_loading);
         prompts.clear();
     }
     int clicked = -1;
@@ -619,24 +617,26 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         const int count[2] = {static_cast<int>(mine.size()) + 1, static_cast<int>(theirs.size()) + 1};
         ModalSpec m;
         m.x0 = 340, m.y0 = 96, m.w = 920, m.h = 680;
-        m.kicker = "FILTER";
+        m.kicker = TR(Str::log_filter_kicker);
         const int side = g_modalSide;
         const int row = std::clamp(g_modalRow[side], 0, count[side] - 1);
         const uint32_t onCode = row == 0 ? 0 : (*lists[side])[row - 1].first;
         const int onCount = row == 0 ? static_cast<int>(g_merged.size()) : (*lists[side])[row - 1].second;
-        m.hint = row == 0 ? "Any character." : std::to_string(onCount) + (onCount == 1 ? " match " : " matches ") + (side == 0 ? "as " : "against ") + CharaLabelOf(live, onCode) + ".";
-        m.prompts = {{"button_a", "Choose"}, {"button_y", "Any"}, {"button_b", "Back"}};
+        m.hint = row == 0 ? std::string(TR(Str::log_filter_any_character))
+                          : TRF(side == 0 ? (onCount == 1 ? Str::log_filter_as_one : Str::log_filter_as) : (onCount == 1 ? Str::log_filter_against_one : Str::log_filter_against),
+                                onCount, CharaLabelOf(live, onCode).c_str());
+        m.prompts = {{"button_a", TR(Str::common_prompt_choose)}, {"button_y", TR(Str::common_prompt_any)}, {"button_b", TR(Str::common_prompt_back)}};
         int mclicked = -1;
         float by = Modal(d, bold, f.body, m, &mclicked);
-        Text(d, f.display, g_v.L(28), g_v.P(m.x0 + 28, by), kCream, "Characters");
+        Text(d, f.display, g_v.L(28), g_v.P(m.x0 + 28, by), kCream, TR(Str::log_filter_characters));
         by += 50;
         constexpr int kVisible = 9;
         for (int s = 0; s < 2; s++) {
             const float x0 = m.x0 + 28 + s * 444, x1 = x0 + 420;
             d->AddRectFilled(g_v.P(x0, by), g_v.P(x1, by + 30), Rgba(0, 0, 0, 82));
-            Text(d, bold, g_v.L(15), g_v.P(x0 + 12, by + 6), kGold, s == 0 ? "YOUR CHARACTER" : "OPPONENT'S CHARACTER");
+            Text(d, bold, g_v.L(15), g_v.P(x0 + 12, by + 6), kGold, TR(s == 0 ? Str::log_your_character : Str::log_their_character));
             Text(d, f.body, g_v.L(15), g_v.P(x1 - 12, by + 6), kMuted,
-                 std::to_string(count[s] - 1) + (s == 0 ? " played" : " faced"), 1);
+                 TRF(s == 0 ? Str::log_played : Str::log_faced, count[s] - 1), 1);
             int& scroll = g_modalScroll[s];
             float first = static_cast<float>(scroll);
             if (WheelList(g_v.P(x0, by + 30), g_v.P(x1, by + 30 + kVisible * 50), count[s], kVisible, &first, &g_modalRow[s])) scroll = static_cast<int>(first);
@@ -690,27 +690,29 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         }
         ModalSpec m;
         m.x0 = 440, m.y0 = 120, m.w = 720, m.h = 640;
-        m.kicker = "FILTER";
+        m.kicker = TR(Str::log_filter_kicker);
         int& row = g_modalRow[0];
         row = list.empty() ? 0 : std::clamp(row, 0, static_cast<int>(list.size()) - 1);
-        m.hint = g_typing ? "Type a name. Enter to keep it." : list.empty() ? "No opponent with that name."
-                                                                            : std::to_string(list[row].second) + (list[row].second == 1 ? " match against " : " matches against ") + core::DisplayName(list[row].first) + ".";
-        m.prompts = g_typing ? PromptList{} : PromptList{{"button_a", "Choose"}, {"button_x", "Search"}, {"button_y", "Any"}, {"button_b", "Back"}};
+        m.hint = g_typing       ? std::string(TR(Str::log_type_name))
+                 : list.empty() ? std::string(TR(Str::log_no_opponent))
+                                : TRF(list[row].second == 1 ? Str::log_filter_against_one : Str::log_filter_against, list[row].second,
+                                      core::DisplayName(list[row].first).c_str());
+        m.prompts = g_typing ? PromptList{} : PromptList{{"button_a", TR(Str::common_prompt_choose)}, {"button_x", TR(Str::common_prompt_search)}, {"button_y", TR(Str::common_prompt_any)}, {"button_b", TR(Str::common_prompt_back)}};
         int mclicked = -1;
         float by = Modal(d, bold, f.body, m, &mclicked);
-        Text(d, f.display, g_v.L(28), g_v.P(m.x0 + 28, by), kCream, "Opponent");
+        Text(d, f.display, g_v.L(28), g_v.P(m.x0 + 28, by), kCream, TR(Str::log_filter_opponent));
         by += 50;
         const float fx0 = m.x0 + 28, fx1 = m.x0 + m.w - 28;
         d->AddRectFilled(g_v.P(fx0, by), g_v.P(fx1, by + 50), Rgba(0, 0, 0, 90));
         d->AddRect(g_v.P(fx0, by), g_v.P(fx1, by + 50), g_typing ? look::kRing : Rgba(236, 228, 206, 77), 0, 0, g_v.L(g_typing ? 2.0f : 1.0f));
-        const std::string field = g_search.empty() && !g_typing ? std::string("Search names") : g_search;
+        const std::string field = g_search.empty() && !g_typing ? std::string(TR(Str::log_search_names)) : g_search;
         Text(d, bold, g_v.L(20), g_v.P(fx0 + 16, by + 12), g_search.empty() && !g_typing ? kMuted : kCream, field);
         if (g_typing && std::fmod(ImGui::GetTime(), 1.0) < 0.5) {
             const float cx = fx0 + 16 + TextW(bold, 20, g_search) + 2;
             d->AddLine(g_v.P(cx, by + 12), g_v.P(cx, by + 38), kCream, g_v.L(2));
         }
         Text(d, f.body, g_v.L(16), g_v.P(fx1 - 14, by + 15), kMuted,
-             std::to_string(list.size()) + " of " + std::to_string(all.size()), 1);
+             TRF(Str::log_of, static_cast<int>(list.size()), static_cast<int>(all.size())), 1);
         by += 64;
         constexpr int kVisible = 7;
         int& scroll = g_modalScroll[0];
@@ -725,7 +727,7 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
             d->AddLine(g_v.P(fx0, ry + 55.5f), g_v.P(fx1, ry + 55.5f), Rgba(236, 228, 206, 36), std::max(1.0f, g_v.L(1)));
             Text(d, bold, g_v.L(20), g_v.P(fx0 + 16, ry + 15), on ? look::kInk : kCream, Ellipsize(bold, 20, Upper2(list[i].first), 420));
             Text(d, bold, g_v.L(17), g_v.P(fx1 - 16, ry + 17), on ? look::kInkSoft : kMuted,
-                 std::to_string(list[i].second) + (list[i].second == 1 ? " match" : " matches"), 1);
+                 TRF(list[i].second == 1 ? Str::common_match : Str::common_matches, list[i].second), 1);
         }
         if (mclicked >= 0) ClickPad(PadKeyOfGlyph(m.prompts[mclicked].first));
         if (takeInput && g_typing) {
