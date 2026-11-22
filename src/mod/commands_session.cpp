@@ -480,7 +480,7 @@ void OverlayCommand(const std::string&, std::stringstream& ss) {
         OverlayShowLastBenchmarkResult();
     } else if (what == "battlelog") {
         OpenHub();
-        OpenBattleLog();
+        BattleLogShow();
     } else if (what == "preview") {
         std::string rest;
         std::getline(ss, rest);

@@ -167,7 +167,17 @@ The stripe is the viewer's bar along the bottom of the screen, with its
 controls and a per-round counter. The counter counts action frames: 0 on a round's
 first action frame, its last on the KO's. They are empty before a round's
 action and full after its KO. A round whose end is not known yet runs
-against the round timer's length.
+against the round timer's length. The title is cut short before the frame
+counter is, so a long title never runs into the controls. Back shows or
+hides the hitboxes and Start the frame meter; holding RT fast-forwards.
+
+A round jump fades the picture out over 0.25 s, asks for the jump once the
+screen is black, stays black until the replay has taken it and finished
+seeking (30 s at most), then fades in over 0.35 s on the round's call. A
+jump pressed while the last one fades back in goes out again from there.
+While a jump fades, only B (leave) is taken. A replay's start fades in the
+same way on round 1's call. A replay that stopped matching its recording
+says so at the top of the screen, from the round where it parted.
 
 ## Replay Takeover
 

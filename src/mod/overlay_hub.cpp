@@ -608,8 +608,8 @@ void DrawHubScreens(bool takeInput) {
         bl.stageName = [](uint16_t s) { return StageLabelOf(s); };
         bl.launching = g_logLaunch.active;
         BattleLogInput in;
-        DrawBattleLog(fonts, bl, takeInput && !g_logLaunch.active, &in);
-        if (in.back) CloseBattleLog();
+        BattleLogDraw(fonts, bl, takeInput && !g_logLaunch.active, &in);
+        if (in.back) BattleLogHide();
         if (!in.watch.empty() && !g_logLaunch.active) {
             Log("battle log: watching %s", in.watch.c_str());
             g_logLaunch = {true, FlowBattleSceneSwitches(), ImGui::GetTime(), -1};
@@ -631,7 +631,7 @@ void DrawHubScreens(bool takeInput) {
             if (done || now - g_logLaunch.since > kLaunchGiveUp) {
                 if (!done) Log("battle log: no battle scene %.0f s after Watch: closing", kLaunchGiveUp);
                 g_logLaunch = {};
-                CloseBattleLog();
+                BattleLogHide();
                 CloseHub();
             }
         }
@@ -769,7 +769,7 @@ void DrawHubScreens(bool takeInput) {
             OpenSettingsScreen();
             break;
         case HubAction::BattleLog:
-            OpenBattleLog();
+            BattleLogShow();
             break;
         case HubAction::MyCharacter:
             if (g_tables.loaded) OpenMyCharacter();

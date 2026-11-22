@@ -28,16 +28,16 @@ struct BattleLogInput {
     std::string watchTitle; // its title ("POLARITYDEV vs KANZUKI · game 2 of 4")
 };
 
-void OpenBattleLog();
-void CloseBattleLog();
+void BattleLogShow();
+void BattleLogHide();
 bool BattleLogOpen();
 // The hub's line: "214 matches" (read in the background; "" until then).
 std::string BattleLogInfo();
 // Reads the folder again (new matches, files copied in).
-void RefreshBattleLog();
-void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput, BattleLogInput* in);
+void BattleLogRefresh();
+void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput, BattleLogInput* in);
 // Over a watched replay (replay_driver.h ReplayViewNow): one stripe along
 // the bottom, under the gauges, with its controls; takes the pad.
-void DrawReplayStripe(const HubFonts& f, bool takeInput);
+void BattleLogDrawStripe(const HubFonts& f, bool takeInput);
 
 } // namespace sfv::mod

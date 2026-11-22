@@ -280,6 +280,21 @@ All off leaves the stage under the cursor on.
 The Debug tab opens a preview of the screen with mock players. Watching, the
 mock players act on a clock that starts over with each phase.
 
+## The Battle Log
+
+The Battle Log (`battle_log_screen.cpp`) lists the recordings in
+`Polarity\replays`, read on a worker thread. A file whose size and time have
+not changed keeps the header read before. The list shows a timeline, grouped
+by day (TODAY, YESTERDAY, then the weekday), or the matches by set (LB and
+RB switch). LT and RT open the filters: the characters on each side, and
+the opponent, with a name search. A set's row says WON or LOST by this
+player's side in its last game, with the set's score. The mouse wheel
+scrolls the list a match a notch; a focused row scrolled out of view becomes
+the nearest one in view. The details show round winners only for a decided
+match: a match left early keeps its rounds' frames for playback, not who
+won them. The replay viewer's stripe is `battle_log_stripe.cpp`
+([replays.md](replays.md)).
+
 ## Launches
 
 Watching a replay from the Battle Log and running the benchmark both keep

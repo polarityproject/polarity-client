@@ -1,3 +1,5 @@
+// The Battle Log: the recordings listed by day or set, their details and the filters.
+
 #include "mod/battle_log_screen.h"
 #include "mod/frame_meter.h"
 #include "mod/hitbox_display.h"
@@ -13,7 +15,7 @@
 #include "mod/ui_sound.h"
 
 #include <imgui.h>
-#include <imgui_internal.h> // ImTextCharToUtf8
+#include <imgui_internal.h>
 
 #include <windows.h>
 #include <shellapi.h>
@@ -33,14 +35,12 @@ namespace {
 using namespace ui;
 using battlelog::Entry;
 
-// ---- the files, read on a worker -------------------------------------------
-
 std::mutex g_dataMutex;
-std::vector<Entry> g_entries;         // all files' headers, as read
-std::map<std::string, Entry> g_cache; // by path: kept while size and time are the same
+std::vector<Entry> g_entries;
+std::map<std::string, Entry> g_cache;
 std::atomic<bool> g_reading{false};
-std::atomic<bool> g_read{false};  // read at least once
-std::atomic<int> g_generation{0}; // bumped when a read finishes
+std::atomic<bool> g_read{false};
+std::atomic<int> g_generation{0};
 
 void ReadFolder() {
     if (g_reading.exchange(true)) return;
@@ -89,30 +89,26 @@ void ReadFolder() {
     }).detach();
 }
 
-// ---- the screen's state ------------------------------------------------------
-
 std::atomic<bool> g_open{false};
-bool g_bySets = false;   // the view: false the timeline (the default), true by set
-int g_focus = 0;         // the focused row (selectable rows only)
-float g_scroll = 0;      // the list's scroll, design units
-uint64_t g_expanded = 0; // the set shown open (Sets view)
+bool g_bySets = false;
+int g_focus = 0;
+float g_scroll = 0;
+uint64_t g_expanded = 0;
 battlelog::Filter g_filter;
 enum class LogModal { None,
                       Characters,
                       Opponent };
 LogModal g_modal = LogModal::None;
-int g_modalSide = 0; // characters: 0 the player's list, 1 the opponent's
+int g_modalSide = 0;
 int g_modalRow[2] = {0, 0};
 int g_modalScroll[2] = {0, 0};
-std::string g_search; // opponent: typed
+std::string g_search;
 bool g_typing = false;
 int g_seenGeneration = -1;
-std::vector<Entry> g_merged; // the screen's copy (Merge)
+std::vector<Entry> g_merged;
 
 constexpr float kListX0 = 48, kListX1 = 868, kListY0 = 142, kListY1 = 832;
 constexpr float kDetailX0 = 892, kDetailX1 = 1552;
-// The rows: 10 inside the header strip (kListY0 + 32) and the pane's 2 px
-// border on every side but the scroll bar's.
 constexpr float kRowsTop = kListY0 + 42, kRowsBottom = kListY1 - 12;
 
 const ImU32 kCream = look::kCream;
@@ -140,7 +136,6 @@ const char* const kMonths[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", 
 const char* const kMonthNames[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 const char* const kDays[] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
 
-// "TODAY · NOV 8", "YESTERDAY · NOV 7", "WED · NOV 5".
 std::string DayLabel(uint64_t unix) {
     const std::tm tm = LocalTime(unix);
     const std::tm now = LocalTime(static_cast<uint64_t>(std::time(nullptr)));
@@ -158,7 +153,6 @@ int DayKey(uint64_t unix) {
     return tm.tm_year * 400 + tm.tm_yday;
 }
 
-// The list's rows.
 enum class RowKind { Day,
                      Match,
                      SetHeader,
@@ -166,23 +160,20 @@ enum class RowKind { Day,
 
 struct Row {
     RowKind kind;
-    const Entry* entry = nullptr;        // Match, Game: the match; SetHeader: its last game
-    const battlelog::Set* set = nullptr; // SetHeader, Game
+    const Entry* entry = nullptr;
+    const battlelog::Set* set = nullptr;
     std::string day;
     float y = 0, h = 0;
-    int game = 0; // Game: its number in the set
+    int game = 0;
 };
 
-float RowHeight(RowKind k) { return k == RowKind::Day ? 30 : k == RowKind::SetHeader ? 86
-                                                         : k == RowKind::Game        ? 54
-                                                                                     : 60; }
+float RowHeight(RowKind k) { return k == RowKind::Day ? 30.0f : k == RowKind::SetHeader ? 86.0f
+                                                            : k == RowKind::Game        ? 54.0f
+                                                                                        : 60.0f; }
 
-// A character's face (the select grid's icon), mirrored for the right side.
 void Face(ImDrawList* d, uint32_t chara, float x, float y, float s, bool mirror) {
     d->AddRectFilled(g_v.P(x, y), g_v.P(x + s, y + s), Rgba(20, 22, 27));
     if (chara) {
-        // The character select's grid icon (116 x 144), its top square: the
-        // HUD portrait (FaceIconLeft) is tinted blue for the fight.
         if (const TextureView* t = TextureSized(CharaTex(UnpackCode(chara), "CharaSelectIconLeft"), g_v.L(s))) {
             const float v1 = 116.0f / 144.0f;
             Image(d, t, g_v.P(x, y), g_v.P(x + s, y + s), mirror ? ImVec2(1, 0) : ImVec2(0, 0), mirror ? ImVec2(0, v1) : ImVec2(1, v1),
@@ -192,19 +183,6 @@ void Face(ImDrawList* d, uint32_t chara, float x, float y, float s, bool mirror)
     d->AddRect(g_v.P(x, y), g_v.P(x + s, y + s), Rgba(236, 228, 206, 77), 0, 0, std::max(1.0f, g_v.L(1)));
 }
 
-// Text cut with an ellipsis to `room` design units.
-std::string Fit(ImFont* f, float size, const std::string& t, float room) {
-    if (TextW(f, size, t) <= room) return t;
-    std::string s = t;
-    while (!s.empty() && TextW(f, size, s + "...") > room) {
-        s.pop_back();
-        while (!s.empty() && (static_cast<unsigned char>(s.back()) & 0xC0) == 0x80) s.pop_back();
-    }
-    return s + "...";
-}
-
-// A match's line: [face] NAME  2 - 1  NAME [face] ... time. Its own side's
-// name first? No: P1 on the left, as the game shows matches.
 void MatchLine(ImDrawList* d, const HubFonts& f, const Entry& e, float x0, float x1, float y, float h, bool on, float face, const std::string& lead,
                const std::string& right) {
     ImFont* bold = f.bold ? f.bold : f.strong;
@@ -219,8 +197,7 @@ void MatchLine(ImDrawList* d, const HubFonts& f, const Entry& e, float x0, float
     const float cy = y + (h - face) / 2;
     Face(d, e.header.setup.players[0].character, x, cy, face, false);
     const float nameRoom = mid - 60 - (x + face + 10) - 8;
-    Text(d, bold, g_v.L(19), g_v.P(x + face + 10, y + h / 2 - 12), fg, Fit(bold, 19, Upper2(battlelog::NameOf(e, 0)), nameRoom));
-    // The round wins, the winner's bright.
+    Text(d, bold, g_v.L(19), g_v.P(x + face + 10, y + h / 2 - 12), fg, Ellipsize(bold, 19, Upper2(battlelog::NameOf(e, 0)), nameRoom));
     if (s.present) {
         const int w0 = s.roundWins[0], w1 = s.roundWins[1];
         Text(d, f.display, g_v.L(22), g_v.P(mid - 20, y + h / 2 - 14), w0 > w1 ? fg : dim, std::to_string(w0), 1);
@@ -229,7 +206,7 @@ void MatchLine(ImDrawList* d, const HubFonts& f, const Entry& e, float x0, float
     }
     const float right1 = x1 - 70;
     Face(d, e.header.setup.players[1].character, right1 - face, cy, face, true);
-    Text(d, bold, g_v.L(19), g_v.P(right1 - face - 10, y + h / 2 - 12), fg, Fit(bold, 19, Upper2(battlelog::NameOf(e, 1)), nameRoom), 1);
+    Text(d, bold, g_v.L(19), g_v.P(right1 - face - 10, y + h / 2 - 12), fg, Ellipsize(bold, 19, Upper2(battlelog::NameOf(e, 1)), nameRoom), 1);
     Text(d, f.body, g_v.L(16), g_v.P(x1, y + h / 2 - 10), dim, right, 1);
 }
 
@@ -241,7 +218,7 @@ std::string CharaLabelOf(const BattleLogLive& live, uint32_t c) {
 
 } // namespace
 
-void OpenBattleLog() {
+void BattleLogShow() {
     g_open = true;
     g_modal = LogModal::None;
     g_typing = false;
@@ -249,14 +226,14 @@ void OpenBattleLog() {
     Log("battle log: open");
 }
 
-void CloseBattleLog() {
+void BattleLogHide() {
     g_open = false;
     g_typing = false;
 }
 
 bool BattleLogOpen() { return g_open; }
 
-void RefreshBattleLog() { ReadFolder(); }
+void BattleLogRefresh() { ReadFolder(); }
 
 std::string BattleLogInfo() {
     if (!g_read) {
@@ -277,7 +254,7 @@ std::string BattleLogInfo() {
     return n == 0 ? "No matches yet" : std::to_string(n) + (n == 1 ? " match" : " matches");
 }
 
-void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput, BattleLogInput* in) {
+void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput, BattleLogInput* in) {
     *in = BattleLogInput{};
     BeginScreen();
     ImDrawList* d = ImGui::GetBackgroundDrawList();
@@ -286,7 +263,6 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
     g_inputOn = takeInput && !g_typing;
     ImFont* bold = f.bold ? f.bold : f.strong;
 
-    // The data: merged when a read finished.
     if (g_seenGeneration != g_generation) {
         g_seenGeneration = g_generation;
         std::vector<Entry> all;
@@ -302,7 +278,6 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
     }
     const std::vector<battlelog::Set> sets = battlelog::GroupSets(shown);
 
-    // The rows.
     std::vector<Row> rows;
     int lastDay = -1;
     auto day = [&](uint64_t unix) {
@@ -343,9 +318,6 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
     float y = 0;
     std::vector<int> selectable;
     for (size_t i = 0; i < rows.size(); i++) {
-        // The first day is the list's header strip's (topDay): no row of
-        // its own, so the first match sits as far from the strip as from
-        // the pane's sides.
         const bool headerDay = i == 0 && rows[i].kind == RowKind::Day;
         rows[i].h = headerDay ? 0 : RowHeight(rows[i].kind);
         rows[i].y = y;
@@ -356,15 +328,12 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
     g_focus = selectable.empty() ? 0 : std::clamp(g_focus, 0, static_cast<int>(selectable.size()) - 1);
     const Row* focused = selectable.empty() ? nullptr : &rows[selectable[g_focus]];
 
-    // ---- input (the list; the modals take it below) ----
     if (g_modal == LogModal::None && takeInput) {
         SetUiSoundSet(UiSoundSet::Menu);
         if (!selectable.empty()) {
             if (Up()) g_focus = std::max(0, g_focus - 1);
             if (Down()) g_focus = std::min(static_cast<int>(selectable.size()) - 1, g_focus + 1);
         }
-        // The wheel over the list scrolls it a match a notch; a focused row
-        // scrolled out of view becomes the nearest one in view.
         if (const int w = WheelSteps(g_v.P(kListX0, kRowsTop), g_v.P(kListX1, kRowsBottom)); w && !selectable.empty()) {
             const float view = kRowsBottom - kRowsTop;
             g_scroll = std::clamp(g_scroll - w * RowHeight(RowKind::Match), 0.0f, std::max(0.0f, total - view));
@@ -424,11 +393,9 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
             }
         }
         if (Back()) in->back = true;
-        // Rebuilt next frame with the focus where it went.
         focused = selectable.empty() ? nullptr : &rows[selectable[std::clamp(g_focus, 0, static_cast<int>(selectable.size()) - 1)]];
     }
 
-    // ---- the top ----
     StageText(d, f.display, 40, 48, 22, kCream, "BATTLE LOG");
     {
         size_t matches = shown.size();
@@ -436,16 +403,13 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
                                  (sets.size() == 1 ? " set" : " sets");
         StageText(d, bold, 20, 1552, 34, kCream, info, 1);
     }
-    // The filters (LT, RT) and the view (LB / RB).
-    // On the stage, not in a pane: each on a pane's glass first, as opaque
-    // as the panels below (the control alone was too see-through).
     auto filterButton = [&](float x0, float x1, const char* glyph, const std::string& label, const std::string& value) {
         Pane(d, x0, 84, x1, 128);
         Control(d, x0, 84, x1, 128, false);
         Glyph(d, glyph, g_v.P(x0 + 10, 92), g_v.P(x0 + 38, 120));
         Text(d, bold, g_v.L(18), g_v.P(x0 + 48, 94), kMuted, label);
         const float vx = x1 - 34;
-        Text(d, bold, g_v.L(18), g_v.P(vx, 94), kCream, Fit(bold, 18, value, x1 - x0 - 190), 1);
+        Text(d, bold, g_v.L(18), g_v.P(vx, 94), kCream, Ellipsize(bold, 18, value, x1 - x0 - 190), 1);
         d->AddTriangleFilled(g_v.P(x1 - 24, 101), g_v.P(x1 - 12, 101), g_v.P(x1 - 18, 109), kGold);
     };
     filterButton(48, 452, "button_lt", "Characters", CharaLabelOf(live, g_filter.mine) + " vs " + CharaLabelOf(live, g_filter.theirs));
@@ -467,11 +431,9 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         Glyph(d, "button_rb", g_v.P(x1 - 42, 92), g_v.P(x1 - 6, 120));
     }
 
-    // ---- the list ----
     Pane(d, kListX0, kListY0, kListX1, kListY1);
     std::string topDay = rows.empty() ? std::string() : rows.front().kind == RowKind::Day ? rows.front().day
                                                                                           : "";
-    // Scroll: the focused row in view.
     const float view = kRowsBottom - kRowsTop;
     if (focused) {
         if (focused->y < g_scroll) g_scroll = focused->y - (focused == &rows[selectable.front()] ? 40 : 0);
@@ -516,20 +478,18 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
                 const std::string info = rule + " \xC2\xB7 " + std::to_string(s.games.size()) + (s.games.size() == 1 ? " GAME" : " GAMES") +
                                          " \xC2\xB7 " + Clock(s.games.front()->header.createdUnix);
                 Text(d, bold, g_v.L(15), g_v.P(lx0 + 34, ry + 9), kick, info);
-                // WON / LOST by the player's side of the last game.
                 const int me = battlelog::MySide(*s.games.back(), live.myName);
                 const bool won = s.wins[me] > s.wins[1 - me], lost = s.wins[me] < s.wins[1 - me];
                 if (won || lost) Text(d, bold, g_v.L(15), g_v.P(lx1 - 14, ry + 9), on ? look::kInk : won ? look::kOk
                                                                                                          : kMuted,
                                       won ? "WON" : "LOST", 1);
-                // The two players, the set's score between them.
                 const Entry& e = *s.games.back();
                 const float fy = ry + 34, face = 44, mid = (lx0 + 34 + face + lx1 - 14 - face) / 2;
                 Face(d, e.header.setup.players[0].character, lx0 + 34, fy, face, false);
-                Text(d, bold, g_v.L(20), g_v.P(lx0 + 34 + face + 10, fy + 10), fg, Fit(bold, 20, Upper2(battlelog::NameOf(e, 0)), mid - 70 - (lx0 + 34 + face + 10)));
+                Text(d, bold, g_v.L(20), g_v.P(lx0 + 34 + face + 10, fy + 10), fg, Ellipsize(bold, 20, Upper2(battlelog::NameOf(e, 0)), mid - 70 - (lx0 + 34 + face + 10)));
                 Text(d, f.display, g_v.L(26), g_v.P(mid, fy + 6), fg, std::to_string(s.wins[0]) + " - " + std::to_string(s.wins[1]), 0.5f);
                 Face(d, e.header.setup.players[1].character, lx1 - 14 - face, fy, face, true);
-                Text(d, bold, g_v.L(20), g_v.P(lx1 - 14 - face - 10, fy + 10), fg, Fit(bold, 20, Upper2(battlelog::NameOf(e, 1)), mid - 70 - (lx0 + 34 + face + 10)), 1);
+                Text(d, bold, g_v.L(20), g_v.P(lx1 - 14 - face - 10, fy + 10), fg, Ellipsize(bold, 20, Upper2(battlelog::NameOf(e, 1)), mid - 70 - (lx0 + 34 + face + 10)), 1);
                 (void)dim;
                 break;
             }
@@ -544,7 +504,6 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         Text(d, bold, g_v.L(20), g_v.P((kListX0 + kListX1) / 2, 420), kSoft, msg, 0.5f);
     }
 
-    // ---- the details ----
     const Entry* de = focused ? focused->entry : nullptr;
     Pane(d, kDetailX0, kListY0, kDetailX1, kListY1);
     if (de) {
@@ -561,7 +520,6 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         }
         Strip(d, kDetailX0 + 2, kListY0 + 2, kDetailX1 - 2, kListY0 + 46, false);
         Text(d, bold, g_v.L(16), g_v.P(kDetailX0 + 24, kListY0 + 14), kGold, kicker);
-        // The two fighters, the round score between them.
         const float ay0 = kListY0 + 46, ay1 = ay0 + 230;
         d->PushClipRect(g_v.P(kDetailX0 + 2, ay0), g_v.P(kDetailX1 - 2, ay1), true);
         static const FadeStop kLeft[] = {{0, 1}, {0.55f, 1}, {0.92f, 0}, {1, 0}};
@@ -586,12 +544,10 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
             const float x = p == 0 ? kDetailX0 + 24 : kDetailX1 - 24;
             const float align = p == 0 ? 0.0f : 1.0f;
             StageText(d, f.body, 16, x, ay1 - 52, kSoft, CharaLabelOf(live, de->header.setup.players[p].character), align);
-            StageText(d, bold, 22, x, ay1 - 32, kCream, Fit(bold, 22, Upper2(battlelog::NameOf(*de, p)), 290), align);
+            StageText(d, bold, 22, x, ay1 - 32, kCream, Ellipsize(bold, 22, Upper2(battlelog::NameOf(*de, p)), 290), align);
         }
         d->AddLine(g_v.P(kDetailX0 + 2, ay1), g_v.P(kDetailX1 - 2, ay1), Rgba(236, 228, 206, 36), std::max(1.0f, g_v.L(1)));
         float ry = ay1 + 16;
-        // Round winners come from a decided match only (a match left early
-        // keeps its rounds' frames for playback, not who won them).
         if (!s.rounds.empty() && s.ending == 0) {
             Text(d, bold, g_v.L(16), g_v.P(kDetailX0 + 24, ry), kGold, "ROUNDS");
             ry += 28;
@@ -619,7 +575,7 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
             line += " \xC2\xB7 " + std::to_string(s.seconds / 60) + " min " + std::to_string(s.seconds % 60) + " s";
         }
         if (s.present && s.ending == 1) line += " \xC2\xB7 not finished";
-        Text(d, bold, g_v.L(19), g_v.P(kDetailX0 + 24, ry), kSoft, Fit(bold, 19, line, kDetailX1 - kDetailX0 - 48));
+        Text(d, bold, g_v.L(19), g_v.P(kDetailX0 + 24, ry), kSoft, Ellipsize(bold, 19, line, kDetailX1 - kDetailX0 - 48));
         ry += 32;
         const bool playable = ReplayCompatible(de->header.gameBuild, live.buildId);
         const std::string ver = "Polarity " + de->header.modVersion;
@@ -628,11 +584,10 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
             d->AddLine(g_v.P(kDetailX0 + 31, ry + 17), g_v.P(kDetailX0 + 40, ry + 6), look::kOk, g_v.L(2.4f));
             Text(d, bold, g_v.L(19), g_v.P(kDetailX0 + 50, ry), kSoft, ver);
         } else {
-            Text(d, bold, g_v.L(19), g_v.P(kDetailX0 + 24, ry), kMuted, Fit(bold, 19, "Made with " + ver + ": can't be played on this version", kDetailX1 - kDetailX0 - 48));
+            Text(d, bold, g_v.L(19), g_v.P(kDetailX0 + 24, ry), kMuted, Ellipsize(bold, 19, "Made with " + ver + ": can't be played on this version", kDetailX1 - kDetailX0 - 48));
         }
     }
 
-    // ---- the prompt line ----
     std::string hint;
     PromptList prompts;
     if (focused && focused->entry && focused->kind != RowKind::SetHeader) {
@@ -657,7 +612,6 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
     PromptLine(d, f.body, bold, "", kGold, g_modal == LogModal::None ? hint : std::string(), g_modal == LogModal::None ? prompts : PromptList{}, &clicked);
     if (clicked >= 0 && g_modal == LogModal::None) ClickPad(PadKeyOfGlyph(prompts[clicked].first));
 
-    // ---- the filters ----
     if (g_modal == LogModal::Characters) {
         const auto mine = battlelog::Characters(g_merged, live.myName, false);
         const auto theirs = battlelog::Characters(g_merged, live.myName, true);
@@ -746,10 +700,9 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         float by = Modal(d, bold, f.body, m, &mclicked);
         Text(d, f.display, g_v.L(28), g_v.P(m.x0 + 28, by), kCream, "Opponent");
         by += 50;
-        // The search field.
         const float fx0 = m.x0 + 28, fx1 = m.x0 + m.w - 28;
         d->AddRectFilled(g_v.P(fx0, by), g_v.P(fx1, by + 50), Rgba(0, 0, 0, 90));
-        d->AddRect(g_v.P(fx0, by), g_v.P(fx1, by + 50), g_typing ? look::kRing : Rgba(236, 228, 206, 77), 0, 0, g_v.L(g_typing ? 2 : 1));
+        d->AddRect(g_v.P(fx0, by), g_v.P(fx1, by + 50), g_typing ? look::kRing : Rgba(236, 228, 206, 77), 0, 0, g_v.L(g_typing ? 2.0f : 1.0f));
         const std::string field = g_search.empty() && !g_typing ? std::string("Search names") : g_search;
         Text(d, bold, g_v.L(20), g_v.P(fx0 + 16, by + 12), g_search.empty() && !g_typing ? kMuted : kCream, field);
         if (g_typing && std::fmod(ImGui::GetTime(), 1.0) < 0.5) {
@@ -770,7 +723,7 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
             const bool on = i == row && !g_typing;
             if (on) d->AddRectFilled(g_v.P(fx0, ry), g_v.P(fx1, ry + 56), kGold);
             d->AddLine(g_v.P(fx0, ry + 55.5f), g_v.P(fx1, ry + 55.5f), Rgba(236, 228, 206, 36), std::max(1.0f, g_v.L(1)));
-            Text(d, bold, g_v.L(20), g_v.P(fx0 + 16, ry + 15), on ? look::kInk : kCream, Fit(bold, 20, Upper2(list[i].first), 420));
+            Text(d, bold, g_v.L(20), g_v.P(fx0 + 16, ry + 15), on ? look::kInk : kCream, Ellipsize(bold, 20, Upper2(list[i].first), 420));
             Text(d, bold, g_v.L(17), g_v.P(fx1 - 16, ry + 17), on ? look::kInkSoft : kMuted,
                  std::to_string(list[i].second) + (list[i].second == 1 ? " match" : " matches"), 1);
         }
@@ -822,236 +775,6 @@ void DrawBattleLog(const HubFonts& f, const BattleLogLive& live, bool takeInput,
     }
     g_inputOn = false;
     d->PopClipRect();
-}
-
-// A round jump's fade (DrawReplayStripe): out over kFadeOut, the jump asked
-// once black, black until the replay has taken it and its seek (or restart)
-// is done, then in over kFadeIn on the round's call as it plays.
-enum class JumpFade { None,
-                      Out,
-                      Black,
-                      In };
-
-struct JumpState {
-    JumpFade phase = JumpFade::None;
-    int dir = 0;
-    double since = 0;
-    uint32_t handledAt = 0; // ReplayView::handled once the jump is taken
-};
-
-JumpState g_jump;
-constexpr double kFadeOut = 0.25, kFadeIn = 0.35, kJumpGiveUp = 30;
-
-void RoundJumpFade(ImDrawList* d, const ReplayView& v) {
-    const double now = ImGui::GetTime();
-    float alpha = 0;
-    switch (g_jump.phase) {
-        case JumpFade::None: return;
-        case JumpFade::Out:
-            alpha = static_cast<float>((now - g_jump.since) / kFadeOut);
-            if (alpha >= 1) {
-                alpha = 1;
-                // dir 0: a fade the replay itself asked for (a takeover's end):
-                // no command, black until it is done seeking.
-                g_jump.handledAt = g_jump.dir != 0 ? ReplayApplyControl(ReplayControl::Round, g_jump.dir) : v.handled;
-                g_jump.phase = g_jump.handledAt || g_jump.dir == 0 ? JumpFade::Black : JumpFade::In;
-                g_jump.since = now;
-            }
-            break;
-        case JumpFade::Black:
-            alpha = 1;
-            if ((v.handled >= g_jump.handledAt && !v.seeking) || now - g_jump.since > kJumpGiveUp) {
-                g_jump.phase = JumpFade::In;
-                g_jump.since = now;
-            }
-            break;
-        case JumpFade::In:
-            alpha = 1 - static_cast<float>((now - g_jump.since) / kFadeIn);
-            if (alpha <= 0) {
-                g_jump = {};
-                return;
-            }
-            break;
-    }
-    // Over the game's picture and HUD; the stripe draws on top.
-    d->AddRectFilled(ImVec2(0, 0), ImGui::GetIO().DisplaySize, Rgba(0, 0, 0, static_cast<int>(255 * std::clamp(alpha, 0.0f, 1.0f))));
-}
-
-void DrawReplayStripe(const HubFonts& f, bool takeInput) {
-    const ReplayView v = ReplayViewNow();
-    if (!v.active) {
-        g_jump = {}; // left mid-fade
-        return;
-    }
-    BeginScreen();
-    ImDrawList* d = ImGui::GetForegroundDrawList();
-    ImFont* bold = f.bold ? f.bold : f.strong;
-    g_inputOn = takeInput;
-    SetUiSoundSet(UiSoundSet::Menu);
-    if (v.benchmark) {
-        // The benchmark's: wait, keep the window in focus; B stops it.
-        if (takeInput && Back()) ReplayApplyControl(ReplayControl::Leave);
-        g_inputOn = false;
-        const float y0 = 856, y1 = 900;
-        d->AddRectFilled(g_v.P(0, y0), g_v.P(1600, y1), Rgba(10, 12, 16, 184));
-        d->AddLine(g_v.P(0, y0), g_v.P(1600, y0), Rgba(236, 228, 206, 115), std::max(1.0f, g_v.L(1)));
-        if (v.frames > 0) d->AddRectFilled(g_v.P(0, y0 - 1), g_v.P(1600.0f * (v.frame + 1) / v.frames, y0 + 2), look::kGold);
-        Text(d, bold, g_v.L(16), g_v.P(48, y0 + 13), look::kGold, "BENCHMARK");
-        const int left = std::max(0, (v.frames - v.frame) / 60);
-        char line[96];
-        std::snprintf(line, sizeof(line), "Please wait, and keep the game window in focus \xC2\xB7 0:%02d left", left);
-        Text(d, bold, g_v.L(18), g_v.P(48 + TextW(bold, 16, "BENCHMARK") + 18, y0 + 11), look::kCream, line);
-        int clicked = -1;
-        PromptRow(d, f.body, 17, {{"button_b", "Stop"}}, 1564, y0 + 8, 28, false, &clicked);
-        if (clicked >= 0) ReplayApplyControl(ReplayControl::Leave);
-        return;
-    }
-    // Replay Takeover: the pad plays a side, so the stripe takes none of it
-    // but Start (no use in a fight), which stops it; a big countdown first.
-    if (v.takeover >= 0) {
-        if (takeInput && Pressed({ImGuiKey_GamepadStart}, false)) {
-            PlayUi(UiSound::Cancel);
-            ReplayApplyControl(ReplayControl::TakeoverStop);
-        }
-        g_inputOn = false;
-        // The KO screen over: to black, back to the start point behind it,
-        // the picture back there (RoundJumpFade with no jump of its own).
-        if (v.takeoverFading && g_jump.phase == JumpFade::None) g_jump = {JumpFade::Out, 0, ImGui::GetTime(), 0};
-        RoundJumpFade(d, v);
-        if (v.takeoverCountdown > 0) {
-            const int n = std::clamp(static_cast<int>(std::ceil(v.takeoverCountdown)), 1, 3);
-            StageText(d, f.display, 220, 800, 300, look::kCream, std::to_string(n), 0.5f);
-            StageText(d, bold, 26, 800, 560, look::kGold, v.takeover == 0 ? "YOU ARE PLAYER 1" : "YOU ARE PLAYER 2", 0.5f);
-        }
-        const float y0 = 856, y1 = 900;
-        d->AddRectFilled(g_v.P(0, y0), g_v.P(1600, y1), Rgba(10, 12, 16, 184));
-        d->AddLine(g_v.P(0, y0), g_v.P(1600, y0), Rgba(236, 228, 206, 115), std::max(1.0f, g_v.L(1)));
-        if (v.roundProgress > 0) d->AddRectFilled(g_v.P(0, y0 - 1), g_v.P(1600 * v.roundProgress, y0 + 2), look::kGold);
-        const char* state = v.takeover == 0 ? "CONTROL P1" : "CONTROL P2";
-        Text(d, bold, g_v.L(16), g_v.P(48, y0 + 13), look::kGold, state);
-        int clicked = -1;
-        const PromptList prompts = {{"button_start", v.takeoverEnding ? "Back to the start" : "Stop"}};
-        const float left = PromptRow(d, f.body, 17, prompts, 1564, y0 + 8, 28, false, &clicked);
-        const float textX = 48 + TextW(bold, 16, state) + 18;
-        const std::string line = v.takeoverCountdown > 0 ? "Get ready" : v.takeoverEnding ? "Round over: back to where you took control"
-                                                                                          : "Until the round's KO";
-        Text(d, bold, g_v.L(18), g_v.P(textX, y0 + 11), look::kCream, Fit(bold, 18, v.title + " \xC2\xB7 " + line, left - 24 - textX));
-        if (clicked >= 0) ReplayApplyControl(ReplayControl::TakeoverStop);
-        return;
-    }
-    // The intro run to round 1's call (a replay's start): black like a round
-    // jump's, fading in on the call.
-    if (v.opening && g_jump.phase == JumpFade::None) g_jump = {JumpFade::Black, 0, ImGui::GetTime(), v.handled};
-    // A round jump while the last one fades back in (pressed as the picture
-    // comes back: the round's first frame you can see): out again from there.
-    const auto jumpPressed = [&] {
-        if (Pressed({ImGuiKey_GamepadL1}, false)) return -1;
-        if (Pressed({ImGuiKey_GamepadR1}, false) && v.canRoundForward) return 1;
-        return 0;
-    };
-    if (takeInput && g_jump.phase == JumpFade::In && !v.seeking) {
-        if (const int dir = jumpPressed(); dir != 0) {
-            PlayUi(UiSound::Step);
-            const double shown = std::clamp(1 - (ImGui::GetTime() - g_jump.since) / kFadeIn, 0.0, 1.0); // the black left
-            g_jump = {JumpFade::Out, dir, ImGui::GetTime() - shown * kFadeOut, 0};
-        }
-    }
-    // While a round jump fades, only B (leave) is taken.
-    const bool fading = g_jump.phase != JumpFade::None;
-    const bool canTakeOver = v.roundFrame >= 0 && !v.seeking && !fading;
-    if (takeInput && fading && Back()) ReplayApplyControl(ReplayControl::Leave);
-    if (takeInput && !fading) {
-        if (canTakeOver) {
-            const int side = Pressed({ImGuiKey_GamepadFaceLeft}, false) ? 0 : Pressed({ImGuiKey_GamepadFaceUp}, false) ? 1
-                                                                                                                       : -1;
-            if (side >= 0) {
-                PlayUi(UiSound::Decide);
-                ReplayApplyControl(ReplayControl::Takeover, side);
-            }
-        }
-        if (Confirm()) ReplayApplyControl(ReplayControl::Toggle);
-        if (Pressed({ImGuiKey_GamepadBack}, false)) {
-            PlayUi(UiSound::Decide);
-            SetHitboxesInReplays(!HitboxesInReplays());
-        }
-        if (Pressed({ImGuiKey_GamepadStart}, false)) {
-            PlayUi(UiSound::Decide);
-            SetFrameMeterInReplays(!FrameMeterInReplays());
-        }
-        // A step back plays no sound, the menu's cue included.
-        if (Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}) && v.frame > v.backLimit) ReplayApplyControl(ReplayControl::Step, -1);
-        if (Pressed({ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight}) && v.canStepForward) {
-            PlayUi(UiSound::Cursor); // the directions' sound (ui_kit Left/Right)
-            ReplayApplyControl(ReplayControl::Step, 1);
-        }
-        // A round jump fades the picture out, jumps behind the black (a run
-        // or the battle started again: nothing to watch) and fades back in
-        // on the round's call (RoundJumpFade).
-        if (g_jump.phase == JumpFade::None) {
-            const int dir = jumpPressed(); // RB only with a round after this one
-            if (dir != 0) {
-                PlayUi(UiSound::Step);
-                g_jump = {JumpFade::Out, dir, ImGui::GetTime(), 0};
-            }
-        }
-        static bool fast = false;
-        const bool held = ImGui::IsKeyDown(ImGuiKey_GamepadR2);
-        if (held != fast) {
-            fast = held;
-            ReplayApplyControl(ReplayControl::Fast, held ? 4 : 0);
-        }
-        if (Back()) ReplayApplyControl(ReplayControl::Leave);
-    }
-    g_inputOn = false;
-    RoundJumpFade(d, v);
-    // The stripe: 44 high along the bottom, glass over the fight.
-    const float y0 = 856, y1 = 900;
-    d->AddRectFilled(g_v.P(0, y0), g_v.P(1600, y1), Rgba(10, 12, 16, 184));
-    d->AddLine(g_v.P(0, y0), g_v.P(1600, y0), Rgba(236, 228, 206, 115), std::max(1.0f, g_v.L(1)));
-    // The round's progress: its action frames, from "FIGHT!" to the KO.
-    if (v.roundProgress > 0) d->AddRectFilled(g_v.P(0, y0 - 1), g_v.P(1600 * v.roundProgress, y0 + 2), look::kGold);
-    const bool action = v.roundFrame >= 0 && !fading; // a jump's black: no stale counter
-    const char* state = v.seeking ? "SEEKING" : v.paused           ? "PAUSED"
-                                            : v.fast > 1 && action ? "FAST"
-                                                                   : "PLAYING";
-    Text(d, bold, g_v.L(16), g_v.P(48, y0 + 13), look::kGold, state);
-    // The frame counter: per round, 0 on its first action frame, its last on
-    // the KO's; none outside the action (intro, round call, KO, win poses).
-    char frame[64] = "";
-    if (action && v.roundFrames > 0) std::snprintf(frame, sizeof(frame), " \xC2\xB7 Frame %d / %d", v.roundFrame, v.roundFrames - 1);
-    else if (action) std::snprintf(frame, sizeof(frame), " \xC2\xB7 Frame %d", v.roundFrame);
-    // RB shows only when there is a round after this one.
-    PromptList prompts = {{"button_a", v.paused ? "Play" : "Pause"}, {"button_lb", "Round"}, {"button_rb", ""}, {"button_rt", "Hold to fast forward"}, {"button_back", HitboxesInReplays() ? "Hide hitboxes" : "Show hitboxes"}, {"button_start", FrameMeterInReplays() ? "Hide frame meter" : "Show frame meter"}, {"button_b", "Leave"}};
-    if (!v.canRoundForward) prompts.erase(prompts.begin() + 2);
-    // Replay Takeover, in a round's fight.
-    if (canTakeOver) prompts.insert(prompts.begin() + 1, {{"button_x", "Control P1"}, {"button_y", "Control P2"}});
-    int clicked = -1;
-    const float left = PromptRow(d, f.body, 17, prompts, 1564, y0 + 8, 28, false, &clicked);
-    // Frame steps: the d-pad's left and right, drawn as triangles; back dims
-    // at the earliest frame a step reaches (ReplayView::backLimit).
-    const float tx = left - 120;
-    // The title gives way (cut short) before the frame counter does, so long
-    // names never run into the controls.
-    const float textX = 48 + TextW(bold, 16, state) + 18;
-    const float titleRoom = std::max(60.0f, tx - 24 - textX - TextW(bold, 18, frame));
-    Text(d, bold, g_v.L(18), g_v.P(textX, y0 + 11), look::kCream, Fit(bold, 18, v.title, titleRoom) + frame);
-    const bool canBack = v.frame > v.backLimit && !v.seeking && !fading;
-    d->AddTriangleFilled(g_v.P(tx, y0 + 22), g_v.P(tx + 12, y0 + 14), g_v.P(tx + 12, y0 + 30), canBack ? look::kCream : Rgba(236, 228, 206, 70));
-    d->AddTriangleFilled(g_v.P(tx + 30, y0 + 14), g_v.P(tx + 42, y0 + 22), g_v.P(tx + 30, y0 + 30),
-                         v.canStepForward && !fading ? look::kCream : Rgba(236, 228, 206, 70));
-    Text(d, bold, g_v.L(17), g_v.P(tx + 52, y0 + 12), look::kCream, "Frame");
-    if (clicked >= 0) ClickPad(PadKeyOfGlyph(prompts[clicked].first));
-    // A replay that stopped matching its recording: what plays from there is
-    // not the match as it was.
-    if (v.outOfSync >= 0) {
-        const std::string note = v.outOfSync > 0 ? "Out of sync with the recording from round " + std::to_string(v.outOfSync)
-                                                 : "Out of sync with the recording";
-        // Top centre, under the round timer: clear of the gauges and the frame meter.
-        const float w = TextW(bold, 17, note) + 32, x = 800 - w / 2, top = 168;
-        d->AddRectFilled(g_v.P(x, top), g_v.P(x + w, top + 34), Rgba(10, 12, 16, 200));
-        d->AddRect(g_v.P(x, top), g_v.P(x + w, top + 34), Rgba(229, 67, 90, 200), 0, 0, std::max(1.0f, g_v.L(1.5f)));
-        Text(d, bold, g_v.L(17), g_v.P(x + 16, top + 7), look::kCream, note);
-    }
 }
 
 } // namespace sfv::mod

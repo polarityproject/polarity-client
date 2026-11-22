@@ -253,7 +253,7 @@ void Draw(IDXGISwapChain* swapChain) {
     if (HubOpen() && !atMenus && !g_logLaunch.active && !g_benchLaunch.active) {
         CloseHub();
         CloseRoomsScreen();
-        CloseBattleLog();
+        BattleLogHide();
     }
     if (g_benchReturn && atMenus && !ReplayViewNow().active) {
         g_benchReturn = false;
@@ -269,8 +269,8 @@ void Draw(IDXGISwapChain* swapChain) {
     if (g_reopenLog && atMenus && g_tables.loaded && !ReplayViewNow().active) {
         g_reopenLog = false;
         OpenHub();
-        OpenBattleLog();
-        RefreshBattleLog();
+        BattleLogShow();
+        BattleLogRefresh();
     }
     StepRoomTraining();
     for (keeper::TableTicket ticket; RoomsTakeTicket(&ticket);) StartTableSession(ticket);
@@ -287,7 +287,7 @@ void Draw(IDXGISwapChain* swapChain) {
         }
     }
     if (HubOpen()) DrawHubFrame(!g_visible);
-    if (ReplayViewNow().active && !g_benchLaunch.active) DrawReplayStripe(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, !g_visible);
+    if (ReplayViewNow().active && !g_benchLaunch.active) BattleLogDrawStripe(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold}, !g_visible);
     if (g_benchLaunch.active) DrawBenchmarkLaunch(HubFonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold});
     if (preview) {
         SelectDrawPreview(SelectFonts{g_fontBig, g_fontHuge, g_fontBody, g_fontBold});

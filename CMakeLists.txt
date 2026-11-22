@@ -295,6 +295,7 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/ui_sound.cpp
     src/mod/hub_screen.cpp
     src/mod/battle_log_screen.cpp
+    src/mod/battle_log_stripe.cpp
     src/mod/benchmark.cpp
     src/mod/battle_data.cpp
     src/mod/rooms_screen.cpp
