@@ -228,7 +228,7 @@ void NetplayDriver::StartSession(SfvGame& game) {
     loweredEarly_ = false;
     sawFight_ = false;
     pace_ = {};
-    TakePaceStats();
+    PaceTakeStats();
     UpdatePredictionWindow();
     winsKnown_ = game_.MatchWins(winsAtStart_[0], winsAtStart_[1]);
     SetState(State::Running);

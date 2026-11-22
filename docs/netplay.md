@@ -15,6 +15,39 @@ game thread must act on (a new match, back to the lobby, the end) the
 network thread hands over as the next step, and the game thread takes it once
 it has let go of the match.
 
+## The server connection
+
+The Weyvelength service (`weyve_service.cpp`) holds the connection to the
+rooms server and the peer to peer links. Its thread polls the client about
+once a millisecond with a high-resolution timer, since a plain `Sleep(1)`
+waits a whole scheduler tick (up to 15.6 ms) unless something raised the
+timer resolution. The game thread's sends and receives wait while this
+thread holds the client's lock, so a long turn shows as a frame drop; a
+turn of 8 ms or more is logged as a hitch.
+
+A connect that gets no answer blocks for about 21 s, the system's TCP
+timeout, which is longer than a session waits. With a second port
+configured, the service tries it too when the first has not connected
+within 1.5 s or failed sooner. Trying both at once doubled the connections,
+and the public server's firewall refuses an address after 6 in 30 s (two
+PCs behind one router, a few quick hosts and joins). The first client to
+connect is kept and the other closes when its connect returns. Each connect
+runs on its own thread, so a stop (the hub closing its connection) gives up
+on it at once. When the service waited instead, a custom server that gave
+no answer held whoever closed the service for 21 s: the render thread, from
+the settings' Server row, and the game with it (the 0.4.2 freeze c311abed,
+2026-11-13).
+
+The service keeps polling after the server connection is gone, so the peer
+to peer links stay up (`third_party/weyvelength-keep-links.patch`). Nothing
+else goes to the server while a match runs, and some networks cut a TCP
+connection idle for about 90 s: players relayed through TURN were dropped a
+minute or two into every match. A heartbeat goes to the server every 20 s.
+
+Before any room, the server never puts the country on this player. `nocc`
+sent outside a room gets "not in a room" back from a rooms server without
+the country patch, which is not an error.
+
 ## The lobby
 
 Each lobby starts at stage select. A table set's first game goes straight to
@@ -177,6 +210,62 @@ screen's Wins, Win Streak and Win Ratio are the set's.
 Leaving mid-set gives it up: the Bye says so and the other player wins the
 set.
 
+## Frame pacing
+
+Time sync slows a machine that runs ahead by stretching its frames. The
+stretch is waited out in the input poll before the pads are read
+(`pacing.cpp`). The engine's own limiter waits before that hook toward its
+own deadline, a hair over 16.667 ms apart. An absolute 60.000 Hz deadline
+in the hook was therefore always already past, and a wait shorter than the
+engine's period would only shorten its next wait. So the deadline is
+relative to the last frame: with a stretch the frame runs past the engine's
+period by that much, and without one there is no wait and the engine paces
+as before.
+
+The wait uses a high-resolution timer for all but the last millisecond, then
+spins. A frame of 100 ms or more is a hitch, and the next frame is not
+paced. Pacing stays on for 250 ms after the driver's last frame and starts
+afresh with the next match. Some machines poll input twice per battle frame
+(on TestPC a stretch counted twice per frame, the second poll waiting out a
+whole period), so only the first poll after a netplay frame paces.
+
+## Saves and checksums
+
+Both peers add player 1 then player 2 to the GekkoNet session, so the
+handles mean the same on both sides. The starting state is saved too, so a
+setup that did not sync can be diffed word by word.
+
+A frame's checksum folds its regions' hashes. A frame that ran on predicted
+inputs is hashed once its inputs are confirmed, from its save: the same
+bytes it had after its last simulation. Its checksum then goes into
+GekkoNet's save, where the health check reads it later, along with the
+recording and the state history. GekkoNet reuses a save slot the
+prediction window plus 2 frames on, and a frame still waiting in it is
+confirmed by then, so it is hashed before the slot is overwritten. A load
+settles the frame loaded and those before it, since their inputs are
+confirmed; the frames after it are about to run again.
+
+GekkoNet loads only the frame before the first mispredicted one, and
+confirmed inputs never change. A save whose next frame's inputs are
+confirmed can therefore never be loaded, and is skipped. A stress session
+confirms nothing, so it saves every frame. Stress mode runs frames again
+with the same inputs and names the regions and the words that came out
+different.
+
+Once the outcome is decided every checksum is sent as 0, since the win
+screens follow each machine's own menu input. GekkoNet never predicts
+further than the prediction window past the last confirmed remote input, so
+anything older is final on both peers; that is the frame its health check
+compares, and the frame periodic dumps are taken from. Once the states
+diverge every later health check fails too. Health checks can arrive out of
+order, so the first event is not always the earliest frame: the session
+keeps the dump of the earliest frame among the first few events, which both
+peers then most likely share.
+
+Costs are logged per advance unless the line says otherwise. "Per frame" is
+the whole work over the frames that were not replays, about one per
+rendered frame.
+
 ## Spectators
 
 The host keeps the last 40 matches' streams, setups and starting checksums,
@@ -188,6 +277,13 @@ again from the last ack after 300 ms without progress. A table set's viewers
 watch through the keeper's relay, one hop more, so they start (and start
 again after running dry) 120 frames behind; Direct Match spectators watch
 the host itself.
+
+A spectator's first start waits for the whole delay, and a start after
+running dry for a quarter of it. Below a quarter of the delay in hand, the
+spectator holds one rendered frame in every 6 (every 3 below an eighth), a
+slight slow motion that lets the stream catch up, and goes back to full
+speed at half the delay. The relay's frames come in bursts up to about
+0.8 s apart (2026-11-07), so the slow motion starts only that low.
 
 ## Ending
 

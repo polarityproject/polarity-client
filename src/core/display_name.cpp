@@ -1,13 +1,15 @@
+// Display names: emoji and pictographs out, mathematical letters as plain ones (docs/rooms-client.md).
+
 #include "core/display_name.h"
 
 #include <cstdint>
+#include <algorithm>
+#include <iterator>
 
 namespace sfv::core {
 
 namespace {
 
-// The next code point of UTF-8 text from `i` (advanced past it); a malformed
-// byte reads as U+FFFD, one byte.
 uint32_t Next(const std::string& s, size_t& i) {
     const auto b = [&](size_t k) { return static_cast<unsigned char>(s[k]); };
     const unsigned char c = b(i);
@@ -49,25 +51,36 @@ void Append(std::string& out, uint32_t cp) {
     }
 }
 
+struct CodeRange {
+    uint32_t first, last;
+};
+
+constexpr CodeRange kStrippedRanges[] = {
+    {0x2300, 0x23FF},
+    {0x2600, 0x27BF},
+    {0x2B00, 0x2BFF},
+    {0x200D, 0x200D},
+    {0x20E3, 0x20E3},
+    {0xFE00, 0xFE0F},
+    {0x10000, 0x1FFFF},
+    {0xE0000, 0xE007F},
+};
+
+constexpr uint32_t kMathLetters = 0x1D400, kMathLettersEnd = 0x1D6A3;
+constexpr uint32_t kMathDigits = 0x1D7CE, kMathDigitsEnd = 0x1D7FF;
+constexpr uint32_t kLettersPerStyle = 52, kDigitsPerStyle = 10, kAlphabet = 26;
+
 bool Stripped(uint32_t cp) {
-    return (cp >= 0x2300 && cp <= 0x23FF) ||   // Miscellaneous Technical (watch, hourglass...)
-           (cp >= 0x2600 && cp <= 0x27BF) ||   // Miscellaneous Symbols, Dingbats
-           (cp >= 0x2B00 && cp <= 0x2BFF) ||   // Miscellaneous Symbols and Arrows (stars, squares)
-           cp == 0x200D || cp == 0x20E3 ||     // zero-width joiner, keycap
-           (cp >= 0xFE00 && cp <= 0xFE0F) ||   // variation selectors
-           (cp >= 0x10000 && cp <= 0x1FFFF) || // plane 1: emoji, pictographs, historic scripts
-           (cp >= 0xE0000 && cp <= 0xE007F);   // tags (flag sequences)
+    return std::any_of(std::begin(kStrippedRanges), std::end(kStrippedRanges),
+                       [cp](const CodeRange& r) { return cp >= r.first && cp <= r.last; });
 }
 
-// A mathematical alphanumeric (U+1D400..U+1D7FF) as a plain letter or digit,
-// or 0. The letters run in 52-letter styles (A-Z then a-z) from U+1D400 to
-// U+1D6A3; the digits in 10-digit styles from U+1D7CE.
 uint32_t PlainLetter(uint32_t cp) {
-    if (cp >= 0x1D400 && cp <= 0x1D6A3) {
-        const uint32_t k = (cp - 0x1D400) % 52;
-        return k < 26 ? 'A' + k : 'a' + (k - 26);
+    if (cp >= kMathLetters && cp <= kMathLettersEnd) {
+        const uint32_t k = (cp - kMathLetters) % kLettersPerStyle;
+        return k < kAlphabet ? 'A' + k : 'a' + (k - kAlphabet);
     }
-    if (cp >= 0x1D7CE && cp <= 0x1D7FF) return '0' + (cp - 0x1D7CE) % 10;
+    if (cp >= kMathDigits && cp <= kMathDigitsEnd) return '0' + (cp - kMathDigits) % kDigitsPerStyle;
     return 0;
 }
 

@@ -1,3 +1,5 @@
+// Local input: the game's input manager, the XInput hook, virtual pads and the window (docs/local-input.md).
+
 #include "mod/local_input.h"
 
 #include "mod/crash_report.h"
@@ -12,14 +14,15 @@
 
 #include <MinHook.h>
 
+#include <limits>
+
 namespace sfv::mod {
 
 namespace {
 
-// The game's input manager (docs/local-input.md).
 namespace inputmgr {
 constexpr uint32_t kGlobal = 0x3A750C0;
-constexpr uint32_t kPadsOff = 0x08; // the pointer to its two pads
+constexpr uint32_t kPadsOff = 0x08;
 constexpr uint32_t kUpdate = 0x4DC7D0;
 constexpr uint8_t kUpdateBytes[] = {0x48, 0x8B, 0xC4, 0x48, 0x89, 0x48, 0x08, 0x55,
                                     0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41};
@@ -28,7 +31,7 @@ constexpr uint32_t kPadStride = 0x200;
 constexpr uint32_t kKeysDownOff = 0x04;
 constexpr uint32_t kBattleValueOff = 0x14;
 constexpr uint32_t kStickXOff = 0x20, kStickYOff = 0x24;
-constexpr uint32_t kStateBeginOff = 0x04, kStateEndOff = 0x28; // what an update reads and writes
+constexpr uint32_t kStateBeginOff = 0x04, kStateEndOff = 0x28;
 constexpr uint32_t kKeyTableOff = 0x30;
 } // namespace inputmgr
 
@@ -38,7 +41,7 @@ constexpr SHORT kStickThreshold = 16000;
 constexpr BYTE kTriggerThreshold = 64;
 constexpr ULONGLONG kTitleEveryMs = 1000;
 constexpr ULONGLONG kPollReportEveryMs = 60000;
-constexpr WPARAM kDevNodesChanged = 0x0007; // DBT_DEVNODES_CHANGED
+constexpr WPARAM kDevNodesChanged = 0x0007;
 
 using XInputGetStateFn = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
 using HwndFn = HWND(WINAPI*)();
@@ -76,12 +79,12 @@ std::atomic<uint64_t> g_uiButtonsUntil{0};
 
 std::atomic<HWND> g_gameWindow{nullptr};
 std::atomic<bool> g_alwaysActive{false};
-std::atomic<bool> g_activePending{false}; // always_active asked for before the window existed
+std::atomic<bool> g_activePending{false};
 
 std::atomic<PackedInput> g_mappedInput{0};
 std::atomic<int> g_mappedLog{0};
 std::atomic<uint32_t> g_gameKeys{0};
-uint8_t g_padsKept[inputmgr::kPads][inputmgr::kStateEndOff - inputmgr::kStateBeginOff] = {}; // game thread only
+uint8_t g_padsKept[inputmgr::kPads][inputmgr::kStateEndOff - inputmgr::kStateBeginOff] = {};
 bool g_padsCleared = false;
 
 void KeepWindowActive();
@@ -175,8 +178,6 @@ uint64_t InputUpdateDetour(void* self, float deltaSeconds) {
     return result;
 }
 
-// The game's input value for a pad state with the default button layout
-// (type A), d-pad or left stick.
 PackedInput ToGameInput(const XINPUT_GAMEPAD& g) {
     PackedInput in = 0;
     if ((g.wButtons & XINPUT_GAMEPAD_DPAD_UP) || g.sThumbLY > kStickThreshold) in |= kUp;
@@ -221,7 +222,6 @@ DWORD ComposeState(DWORD user, XINPUT_STATE* state) {
 
 DWORD WINAPI GetStateDetour(DWORD user, XINPUT_STATE* state) {
     HookGuard guard;
-    // The engine polls pad 0 on the game thread once per frame.
     if (user == 0) FlowPumpGameThread();
     const DWORD result = ComposeState(user, state);
     if (user >= XUSER_MAX_COUNT) return result;
@@ -291,7 +291,6 @@ void SubclassWindow() {
 void KeepWindowActive() {
     g_alwaysActive = true;
     SubclassWindow();
-    // The game may already have been told it is inactive.
     PostMessageW(g_gameWindow, WM_ACTIVATEAPP, TRUE, 0);
     PostMessageW(g_gameWindow, WM_ACTIVATE, WA_ACTIVE, 0);
     PostMessageW(g_gameWindow, WM_SETFOCUS, 0, 0);
@@ -308,8 +307,6 @@ bool HookFocusFunctions() {
            hook("GetFocus", reinterpret_cast<void*>(&FocusDetour), &g_origFocus);
 }
 
-// Where the game exe's import of `module`'s function (by ordinal or by name)
-// leads, or null.
 void* GameImport(const char* module, WORD ordinal, const char* name) {
     auto* base = reinterpret_cast<uint8_t*>(g_imageBase);
     auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + reinterpret_cast<IMAGE_DOS_HEADER*>(base)->e_lfanew);
@@ -431,12 +428,12 @@ bool InputParseButtons(const std::string& spec, PadState* out) {
     while (std::getline(ss, b, '+')) {
         const auto button = std::find_if(std::begin(kButtons), std::end(kButtons), [&b](const auto& k) { return b == k.first; });
         if (button != std::end(kButtons)) out->buttons |= static_cast<WORD>(button->second);
-        else if (b == "lt") out->lt = 255;
-        else if (b == "rt") out->rt = 255;
-        else if (b == "sup") out->ly = 32767;
-        else if (b == "sdown") out->ly = -32768;
-        else if (b == "sleft") out->lx = -32768;
-        else if (b == "sright") out->lx = 32767;
+        else if (b == "lt") out->lt = std::numeric_limits<BYTE>::max();
+        else if (b == "rt") out->rt = std::numeric_limits<BYTE>::max();
+        else if (b == "sup") out->ly = std::numeric_limits<SHORT>::max();
+        else if (b == "sdown") out->ly = std::numeric_limits<SHORT>::min();
+        else if (b == "sleft") out->lx = std::numeric_limits<SHORT>::min();
+        else if (b == "sright") out->lx = std::numeric_limits<SHORT>::max();
         else if (b != "none") return false;
     }
     return true;

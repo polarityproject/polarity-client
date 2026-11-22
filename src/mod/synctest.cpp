@@ -1,3 +1,5 @@
+// The in-game determinism test: two passes over the same inputs, compared frame by frame (docs/testing.md).
+
 #include "mod/synctest.h"
 
 #include "core/replay_diff.h"
@@ -11,16 +13,20 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iterator>
 
 namespace sfv::mod {
 
 namespace {
 
-// Neutral frames at both ends so the pads hold the same state when each pass
-// starts: edge detection outside the snapshot then sees the same history.
 constexpr int kNeutralFrames = 12;
-// Keep every pass-1 state (for byte diffs) only for short tests.
 constexpr int kMaxKeptStates = 240;
+constexpr int kMaxFrames = 36000;
+constexpr int kSampleFrames[] = {30, 100};
+constexpr int kSampleAfterFirst = 2;
+constexpr size_t kContextBefore = 8, kContextBytes = 24;
+constexpr int kDiffsLogged = 16, kRegionsListed = 24, kDiffsAtMismatch = 48;
+constexpr uint8_t kTriggerFull = 255;
 
 } // namespace
 
@@ -29,7 +35,7 @@ void SyncTest::Start(int frames, uint64_t seed) {
         Log("synctest: already running");
         return;
     }
-    frames_ = std::clamp(frames, 2 * kNeutralFrames + 1, 36000);
+    frames_ = std::clamp(frames, 2 * kNeutralFrames + 1, kMaxFrames);
     seed_ = seed;
     k_ = 0;
     firstMismatch_ = -1;
@@ -42,7 +48,6 @@ void SyncTest::Start(int frames, uint64_t seed) {
 
 uint16_t SyncTest::Buttons(int frame, int player, uint8_t* rightTrigger) const {
     *rightTrigger = 0;
-    // Seed 0 keeps both pads neutral: separates input-driven state from the rest.
     if (seed_ == 0 || frame < kNeutralFrames || frame >= frames_ - kNeutralFrames) return 0;
     const uint64_t key[3] = {seed_, static_cast<uint64_t>(player), static_cast<uint64_t>(frame / 5)};
     const uint64_t h = Hash64(key, sizeof(key));
@@ -56,12 +61,12 @@ uint16_t SyncTest::Buttons(int frame, int player, uint8_t* rightTrigger) const {
         case 5: b |= XINPUT_GAMEPAD_DPAD_UP; break;
         default: break;
     }
-    // LP MP HP LK MK HK on the default pad layout.
     static const uint16_t kAttack[] = {XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y, XINPUT_GAMEPAD_RIGHT_SHOULDER,
                                        XINPUT_GAMEPAD_A, XINPUT_GAMEPAD_B, 0};
     if ((h >> 8) % 3 == 0) {
-        const int attack = static_cast<int>((h >> 16) % 6);
-        if (attack == 5) *rightTrigger = 255;
+        constexpr int kAttacks = static_cast<int>(std::size(kAttack));
+        const int attack = static_cast<int>((h >> 16) % kAttacks);
+        if (attack == kAttacks - 1) *rightTrigger = kTriggerFull;
         else b |= kAttack[attack];
     }
     return b;
@@ -81,7 +86,6 @@ void SyncTest::OnTick(SfvGame& game) {
     const size_t count = regions.size();
     const size_t size = StateSize(regions);
 
-    // Pad reads since the previous tick; each tick should see exactly one.
     const uint64_t polls = InputPadPolls(0);
     if (k_ > 0) pollHistogram_[std::min<uint64_t>(polls - lastPolls_, 3)]++;
     lastPolls_ = polls;
@@ -110,9 +114,8 @@ void SyncTest::OnTick(SfvGame& game) {
             mismatchState_.resize(size);
             SaveRegions(regions, mismatchState_.data());
         }
-        // How the difference evolves: a few sample frames, with context.
         const int since = k_ - firstMismatch_;
-        if (size_t(k_) < states_.size() && (since <= 2 || k_ == 30 || k_ == 100 || k_ == frames_ - 1)) {
+        if (size_t(k_) < states_.size() && (since <= kSampleAfterFirst || k_ == kSampleFrames[0] || k_ == kSampleFrames[1] || k_ == frames_ - 1)) {
             std::vector<uint8_t> now(size);
             SaveRegions(regions, now.data());
             LogByteDiffs(regions, states_[k_], now, k_);
@@ -131,7 +134,6 @@ void SyncTest::OnTick(SfvGame& game) {
         phase_ = Phase::Replay;
         k_ = 0;
         Log("synctest: recorded %d frames, restored, replaying", frames_);
-        // The tick now runs from the restored state: treat it as frame 0.
         OnTick(game);
         return;
     }
@@ -148,11 +150,10 @@ void SyncTest::LogByteDiffs(const std::vector<StateRegion>& regions, const std::
         offsets.push_back(base);
         base += r.size;
     }
-    for (const auto& br : DiffStates(infos, a, b, 16)) {
-        // 16 bytes of context starting 8 before the difference, both passes.
+    for (const auto& br : DiffStates(infos, a, b, kDiffsLogged)) {
         const size_t regionStart = offsets[br.region];
-        const size_t from = regionStart + (br.offset >= 8 ? br.offset - 8 : 0);
-        const size_t to = std::min(regionStart + regions[br.region].size, from + 24);
+        const size_t from = regionStart + (br.offset >= kContextBefore ? br.offset - kContextBefore : 0);
+        const size_t to = std::min(regionStart + regions[br.region].size, from + kContextBytes);
         char ha[80] = {}, hb[80] = {};
         int na = 0, nb = 0;
         for (size_t i = from; i < to; i++) {
@@ -182,12 +183,11 @@ void SyncTest::Finish(SfvGame& game) {
 
     const auto& regions = game.Regions();
     const size_t count = regions.size();
-    // Recompute which regions differ at the first mismatching frame.
     std::vector<uint64_t> row(count);
     HashSavedState(regions, mismatchState_.data(), row.data());
     const uint64_t* expected = &recorded_[size_t(firstMismatch_) * count];
     int listed = 0;
-    for (size_t i = 0; i < count && listed < 24; i++) {
+    for (size_t i = 0; i < count && listed < kRegionsListed; i++) {
         if (row[i] != expected[i]) {
             Log("  region %s (%zu bytes) differs", regions[i].name.c_str(), regions[i].size);
             listed++;
@@ -203,7 +203,7 @@ void SyncTest::Finish(SfvGame& game) {
             base += r.size;
         }
         const auto& a = states_[firstMismatch_];
-        for (const auto& br : DiffStates(infos, a, mismatchState_, 48)) {
+        for (const auto& br : DiffStates(infos, a, mismatchState_, kDiffsAtMismatch)) {
             const size_t at = offsets[br.region] + br.offset;
             uint64_t va = 0, vb = 0;
             std::memcpy(&va, &a[at], std::min<size_t>(8, a.size() - at));

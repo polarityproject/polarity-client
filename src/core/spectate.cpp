@@ -1,3 +1,5 @@
+// A spectator's stream: frames in hand, running dry and the slow motion that refills them (docs/netplay.md).
+
 #include "core/spectate.h"
 
 #include "core/recorder.h"
@@ -7,6 +9,14 @@
 #include <ctime>
 
 namespace sfv {
+
+namespace {
+
+constexpr int kRunsLogged = 10, kNotesLogged = 40;
+constexpr int kRestartPart = 4, kVeryLowPart = 8, kLowPart = 4, kFullSpeedPart = 2;
+constexpr int kHoldEveryVeryLow = 3, kHoldEveryLow = 6;
+
+} // namespace
 
 SpectatorPlayback::SpectatorPlayback(IGame& game, SpectateConfig config) : game_(game), config_(std::move(config)) {}
 
@@ -79,11 +89,10 @@ void SpectatorPlayback::Play() {
             Log("spectator desync at frame " + std::to_string(frame));
         }
     }
-    // Runs of differing frames (the first few), for the log.
     if (differs && runStart_ < 0) {
         runStart_ = frame;
     } else if (!differs && runStart_ >= 0) {
-        if (runsLogged_++ < 10) {
+        if (runsLogged_++ < kRunsLogged) {
             Log("checksums differed in frames " + std::to_string(runStart_) + "-" + std::to_string(frame - 1));
         }
         runStart_ = -1;
@@ -98,11 +107,9 @@ void SpectatorPlayback::Update() {
     const int buffered = received_ - next_;
     const auto now = Clock::now();
     const auto msSince = [&](Clock::time_point t) { return static_cast<long long>(duration_cast<milliseconds>(now - t).count()); };
-    const bool note = notesLogged_ < 40;
+    const bool note = notesLogged_ < kNotesLogged;
     if (!started_) {
-        // The first start waits for the whole delay; after running dry, a
-        // quarter of it (the slow motion below refills the rest).
-        const int need = stalls_ == 0 ? delay : std::max(1, delay / 4);
+        const int need = stalls_ == 0 ? delay : std::max(1, delay / kRestartPart);
         if (buffered < need) return;
         started_ = true;
         if (stalls_ > 0 && note) {
@@ -119,18 +126,14 @@ void SpectatorPlayback::Update() {
         if (note) {
             notesLogged_++;
             Log("ran dry at frame " + std::to_string(next_) + ": the last frames came " + std::to_string(msSince(lastArrival_)) +
-                " ms ago; waiting for " + std::to_string(std::max(1, delay / 4)) + " in hand");
+                " ms ago; waiting for " + std::to_string(std::max(1, delay / kRestartPart)) + " in hand");
         }
         return;
     }
-    // Low on frames: hold one rendered frame in every few, a slight slow
-    // motion, so the stream can catch up before it runs dry. The relay's
-    // frames come in bursts up to about 0.8 s apart (2026-11-07), so only
-    // under a quarter of the delay; back to full speed at half of it.
     const int was = holdEvery_;
-    if (buffered < delay / 8) holdEvery_ = 3;
-    else if (buffered < delay / 4) holdEvery_ = holdEvery_ ? holdEvery_ : 6;
-    else if (buffered >= delay / 2) holdEvery_ = 0;
+    if (buffered < delay / kVeryLowPart) holdEvery_ = kHoldEveryVeryLow;
+    else if (buffered < delay / kLowPart) holdEvery_ = holdEvery_ ? holdEvery_ : kHoldEveryLow;
+    else if (buffered >= delay / kFullSpeedPart) holdEvery_ = 0;
     if (holdEvery_ && !was && note) {
         notesLogged_++;
         Log("low on frames at frame " + std::to_string(next_) + " (" + std::to_string(buffered) + " in hand, the last came " +

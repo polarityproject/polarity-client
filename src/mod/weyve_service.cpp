@@ -1,3 +1,5 @@
+// The Weyvelength service: the rooms server connection, peer links and datagrams (docs/netplay.md).
+
 #include "mod/weyve_service.h"
 
 #include "mod/hitch.h"
@@ -15,6 +17,7 @@
 #include <functional>
 #include <mutex>
 #include <thread>
+#include <limits>
 
 namespace sfv::mod {
 
@@ -27,6 +30,13 @@ int64_t MicrosSince(std::chrono::steady_clock::time_point from) {
 constexpr uint16_t kDefaultPort = 5555;
 constexpr size_t kMaxDatagram = 1024;
 constexpr auto kLinkKick = std::chrono::milliseconds(200);
+constexpr auto kConnectPoll = std::chrono::milliseconds(100);
+constexpr int64_t kHitchLogUs = 8000;
+constexpr ULONGLONG kHitchLogEveryMs = 1000;
+constexpr LONGLONG kOneMsRelative = -10000;
+constexpr DWORD kTimerWaitCapMs = 5;
+constexpr int kLeavePolls = 5;
+constexpr DWORD kLeavePollMs = 2;
 const char kCodeAlphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 const char* RoomErrorName(WeyveRoomError e) {
@@ -47,7 +57,6 @@ const char* RoomErrorName(WeyveRoomError e) {
 
 std::string Str(const char* p, uint32_t len) { return p ? std::string(p, len) : std::string(); }
 
-// A getter's byte range (it writes the length through its last argument).
 template <typename Get>
 std::string Bytes(Get get) {
     uint32_t len = 0;
@@ -64,14 +73,14 @@ const WeyveMember* WeyveRoomView::Member(uint32_t id) const {
     return nullptr;
 }
 
-bool ParseServer(const std::string& text, std::string* host, uint16_t* port) {
+bool WeyveParseServer(const std::string& text, std::string* host, uint16_t* port) {
     *host = text;
     *port = kDefaultPort;
     const size_t colon = text.rfind(':');
     if (colon != std::string::npos) {
         *host = text.substr(0, colon);
         const int p = std::atoi(text.c_str() + colon + 1);
-        if (p <= 0 || p > 65535) return false;
+        if (p <= 0 || p > std::numeric_limits<uint16_t>::max()) return false;
         *port = static_cast<uint16_t>(p);
     }
     return !host->empty();
@@ -80,10 +89,10 @@ bool ParseServer(const std::string& text, std::string* host, uint16_t* port) {
 struct WeyveService::Impl {
     std::string host;
     uint16_t port = kDefaultPort;
-    uint16_t alsoPort = 0; // tried too when `port` does not answer soon (Start, Connect)
+    uint16_t alsoPort = 0;
     std::string name;
 
-    std::mutex mutex; // guards everything below and every call into the client
+    std::mutex mutex;
     WeyveClient* client = nullptr;
     std::atomic<bool> connected{false};
     WeyveRoomView::Server server = WeyveRoomView::Server::Connecting;
@@ -91,19 +100,16 @@ struct WeyveService::Impl {
     std::deque<WeyveEvent> events;
     std::vector<WeyveListedRoom> roomList;
     std::deque<Packet> inbox;
-    std::map<uint32_t, std::chrono::steady_clock::time_point> kicked; // per peer, last send while unlinked
-    std::map<uint32_t, bool> linked;                                  // per peer, as last logged
+    std::map<uint32_t, std::chrono::steady_clock::time_point> kicked;
+    std::map<uint32_t, bool> linked;
 
     std::atomic<bool> stop{false};
     std::thread thread;
     static constexpr auto kHeartbeatEvery = std::chrono::seconds(20);
     std::chrono::steady_clock::time_point lastHeartbeat = std::chrono::steady_clock::now();
-    bool heartbeatAnswered = false; // logged once
-    // "nocc" sent outside a room: a rooms server without the country patch
-    // answers each with "not in a room", which is not an error of ours.
+    bool heartbeatAnswered = false;
     int noccUnanswered = 0;
 
-    // With the lock held (or before the thread shares the client).
     void SendHideCountry(WeyveClient* c, bool hide) {
         uint32_t len = 0;
         const bool inRoom = weyve_room_id(c, &len) && len;
@@ -116,12 +122,8 @@ struct WeyveService::Impl {
         commands.push_back(std::move(command));
     }
 
-    // With the lock held: the client's network work, then its events and
-    // datagrams into our queues.
     void Pump() {
         if (!connected) return;
-        // Polled on after the server connection is gone: the P2P links stay
-        // (third_party/weyvelength-keep-links.patch).
         if (!weyve_poll(client) && server == WeyveRoomView::Server::Connected) {
             server = WeyveRoomView::Server::Lost;
             events.push_back({WeyveEvent::Type::ServerLost, 0, "lost the connection to " + host});
@@ -132,7 +134,7 @@ struct WeyveService::Impl {
         while (weyve_next(client, &raw)) {
             switch (raw.type) {
                 case WEYVE_EVENT_ROOM_ID_ASSIGNED:
-                    noccUnanswered = 0; // answered by now, in order, if ever
+                    noccUnanswered = 0;
                     ev = {WeyveEvent::Type::RoomJoined, 0, Str(raw.data.room_assigned.id, raw.data.room_assigned.id_len)};
                     Log("weyve: in room %s as member %u", ev.text.c_str(), weyve_id(client));
                     events.push_back(ev);
@@ -161,7 +163,7 @@ struct WeyveService::Impl {
                     events.push_back({WeyveEvent::Type::PeerJoined, raw.data.peer_joined.id, {}});
                     break;
                 case WEYVE_EVENT_PEER_LEFT:
-                    if (raw.data.peer_left.id == weyve_id(client)) break; // our own leave
+                    if (raw.data.peer_left.id == weyve_id(client)) break;
                     Log("weyve: member %u left", raw.data.peer_left.id);
                     kicked.erase(raw.data.peer_left.id);
                     linked.erase(raw.data.peer_left.id);
@@ -211,19 +213,6 @@ struct WeyveService::Impl {
         }
     }
 
-    // Connects to `port`; with `alsoPort` set, to that one too when `port`
-    // has not connected within kAlsoAfter (or failed sooner). A connect that
-    // gets no answer blocks for about 21 s (the system's TCP timeout), longer
-    // than a session waits, so the second may not wait for the first to give
-    // up. Both at once doubled the connections, and the public server's
-    // firewall refuses an address after 6 in 30 s (two PCs behind one router,
-    // a few quick hosts and joins). The first client to connect is kept; the
-    // other is closed when its connect returns. Null if neither connects.
-    // Each connect runs on its own thread, also with no `alsoPort`: a stop
-    // (the hub closing its connection) gives up on it at once. Waited for, a
-    // custom server that gave no answer held whoever closed the service for
-    // 21 s: the render thread, from the settings' Server row, and with it
-    // the game (0.4.2 freeze c311abed, 2026-11-13).
     static constexpr auto kAlsoAfter = std::chrono::milliseconds(1500);
 
     WeyveClient* Connect() {
@@ -233,13 +222,13 @@ struct WeyveService::Impl {
             WeyveClient* winner = nullptr;
             uint16_t winnerPort = 0;
             int finished = 0;
-            bool abandoned = false; // the service stopped waiting: a late connect closes itself
+            bool abandoned = false;
         };
 
         auto race = std::make_shared<Race>();
         auto dial = [&](uint16_t p) {
             std::thread([race, p, h = host] {
-                ThreadGuard running; // a connect can block ~21 s: no unload meanwhile
+                ThreadGuard running;
                 WeyveClient* c = weyve_client_create();
                 const bool ok = weyve_connect(c, h.c_str(), p);
                 if (!ok) Log("weyve: cannot connect to %s:%u", h.c_str(), p);
@@ -267,7 +256,7 @@ struct WeyveService::Impl {
                 dialed = 2;
                 continue;
             }
-            race->done.wait_for(lock, std::chrono::milliseconds(100));
+            race->done.wait_for(lock, kConnectPoll);
         }
         if (stop) {
             race->abandoned = true;
@@ -276,7 +265,7 @@ struct WeyveService::Impl {
         }
         if (race->winner && race->winnerPort != port) {
             Log("weyve: connected through port %u", race->winnerPort);
-            port = race->winnerPort; // what the session uses from here on
+            port = race->winnerPort;
         }
         return race->winner;
     }
@@ -293,7 +282,6 @@ struct WeyveService::Impl {
             return;
         }
         weyve_set_name(c, name.c_str());
-        // Before any room: the server never puts the country on this player.
         if (WeyveService::HideCountry()) {
             SendHideCountry(c, true);
             Log("weyve: country flag hidden (nocc)");
@@ -310,23 +298,19 @@ struct WeyveService::Impl {
         }
         Log("weyve: connected to %s:%u", host.c_str(), port);
 
-        // A high-resolution timer: a plain Sleep(1) waits a whole scheduler
-        // tick (up to 15.6 ms) unless something raised the timer resolution.
         HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
         while (!stop && !Stopping()) {
             {
                 const auto heldFrom = std::chrono::steady_clock::now();
                 std::lock_guard lock(mutex);
 
-                // The game thread's sends and receives wait while this holds
-                // the lock: a long turn shows as a frame drop (hitch.h).
                 struct Held {
                     std::chrono::steady_clock::time_point from;
 
                     ~Held() {
                         static ULONGLONG lastLog = 0;
                         const int64_t us = MicrosSince(from);
-                        if (us >= 8000 && GetTickCount64() - lastLog >= 1000) {
+                        if (us >= kHitchLogUs && GetTickCount64() - lastLog >= kHitchLogEveryMs) {
                             lastLog = GetTickCount64();
                             Log("hitch: the Weyvelength thread held the client lock %.1f ms", us / 1000.0);
                         }
@@ -336,10 +320,6 @@ struct WeyveService::Impl {
                 if (connected && server == WeyveRoomView::Server::Connected) {
                     for (auto& command : commands) command(client);
                     commands.clear();
-                    // Nothing else goes to the server while a match runs,
-                    // and some networks cut a TCP connection idle for about
-                    // 90 s (players relayed through TURN: the server dropped
-                    // them a minute or two into every match).
                     const auto now = std::chrono::steady_clock::now();
                     if (now - lastHeartbeat >= kHeartbeatEvery) {
                         lastHeartbeat = now;
@@ -356,9 +336,9 @@ struct WeyveService::Impl {
             }
             if (timer) {
                 LARGE_INTEGER due;
-                due.QuadPart = -10000; // 1 ms
+                due.QuadPart = kOneMsRelative;
                 SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE);
-                WaitForSingleObject(timer, 5);
+                WaitForSingleObject(timer, kTimerWaitCapMs);
             } else {
                 Sleep(1);
             }
@@ -367,9 +347,8 @@ struct WeyveService::Impl {
 
         std::lock_guard lock(mutex);
         if (connected && server == WeyveRoomView::Server::Connected) {
-            // Leave, and give the request a moment to go out.
             weyve_leave_room(client);
-            for (int i = 0; i < 5 && weyve_poll(client); i++) Sleep(2);
+            for (int i = 0; i < kLeavePolls && weyve_poll(client); i++) Sleep(kLeavePollMs);
         }
         connected = false;
         weyve_client_destroy(client);
@@ -391,7 +370,7 @@ WeyveService::Live& WeyveService::Open() {
 
 std::unique_ptr<WeyveService> WeyveService::Start(const std::string& server, const std::string& name, uint16_t alsoPort) {
     auto impl = std::make_unique<Impl>();
-    if (!ParseServer(server, &impl->host, &impl->port)) impl->host = server;
+    if (!WeyveParseServer(server, &impl->host, &impl->port)) impl->host = server;
     impl->alsoPort = alsoPort == impl->port ? 0 : alsoPort;
     impl->name = name;
     Impl* raw = impl.get();

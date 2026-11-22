@@ -1,7 +1,7 @@
 #pragma once
 // Frame pacing during netplay matches. Time sync used to drop whole frames on
 // the peer that runs ahead (a visible repeat, about ten a minute). Now that
-// peer stretches its frame period a little (StretchFor) instead: right before
+// peer stretches its frame period a little (PaceStretchFor) instead: right before
 // the game's per-frame input poll (control.cpp), so no input waits for it,
 // the game thread waits until the last frame's time here plus the stretched
 // period (QPC: a high-resolution timer, then a spin). Without a stretch there
@@ -16,7 +16,7 @@ namespace sfv::mod {
 // estimate): none up to 0.25, then 1 % per frame up to 3 frames (a one-frame
 // lead is gone in about 1.7 s, slower than the estimate's ~0.4 s lag, so it
 // does not overshoot), then 3 % plus 3 % per frame beyond 3, at most 25 %.
-float StretchFor(float ahead);
+float PaceStretchFor(float ahead);
 
 // From the netplay driver's frame while a match runs: this side's lead. Pacing
 // is on while these keep coming (it lapses a quarter of a second after the last).
@@ -35,6 +35,6 @@ struct PaceStats {
 };
 
 // The figures since the last call (the netplay pace log).
-PaceStats TakePaceStats();
+PaceStats PaceTakeStats();
 
 } // namespace sfv::mod

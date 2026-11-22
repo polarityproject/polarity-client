@@ -1,3 +1,5 @@
+// The GekkoNet session: advances, saves and loads, checksums, desyncs and the recording (docs/netplay.md).
+
 #include "core/netplay.h"
 
 #include "core/gekko_bridge.h"
@@ -53,8 +55,6 @@ bool NetplaySession::Start(std::string* error) {
     recording_.regions = DescribeRegions(regions);
     recording_.initialHashes.resize(regions.size());
     HashRegions(regions, recording_.initialHashes.data());
-    // The starting state itself, so a setup that did not sync can be diffed
-    // word by word.
     StateDump& initial = recording_.dumps.emplace_back();
     initial.frame = -1;
     initial.label = "initial";
@@ -98,7 +98,6 @@ bool NetplaySession::Start(std::string* error) {
     gekko_net_adapter_set(session_, GekkoAdapter());
     gekko_set_disconnect_timeout(session_, config_.disconnectTimeoutMs);
 
-    // Both peers add P1 then P2 so the handles mean the same on both sides.
     remoteAddress_ = config_.remotePeer;
     GekkoNetAddress addr{&remoteAddress_, sizeof(remoteAddress_)};
     for (int p = 0; p < kNumPlayers; p++) {
@@ -178,14 +177,12 @@ void NetplaySession::HandleGameEvent(GekkoGameEvent* ev) {
             auto t = CostClock::now();
             game_.Advance(in, adv.rolling_back);
             if (adv.frame >= 0) {
-                // A rollback's resimulation overwrites the frame's: the last one stands.
                 auto& flags = recording_.frameFlags;
                 if (flags.size() <= size_t(adv.frame)) flags.resize(size_t(adv.frame) + 1, 0);
                 flags[size_t(adv.frame)] = game_.FrameFlags();
             }
             (adv.rolling_back ? costs_.replayTick : costs_.tick) += MicrosSince(t);
             (adv.rolling_back ? costs_.replayed : costs_.ticks)++;
-            // On predicted inputs: hashed once confirmed (SettleConfirmed), from its save.
             PendingFrame& pending = pending_[size_t(adv.frame) % pending_.size()];
             const bool later = HashOnConfirm() && adv.frame > gekko_confirmed_frame(session_);
             if (later) {
@@ -205,8 +202,6 @@ void NetplaySession::HandleGameEvent(GekkoGameEvent* ev) {
             costs_.hash += MicrosSince(t);
             t = CostClock::now();
 
-            // Stress mode resimulates frames it has simulated before with the same
-            // inputs: name the regions, and the words, that came out different.
             if (config_.stressCheckDistance > 0 && adv.frame < recording_.FrameCount() &&
                 std::memcmp(recording_.FrameHashes(adv.frame), frameHashes_.data(), regions.size() * 8) != 0) {
                 const uint64_t* before = recording_.FrameHashes(adv.frame);
@@ -236,8 +231,6 @@ void NetplaySession::HandleGameEvent(GekkoGameEvent* ev) {
             if (costs_.ticks + costs_.replayed >= kCostEvery) {
                 Costs& c = costs_;
                 const int n = c.ticks + c.replayed;
-                // Per advance unless said; "per frame" is the whole work over the
-                // frames that were not replays (about one per rendered frame).
                 char buf[480];
                 std::snprintf(buf, sizeof(buf),
                               "costs over %d advances (%d replayed, %d loads, %d of %d saves skipped%s): tick %.0f us, "
@@ -256,8 +249,6 @@ void NetplaySession::HandleGameEvent(GekkoGameEvent* ev) {
             nextFrame_ = adv.frame + 1;
             highestFrame_ = std::max(highestFrame_, adv.frame);
 
-            // A frame this far back has its remote input and any rollback for it
-            // done: its state is final on both peers.
             if (config_.dumpEvery > 0 && periodicDumps_ < config_.maxDumps) {
                 const int confirmed = highestFrame_ - int(config_.predictionWindow) - 1;
                 while (nextDump_ <= confirmed && periodicDumps_ < config_.maxDumps) {
@@ -273,8 +264,6 @@ void NetplaySession::HandleGameEvent(GekkoGameEvent* ev) {
         case GekkoSaveEvent: {
             const auto& save = ev->data.save;
             const auto t = CostClock::now();
-            // GekkoNet reuses a save slot window + 2 frames on: a frame still
-            // waiting in it is confirmed by then, hash it before it is overwritten.
             if (HashOnConfirm()) {
                 for (PendingFrame& p : pending_) {
                     if (p.frame >= 0 && p.frame != save.frame && p.state == save.state) Settle(p);
@@ -286,14 +275,10 @@ void NetplaySession::HandleGameEvent(GekkoGameEvent* ev) {
                 HashRegions(regions, frameHashes_.data());
                 hashedFrame_ = save.frame;
             }
-            // GekkoNet loads frame (first mispredicted - 1) only, and confirmed
-            // inputs never change: with the inputs of frame + 1 confirmed this
-            // state can never be loaded (a stress session confirms nothing).
             const bool skip = config_.skipUnloadableSaves && gekko_confirmed_frame(session_) >= save.frame + 1;
             if (!skip) SaveRegions(regions, save.state);
             *save.state_len = static_cast<unsigned int>(StateSize(regions));
             if (later) {
-                // The checksum and the state history come when the frame is confirmed.
                 pending.state = save.state;
                 pending.checksum = save.checksum;
                 *save.checksum = 0;
@@ -301,8 +286,6 @@ void NetplaySession::HandleGameEvent(GekkoGameEvent* ev) {
             } else {
                 const uint32_t sum = FoldChecksum(frameHashes_.data(), frameHashes_.size());
                 saved_[save.frame % saved_.size()] = {save.frame, sum, skip};
-                // After the outcome every state compares equal: the win screens
-                // follow each machine's own menu input.
                 *save.checksum = game_.OutcomeDecided() ? 0 : sum;
             }
             costs_.save += MicrosSince(t);
@@ -313,14 +296,10 @@ void NetplaySession::HandleGameEvent(GekkoGameEvent* ev) {
         }
         case GekkoLoadEvent: {
             const auto& load = ev->data.load;
-            // The frame loaded and those before it are final (their inputs are
-            // confirmed); the ones after it are about to run again. (Its own cost
-            // counts as hash and recording.)
             if (HashOnConfirm()) SettleConfirmed(load.frame);
             auto t = CostClock::now();
             const SavedFrame& was = saved_[load.frame % saved_.size()];
             if (was.frame == load.frame && was.skipped) {
-                // Cannot happen if the rule above holds; the state loaded is stale.
                 Log("load of frame " + std::to_string(load.frame) + ", whose save was skipped: the state is wrong from here");
             }
             LoadRegions(regions, load.state);
@@ -356,10 +335,6 @@ void NetplaySession::HandleGameEvent(GekkoGameEvent* ev) {
     }
 }
 
-// A frame that ran on predicted inputs, now confirmed: its hashes from its
-// save (the same bytes it had after its last simulation), its checksum into
-// GekkoNet's save (read by its health check later), the recording, the
-// state history.
 void NetplaySession::Settle(PendingFrame& p) {
     const int f = p.frame;
     if (!p.state) {
@@ -411,10 +386,6 @@ void NetplaySession::HandleSessionEvent(GekkoSessionEvent* ev) {
             phase_ = NetplayPhase::Ended;
             break;
         case GekkoDesyncDetected: {
-            // Once diverged, every later health check fails too. Health checks can
-            // arrive out of order, so the first event is not always the earliest
-            // frame: keep the dump of the earliest one among the first few events,
-            // which both peers then most likely share.
             const auto& d = ev->data.desynced;
             desyncCount_++;
             if (desyncs_.size() >= kMaxRecordedDesyncs) break;
@@ -448,9 +419,6 @@ void NetplaySession::HandleSessionEvent(GekkoSessionEvent* ev) {
 
 ReplayFile NetplaySession::Recording() const {
     ReplayFile copy = recording_;
-    // GekkoNet never predicts further than the prediction window past the last
-    // confirmed remote input, so anything older is final. This is the same
-    // frame its desync health check compares.
     copy.finalThrough = std::min(highestFrame_ - int(config_.predictionWindow) - 1, copy.FrameCount() - 1);
     return copy;
 }

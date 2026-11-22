@@ -157,5 +157,34 @@ when the set is over and nobody watched. When the same two play on, the
 relay carries on to the next set's end; a set's relay keeps serving its
 viewers, and nobody new joins.
 
+On the host's side the relay says Hello again every second until the host
+knows the member is the keeper, since its proof arrives through the server.
+It takes the oldest game the host has that it doesn't hold yet: the host's
+Loaded (its checksum, for the viewers), then the stream, at most 4 batches
+ahead, as the host sends. With every game in hand it sends a heartbeat for
+match 0. Games keep the host's order. Games it no longer lists (older ones
+it dropped) stay in front, and a game known only from its Welcome so far
+(the next game, before the host's list has it) stays after: viewers take
+the next game by its place in the list, and when it once came first, live
+viewers loaded game 1 again for game 2. When the same two play on into a
+next set, the score starts over and the set's end is to come again.
+
+Viewers get the set's games at once. A table viewer starts at the first;
+with the live game's Welcome first, it loaded that one and then the first,
+and lost half a minute. A new viewer gets the list before any Welcome, 1.5 s
+after its Accept, and a viewer still on an earlier game takes the players'
+match up once that game ends. When a player chooses character select, only
+a viewer at the live game's result goes to the select screen with them, and
+stays there while they are on it. One still playing a game, the live one or
+an earlier one, is told the match goes on: the select phase would take it
+out of its game, and it lost the rest of that game.
+
+Once the host is gone nothing more comes. A viewer is done when it is at
+the result of the last game played, or has played through every frame
+there is (a set that broke off mid-game); having the first game alone isn't
+enough, since a viewer takes frames far ahead of what it shows. Viewers far
+behind are still served for 10 minutes after the host left. A viewer that
+is done gets a Bye 3 times, 500 ms apart.
+
 A room closing takes its listing and its relays with it; a relay asked for
 and never made just ends.

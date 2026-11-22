@@ -86,6 +86,13 @@ the set off.
 
 A member's name shows as the keeper's mask ("Player 1234") unless the player
 turned the word filter off. Names show without emoji: the fonts have none.
+`core/display_name.cpp` takes out Miscellaneous Technical, Miscellaneous
+Symbols, Dingbats, Miscellaneous Symbols and Arrows, the zero-width joiner
+and keycap, variation selectors, all of plane 1 (emoji, pictographs,
+historic scripts) and the tag characters of flag sequences. Mathematical
+alphanumerics (U+1D400 to U+1D7FF) show as the plain letter or digit: the
+letters run in styles of 52 (A to Z, then a to z) up to U+1D6A3, and the
+digits in styles of 10 from U+1D7CE.
 A public room carries the keeper's word list in its data, by its hash; the
 client reads it again when the hash changes and keeps it across rooms. Chat
 is censored once, as it arrives, and the setting picks which copy shows.

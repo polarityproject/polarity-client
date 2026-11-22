@@ -96,6 +96,25 @@ shared secret you choose per test run; don't commit it. Then:
 
 On SteamOS, `scripts/agent_steamos.py` speaks the same protocol.
 
+## The determinism test
+
+`synctest <frames> [seed]` (`synctest.cpp`) runs a stretch of battle twice
+from the same saved state and compares each frame's hashes. Pass 1 records
+them; pass 2 restores the state, treats the restored tick as frame 0, and
+replays the same inputs. Each pass starts and ends with 12 neutral frames,
+so the pads hold the same state when each pass starts and edge detection
+outside the snapshot sees the same history. Every pass-1 state is kept for
+byte diffs only in tests of 240 frames or fewer. Each tick should see
+exactly one pad read.
+
+The inputs come from the seed: directions, and a third of the time an
+attack (LP, MP, HP, LK, MK on the default layout, HK on the right
+trigger). Seed 0 keeps both pads neutral, which separates the state the
+inputs drive from the rest. At the first frame that differs the test lists
+the regions that differ, then shows how the difference evolves at a few
+sample frames (the next two, frames 30 and 100, and the last), each with
+the bytes from 8 before the difference in both passes.
+
 ## The replay regression check
 
 `scripts\replay-regression.ps1` replays the reference recordings in

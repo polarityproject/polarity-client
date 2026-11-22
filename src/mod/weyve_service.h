@@ -143,6 +143,6 @@ private:
 };
 
 // "host:port" from [weyve] server, with the port defaulted.
-bool ParseServer(const std::string& text, std::string* host, uint16_t* port);
+bool WeyveParseServer(const std::string& text, std::string* host, uint16_t* port);
 
 } // namespace sfv::mod

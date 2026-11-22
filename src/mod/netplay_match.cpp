@@ -300,7 +300,7 @@ void NetplayDriver::LogPace(float ahead, bool wait) {
     if (pace_.since.time_since_epoch().count() != 0) {
         const double s = std::chrono::duration<double>(now - pace_.since).count();
         const GekkoNetworkStats net = session_->NetworkStats();
-        const PaceStats p = TakePaceStats();
+        const PaceStats p = PaceTakeStats();
         Log("netplay: pace %.1f frames/s (%d frames in %.1f s), %d of %d rendered frames waited, ahead %.2f, "
             "stretched %d frames (%.1f %% on average), %d late, %d resets, %.1f ms waited per frame, "
             "delay %u, window %u, ping %.0f ms, jitter %.0f ms, focused %d",
