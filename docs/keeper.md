@@ -54,7 +54,9 @@ lobby channel of its own (a first start, a lost state file, or the saved
 channel gone), the keeper first looks for one of this build's made by an
 earlier keeper and joins it: the players may already sit there, and a
 second channel would split them, since hubs pick the busiest. The players
-then hand its host back to the keeper.
+then hand its host back to the keeper. If the server refuses the join
+because it came within 1 s of a failed one, the keeper reconnects after
+5 s and joins again on the new connection.
 
 ## Rooms
 

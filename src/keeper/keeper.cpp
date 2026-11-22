@@ -268,6 +268,13 @@ void Keeper::Pump(Room& room, int64_t nowMs) {
                     } else {
                         Close(room, "gone");
                     }
+                } else if (!room.inRoom && room.kind == Kind::Lobby && code == WEYVE_ROOM_ERROR_RATE_LIMITED) {
+                    // The server's wait after a failed join (or a list asked too soon). A
+                    // new connection starts without it and rejoins room.code, or looks again.
+                    Log("keeper: lobby channel asked too soon; reconnecting in %lld s", static_cast<long long>(kReconnectMs / 1000));
+                    Retire(room.client);
+                    room.host = room.setUp = false;
+                    room.reconnectMs = nowMs + kReconnectMs;
                 }
                 break;
             }
