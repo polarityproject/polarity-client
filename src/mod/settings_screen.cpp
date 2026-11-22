@@ -22,8 +22,6 @@ namespace {
 const ImU32 kGold = IM_COL32(233, 196, 106, 255);
 const ImU32 kCream = IM_COL32(244, 241, 232, 255);
 const ImU32 kSoft = IM_COL32(228, 224, 212, 255);
-const ImU32 kMuted = IM_COL32(198, 193, 180, 255);
-const ImU32 kLine = IM_COL32(201, 168, 92, 190);
 
 constexpr float kTop = 98, kBottom = 830, kRowH = 50, kRowPitch = 50, kHeaderH = 38;
 constexpr float kValueX = 766;

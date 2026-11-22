@@ -16,8 +16,6 @@ constexpr int kGranuleShift = 16;
 constexpr ULONGLONG kFreeGranulesKeptMs = 250;
 constexpr uint32_t kStateMapMagic = 0x4D564653, kStateMapVersion = 1; // "SFVM"
 
-constexpr size_t kMaxGroups = 64;
-
 std::vector<std::pair<uintptr_t, uintptr_t>> CommittedRanges() {
     std::vector<std::pair<uintptr_t, uintptr_t>> out;
     uintptr_t addr = kFirstPage;

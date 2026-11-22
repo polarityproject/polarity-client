@@ -3,7 +3,6 @@
 #include <windows.h>
 
 #include <algorithm>
-#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 #include <deque>

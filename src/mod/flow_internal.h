@@ -46,8 +46,6 @@ std::string PropertyText(const uint8_t* property, const uint8_t* data);
 
 extern std::function<std::string(const void*)> g_regionOf;
 
-uint8_t* BattleContext(uint8_t* task);
-
 } // namespace sfv::mod
 
 namespace sfv::mod::flow {

@@ -25,7 +25,6 @@ using namespace ui;
 namespace {
 
 const ImU32 kGold = IM_COL32(233, 196, 106, 255);
-const ImU32 kRing = IM_COL32(240, 194, 74, 255);
 const ImU32 kCream = IM_COL32(244, 241, 232, 255);
 const ImU32 kSoft = IM_COL32(228, 224, 212, 255);
 const ImU32 kMuted = IM_COL32(198, 193, 180, 255);

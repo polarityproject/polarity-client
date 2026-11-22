@@ -40,7 +40,6 @@
 #include "mod/settings_screen.h"
 #include "core/match_ticket.h"
 #include "mod/rooms_client.h"
-#include "mod/profile.h"
 #include "mod/status.h"
 #include "mod/report_upload.h"
 #include "mod/updater.h"
@@ -370,14 +369,6 @@ void SaveChoices();
 
 int VariantsOf(int chara, int costume);
 
-bool IsEleven(int chara);
-
-void RollEleven(Choices& c);
-
-PlayerSetup ElevenPick(Choices& c);
-
-bool IsElevenSetup(const PlayerSetup& p);
-
 bool PickValid(Choices& c);
 
 inline bool g_otherHasPick = false;
@@ -493,8 +484,6 @@ const char* VoteText(lobby::Choice c);
 
 void DrawSides(const NetView& v, const bool (&show)[kNumPlayers] = {true, true});
 
-NetView PreviewView(NetView::Phase phase);
-
 inline std::mutex g_previewMutex;
 
 inline std::string g_previewWords;
@@ -567,8 +556,6 @@ inline ProfileFavorites g_favorites;
 inline int g_tableDelay = -1;
 
 inline bool g_myCharacterOpen = false;
-
-void ApplyProfileFavorite(Choices& c);
 
 inline bool g_backToRooms = false;
 
@@ -663,10 +650,6 @@ constexpr double kLaunchToBlack = 0.3, kLaunchBlackHeld = 0.6, kLaunchGiveUp = 4
 
 std::string StageLabelOf(uint16_t stage);
 
-void DrawHubScreens(bool takeInput);
-
-bool OnMenuScreen();
-
 void DrawMenuHint();
 
 void DrawPreviews();
@@ -702,8 +685,6 @@ inline int g_burstLeft = 0, g_burstScale = 2, g_burstIndex = 0;
 inline std::vector<BurstFrame> g_burstFrames;
 
 void TakeBurstFrame(IDXGISwapChain* swapChain);
-
-void TakeScreenshot(IDXGISwapChain* swapChain);
 
 bool WriteTableSlot(void** slot, void* value);
 

@@ -147,10 +147,7 @@ void FightUiDrawVote(const HubFonts& f, const VoteSide (&sides)[2], bool armed, 
                 in->delayStep = MouseIn(g_v.P(x0 + 22, y), g_v.P((x0 + x1) / 2, y + 50)) ? -1 : 1;
             }
             y += 50;
-            if (!s.suggestion.empty()) {
-                Text(d, f.body, g_v.L(15), g_v.P(x0 + 22, y + 6), look::kMuted, s.suggestion);
-                y += 26;
-            }
+            if (!s.suggestion.empty()) Text(d, f.body, g_v.L(15), g_v.P(x0 + 22, y + 6), look::kMuted, s.suggestion);
             if (takeInput) {
                 if (Up()) g_voteFocus = std::max(0, g_voteFocus - 1);
                 if (Down()) g_voteFocus = std::min(kDelayRow, g_voteFocus + 1);

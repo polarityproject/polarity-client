@@ -13,7 +13,6 @@ namespace sfv::mod {
 
 using namespace roomui;
 using namespace ui;
-using keeper::TablePhase;
 
 namespace roomui {
 

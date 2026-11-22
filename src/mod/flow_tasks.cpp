@@ -175,7 +175,7 @@ void FlowTaskCensus(int calls) {
         g_census.clear();
     }
     g_taskCensus = calls;
-    std::thread([calls] {
+    std::thread([] {
         ThreadGuard running;
         for (int i = 0; i < 100 && g_taskCensus > 0 && !Stopping(); i++) Sleep(50);
         g_taskCensus = 0;
