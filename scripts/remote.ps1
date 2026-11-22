@@ -1,10 +1,10 @@
 # Talks to scripts\agent.ps1 on the second PC. Dot-source it, or run one op:
-#   . scripts\remote.ps1 -Agent 192.168.1.20 -Token <secret>
+#   . scripts\remote.ps1 -Agent 192.0.2.20 -Token <secret>
 #   Remote ping
 #   Remote cmd @{ instance = 0; commands = 'mash 22; join ABCDEF' }
 #   RemoteLog 0          # the remote instance's log lines since the last call
 #   RemotePut <local file> <remote path>   RemoteGet <remote path> <local file>
-#   scripts\remote.ps1 -Agent 192.168.1.20 -Token <secret> -Op ping
+#   scripts\remote.ps1 -Agent 192.0.2.20 -Token <secret> -Op ping
 param([string]$Agent = $env:SFV_AGENT, [string]$Token = $env:SFV_AGENT_TOKEN, [int]$Port = 47100, [string]$Op = '')
 
 $script:agentToken = $Token

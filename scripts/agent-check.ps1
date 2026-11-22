@@ -3,7 +3,7 @@
 # use it: every op, its errors, and with -Match a Direct Match against this
 # PC on a Weyvelength server.
 #   $env:SFV_AGENT_TOKEN = '<the agent's token>'
-#   scripts\agent-check.ps1 -Agent 192.168.8.50 [-Deploy] [-Match -Server 192.168.8.208:5555]
+#   scripts\agent-check.ps1 -Agent 192.0.2.20 [-Deploy] [-Match -Server 192.0.2.10:5555]
 # -Fake: the agent runs against a stand-in game (the WSL check), so the game's
 # own effects (pads, a match) are not checked.
 param([Parameter(Mandatory)][string]$Agent, [string]$Token = $env:SFV_AGENT_TOKEN, [int]$Port = 47100,

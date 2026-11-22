@@ -6,7 +6,7 @@
 # -Server sets [weyve] server in the ini (default: the public server); -Testing also turns on the virtual pads
 # and background input the test scripts need (mashing, the agent). -Public (what release-files.ps1 publishes):
 # only Win64\ and a player's INSTALL.txt, no test folder.
-#   package.ps1 -Server 192.168.1.10 -Testing
+#   package.ps1 -Server 192.0.2.10 -Testing
 param([string]$Server = '2.29.123.240:5555', [switch]$Testing, [switch]$Public)
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..')

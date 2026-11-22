@@ -3,7 +3,7 @@
 # each presses every pad button and its remapped keys; both recordings must show each
 # player's presses as that player's own layout makes them. This PC hosts (P1); the
 # second PC (scripts\agent.ps1) joins (P2). Input2.ini is restored on both at the end.
-#   layout-test.ps1 -Agent 192.168.1.20 -Token <secret> -Server 192.168.1.10 [-Deploy]
+#   layout-test.ps1 -Agent 192.0.2.20 -Token <secret> -Server 192.0.2.10 [-Deploy]
 param([Parameter(Mandatory)][string]$Agent, [Parameter(Mandatory)][string]$Token, [Parameter(Mandatory)][string]$Server,
       [switch]$Deploy)
 $ErrorActionPreference = 'Stop'

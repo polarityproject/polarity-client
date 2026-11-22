@@ -10,8 +10,8 @@
 # 120 s. Mid-run: no fatal error, freeze or stress session failure; a replay
 # with no result after -MaxSeconds is stopped and counted as failed.
 #
-#   .\scripts\replay-regression.ps1 -Token <agent token> [-Quick] [-Stress 1] [-NoDeploy]
-param([Parameter(Mandatory)][string]$Token, [string]$Agent = '192.168.8.104', [switch]$Quick, [int]$Stress = 1, [switch]$StressAll, [string]$AllMode = '',
+#   .\scripts\replay-regression.ps1 -Agent <second PC> -Token <agent token> [-Quick] [-Stress 1] [-NoDeploy]
+param([Parameter(Mandatory)][string]$Token, [Parameter(Mandatory)][string]$Agent, [switch]$Quick, [int]$Stress = 1, [switch]$StressAll, [string]$AllMode = '',
       [switch]$NoDeploy, [int]$MaxSeconds = 600, [string]$Out = '')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent

@@ -6,9 +6,9 @@
 # instance N watches. All players mash; after each decided match both make
 # the next choice from -Choices; then everyone leaves. The agents' recordings
 # are fetched and each match is compared with `polarity peers`.
-#   two-machine.ps1 -Agent 192.168.1.20 -Token <secret> -Server 192.168.1.10 [-Deploy] [-Choices rematch,select]
-#   two-machine.ps1 -HostAgent 192.168.1.20 -Agent 192.168.1.30 -Token <secret> -Server 192.168.1.10 -Deploy -Spectate 1
-#   two-machine.ps1 -HostAgent 192.168.1.30 -Agent 192.168.1.30 -Token <secret> -Server 192.168.1.10 -Deploy
+#   two-machine.ps1 -Agent 192.0.2.20 -Token <secret> -Server 192.0.2.10 [-Deploy] [-Choices rematch,select]
+#   two-machine.ps1 -HostAgent 192.0.2.20 -Agent 192.0.2.30 -Token <secret> -Server 192.0.2.10 -Deploy -Spectate 1
+#   two-machine.ps1 -HostAgent 192.0.2.30 -Agent 192.0.2.30 -Token <secret> -Server 192.0.2.10 -Deploy
 # The same agent for both players runs them as its instances 0 and 1 (a
 # Deck alone: agent_steamos.py starts two copies); a spectator there is
 # instance 2 or above.
