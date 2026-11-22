@@ -65,6 +65,19 @@ changes, and again when members join or leave. Other names a room shows as
 "Player N" use the member's place in the room by join order, as every
 client draws them.
 
+The word filter (`core/keeper_words.cpp`) folds what it compares: lower
+case, with the digits and symbols that stand for letters read as those
+letters (0 o, 1 i, 3 e, 4 a, 5 s, 7 t, @ a, $ s), and everything else
+dropped. A word file entry is a word, a prefix (ending in `*`) or a phrase
+(words with spaces between them). An entry of five letters or more matches
+anywhere in a folded name; a shorter one matches only a whole word of the
+name, or its start for a prefix. In chat a word ends at whitespace or ASCII
+punctuation, but `@`, `$` and `'` belong to words ("a$$", "don't"). A
+phrase matches only as its words in a row, never letters typed apart, up to
+six words, and the longest run is starred first. Each character of a match
+becomes one `*`. A public room carries the list in its data (`wl0` and on,
+each value at most 512 bytes) with its hash (`wlv`, FNV-1a).
+
 ## The public list
 
 Public rooms are listed in the rooms server's own room listing: each public

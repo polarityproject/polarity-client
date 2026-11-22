@@ -155,6 +155,7 @@ add_library(sfvcore STATIC
   src/core/pak_index.cpp
   src/core/match_ticket.cpp
   src/core/keeper_protocol.cpp
+  src/core/keeper_words.cpp
   src/core/country_flags.cpp
   src/keeper/sign.cpp
   src/core/replay_file.cpp

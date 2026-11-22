@@ -71,6 +71,7 @@ add_executable(polarity-keeper
   ${POLARITY_ROOT}/src/keeper/keeper_tables.cpp
   ${POLARITY_ROOT}/src/keeper/sign.cpp
   ${POLARITY_ROOT}/src/core/keeper_protocol.cpp
+  ${POLARITY_ROOT}/src/core/keeper_words.cpp
   ${POLARITY_ROOT}/src/core/lobby.cpp
   ${POLARITY_ROOT}/src/core/spectate_relay.cpp
   ${POLARITY_ROOT}/src/core/rules.cpp)
