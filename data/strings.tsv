@@ -25,3 +25,190 @@ fight.vote.delay	Delay
 fight.vote.delay_frame	%d frame
 fight.vote.delay_frames	%d frames
 fight.menu_note	Back + Start or F1 for the Polarity menu
+
+# Words several screens use.
+common.on	On
+common.off	Off
+common.shown	Shown
+common.hidden	Hidden
+common.auto	Auto
+common.frame	%d frame
+common.frames	%d frames
+common.month.1	Jan
+common.month.2	Feb
+common.month.3	Mar
+common.month.4	Apr
+common.month.5	May
+common.month.6	Jun
+common.month.7	Jul
+common.month.8	Aug
+common.month.9	Sep
+common.month.10	Oct
+common.month.11	Nov
+common.month.12	Dec
+common.public_server	Public server
+common.version	Polarity %s
+
+# Polarity settings (overlay_hub.cpp builds the rows).
+settings.section.updates	UPDATES
+settings.section.online	ONLINE
+settings.section.training	TRAINING
+settings.section.benchmark	BENCHMARK
+settings.section.reports	REPORTS
+settings.section.about	ABOUT
+settings.install.label	Install %s
+settings.install.kicker	NEW VERSION
+settings.install.notes_from	From %s: %s
+settings.install.same_version	You can only play people on the same version.
+settings.install.value	Download and install
+settings.install.action	Install
+settings.install.hint	Installs the next time the game starts.
+settings.install.downloading	Downloading %d%%
+settings.install.downloading_hint	Keep playing. It installs the next time the game starts.
+settings.install.restart_value	Restart the game to use it
+settings.install.restart	Restart
+settings.check.label	Check now
+settings.check.checking	Checking...
+settings.check.action	Check
+settings.check.off_line	Updates are off: %s.
+settings.check.idle	Not checked yet.
+settings.check.checking_line	Checking for updates...
+settings.check.up_to_date	You're up to date.
+settings.check.available	Polarity %s is available.
+settings.check.downloading	Downloading Polarity %s.
+settings.check.ready	Polarity %s installs when you restart the game.
+settings.check.failed	The check failed: %s.
+settings.check.hint	Nothing installs without asking you.
+settings.check_start.label	Check at start
+settings.check_start.line	Checks for a new version each time the game starts. Nothing installs without asking you.
+settings.name.label	Name
+settings.name.steam	%s (Steam name)
+settings.name.line	Shown to other players. Leave it empty to use your Steam name.
+settings.name.deck	On Steam Deck, press Steam + X for the keyboard.
+settings.fps.label	My frame rate
+settings.fps.line	Shows your own frame rate next to your name during matches.
+settings.country.label	Country flag
+settings.country.line	Shows your country's flag next to your name in rooms, based on your connection.
+settings.country.hidden	When hidden, your country isn't shown to anyone.
+settings.filter.label	Word filter
+settings.filter.line	Hides offensive names and words in public rooms. Hidden names show as "Player 1234".
+settings.filter.always	The room list is always filtered. Private rooms never are.
+settings.streamer.label	Streamer mode
+settings.streamer.line	Hides room codes on screen, for streams and screenshots.
+settings.streamer.copy	Copy code still copies the real code.
+settings.delay.label	Input delay
+settings.delay.title_frames	Input delay: %s
+settings.delay.title_auto	Input delay: Auto
+settings.delay.none	Every match starts with no input delay.
+settings.delay.fixed	Every match starts with %s of input delay.
+settings.delay.auto	Picks 0 to 3 frames for each match, based on the connection.
+settings.delay.tradeoff	Lower feels sharper but rolls back more. You can still change it before each match.
+settings.server.label	Server
+settings.server.line	Custom Rooms and Direct Match use this server.
+settings.server.others	Other servers appear here once you've used them.
+settings.hitboxes.label	Hitboxes
+settings.hitboxes.line	Shows hurtboxes, hitboxes, throw and proximity boxes in Training mode.
+settings.meter.label	Frame meter
+settings.meter.line	Shows each frame of both characters' actions above the V-Trigger gauges in Training mode, with startup, total and frame advantage.
+settings.bench.label	Run benchmark
+settings.bench.action	Run
+settings.bench.hint	Plays one round with a rollback on every frame.
+settings.bench_last.label	Last result
+settings.bench_last.pass	Pass · %.1f fps · %s %d
+settings.bench_last.fail	Fail · %.1f fps · %s %d
+settings.bench_last.action	Show
+settings.bench_last.hint	Your last run.
+settings.bench_last.none	None yet
+settings.reports.label	Send reports
+settings.reports.line	Sends desync and crash reports to help fix bugs.
+settings.reports.what	A desync report has the match's recording and log (names, picks, inputs). A crash report has the end of the log and a small crash dump, sent at the next start.
+settings.folder.label	Polarity folder
+settings.folder.action	Open
+settings.folder.kicker	POLARITY FOLDER
+settings.folder.line	Holds logs, match recordings and crash reports.
+settings.folder.hint	Opens in Explorer. The game stays open.
+settings.pack.label	Pack logs
+settings.pack.value	Pack to share
+settings.pack.action	Pack
+settings.pack.kicker	PACK LOGS
+settings.pack.line	Zips logs and recent recordings into one file in the Polarity folder, to send with a bug report.
+settings.pack.failed	Could not pack the logs: %s
+settings.pack.done	Packed %s
+settings.credits.label	Acknowledgements
+settings.restart_failed	Couldn't restart: %s. Close the game and start it again.
+
+# The hub (overlay_hub.cpp).
+hub.rooms.cant_connect	Can't connect
+hub.rooms.update_needed	Update needed
+hub.rooms.unavailable	Unavailable right now
+hub.rooms.count_room_player	%d public room · %d player
+hub.rooms.count_room_players	%d public room · %d players
+hub.rooms.count_rooms_player	%d public rooms · %d player
+hub.rooms.count_rooms_players	%d public rooms · %d players
+hub.rooms.getting_ready	Getting ready...
+hub.rooms.info	Browse, create or join with a code
+hub.my.eleven	Eleven
+hub.my.skills	%s VS%d / VT%d
+hub.toast.bad_replay	This replay can't be played.
+hub.toast.slow_down	Slow down. One message per second.
+hub.toast.code_copied	Room code copied
+
+# Prompts and buttons several screens use.
+common.prompt.select	Select
+common.prompt.close	Close
+common.prompt.back	Back
+common.prompt.type	Type
+common.try_again	Try again
+common.close	Close
+common.player	Player
+
+# The hub screen, its problem and update modals, and the settings screen (hub_screen.cpp, settings_screen.cpp).
+hub.tile.offline	PLAY OFFLINE
+hub.tile.offline_info	Story, arcade, training, versus
+hub.tile.offline_text	Press Back + Start in the game's menus to come back here.
+hub.tile.rooms	CUSTOM ROOMS
+hub.tile.rooms_text	Play online in rooms of up to 16 players.
+hub.tile.log	BATTLE LOG
+hub.tile.log_text	Your online matches, to watch again.
+hub.tile.my	MY CHARACTER
+hub.tile.my_text	The character, loadout and stage you play in Custom Rooms.
+hub.prompt.settings	Polarity settings
+hub.problem.kicker	CUSTOM ROOMS
+hub.problem.connecting	Connecting...
+hub.problem.connecting_text	Custom Rooms opens once connected.
+hub.problem.unreachable	Can't reach the rooms server
+hub.problem.unreachable_text	Couldn't connect to %s. Check your internet connection and firewall. If they're fine, the server may be down. Polarity retries every 10 seconds.
+hub.problem.the_server	the rooms server
+hub.problem.checking	Checking for updates...
+hub.problem.checking_text	Custom Rooms opens once the check is done.
+hub.problem.update	Update to play online
+hub.problem.update_text	Polarity %s is out. Custom Rooms need the latest version.
+hub.problem.update_now	Update now
+hub.problem.needed	Update needed
+hub.problem.needed_text	Custom Rooms need a newer Polarity. Update in Polarity settings, then restart the game.
+hub.problem.needed_protocol	Custom Rooms need a newer Polarity (protocol %s). Update in Polarity settings, then restart the game.
+hub.problem.settings	Polarity settings
+hub.problem.unavailable	Custom Rooms are unavailable
+hub.problem.unavailable_text	The rooms server is up, but isn't hosting rooms right now. Try again in a little while.
+hub.update.kicker	UPDATE
+hub.update.later	Later
+hub.update.out	Polarity %s is out
+hub.update.ready_to_download	A new version is ready to download.
+hub.update.update_now	Update now
+hub.update.updating	Updating to Polarity %s
+hub.update.downloading	Downloading... %d%%. You can keep using the menus.
+hub.update.hide	Hide
+hub.update.ready	Polarity %s is ready
+hub.update.restart_to_finish	Restart the game to finish.
+hub.update.restart_failed	Couldn't restart: %s. Close the game and start it again.
+hub.update.restart_now	Restart now
+hub.update.failed	The update failed
+hub.update.went_wrong	Something went wrong.
+hub.update.failed_text	%s Check your connection and try again.
+hub.update.checking	Checking for updates...
+hub.update.one_moment	One moment.
+hub.update.up_to_date	Polarity is up to date
+hub.update.latest	You have the latest version.
+settings.title	POLARITY SETTINGS
+settings.version	Version %s
+settings.typing_hint	Enter to save, Escape to cancel.

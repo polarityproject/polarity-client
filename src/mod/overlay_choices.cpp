@@ -1,5 +1,7 @@
 #include "mod/overlay_internal.h"
 
+#include "core/text.h"
+
 namespace sfv::mod::overlay {
 
 Tables ReadTables() {
@@ -490,7 +492,7 @@ std::string CommentText(const std::string& code, int comment) {
     return "Comment " + std::to_string(comment);
 }
 
-std::string FramesText(int n) { return std::to_string(n) + (n == 1 ? " frame" : " frames"); }
+std::string FramesText(int n) { return TRF(n == 1 ? Str::common_frame : Str::common_frames, n); }
 
 void SyncChoices(const NetView& v) {
     if (!g_tables.loaded || !g_choices.initialised || g_previewing) return;

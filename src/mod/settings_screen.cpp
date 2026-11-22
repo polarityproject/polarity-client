@@ -2,6 +2,7 @@
 
 #include "mod/settings_screen.h"
 
+#include "core/text.h"
 #include "mod/log.h"
 #include "mod/ui_kit.h"
 #include "mod/ui_sound.h"
@@ -145,8 +146,8 @@ void SettingsScreenDraw(const HubFonts& f, const std::string& version, const std
         }
     }
 
-    StageText(d, f.display, 40, 48, 22, Rgba(255, 255, 255), "POLARITY SETTINGS");
-    StageText(d, f.body, 20, 48 + TextW(f.display, 40, "POLARITY SETTINGS") + 28, 39, kCream, "Version " + version);
+    StageText(d, f.display, 40, 48, 22, Rgba(255, 255, 255), TR(Str::settings_title));
+    StageText(d, f.body, 20, 48 + TextW(f.display, 40, TR(Str::settings_title)) + 28, 39, kCream, TRF(Str::settings_version, version.c_str()));
     std::vector<float> ys(count);
     float y = 0;
     std::string section;
@@ -266,13 +267,13 @@ void SettingsScreenDraw(const HubFonts& f, const std::string& version, const std
 
     PromptList prompts;
     if (!g.typing) {
-        if (r.text) prompts.push_back({"button_a", "Type"});
+        if (r.text) prompts.push_back({"button_a", TR(Str::common_prompt_type)});
         else if (!r.action.empty()) prompts.push_back({"button_a", r.action});
-        prompts.push_back({"button_b", "Back"});
+        prompts.push_back({"button_b", TR(Str::common_prompt_back)});
     }
     int clicked = -1;
     PromptLine(d, f.body, f.bold ? f.bold : f.strong, "", kGold,
-               g.typing ? "Enter to save, Escape to cancel." : r.hint, prompts, &clicked);
+               g.typing ? std::string(TR(Str::settings_typing_hint)) : r.hint, prompts, &clicked);
     (void)clicked;
     g_inputOn = false;
     d->PopClipRect();

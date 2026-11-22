@@ -1,5 +1,7 @@
 #include "mod/overlay_internal.h"
 
+#include "core/text.h"
+
 namespace sfv::mod::overlay {
 
 void UseServer(const std::string& chosen) {
@@ -25,7 +27,7 @@ std::vector<std::string> ServerChoices() {
     return list;
 }
 
-std::string ServerLabel(const std::string& server) { return server == kDefaultServer ? "Public server" : server; }
+std::string ServerLabel(const std::string& server) { return server == kDefaultServer ? std::string(TR(Str::common_public_server)) : server; }
 
 std::vector<SettingsRow> SettingsRows() {
     std::vector<SettingsRow> rows;
@@ -38,199 +40,193 @@ std::vector<SettingsRow> SettingsRows() {
     };
     const UpdateView u = UpdateViewNow();
     using U = UpdateView::State;
-    const std::string current = u.current.empty() ? g_build : "Polarity " + u.current;
+    const std::string current = u.current.empty() ? g_build : TRF(Str::common_version, u.current.c_str());
     if (u.state == U::Available || u.state == U::Downloading || u.state == U::Ready) {
-        SettingsRow& r = row("install", "UPDATES", "Install " + u.latest);
+        SettingsRow& r = row("install", TR(Str::settings_section_updates), TRF(Str::settings_install_label, u.latest.c_str()));
         r.highlight = true;
-        r.kicker = "NEW VERSION";
-        r.title = "Polarity " + u.latest;
-        if (!u.notes.empty()) r.lines.push_back((u.published.empty() ? "" : "From " + u.published + ": ") + u.notes);
+        r.kicker = TR(Str::settings_install_kicker);
+        r.title = TRF(Str::common_version, u.latest.c_str());
+        if (!u.notes.empty()) r.lines.push_back(u.published.empty() ? u.notes : TRF(Str::settings_install_notes_from, u.published.c_str(), u.notes.c_str()));
         r.goldFirst = !r.lines.empty();
-        r.lines.push_back("You can only play people on the same version.");
+        r.lines.push_back(TR(Str::settings_install_same_version));
         if (u.state == U::Available) {
-            r.value = "Download and install";
-            r.action = "Install";
-            r.hint = "Installs the next time the game starts.";
+            r.value = TR(Str::settings_install_value);
+            r.action = TR(Str::settings_install_action);
+            r.hint = TR(Str::settings_install_hint);
         } else if (u.state == U::Downloading) {
             const int pct = u.total ? static_cast<int>(100 * u.done / u.total) : 0;
-            r.value = "Downloading " + std::to_string(pct) + "%";
-            r.hint = "Keep playing. It installs the next time the game starts.";
+            r.value = TRF(Str::settings_install_downloading, pct);
+            r.hint = TR(Str::settings_install_downloading_hint);
         } else {
-            r.value = "Restart the game to use it";
-            r.action = "Restart";
+            r.value = TR(Str::settings_install_restart_value);
+            r.action = TR(Str::settings_install_restart);
             r.hint = "";
         }
     }
     {
-        SettingsRow& r = row("check", "UPDATES", "Check now");
+        SettingsRow& r = row("check", TR(Str::settings_section_updates), TR(Str::settings_check_label));
         r.highlight = true;
-        r.value = u.state == U::Checking ? "Checking..." : u.state == U::Off ? "Off"
-                                                                             : "Check";
+        r.value = TR(u.state == U::Checking ? Str::settings_check_checking : u.state == U::Off ? Str::common_off
+                                                                                               : Str::settings_check_action);
         r.enabled = u.state != U::Off;
-        r.action = u.state == U::Checking ? "" : "Check";
-        r.kicker = "UPDATES";
+        r.action = u.state == U::Checking ? "" : TR(Str::settings_check_action);
+        r.kicker = TR(Str::settings_section_updates);
         r.title = current;
         switch (u.state) {
-            case U::Off: r.lines = {"Updates are off: " + u.message + "."}; break;
-            case U::Idle: r.lines = {"Not checked yet."}; break;
-            case U::Checking: r.lines = {"Checking for updates..."}; break;
-            case U::UpToDate: r.lines = {"You're up to date."}; break;
-            case U::Available: r.lines = {"Polarity " + u.latest + " is available."}; break;
-            case U::Downloading: r.lines = {"Downloading Polarity " + u.latest + "."}; break;
-            case U::Ready: r.lines = {"Polarity " + u.latest + " installs when you restart the game."}; break;
-            case U::Failed: r.lines = {"The check failed: " + u.message + "."}; break;
+            case U::Off: r.lines = {TRF(Str::settings_check_off_line, u.message.c_str())}; break;
+            case U::Idle: r.lines = {TR(Str::settings_check_idle)}; break;
+            case U::Checking: r.lines = {TR(Str::settings_check_checking_line)}; break;
+            case U::UpToDate: r.lines = {TR(Str::settings_check_up_to_date)}; break;
+            case U::Available: r.lines = {TRF(Str::settings_check_available, u.latest.c_str())}; break;
+            case U::Downloading: r.lines = {TRF(Str::settings_check_downloading, u.latest.c_str())}; break;
+            case U::Ready: r.lines = {TRF(Str::settings_check_ready, u.latest.c_str())}; break;
+            case U::Failed: r.lines = {TRF(Str::settings_check_failed, u.message.c_str())}; break;
         }
-        r.hint = "Nothing installs without asking you.";
+        r.hint = TR(Str::settings_check_hint);
     }
     {
-        SettingsRow& r = row("checkstart", "UPDATES", "Check at start");
+        SettingsRow& r = row("checkstart", TR(Str::settings_section_updates), TR(Str::settings_check_start_label));
         r.arrows = true;
-        r.value = ConfigReadMainIni(L"update", L"check", 1) ? "On" : "Off";
-        r.kicker = "UPDATES";
-        r.title = "Check at start";
-        r.lines = {"Checks for a new version each time the game starts. Nothing installs without asking you."};
+        r.value = TR(ConfigReadMainIni(L"update", L"check", 1) ? Str::common_on : Str::common_off);
+        r.kicker = TR(Str::settings_section_updates);
+        r.title = TR(Str::settings_check_start_label);
+        r.lines = {TR(Str::settings_check_start_line)};
     }
     {
-        SettingsRow& r = row("name", "ONLINE", "Name");
+        SettingsRow& r = row("name", TR(Str::settings_section_online), TR(Str::settings_name_label));
         r.text = true;
         r.editValue = g_choices.name;
-        r.value = g_choices.name[0] ? std::string(g_choices.name) : NetLocalPlayerName() + " (Steam name)";
-        r.kicker = "ONLINE";
+        r.value = g_choices.name[0] ? std::string(g_choices.name) : TRF(Str::settings_name_steam, NetLocalPlayerName().c_str());
+        r.kicker = TR(Str::settings_section_online);
         r.title = g_choices.name[0] ? std::string(g_choices.name) : NetLocalPlayerName();
-        r.lines = {"Shown to other players. Leave it empty to use your Steam name.", "On Steam Deck, press Steam + X for the keyboard."};
+        r.lines = {TR(Str::settings_name_line), TR(Str::settings_name_deck)};
     }
     {
-        SettingsRow& r = row("fps", "ONLINE", "My frame rate");
+        SettingsRow& r = row("fps", TR(Str::settings_section_online), TR(Str::settings_fps_label));
         r.arrows = true;
-        r.value = g_choices.showFps ? "Shown" : "Hidden";
-        r.kicker = "ONLINE";
-        r.title = "My frame rate";
-        r.lines = {"Shows your own frame rate next to your name during matches."};
+        r.value = TR(g_choices.showFps ? Str::common_shown : Str::common_hidden);
+        r.kicker = TR(Str::settings_section_online);
+        r.title = TR(Str::settings_fps_label);
+        r.lines = {TR(Str::settings_fps_line)};
     }
     {
-        SettingsRow& r = row("country", "ONLINE", "Country flag");
+        SettingsRow& r = row("country", TR(Str::settings_section_online), TR(Str::settings_country_label));
         r.arrows = true;
-        r.value = g_choices.shareCountry ? "Shown" : "Hidden";
-        r.kicker = "ONLINE";
-        r.title = "Country flag";
-        r.lines = {"Shows your country's flag next to your name in rooms, based on your connection.",
-                   "When hidden, your country isn't shown to anyone."};
+        r.value = TR(g_choices.shareCountry ? Str::common_shown : Str::common_hidden);
+        r.kicker = TR(Str::settings_section_online);
+        r.title = TR(Str::settings_country_label);
+        r.lines = {TR(Str::settings_country_line), TR(Str::settings_country_hidden)};
     }
     {
-        SettingsRow& r = row("wordfilter", "ONLINE", "Word filter");
+        SettingsRow& r = row("wordfilter", TR(Str::settings_section_online), TR(Str::settings_filter_label));
         r.arrows = true;
-        r.value = g_choices.wordFilter ? "On" : "Off";
-        r.kicker = "ONLINE";
-        r.title = "Word filter";
-        r.lines = {"Hides offensive names and words in public rooms. Hidden names show as \"Player 1234\".",
-                   "The room list is always filtered. Private rooms never are."};
+        r.value = TR(g_choices.wordFilter ? Str::common_on : Str::common_off);
+        r.kicker = TR(Str::settings_section_online);
+        r.title = TR(Str::settings_filter_label);
+        r.lines = {TR(Str::settings_filter_line), TR(Str::settings_filter_always)};
     }
     {
-        SettingsRow& r = row("streamer", "ONLINE", "Streamer mode");
+        SettingsRow& r = row("streamer", TR(Str::settings_section_online), TR(Str::settings_streamer_label));
         r.arrows = true;
-        r.value = g_choices.streamerMode ? "On" : "Off";
-        r.kicker = "ONLINE";
-        r.title = "Streamer mode";
-        r.lines = {"Hides room codes on screen, for streams and screenshots.", "Copy code still copies the real code."};
+        r.value = TR(g_choices.streamerMode ? Str::common_on : Str::common_off);
+        r.kicker = TR(Str::settings_section_online);
+        r.title = TR(Str::settings_streamer_label);
+        r.lines = {TR(Str::settings_streamer_line), TR(Str::settings_streamer_copy)};
     }
     {
-        SettingsRow& r = row("delay", "ONLINE", "Input delay");
+        SettingsRow& r = row("delay", TR(Str::settings_section_online), TR(Str::settings_delay_label));
         const int fixed = NetOptions().delaySetting;
         r.arrows = true;
-        r.value = fixed >= 0 ? FramesText(fixed) : "Auto";
-        r.kicker = "ONLINE";
-        r.title = fixed >= 0 ? "Input delay: " + FramesText(fixed) : "Input delay: Auto";
-        r.lines = {fixed == 0  ? std::string("Every match starts with no input delay.")
-                   : fixed > 0 ? "Every match starts with " + FramesText(fixed) + " of input delay."
-                               : std::string("Picks 0 to 3 frames for each match, based on the connection."),
-                   "Lower feels sharper but rolls back more. You can still change it before each match."};
+        r.value = fixed >= 0 ? FramesText(fixed) : std::string(TR(Str::common_auto));
+        r.kicker = TR(Str::settings_section_online);
+        r.title = fixed >= 0 ? TRF(Str::settings_delay_title_frames, FramesText(fixed).c_str()) : std::string(TR(Str::settings_delay_title_auto));
+        r.lines = {fixed == 0  ? std::string(TR(Str::settings_delay_none))
+                   : fixed > 0 ? TRF(Str::settings_delay_fixed, FramesText(fixed).c_str())
+                               : std::string(TR(Str::settings_delay_auto)),
+                   TR(Str::settings_delay_tradeoff)};
     }
     {
-        SettingsRow& r = row("server", "ONLINE", "Server");
+        SettingsRow& r = row("server", TR(Str::settings_section_online), TR(Str::settings_server_label));
         const std::vector<std::string> servers = ServerChoices();
         r.arrows = servers.size() > 1;
         r.value = ServerLabel(NetOptions().server);
-        r.kicker = "ONLINE";
+        r.kicker = TR(Str::settings_section_online);
         r.title = ServerLabel(NetOptions().server);
-        r.lines = {"Custom Rooms and Direct Match use this server.", "Other servers appear here once you've used them."};
+        r.lines = {TR(Str::settings_server_line), TR(Str::settings_server_others)};
     }
     {
-        SettingsRow& r = row("hitboxes", "TRAINING", "Hitboxes");
+        SettingsRow& r = row("hitboxes", TR(Str::settings_section_training), TR(Str::settings_hitboxes_label));
         r.arrows = true;
-        r.value = HitboxesInTraining() ? "Shown" : "Hidden";
-        r.kicker = "TRAINING";
-        r.title = "Hitboxes";
-        r.lines = {"Shows hurtboxes, hitboxes, throw and proximity boxes in Training mode."};
+        r.value = TR(HitboxesInTraining() ? Str::common_shown : Str::common_hidden);
+        r.kicker = TR(Str::settings_section_training);
+        r.title = TR(Str::settings_hitboxes_label);
+        r.lines = {TR(Str::settings_hitboxes_line)};
     }
     {
-        SettingsRow& r = row("framemeter", "TRAINING", "Frame meter");
+        SettingsRow& r = row("framemeter", TR(Str::settings_section_training), TR(Str::settings_meter_label));
         r.arrows = true;
-        r.value = FrameMeterInTraining() ? "Shown" : "Hidden";
-        r.kicker = "TRAINING";
-        r.title = "Frame meter";
-        r.lines = {"Shows each frame of both characters' actions above the V-Trigger gauges in Training mode, with startup, total and frame advantage."};
+        r.value = TR(FrameMeterInTraining() ? Str::common_shown : Str::common_hidden);
+        r.kicker = TR(Str::settings_section_training);
+        r.title = TR(Str::settings_meter_label);
+        r.lines = {TR(Str::settings_meter_line)};
     }
     {
-        SettingsRow& r = row("bench", "BENCHMARK", "Run benchmark");
+        SettingsRow& r = row("bench", TR(Str::settings_section_benchmark), TR(Str::settings_bench_label));
         r.highlight = true;
-        r.value = "Run";
-        r.action = "Run";
-        r.hint = "Plays one round with a rollback on every frame.";
+        r.value = TR(Str::settings_bench_action);
+        r.action = TR(Str::settings_bench_action);
+        r.hint = TR(Str::settings_bench_hint);
     }
     {
         const BenchmarkResult b = BenchmarkLast();
-        SettingsRow& r = row("benchlast", "BENCHMARK", "Last result");
+        SettingsRow& r = row("benchlast", TR(Str::settings_section_benchmark), TR(Str::settings_bench_last_label));
         if (b.valid) {
             const std::time_t t = static_cast<std::time_t>(b.when);
             std::tm tm{};
             localtime_s(&tm, &t);
-            static const char* const kMon[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-            char v[64];
-            std::snprintf(v, sizeof(v), "%s \xC2\xB7 %.1f fps \xC2\xB7 %s %d", b.Pass() ? "Pass" : "Fail", b.averageFps, kMon[tm.tm_mon], tm.tm_mday);
-            r.value = v;
-            r.action = "Show";
-            r.hint = "Your last run.";
+            const Str month = static_cast<Str>(static_cast<int>(Str::common_month_1) + std::clamp(tm.tm_mon, 0, 11));
+            r.value = TRF(b.Pass() ? Str::settings_bench_last_pass : Str::settings_bench_last_fail, b.averageFps, TR(month), tm.tm_mday);
+            r.action = TR(Str::settings_bench_last_action);
+            r.hint = TR(Str::settings_bench_last_hint);
         } else {
-            r.value = "None yet";
+            r.value = TR(Str::settings_bench_last_none);
             r.enabled = false;
         }
     }
     {
-        SettingsRow& r = row("reports", "REPORTS", "Send reports");
+        SettingsRow& r = row("reports", TR(Str::settings_section_reports), TR(Str::settings_reports_label));
         r.arrows = true;
-        r.value = g_choices.uploadReports ? "On" : "Off";
-        r.kicker = "REPORTS";
-        r.title = "Send reports";
-        r.lines = {"Sends desync and crash reports to help fix bugs.",
-                   "A desync report has the match's recording and log (names, picks, inputs). A crash report has the end of the "
-                   "log and a small crash dump, sent at the next start."};
+        r.value = TR(g_choices.uploadReports ? Str::common_on : Str::common_off);
+        r.kicker = TR(Str::settings_section_reports);
+        r.title = TR(Str::settings_reports_label);
+        r.lines = {TR(Str::settings_reports_line), TR(Str::settings_reports_what)};
     }
     {
-        SettingsRow& r = row("folder", "REPORTS", "Polarity folder");
+        SettingsRow& r = row("folder", TR(Str::settings_section_reports), TR(Str::settings_folder_label));
         r.highlight = true;
-        r.value = "Open";
-        r.action = "Open";
-        r.kicker = "POLARITY FOLDER";
+        r.value = TR(Str::settings_folder_action);
+        r.action = TR(Str::settings_folder_action);
+        r.kicker = TR(Str::settings_folder_kicker);
         std::string path;
         for (wchar_t ch : FilesDataDir()) path += ch < 128 ? static_cast<char>(ch) : '_';
         r.title = path;
-        r.lines = {"Holds logs, match recordings and crash reports."};
-        r.hint = "Opens in Explorer. The game stays open.";
+        r.lines = {TR(Str::settings_folder_line)};
+        r.hint = TR(Str::settings_folder_hint);
     }
     {
-        SettingsRow& r = row("pack", "REPORTS", "Pack logs");
+        SettingsRow& r = row("pack", TR(Str::settings_section_reports), TR(Str::settings_pack_label));
         r.highlight = true;
-        r.value = "Pack to share";
-        r.action = "Pack";
-        r.kicker = "PACK LOGS";
-        r.title = "Pack logs";
-        r.lines = {"Zips logs and recent recordings into one file in the Polarity folder, to send with a bug report."};
+        r.value = TR(Str::settings_pack_value);
+        r.action = TR(Str::settings_pack_action);
+        r.kicker = TR(Str::settings_pack_kicker);
+        r.title = TR(Str::settings_pack_label);
+        r.lines = {TR(Str::settings_pack_line)};
         if (!g_packResult.empty()) r.lines.push_back(g_packResult);
     }
     {
-        SettingsRow& r = row("credits", "ABOUT", "Acknowledgements");
-        r.kicker = "ABOUT";
-        r.title = "Acknowledgements";
+        SettingsRow& r = row("credits", TR(Str::settings_section_about), TR(Str::settings_credits_label));
+        r.kicker = TR(Str::settings_section_about);
+        r.title = TR(Str::settings_credits_label);
         r.lines = {"Dear ImGui by Omar Cornut, MIT",
                    "GekkoNet and Weyvelength by Jamie Meyer, BSD 2-Clause",
                    "MinHook by Tsuda Kageyu, BSD 2-Clause",
@@ -248,7 +244,7 @@ void ApplySetting(const SettingsInput& in) {
     if (in.row == "install" && in.confirm) {
         if (UpdateViewNow().state == UpdateView::State::Ready) {
             std::string error;
-            if (!UpdateRestartGame(g_window, &error)) g_packResult = "Couldn't restart: " + error + ". Close the game and start it again.";
+            if (!UpdateRestartGame(g_window, &error)) g_packResult = TRF(Str::settings_restart_failed, error.c_str());
         } else UpdateInstall();
     } else if (in.row == "check" && in.confirm) UpdateCheck();
     else if (in.row == "bench" && in.confirm) OpenBenchmarkModal(false);
@@ -299,11 +295,11 @@ void ApplySetting(const SettingsInput& in) {
     else if (in.row == "pack" && in.confirm) {
         std::string error;
         const std::wstring zip = FilesPackLogsToShare(&error);
-        if (zip.empty()) g_packResult = "Could not pack the logs: " + error;
+        if (zip.empty()) g_packResult = TRF(Str::settings_pack_failed, error.c_str());
         else {
             std::string name;
             for (wchar_t ch : zip.substr(zip.find_last_of(L'\\') + 1)) name += ch < 128 ? static_cast<char>(ch) : '_';
-            g_packResult = "Packed " + name;
+            g_packResult = TRF(Str::settings_pack_done, name.c_str());
             FilesOpenDataFolder(zip);
         }
     }
@@ -547,20 +543,22 @@ void DrawHubScreens(bool takeInput) {
     }
     HubLive live;
     live.player = NetLocalPlayerName();
-    live.server = o.server == kDefaultServer ? "Public server" : o.server;
+    live.server = o.server == kDefaultServer ? std::string(TR(Str::common_public_server)) : o.server;
     using S = RoomsView::State;
     live.serverState = rooms.state == S::Off ? 0 : rooms.state == S::Connecting ? 1
                                                : rooms.state == S::Failed       ? 3
                                                                                 : 2;
     live.version = g_build;
-    if (rooms.state == S::Failed) live.roomsState = "Can't connect";
-    else if (!rooms.otherBuild.empty() && !rooms.keeper) live.roomsState = "Update needed";
-    else if (rooms.state == S::NoLobby || ((rooms.state == S::Lobby || rooms.state == S::Room) && !rooms.keeper)) live.roomsState = "Unavailable right now";
+    if (rooms.state == S::Failed) live.roomsState = TR(Str::hub_rooms_cant_connect);
+    else if (!rooms.otherBuild.empty() && !rooms.keeper) live.roomsState = TR(Str::hub_rooms_update_needed);
+    else if (rooms.state == S::NoLobby || ((rooms.state == S::Lobby || rooms.state == S::Room) && !rooms.keeper)) live.roomsState = TR(Str::hub_rooms_unavailable);
     else if (rooms.keeper && (rooms.state == S::Browsing || rooms.state == S::Lobby || rooms.state == S::Room)) {
         const int n = rooms.summary.publicRooms, p = rooms.summary.players;
-        live.roomsState = std::to_string(n) + (n == 1 ? " public room" : " public rooms") + " \xC2\xB7 " + std::to_string(p) + (p == 1 ? " player" : " players");
+        live.roomsState = TRF(n == 1 ? (p == 1 ? Str::hub_rooms_count_room_player : Str::hub_rooms_count_room_players)
+                                     : (p == 1 ? Str::hub_rooms_count_rooms_player : Str::hub_rooms_count_rooms_players),
+                              n, p);
     }
-    if (!g_tables.loaded) live.roomsState = "Getting ready...";
+    if (!g_tables.loaded) live.roomsState = TR(Str::hub_rooms_getting_ready);
     using RP = HubLive::RoomsProblem;
     live.roomsServer = o.server;
     live.update = update;
@@ -571,7 +569,7 @@ void DrawHubScreens(bool takeInput) {
     else if (!rooms.otherBuild.empty() && !rooms.keeper) live.roomsProblem = RP::UpdateNeeded, live.roomsBuild = rooms.otherBuild;
     else if (rooms.state == S::Off || rooms.state == S::Connecting || rooms.state == S::Finding) live.roomsProblem = RP::Connecting;
     else if (rooms.state == S::NoLobby || !rooms.keeper) live.roomsProblem = RP::Offline;
-    live.roomsInfo = "Browse, create or join with a code";
+    live.roomsInfo = TR(Str::hub_rooms_info);
     live.logInfo = BattleLogInfo();
     {
         std::lock_guard lock(g_favoritesMutex);
@@ -589,8 +587,8 @@ void DrawHubScreens(bool takeInput) {
     for (size_t i = 0; i < g_tables.stages.size(); i++) {
         if (g_tables.stages[i] == o.stageCode) live.myStage = o.stageCode;
     }
-    live.mySubtitle = live.myChara == "ELV" ? std::string("Eleven")
-                                            : CharaLabel(live.myChara) + " VS" + std::to_string(tablePick.vskill) + " / VT" + std::to_string(tablePick.vtrigger);
+    live.mySubtitle = live.myChara == "ELV" ? std::string(TR(Str::hub_my_eleven))
+                                            : TRF(Str::hub_my_skills, CharaLabel(live.myChara).c_str(), tablePick.vskill, tablePick.vtrigger);
     live.roomsChara = "CNL";
     live.roomsStage = "CHN";
     if (live.offlineStage.empty() && !g_tables.stages.empty()) live.offlineStage = g_tables.stages.front();
@@ -616,7 +614,7 @@ void DrawHubScreens(bool takeInput) {
             ReplayRequestView(in.watch, in.watchTitle, [] { g_reopenLog = true; });
             if (!BattleCurrentFrameDriver()) {
                 g_logLaunch = {};
-                AddToast("This replay can't be played.", kRed, 4);
+                AddToast(TR(Str::hub_toast_bad_replay), kRed, 4);
             }
         }
         if (g_logLaunch.active) {
@@ -719,9 +717,9 @@ void DrawHubScreens(bool takeInput) {
         else if (g_myCharacterOpen) DrawMyCharacter(rooms, takeInput);
         if (!in.chat.empty() && !RoomsChat(in.chat)) {
             Log("rooms: a chat line held back (one a second)");
-            AddToast("Slow down. One message per second.", ImVec4(1, 0.8f, 0.4f, 1), 2);
+            AddToast(TR(Str::hub_toast_slow_down), ImVec4(1, 0.8f, 0.4f, 1), 2);
         }
-        if (in.copiedCode) AddToast("Room code copied", ImVec4(1, 1, 1, 1), 2);
+        if (in.copiedCode) AddToast(TR(Str::hub_toast_code_copied), ImVec4(1, 1, 1, 1), 2);
         if (in.leave) RoomsLeave();
         return;
     }
