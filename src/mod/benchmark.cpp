@@ -28,7 +28,7 @@ bool g_lastRead = false;
 bool g_fresh = false;
 std::string g_version;
 
-std::wstring ResultsPath() { return LogsDir() + L"\\benchmark.txt"; }
+std::wstring ResultsPath() { return FilesLogsDir() + L"\\benchmark.txt"; }
 
 std::string Line(const BenchmarkResult& r) {
     char b[1400];
@@ -129,8 +129,8 @@ bool StartBenchmark(const std::string& modVersion) {
         std::lock_guard lock(g_mutex);
         g_version = modVersion;
     }
-    EnsureDirectory(DataDir());
-    const std::string path = Utf8Path(DataDir() + L"\\benchmark.sfvr");
+    FilesEnsureDirectory(FilesDataDir());
+    const std::string path = FilesUtf8Path(FilesDataDir() + L"\\benchmark.sfvr");
     if (FILE* f = OpenFile(path, "wb")) {
         std::fwrite(kBenchmarkRound, 1, sizeof(kBenchmarkRound), f);
         std::fclose(f);
@@ -210,8 +210,8 @@ void FinishBenchmark(const CapturedRun& run) {
     r.drawMs = draw / n;
     const std::string line = Line(r);
     Log("benchmark: %s: %s", r.Pass() ? "PASS" : "FAIL", line.c_str());
-    EnsureDirectory(LogsDir());
-    if (FILE* f = OpenFile(Utf8Path(ResultsPath()), "ab")) {
+    FilesEnsureDirectory(FilesLogsDir());
+    if (FILE* f = OpenFile(FilesUtf8Path(ResultsPath()), "ab")) {
         std::fprintf(f, "%s\n", line.c_str());
         std::fclose(f);
     }
@@ -225,7 +225,7 @@ BenchmarkResult LastBenchmark() {
     std::lock_guard lock(g_mutex);
     if (!g_lastRead) {
         g_lastRead = true;
-        std::ifstream in(Utf8Path(ResultsPath()));
+        std::ifstream in(FilesUtf8Path(ResultsPath()));
         std::string line, last;
         while (std::getline(in, line)) {
             if (!line.empty()) last = line;

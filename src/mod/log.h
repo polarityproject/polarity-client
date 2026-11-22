@@ -7,7 +7,7 @@ namespace sfv::mod {
 
 // The event log, Polarity\logs\polarity.log (files.h). Thread-safe. Lines carry the
 // time of day; the file starts with the date ("Polarity log started ...", which
-// RotateLog reads) and says when the date changes.
+// FilesRotateLog reads) and says when the date changes.
 void LogOpen(const std::wstring& path);
 void Log(const char* fmt, ...);
 void LogClose();

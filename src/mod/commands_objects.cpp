@@ -185,7 +185,7 @@ void PaktexCommand(const std::string&, std::stringstream& ss) {
     if (what == "on" || what == "off") SetPakTexturesEnabled(what == "on");
     else if (what == "status") Log("%s", PakTextureStatus().c_str());
     else if (what == "dump") {
-        std::thread([path] { DumpPakPackage(path, Utf8Path(DataDir()) + "\\textures\\" + path.substr(path.rfind('/') + 1) + ".uasset"); }).detach();
+        std::thread([path] { DumpPakPackage(path, FilesUtf8Path(FilesDataDir()) + "\\textures\\" + path.substr(path.rfind('/') + 1) + ".uasset"); }).detach();
     } else if (what == "format") {
         FlowRunOnGameThread([path] {
             const TextureView view = ViewOfTexture(FindOrLoadTexture(path + "." + path.substr(path.rfind('/') + 1)), true);

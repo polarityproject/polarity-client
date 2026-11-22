@@ -108,7 +108,7 @@ bool WritePng(const std::string& path, int w, int h, const std::vector<uint8_t>&
     std::wstring full = Widen(path);
     const bool absolute = full.size() > 1 && (full[1] == L':' || full[0] == L'\\' || full[0] == L'/');
     if (!absolute) {
-        std::wstring win64 = DataDir();
+        std::wstring win64 = FilesDataDir();
         const size_t cut = win64.find_last_of(L"\\/");
         if (cut != std::wstring::npos) win64.resize(cut);
         full = win64 + L"\\" + full;
@@ -149,7 +149,7 @@ void TakeBurstFrame(IDXGISwapChain* swapChain) {
         ThreadGuard running;
         std::wstring folder = Widen(dir);
         if (!(folder.size() > 1 && folder[1] == L':')) {
-            std::wstring win64 = DataDir();
+            std::wstring win64 = FilesDataDir();
             const size_t cut = win64.find_last_of(L"\\/");
             if (cut != std::wstring::npos) win64.resize(cut);
             folder = win64 + L"\\" + folder;

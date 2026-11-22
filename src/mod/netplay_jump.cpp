@@ -67,7 +67,7 @@ void NetplayDriver::BeginJump() {
     liveMatch_ = matchId_.load();
     if (jump_.joinable()) jump_.join();
     matchLive_ = true;
-    SetMatchRunning(true);
+    ReportsSetMatchRunning(true);
     SetState(State::Jumping);
     BattleSetFrameDriver(this);
     jump_ = std::thread([this] {

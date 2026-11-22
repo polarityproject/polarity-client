@@ -407,7 +407,7 @@ void NetplayDriver::FinishMatch(SfvGame& game, bool keepSetup) {
     watchingMatch_ = 0;
     BattleSetFrameDriver(nullptr);
     matchLive_ = false;
-    SetMatchRunning(false);
+    ReportsSetMatchRunning(false);
 }
 
 ReplayFile NetplayDriver::WithSummary(ReplayFile rf, bool leftEarly) {
@@ -440,8 +440,8 @@ ReplayFile NetplayDriver::WithSummary(ReplayFile rf, bool leftEarly) {
 
 void NetplayDriver::SaveToBattleLog(const ReplayFile& rf) {
     if (role_ == Role::Spectator || rf.FrameCount() < 60) return;
-    const std::wstring dir = ReplaysDir();
-    EnsureDirectory(dir);
+    const std::wstring dir = FilesReplaysDir();
+    FilesEnsureDirectory(dir);
     const std::time_t t = static_cast<std::time_t>(rf.createdUnix ? rf.createdUnix : std::time(nullptr));
     std::tm tm;
     localtime_s(&tm, &t);
@@ -449,11 +449,11 @@ void NetplayDriver::SaveToBattleLog(const ReplayFile& rf) {
     std::snprintf(when, sizeof(when), "%04d-%02d-%02d_%02d-%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min);
     std::string name = when;
     for (int i = 0; i < kNumPlayers; i++) {
-        name += (i == 0 ? "_" : "_vs_") + FileSafe(rf.summary.names[i], 20, i == 0 ? "P1" : "P2") + "-" +
-                FileSafe(UnpackCode(rf.setup.players[i].character), 8, "unknown");
+        name += (i == 0 ? "_" : "_vs_") + FilesSafeName(rf.summary.names[i], 20, i == 0 ? "P1" : "P2") + "-" +
+                FilesSafeName(UnpackCode(rf.setup.players[i].character), 8, "unknown");
     }
     name += "_" + Hex64(rf.matchId).substr(0, 8) + ".sfvr";
-    const std::string path = Utf8Path(dir) + "\\" + name;
+    const std::string path = FilesUtf8Path(dir) + "\\" + name;
     std::thread([path, file = rf] {
         ThreadGuard running;
         std::string error;
@@ -463,7 +463,7 @@ void NetplayDriver::SaveToBattleLog(const ReplayFile& rf) {
 }
 
 std::string NetplayDriver::SaveReport(const ReplayFile& rf, const char* kind, bool background) {
-    EnsureDirectory(reportDir_);
+    FilesEnsureDirectory(reportDir_);
     std::string names[kNumPlayers];
     {
         std::lock_guard lock(mutex_);
@@ -477,21 +477,21 @@ std::string NetplayDriver::SaveReport(const ReplayFile& rf, const char* kind, bo
                   tm.tm_hour, tm.tm_min, tm.tm_sec);
     std::string name = when;
     for (int i = 0; i < kNumPlayers; i++) {
-        const std::string player = FileSafe(names[i], 20, i == 0 ? "P1" : "P2");
-        const std::string character = FileSafe(UnpackCode(rf.setup.players[i].character), 8, "unknown");
+        const std::string player = FilesSafeName(names[i], 20, i == 0 ? "P1" : "P2");
+        const std::string character = FilesSafeName(UnpackCode(rf.setup.players[i].character), 8, "unknown");
         name += (i == 0 ? "_" : "_vs_") + player + "-" + character;
     }
     name += "_" + Hex64(liveMatch_).substr(0, 8) + (role_ == Role::Spectator ? "_spec" : host_ ? "_p1"
                                                                                                : "_p2");
     if (std::strstr(kind, "desync")) name += "_desync";
-    const std::string path = Utf8Path(reportDir_) + "\\" + name + ".sfvr";
-    if (!ReportUploadsOn()) KeepReportLocal(reportDir_, name + ".sfvr");
+    const std::string path = FilesUtf8Path(reportDir_) + "\\" + name + ".sfvr";
+    if (!ReportsOn()) ReportsKeepLocal(reportDir_, name + ".sfvr");
     const ReplayDetail detail = options_.fullRecordings ? ReplayDetail::Full : ReplayDetail::Compact;
     auto save = [path, detail, dir = reportDir_](const ReplayFile& file) {
         std::string error;
         if (!SaveReplay(file, path, &error, detail)) Log("netplay: cannot save %s: %s", path.c_str(), error.c_str());
         else Log("netplay: saved %s", path.c_str());
-        PruneOldest(dir, L"*.sfvr", kKeptRecordings);
+        FilesPruneOldest(dir, L"*.sfvr", kKeptRecordings);
     };
     if (background) {
         std::thread([save, file = rf] {
@@ -520,7 +520,7 @@ void NetplayDriver::WriteMatchLog(const std::string& recording, const ReplayFile
         path = linkPath_;
     }
     const std::string logPath = recording.substr(0, recording.rfind('.')) + ".log";
-    if (!ReportUploadsOn()) KeepReportLocal(reportDir_, logPath.substr(logPath.find_last_of('\\') + 1));
+    if (!ReportsOn()) ReportsKeepLocal(reportDir_, logPath.substr(logPath.find_last_of('\\') + 1));
     FILE* f = OpenFile(logPath, "w");
     const std::vector<std::string> lines = LogCaptureTake();
     if (!f) {
@@ -546,19 +546,19 @@ void NetplayDriver::WriteMatchLog(const std::string& recording, const ReplayFile
                                                                                                    : "unknown",
                  options_.inputDelay);
     std::fprintf(f, "%s\n", summary.c_str());
-    std::fprintf(f, "game files: %s\n", GameFilesText().c_str());
+    std::fprintf(f, "game files: %s\n", FilesGameText().c_str());
     std::fprintf(f, "mods: %s\n", ScanModPaks().Text().c_str());
     std::fprintf(f, "battle data: %s\n", LastDataCheck().Text().c_str());
     std::fprintf(f, "character versions: %s\n", FlowCharaVersionsText().c_str());
     const int peerReports = peerReports_;
-    std::fprintf(f, "desync reports: %s from this side, %s from the other side\n", ReportUploadsOn() ? "sent" : "not sent",
+    std::fprintf(f, "desync reports: %s from this side, %s from the other side\n", ReportsOn() ? "sent" : "not sent",
                  peerReports > 0 ? "sent" : peerReports == 0 ? "not sent"
                                                              : "not known if sent");
     std::fprintf(f, "recording %s\n\n", recording.substr(recording.find_last_of('\\') + 1).c_str());
     for (const std::string& line : lines) std::fprintf(f, "%s\n", line.c_str());
     std::fclose(f);
-    PruneOldest(reportDir_, L"*.log", kKeptMatchLogs);
-    SendReadyReports();
+    FilesPruneOldest(reportDir_, L"*.log", kKeptMatchLogs);
+    ReportsSendReady();
 }
 
 } // namespace sfv::mod::netplay

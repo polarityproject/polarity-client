@@ -28,13 +28,13 @@ Tables ReadTables() {
             if (ids.empty()) {
                 for (int c = 0; c < n; c++) ids.push_back(c);
             }
-            costumeOwned.push_back(spec == specs.end() || OwnsEntitlement(spec->second.costumeCode));
+            costumeOwned.push_back(spec == specs.end() || EntitlementsOwns(spec->second.costumeCode));
             std::vector<bool> owned;
             for (int id : ids) {
                 bool has = true;
                 if (spec != specs.end()) {
                     const auto code = spec->second.colorCodes.find(id);
-                    has = code == spec->second.colorCodes.end() || OwnsEntitlement(code->second);
+                    has = code == spec->second.colorCodes.end() || EntitlementsOwns(code->second);
                 }
                 owned.push_back(has);
             }
@@ -42,7 +42,7 @@ Tables ReadTables() {
             colors.push_back(std::move(ids));
         }
         if (costumes.empty()) continue;
-        t.charaOwned.push_back(OwnsEntitlement(charaCode));
+        t.charaOwned.push_back(EntitlementsOwns(charaCode));
         t.costumeOwned.push_back(std::move(costumeOwned));
         t.colorOwned.push_back(std::move(colorOwned));
         std::vector<CostumeSwatches> swatches;
@@ -108,14 +108,14 @@ Tables ReadTables() {
         t.stages.push_back(FlowStageCode(i));
         const std::string name = FlowStageName(i);
         t.stageLabels.push_back(name.empty() ? FlowStageCode(i) : name);
-        t.stageOwned.push_back(OwnsEntitlement(FlowStageAvailableCode(i)));
+        t.stageOwned.push_back(EntitlementsOwns(FlowStageAvailableCode(i)));
         std::vector<std::string> codes, names;
         std::vector<bool> owned;
         for (int k : FlowStageSettings(i)) {
             if (!FlowIsPlayableStage(k)) continue;
             codes.push_back(FlowStageCode(k));
             names.push_back(FlowStageName(k).empty() ? FlowStageCode(k) : FlowStageName(k));
-            owned.push_back(OwnsEntitlement(FlowStageAvailableCode(k)));
+            owned.push_back(EntitlementsOwns(FlowStageAvailableCode(k)));
         }
         t.settings.push_back(std::move(codes));
         t.settingLabels.push_back(std::move(names));
@@ -235,7 +235,7 @@ bool StageOwned(int stage, int setting) {
 
 void InitChoices() {
     if (g_choices.initialised || !g_tables.loaded) return;
-    if (!g_panelPath.empty()) g_loadouts = ReadLoadouts(g_panelPath);
+    if (!g_panelPath.empty()) g_loadouts = ConfigReadLoadouts(g_panelPath);
     const NetplayOptions o = NetOptions();
     g_choices.pick = true;
     if (o.hasPick) {
@@ -341,7 +341,7 @@ void SaveChoices() {
         NetOptions().name = o.name;
         NetOptions().allowSpectators = o.allowSpectators;
         NetOptions().uploadReports = o.uploadReports;
-        SetReportUploads(o.uploadReports);
+        ReportsSetOn(o.uploadReports);
         NetOptions().showOwnFps = o.showOwnFps;
         NetOptions().shareCountry = o.shareCountry;
         WeyveService::SetHideCountry(!o.shareCountry);
@@ -350,7 +350,7 @@ void SaveChoices() {
         NetOptions().wordFilter = o.wordFilter;
         RoomsSetWordFilter(o.wordFilter);
         NetOptions().inputDelay = o.inputDelay;
-        if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, o, o.stageCode);
+        if (!g_panelPath.empty()) ConfigSaveNetplayChoices(g_panelPath, o, o.stageCode);
     });
 }
 
@@ -514,7 +514,7 @@ void SyncChoices(const NetView& v) {
         if (pickChanged) NetSetPick(o.hasPick, o.pick);
         if (stageChanged) NetSetStage(o.stageCode);
         if (delayChanged) NetSetDelay(o.inputDelay);
-        if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, o, o.stageCode);
+        if (!g_panelPath.empty()) ConfigSaveNetplayChoices(g_panelPath, o, o.stageCode);
     });
 }
 

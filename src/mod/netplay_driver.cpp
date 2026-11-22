@@ -408,7 +408,7 @@ void NetplayDriver::Stop() {
         session_.reset();
     }
     spectate_.reset();
-    SetMatchRunning(false);
+    ReportsSetMatchRunning(false);
     InputBlockPause(false);
     InputScriptedPad(0, false);
     InputScriptedPad(1, false);

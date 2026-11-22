@@ -1,3 +1,5 @@
+// The Polarity folder: its paths, log rotation and the zip of logs to share (docs/startup.md).
+
 #include "mod/files.h"
 
 #include "core/state.h"
@@ -15,6 +17,10 @@ namespace sfv::mod {
 
 namespace {
 
+constexpr int kDosEpochYear = 1980;
+constexpr int kMaxSameStamp = 100;
+constexpr size_t kOtherPaksListed = 600;
+
 std::wstring g_dataDir;
 
 struct Found {
@@ -22,7 +28,6 @@ struct Found {
     FILETIME written{};
 };
 
-// The files matching `pattern` in `dir`, newest first.
 std::vector<Found> ListNewestFirst(const std::wstring& dir, const std::wstring& pattern) {
     std::vector<Found> out;
     WIN32_FIND_DATAW fd;
@@ -43,7 +48,6 @@ std::string Narrow(const std::wstring& w) {
 }
 
 bool ReadWhole(const std::wstring& path, std::vector<uint8_t>* out) {
-    // Shared: the event log of this run is still open for writing.
     HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) return false;
@@ -58,14 +62,13 @@ bool ReadWhole(const std::wstring& path, std::vector<uint8_t>* out) {
     return ok;
 }
 
-// MS-DOS date and time, as zip entries carry them.
 void DosTime(const FILETIME& ft, uint16_t* time, uint16_t* date) {
     FILETIME local;
     SYSTEMTIME t;
     FileTimeToLocalFileTime(&ft, &local);
     FileTimeToSystemTime(&local, &t);
     *time = static_cast<uint16_t>(t.wHour << 11 | t.wMinute << 5 | t.wSecond / 2);
-    *date = static_cast<uint16_t>((std::max<int>(t.wYear, 1980) - 1980) << 9 | t.wMonth << 5 | t.wDay);
+    *date = static_cast<uint16_t>((std::max<int>(t.wYear, kDosEpochYear) - kDosEpochYear) << 9 | t.wMonth << 5 | t.wDay);
 }
 
 void Put16(std::vector<uint8_t>& b, uint16_t v) { b.insert(b.end(), {uint8_t(v), uint8_t(v >> 8)}); }
@@ -84,50 +87,48 @@ std::wstring Wide(const std::string& s) { return std::wstring(s.begin(), s.end()
 
 } // namespace
 
-void SetDataDir(const std::wstring& dir) { g_dataDir = dir; }
+void FilesSetDataDir(const std::wstring& dir) { g_dataDir = dir; }
 
-std::wstring DataDir() { return g_dataDir; }
+std::wstring FilesDataDir() { return g_dataDir; }
 
-std::wstring LogsDir() { return g_dataDir + L"\\logs"; }
+std::wstring FilesLogsDir() { return g_dataDir + L"\\logs"; }
 
-std::wstring MatchesDir() { return g_dataDir + L"\\matches"; }
+std::wstring FilesMatchesDir() { return g_dataDir + L"\\matches"; }
 
-std::wstring ReplaysDir() { return g_dataDir + L"\\replays"; }
+std::wstring FilesReplaysDir() { return g_dataDir + L"\\replays"; }
 
-std::wstring CrashesDir() { return g_dataDir + L"\\crashes"; }
+std::wstring FilesCrashesDir() { return g_dataDir + L"\\crashes"; }
 
-std::wstring ResearchDir() {
+std::wstring FilesResearchDir() {
     const std::wstring dir = g_dataDir + L"\\research";
-    EnsureDirectory(dir);
+    FilesEnsureDirectory(dir);
     return dir;
 }
 
-bool EnsureDirectory(const std::wstring& path) {
+bool FilesEnsureDirectory(const std::wstring& path) {
     if (path.empty()) return false;
     const DWORD attr = GetFileAttributesW(path.c_str());
     if (attr != INVALID_FILE_ATTRIBUTES) return (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
     const size_t slash = path.find_last_of(L"\\/");
-    if (slash != std::wstring::npos && slash > 2) EnsureDirectory(path.substr(0, slash));
+    if (slash != std::wstring::npos && slash > 2) FilesEnsureDirectory(path.substr(0, slash));
     return CreateDirectoryW(path.c_str(), nullptr) || GetLastError() == ERROR_ALREADY_EXISTS;
 }
 
-void PruneOldest(const std::wstring& dir, const std::wstring& pattern, size_t keep) {
+void FilesPruneOldest(const std::wstring& dir, const std::wstring& pattern, size_t keep) {
     const auto files = ListNewestFirst(dir, pattern);
     for (size_t i = keep; i < files.size(); i++) DeleteFileW((dir + L"\\" + files[i].name).c_str());
 }
 
-void RotateLog(const std::wstring& dir, const std::wstring& stem) {
+void FilesRotateLog(const std::wstring& dir, const std::wstring& stem) {
     const std::wstring path = dir + L"\\" + stem + L".log";
     WIN32_FILE_ATTRIBUTE_DATA info;
     if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &info)) return;
-    // When the run started: its first line (LogOpen), else when it last wrote.
     SYSTEMTIME t{};
     bool known = false;
     if (FILE* f = _wfopen(path.c_str(), L"rb")) {
         char line[96] = {};
         if (std::fgets(line, sizeof(line), f)) {
             int y, mo, d, h, mi, s;
-            // "SFVR log started": a log from before Polarity (migrate.h renames them).
             if (std::sscanf(line, "Polarity log started %d-%d-%d %d:%d:%d", &y, &mo, &d, &h, &mi, &s) == 6 ||
                 std::sscanf(line, "SFVR log started %d-%d-%d %d:%d:%d", &y, &mo, &d, &h, &mi, &s) == 6) {
                 t = {WORD(y), WORD(mo), 0, WORD(d), WORD(h), WORD(mi), WORD(s), 0};
@@ -142,14 +143,14 @@ void RotateLog(const std::wstring& dir, const std::wstring& stem) {
         FileTimeToSystemTime(&local, &t);
     }
     std::wstring target = dir + L"\\" + stem + L"_" + Wide(Stamp(t)) + L".log";
-    for (int n = 2; GetFileAttributesW(target.c_str()) != INVALID_FILE_ATTRIBUTES && n < 100; n++) {
+    for (int n = 2; GetFileAttributesW(target.c_str()) != INVALID_FILE_ATTRIBUTES && n < kMaxSameStamp; n++) {
         target = dir + L"\\" + stem + L"_" + Wide(Stamp(t)) + L"-" + std::to_wstring(n) + L".log";
     }
     MoveFileExW(path.c_str(), target.c_str(), MOVEFILE_COPY_ALLOWED);
-    PruneOldest(dir, stem + L"_*.log", kKeptRunLogs);
+    FilesPruneOldest(dir, stem + L"_*.log", kKeptRunLogs);
 }
 
-std::string Utf8Path(const std::wstring& path) {
+std::string FilesUtf8Path(const std::wstring& path) {
     if (path.empty()) return {};
     const int n = WideCharToMultiByte(CP_UTF8, 0, path.data(), static_cast<int>(path.size()), nullptr, 0, nullptr, nullptr);
     std::string out(static_cast<size_t>(n > 0 ? n : 0), '\0');
@@ -157,7 +158,7 @@ std::string Utf8Path(const std::wstring& path) {
     return out;
 }
 
-std::string FileSafe(const std::string& text, size_t maxLen, const std::string& empty) {
+std::string FilesSafeName(const std::string& text, size_t maxLen, const std::string& empty) {
     std::string out;
     for (unsigned char c : text) {
         const bool keep = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-';
@@ -169,8 +170,8 @@ std::string FileSafe(const std::string& text, size_t maxLen, const std::string& 
     return out.empty() ? empty : out;
 }
 
-bool WriteZip(const std::wstring& path, const std::vector<std::pair<std::wstring, std::string>>& files,
-              std::string* error) {
+bool FilesWriteZip(const std::wstring& path, const std::vector<std::pair<std::wstring, std::string>>& files,
+                   std::string* error) {
     std::vector<uint8_t> zip, central;
     uint16_t entries = 0;
     for (const auto& [source, name] : files) {
@@ -182,7 +183,6 @@ bool WriteZip(const std::wstring& path, const std::vector<std::pair<std::wstring
         const uint32_t crc = Crc32(data.data(), data.size());
         const uint32_t offset = static_cast<uint32_t>(zip.size());
         const uint32_t size = static_cast<uint32_t>(data.size());
-        // Local header, then the bytes as they are (method 0: stored).
         Put32(zip, 0x04034b50);
         Put16(zip, 20);
         Put16(zip, 0);
@@ -196,7 +196,6 @@ bool WriteZip(const std::wstring& path, const std::vector<std::pair<std::wstring
         Put16(zip, 0);
         zip.insert(zip.end(), name.begin(), name.end());
         zip.insert(zip.end(), data.begin(), data.end());
-        // Its central directory entry.
         Put32(central, 0x02014b50);
         Put16(central, 20);
         Put16(central, 20);
@@ -239,58 +238,50 @@ bool WriteZip(const std::wstring& path, const std::vector<std::pair<std::wstring
     return written;
 }
 
-std::wstring PackLogsToShare(std::string* error) {
+std::wstring FilesPackLogsToShare(std::string* error) {
     std::vector<std::pair<std::wstring, std::string>> files;
-    // The event logs: this run's and the earlier ones kept.
-    for (const auto& f : ListNewestFirst(LogsDir(), L"*.log")) files.push_back({LogsDir() + L"\\" + f.name, "logs/" + Narrow(f.name)});
-    // The benchmark's results, and the state dumps of its latest failed runs.
-    for (const auto& f : ListNewestFirst(LogsDir(), L"benchmark.txt")) files.push_back({LogsDir() + L"\\" + f.name, "logs/" + Narrow(f.name)});
-    const auto dumps = ListNewestFirst(LogsDir(), L"benchmark_*.sfvr");
-    for (size_t i = 0; i < dumps.size() && i < 2; i++) files.push_back({LogsDir() + L"\\" + dumps[i].name, "logs/" + Narrow(dumps[i].name)});
-    // The latest crash reports (crash_report.h): notes and minidumps.
-    const auto crashes = ListNewestFirst(CrashesDir(), L"*_crash_*");
+    for (const auto& f : ListNewestFirst(FilesLogsDir(), L"*.log")) files.push_back({FilesLogsDir() + L"\\" + f.name, "logs/" + Narrow(f.name)});
+    for (const auto& f : ListNewestFirst(FilesLogsDir(), L"benchmark.txt")) files.push_back({FilesLogsDir() + L"\\" + f.name, "logs/" + Narrow(f.name)});
+    const auto dumps = ListNewestFirst(FilesLogsDir(), L"benchmark_*.sfvr");
+    for (size_t i = 0; i < dumps.size() && i < 2; i++) files.push_back({FilesLogsDir() + L"\\" + dumps[i].name, "logs/" + Narrow(dumps[i].name)});
+    const auto crashes = ListNewestFirst(FilesCrashesDir(), L"*_crash_*");
     for (size_t i = 0; i < crashes.size() && i < kSharedCrashFiles; i++) {
-        files.push_back({CrashesDir() + L"\\" + crashes[i].name, "crashes/" + Narrow(crashes[i].name)});
+        files.push_back({FilesCrashesDir() + L"\\" + crashes[i].name, "crashes/" + Narrow(crashes[i].name)});
     }
-    // The latest matches: their logs, and every recording with the same match
-    // id (the match's own and its desync reports). File names are
-    // <date>_<time>_<P1>_vs_<P2>_<id>_<side>[_<kind>], with '_' only between
-    // the parts.
     std::set<std::string> ids;
-    const auto logs = ListNewestFirst(MatchesDir(), L"*.log");
+    const auto logs = ListNewestFirst(FilesMatchesDir(), L"*.log");
     for (size_t i = 0; i < logs.size() && i < kSharedMatches; i++) {
         const std::string name = Narrow(logs[i].name);
-        files.push_back({MatchesDir() + L"\\" + logs[i].name, "matches/" + name});
+        files.push_back({FilesMatchesDir() + L"\\" + logs[i].name, "matches/" + name});
         size_t at = 0;
         for (int part = 0; part < 5 && at != std::string::npos; part++) at = name.find('_', at + 1);
         if (at != std::string::npos) ids.insert(name.substr(at + 1, name.find('_', at + 1) - at - 1));
     }
-    for (const auto& f : ListNewestFirst(MatchesDir(), L"*.sfvr")) {
+    for (const auto& f : ListNewestFirst(FilesMatchesDir(), L"*.sfvr")) {
         const std::string name = Narrow(f.name);
         for (const auto& id : ids) {
             if (name.find("_" + id + "_") == std::string::npos) continue;
-            files.push_back({MatchesDir() + L"\\" + f.name, "matches/" + name});
+            files.push_back({FilesMatchesDir() + L"\\" + f.name, "matches/" + name});
             break;
         }
     }
     SYSTEMTIME t;
     GetLocalTime(&t);
-    const std::wstring path = DataDir() + L"\\Polarity-logs-" + Wide(Stamp(t)) + L".zip";
-    if (!WriteZip(path, files, error)) return L"";
-    PruneOldest(DataDir(), L"Polarity-logs-*.zip", 5);
+    const std::wstring path = FilesDataDir() + L"\\Polarity-logs-" + Wide(Stamp(t)) + L".zip";
+    if (!FilesWriteZip(path, files, error)) return L"";
+    FilesPruneOldest(FilesDataDir(), L"Polarity-logs-*.zip", 5);
     Log("files: packed %zu files to share into %s", files.size(), Narrow(path).c_str());
     return path;
 }
 
-void OpenDataFolder(const std::wstring& select) {
-    const std::wstring args = select.empty() ? L"\"" + DataDir() + L"\"" : L"/select,\"" + select + L"\"";
+void FilesOpenDataFolder(const std::wstring& select) {
+    const std::wstring args = select.empty() ? L"\"" + FilesDataDir() + L"\"" : L"/select,\"" + select + L"\"";
     ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
 }
 
 namespace {
 
 bool IsGamePak(const std::wstring& name) {
-    // pakchunk<digits>-WindowsNoEditor.pak
     const std::wstring head = L"pakchunk", tail = L"-WindowsNoEditor.pak";
     if (name.size() <= head.size() + tail.size() || _wcsnicmp(name.c_str(), head.c_str(), head.size()) != 0) return false;
     if (_wcsicmp(name.c_str() + name.size() - tail.size(), tail.c_str()) != 0) return false;
@@ -300,7 +291,6 @@ bool IsGamePak(const std::wstring& name) {
     return true;
 }
 
-// Every .pak under `dir` (subfolders too), as paths relative to `root`.
 void ListPaks(const std::wstring& root, const std::wstring& rel, int depth, std::vector<std::pair<std::wstring, uint64_t>>* out) {
     WIN32_FIND_DATAW fd;
     HANDLE h = FindFirstFileW((root + rel + L"\\*").c_str(), &fd);
@@ -321,11 +311,11 @@ void ListPaks(const std::wstring& root, const std::wstring& rel, int depth, std:
 
 } // namespace
 
-std::vector<std::wstring> OtherPaks() {
+std::vector<std::wstring> FilesOtherPaks() {
     wchar_t exe[MAX_PATH] = {};
     GetModuleFileNameW(nullptr, exe, MAX_PATH);
     std::wstring dir(exe);
-    dir = dir.substr(0, dir.find_last_of(L"\\/")); // Binaries\Win64
+    dir = dir.substr(0, dir.find_last_of(L"\\/"));
     const std::wstring paks = dir + L"\\..\\..\\Content\\Paks";
     std::vector<std::pair<std::wstring, uint64_t>> found;
     ListPaks(paks, L"", 0, &found);
@@ -338,12 +328,12 @@ std::vector<std::wstring> OtherPaks() {
     return out;
 }
 
-std::string GameFilesText() {
+std::string FilesGameText() {
     static const std::string text = [] {
         wchar_t exe[MAX_PATH] = {};
         GetModuleFileNameW(nullptr, exe, MAX_PATH);
         std::wstring dir(exe);
-        dir = dir.substr(0, dir.find_last_of(L"\\/")); // Binaries\Win64
+        dir = dir.substr(0, dir.find_last_of(L"\\/"));
         const std::wstring paks = dir + L"\\..\\..\\Content\\Paks";
         std::vector<std::pair<std::wstring, uint64_t>> found;
         ListPaks(paks, L"", 0, &found);
@@ -359,10 +349,10 @@ std::string GameFilesText() {
                 continue;
             }
             otherCount++;
-            if (others.size() < 600) {
+            if (others.size() < kOtherPaksListed) {
                 char buf[48];
                 std::snprintf(buf, sizeof(buf), " (%llu KB)", static_cast<unsigned long long>(size / 1024));
-                others += (others.empty() ? "" : ", ") + Utf8Path(path) + buf;
+                others += (others.empty() ? "" : ", ") + FilesUtf8Path(path) + buf;
             }
         }
         char head[96];

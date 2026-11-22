@@ -145,7 +145,7 @@ void BattleDumpMoveFile(const std::string& name) {
     const auto* data = *reinterpret_cast<const uint8_t* const*>(static_cast<uint8_t*>(object) + kMoveFileDataOff);
     const uint32_t size = *reinterpret_cast<const uint32_t*>(static_cast<uint8_t*>(object) + kMoveFileSizeOff);
     if (!data || !size || !IsReadable(data, size)) return Log("dumpbac: %s has no readable data", name.c_str());
-    const std::wstring dir = ResearchDir();
+    const std::wstring dir = FilesResearchDir();
     const std::wstring path = dir + L"\\" + std::wstring(name.begin(), name.end()) + L".bin";
     if (FILE* f = _wfopen(path.c_str(), L"wb")) {
         std::fwrite(data, 1, size, f);
@@ -385,7 +385,7 @@ void BattleTraceCameraObjects(uint32_t from, uint32_t to, const std::string& tex
         if (!IsReadable(object, size)) return;
         g_camObjects.push_back({static_cast<const uint8_t*>(object), size, ue4::Describe(object)});
     });
-    const std::wstring dir = ResearchDir();
+    const std::wstring dir = FilesResearchDir();
     g_camFile = _wfopen((dir + L"\\camtrace.bin").c_str(), L"wb");
     if (!g_camFile) return;
     const uint32_t n = static_cast<uint32_t>(g_camObjects.size());

@@ -110,7 +110,7 @@ void BattleTraceRegions(int ticks) {
     g_ftracePrev.clear();
     g_ftraceTick = 0;
     if (!g_game || ticks <= 0) return;
-    const std::wstring dir = ResearchDir();
+    const std::wstring dir = FilesResearchDir();
     g_ftraceFile = _wfopen((dir + L"\\ftrace.bin").c_str(), L"wb");
     if (!g_ftraceFile) return;
     const auto& regions = g_game->Regions();
@@ -200,7 +200,7 @@ void BattleCompareRegions(const std::string& a, const std::string& b, long long 
 void BattleDumpRegion(const std::string& name, const std::string& tag) {
     const StateRegion* r = FindRegion(name);
     if (!r || !IsReadable(r->ptr - 0x40, r->size + 0x40)) return Log("rdump: no region %s", name.c_str());
-    const std::wstring dir = ResearchDir();
+    const std::wstring dir = FilesResearchDir();
     const std::wstring path = dir + L"\\" + std::wstring(tag.begin(), tag.end()) + L".bin";
     if (FILE* f = _wfopen(path.c_str(), L"wb")) {
         std::fwrite(r->ptr - 0x40, 1, r->size + 0x40, f);

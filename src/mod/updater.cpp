@@ -1,3 +1,5 @@
+// Updates from the site: the check, the download and the swap, and the restart (docs/updater.md).
+
 #include "mod/updater.h"
 
 #include "core/update_info.h"
@@ -24,11 +26,13 @@ namespace {
 
 constexpr size_t kMaxInfoBytes = 64 * 1024;
 constexpr DWORD kTimeoutMs = 8000;
+constexpr size_t kMaxSignatureBytes = 4096;
+constexpr DWORD kStaleLookMs = 60 * 1000;
 
 std::mutex g_mutex;
-UpdateView g_view;        // under g_mutex
-UpdateInfo g_info;        // under g_mutex: the info `g_view.latest` came from
-std::string g_configured; // the configured site
+UpdateView g_view;
+UpdateInfo g_info;
+std::string g_configured;
 std::wstring g_gameDir;
 std::atomic<bool> g_busy{false};
 
@@ -46,18 +50,13 @@ void Set(UpdateView::State state, const std::string& message = "") {
     g_view.message = message;
 }
 
-// A check ended (whatever came of it): UpdateCheckIfStale goes by this.
 void Checked() {
     std::lock_guard lock(g_mutex);
     g_view.checkedAtMs = static_cast<int64_t>(GetTickCount64());
 }
 
-// Checked again every so often while the game runs (when checks at start
-// are on), so a release reaches players already in the game.
 constexpr int64_t kCheckEveryMs = 15 * 60 * 1000;
 
-// GET `url` (http or https) into `out`, at most `maxBytes`; `progress` gets
-// the bytes so far.
 bool HttpGet(const std::string& url, size_t maxBytes, std::vector<uint8_t>* out, std::string* error,
              const std::function<void(uint64_t)>& progress = nullptr) {
     const std::wstring wurl = Wide(url);
@@ -87,7 +86,7 @@ bool HttpGet(const std::string& url, size_t maxBytes, std::vector<uint8_t>* out,
             DWORD status = 0, size = sizeof(status);
             WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX,
                                 &status, &size, WINHTTP_NO_HEADER_INDEX);
-            if (status != 200) *error = "the site answered " + std::to_string(status) + " for " + url;
+            if (status != HTTP_STATUS_OK) *error = "the site answered " + std::to_string(status) + " for " + url;
             else {
                 out->clear();
                 ok = true;
@@ -152,18 +151,16 @@ void Check() {
         ~Done() { Checked(); }
     } done;
 
-    // Installed in this run: nothing more to do until the next launch.
     if (UpdateViewNow().state == UpdateView::State::Ready) return;
     const std::string url = SiteUrl();
     Set(UpdateView::State::Checking);
     std::vector<uint8_t> body, sig;
     std::string error;
-    if (!HttpGet(url, kMaxInfoBytes, &body, &error) || !HttpGet(url + ".sig", 4096, &sig, &error)) {
+    if (!HttpGet(url, kMaxInfoBytes, &body, &error) || !HttpGet(url + ".sig", kMaxSignatureBytes, &sig, &error)) {
         Log("update: %s", error.c_str());
         Set(UpdateView::State::Failed, error);
         return;
     }
-    // The signature first: nothing in the file counts before it checks out.
     const std::vector<uint8_t> signature = Base64Decode(std::string_view(reinterpret_cast<const char*>(sig.data()), sig.size()));
     if (!VerifySignature(body.data(), body.size(), signature.data(), signature.size(), kUpdatePublicKey)) {
         Log("update: the update info at %s is not signed with this build's key; ignored", url.c_str());
@@ -184,10 +181,6 @@ void Check() {
         g_view.notes = info.notes;
         g_view.message.clear();
         const bool newer = CompareVersions(info.version, g_view.current) > 0;
-        // This version, with a data file missing from the game folder (an
-        // updater before 0.3.0 installed it without "more_files"): that file
-        // only, now. Files that are there are left alone, so a build being
-        // worked on keeps its own.
         if (!newer && CompareVersions(info.version, g_view.current) == 0) {
             info.files.erase(std::remove_if(info.files.begin(), info.files.end(), [](const UpdateFile& f) { return !MissingData(f); }),
                              info.files.end());
@@ -201,14 +194,10 @@ void Check() {
     }
     if (finish) {
         Install();
-        // Nothing to run anew: the font is read at the next start anyway.
         if (UpdateViewNow().state == UpdateView::State::Ready) Set(UpdateView::State::UpToDate);
     }
 }
 
-// An update file's place under the game folder (Polarity/fonts/x.ttc or
-// the old site's SFVR/fonts/x.ttc -> Polarity\fonts\x.ttc), and its name in
-// the staging folder (flat).
 std::wstring OnDisk(const UpdateFile& f) {
     return Wide(UpdateFileOnDisk(f.path));
 }
@@ -219,8 +208,6 @@ std::wstring Staged(const UpdateFile& f) {
     return name;
 }
 
-// Whether the game folder has this file as the update has it already (the
-// bundled font, 18 MB, rarely changes: not downloaded again).
 bool AlreadyThere(const UpdateFile& f) {
     const std::wstring target = g_gameDir + L"\\" + OnDisk(f);
     FILE* in = _wfopen(target.c_str(), L"rb");
@@ -231,7 +218,6 @@ bool AlreadyThere(const UpdateFile& f) {
     return got == f.size && Sha256Hex(data.data(), got) == f.sha256;
 }
 
-// Puts the staged files in place, the old ones aside; all or nothing.
 bool Apply(const std::wstring& staging, const UpdateInfo& info, std::string* error) {
     struct Swap {
         std::wstring target, old;
@@ -243,7 +229,7 @@ bool Apply(const std::wstring& staging, const UpdateInfo& info, std::string* err
     for (const UpdateFile& f : info.files) {
         const std::wstring target = g_gameDir + L"\\" + OnDisk(f);
         const std::wstring old = target + L"." + stamp + L".old";
-        if (const size_t slash = target.find_last_of(L'\\'); slash > g_gameDir.size()) EnsureDirectory(target.substr(0, slash));
+        if (const size_t slash = target.find_last_of(L'\\'); slash > g_gameDir.size()) FilesEnsureDirectory(target.substr(0, slash));
         const bool exists = GetFileAttributesW(target.c_str()) != INVALID_FILE_ATTRIBUTES;
         bool ok = !exists || MoveFileExW(target.c_str(), old.c_str(), 0);
         if (ok) {
@@ -252,7 +238,6 @@ bool Apply(const std::wstring& staging, const UpdateInfo& info, std::string* err
         }
         if (!ok) {
             *error = "cannot replace " + f.path + " (error " + std::to_string(GetLastError()) + ")";
-            // Back to what was there.
             for (auto it = done.rbegin(); it != done.rend(); ++it) {
                 DeleteFileW(it->target.c_str());
                 if (it->hadOld) MoveFileExW(it->old.c_str(), it->target.c_str(), 0);
@@ -277,15 +262,14 @@ void Install() {
         g_view.done = 0;
         g_view.total = 0;
     }
-    // Only what differs from the game folder's copy.
     const size_t listed = info.files.size();
     info.files.erase(std::remove_if(info.files.begin(), info.files.end(), AlreadyThere), info.files.end());
     {
         std::lock_guard lock(g_mutex);
         for (const auto& f : info.files) g_view.total += f.size;
     }
-    const std::wstring staging = DataDir() + L"\\update\\" + Wide(info.version);
-    EnsureDirectory(staging);
+    const std::wstring staging = FilesDataDir() + L"\\update\\" + Wide(info.version);
+    FilesEnsureDirectory(staging);
     uint64_t before = 0;
     std::string error;
     for (const UpdateFile& f : info.files) {
@@ -324,8 +308,6 @@ void Install() {
     Set(UpdateView::State::Ready);
 }
 
-// What an earlier update left: the replaced files, which nothing runs now,
-// and any staging folder of a download that did not finish.
 void CleanUp() {
     WIN32_FIND_DATAW fd;
     HANDLE h;
@@ -337,7 +319,7 @@ void CleanUp() {
         } while (FindNextFileW(h, &fd));
         FindClose(h);
     }
-    const std::wstring update = DataDir() + L"\\update";
+    const std::wstring update = FilesDataDir() + L"\\update";
     h = FindFirstFileW((update + L"\\*").c_str(), &fd);
     if (h != INVALID_HANDLE_VALUE) {
         do {
@@ -384,7 +366,7 @@ void ApplyUrl(const std::string& url) {
 
 } // namespace
 
-void InstallUpdater(const std::wstring& gameDir, const std::string& currentVersion, const std::string& url, bool checkNow) {
+void UpdateStart(const std::wstring& gameDir, const std::string& currentVersion, const std::string& url, bool checkNow) {
     g_gameDir = gameDir;
     {
         std::lock_guard lock(g_mutex);
@@ -396,12 +378,10 @@ void InstallUpdater(const std::wstring& gameDir, const std::string& currentVersi
     const UpdateView v = UpdateViewNow();
     Log("update: %s", v.state == UpdateView::State::Off ? ("off: " + v.message).c_str() : ("site " + v.url).c_str());
     if (checkNow) UpdateCheck();
-    // Again every 15 minutes (with checks at start on): a release while
-    // playing shows too (rooms then ask for it).
     if (checkNow && v.state != UpdateView::State::Off) {
         std::thread([] {
             for (;;) {
-                Sleep(60 * 1000);
+                Sleep(kStaleLookMs);
                 const UpdateView now = UpdateViewNow();
                 const bool settled = now.state == UpdateView::State::UpToDate || now.state == UpdateView::State::Failed;
                 if (settled && static_cast<int64_t>(GetTickCount64()) - now.checkedAtMs >= kCheckEveryMs) UpdateCheck();
@@ -437,7 +417,7 @@ bool UpdateCheckIfStale(int64_t maxAgeMs) {
     if (v.checkedAtMs >= 0 && static_cast<int64_t>(GetTickCount64()) - v.checkedAtMs < maxAgeMs) return false;
     Log("update: checking before Custom Rooms (last check %s)",
         v.checkedAtMs < 0 ? "never" : (std::to_string((static_cast<int64_t>(GetTickCount64()) - v.checkedAtMs) / 1000) + " s ago").c_str());
-    Set(S::Checking); // at once: the hub's modal shows it this frame
+    Set(S::Checking);
     RunInBackground(&Check);
     return true;
 }
@@ -450,7 +430,7 @@ void UpdatePretendVersion(const std::string& version) {
     g_view.checkedAtMs = -1;
 }
 
-bool RestartGame(void* window, std::string* error) {
+bool UpdateRestartGame(void* window, std::string* error) {
     wchar_t exe[MAX_PATH] = {};
     if (!GetModuleFileNameW(nullptr, exe, MAX_PATH)) {
         if (error) *error = "cannot find the game's program";
@@ -458,12 +438,7 @@ bool RestartGame(void* window, std::string* error) {
     }
     std::wstring dir = exe;
     dir = dir.substr(0, dir.find_last_of(L"\\/"));
-    // The same command line (Steam's arguments with it); the environment is
-    // this one's (Steam's app id: no relaunch through Steam) and the pid to
-    // wait for.
     std::wstring command = GetCommandLineW();
-    // Both names: a loader from before Polarity (an update that could not
-    // replace it) waits on SFVR_WAIT_PID.
     const std::wstring pid = std::to_wstring(GetCurrentProcessId());
     SetEnvironmentVariableW(L"POLARITY_WAIT_PID", pid.c_str());
     SetEnvironmentVariableW(L"SFVR_WAIT_PID", pid.c_str());
@@ -486,7 +461,7 @@ bool RestartGame(void* window, std::string* error) {
     return true;
 }
 
-void SetUpdateUrl(const std::string& url) {
+void UpdateSetUrl(const std::string& url) {
     ApplyUrl(url.empty() ? g_configured : url);
     Log("update: site %s", url.empty() ? g_configured.c_str() : url.c_str());
 }

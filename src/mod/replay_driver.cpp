@@ -26,7 +26,7 @@ bool ForcedRollback(int frame) {
 namespace {
 
 std::string FindRecording(const std::string& name) {
-    const std::string inMatches = Utf8Path(MatchesDir()) + "\\" + name;
+    const std::string inMatches = FilesUtf8Path(FilesMatchesDir()) + "\\" + name;
     if (FILE* f = OpenFile(inMatches, "rb")) {
         std::fclose(f);
         return inMatches;
@@ -35,7 +35,7 @@ std::string FindRecording(const std::string& name) {
     GetModuleFileNameW(nullptr, exe, MAX_PATH);
     std::wstring dir(exe);
     dir = dir.substr(0, dir.find_last_of(L"\\/"));
-    return Utf8Path(dir) + "\\reports\\" + name;
+    return FilesUtf8Path(dir) + "\\reports\\" + name;
 }
 
 } // namespace

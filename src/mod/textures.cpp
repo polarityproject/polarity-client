@@ -298,8 +298,8 @@ void SaveOne(ID3D11ShaderResourceView* srv, const std::string& name) {
             }
             h[26] = 0x1000; // caps: texture
             const uint32_t dx10Header[5] = {uint32_t(desc.Format), 3, 0, 1, 0};
-            CreateDirectoryW((DataDir() + L"\\textures").c_str(), nullptr);
-            const std::string path = Utf8Path(DataDir()) + "\\textures\\" + name + ".dds";
+            CreateDirectoryW((FilesDataDir() + L"\\textures").c_str(), nullptr);
+            const std::string path = FilesUtf8Path(FilesDataDir()) + "\\textures\\" + name + ".dds";
             if (FILE* f = OpenFile(path, "wb")) {
                 std::fwrite("DDS ", 1, 4, f);
                 std::fwrite(h, 4, 31, f);

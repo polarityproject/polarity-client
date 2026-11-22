@@ -143,7 +143,7 @@ void SceneTickDetour(void* self, float deltaSeconds) {
     HookGuard guard;
     g_origSceneTick(self, deltaSeconds);
     g_sceneTicks++;
-    NoteGameTick();
+    CrashNoteGameTick();
     FlowPumpGameThread();
     if (g_sceneTicks % 30 == 0) PreloadTick();
 }
@@ -159,7 +159,7 @@ void ChangeDetour(void* self, const void* stateClass, void* param) {
     LogStack("ChangeSceneState", g_base);
     g_origChange(self, stateClass, param);
     TraceSceneSteps(ue4::ObjectName(stateClass));
-    if (ue4::ObjectName(stateClass) == "InitialState") GoOfflineFromTitle();
+    if (ue4::ObjectName(stateClass) == "InitialState") BootGoOfflineFromTitle();
 }
 
 std::atomic<int> g_sceneGeneration{0};

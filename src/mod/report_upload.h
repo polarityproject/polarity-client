@@ -26,24 +26,24 @@ namespace sfv::mod {
 constexpr const char* kDefaultReportUrl = "http://2.29.123.240:5580";
 
 // From the mod's start: looks for unsent reports a little later.
-void InstallReportUploads(const std::wstring& reportDir, const std::string& url, const std::string& modVersion, bool on);
+void ReportsInstall(const std::wstring& reportDir, const std::string& url, const std::string& modVersion, bool on);
 // The player's choice (the panel's checkbox).
-void SetReportUploads(bool on);
+void ReportsSetOn(bool on);
 // After a match's files are written: sends what is ready, in the background.
-void SendReadyReports();
-// While a match runs, nothing is retried (SendReadyReports still sends).
-void SetMatchRunning(bool running);
+void ReportsSendReady();
+// While a match runs, nothing is retried (ReportsSendReady still sends).
+void ReportsSetMatchRunning(bool running);
 // Whether this side sends reports (the other side hears it at the handshake).
-bool ReportUploadsOn();
+bool ReportsOn();
 // Reports sent in this run, a desync's match or a crash (the overlay toasts
 // each new one).
 int ReportsSent();
 // For tests: another server (empty: the configured one).
-void SetReportUrl(const std::string& url);
+void ReportsSetUrl(const std::string& url);
 // A report made while uploads were off (a test run's killed games and
 // desyncs, or the player's choice then): listed in that folder's kept.txt and
 // never sent, also once uploads are on again. A match side with any kept file
 // stays home whole.
-void KeepReportLocal(const std::wstring& dir, const std::string& name);
+void ReportsKeepLocal(const std::wstring& dir, const std::string& name);
 
 } // namespace sfv::mod

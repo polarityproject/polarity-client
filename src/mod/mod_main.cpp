@@ -1,3 +1,5 @@
+// The mod's start: the instance, the log, the settings and the hooks (docs/startup.md).
+
 #include "core/version.h"
 #include "builtin_noise.h"
 #include "core/replay_file.h"
@@ -43,7 +45,8 @@ namespace sfv::mod {
 
 namespace {
 
-constexpr const char* kModVersion = kPolarityVersion; // core/version.h
+constexpr const char* kModVersion = kPolarityVersion;
+constexpr int kSteamWaitMs = 120000, kSteamPollMs = 100;
 
 std::wstring DirectoryOf(HMODULE module) {
     wchar_t path[MAX_PATH];
@@ -64,33 +67,26 @@ std::string Narrow(const std::wstring& w) {
 DWORD WINAPI ModMain(LPVOID self) {
     ThreadGuard running;
     const std::wstring dir = DirectoryOf(static_cast<HMODULE>(self));
-    // Several game instances can share the folder; the loader numbers them.
-    // Instance 0 uses the plain file names, instance N appends ".N".
     wchar_t instanceText[8] = L"0";
     GetEnvironmentVariableW(L"SFV_INSTANCE", instanceText, 8);
     const int instance = _wtoi(instanceText);
     const std::wstring suffix = instance == 0 ? L"" : L"." + std::to_wstring(instance);
-    // An SFVR install's files move to Polarity's names first (migrate.h).
     const MigrateResult migrated = MigrateFromSfvr(dir);
-    // The event log in the Polarity folder players share (files.h); the last
-    // run's moves aside first.
-    SetDataDir(dir + L"\\Polarity");
-    EnsureDirectory(LogsDir());
-    EnsureDirectory(MatchesDir());
-    // A report of the last run if it ended badly (from its log, before the
-    // log moves aside), then this run counts as running.
-    const std::string lastRun = CheckPreviousRun(suffix, kModVersion);
-    RotateLog(LogsDir(), L"polarity" + suffix);
-    LogOpen(LogsDir() + L"\\polarity" + suffix + L".log");
+    FilesSetDataDir(dir + L"\\Polarity");
+    FilesEnsureDirectory(FilesLogsDir());
+    FilesEnsureDirectory(FilesMatchesDir());
+    const std::string lastRun = CrashCheckPreviousRun(suffix, kModVersion);
+    FilesRotateLog(FilesLogsDir(), L"polarity" + suffix);
+    LogOpen(FilesLogsDir() + L"\\polarity" + suffix + L".log");
     for (const std::string& line : migrated.lines) Log("%s", line.c_str());
     if (migrated.waited) Log("migrate: waited for another game moving SFVR's files");
     if (!lastRun.empty()) Log("%s", lastRun.c_str());
-    InstallCrashHandler(suffix, kModVersion);
+    CrashInstallHandler(suffix, kModVersion);
     std::wstring iniPath = dir + L"\\polarity" + suffix + L".ini";
     if (GetFileAttributesW(iniPath.c_str()) == INVALID_FILE_ATTRIBUTES) iniPath = dir + L"\\polarity.ini";
     const std::wstring panelPath = dir + L"\\polarity.panel" + suffix + L".ini";
-    const Config config = LoadConfig(iniPath, dir, panelPath);
-    Log("Polarity %s, instance %d, mode %s", kModVersion, instance, ModeName(config.mode));
+    const Config config = ConfigLoad(iniPath, dir, panelPath);
+    Log("Polarity %s, instance %d, mode %s", kModVersion, instance, ConfigModeName(config.mode));
     if (GetEnvironmentVariableW(L"POLARITY_RESTARTED", nullptr, 0)) {
         SetEnvironmentVariableW(L"POLARITY_RESTARTED", nullptr);
         Log("started again by the last run's restart (after an update)");
@@ -103,10 +99,7 @@ DWORD WINAPI ModMain(LPVOID self) {
     }
     if (config.mode == Mode::Off) return 0;
 
-    // We are loaded during the exe's import resolution, before the SteamStub
-    // entry point has run. steam_api64.dll is delay-loaded by the real game
-    // code, so its arrival means the stub is done and the game is running.
-    for (int i = 0; i < 1200 && !GetModuleHandleW(L"steam_api64.dll"); i++) Sleep(100);
+    for (int i = 0; i < kSteamWaitMs / kSteamPollMs && !GetModuleHandleW(L"steam_api64.dll"); i++) Sleep(kSteamPollMs);
     if (!GetModuleHandleW(L"steam_api64.dll")) {
         Log("steam_api64.dll never loaded; not hooking");
         return 0;
@@ -128,14 +121,7 @@ DWORD WINAPI ModMain(LPVOID self) {
                                                                                  : "none (hashes include pointers)");
 
     static SfvGame game(image);
-    // No AddressTest for the checksums: whether a value is an address in use
-    // is a property of one process, so a value equal on both machines could be
-    // masked on one side only. Pointer fields are masked by the shared noise
-    // file instead (polarity peers --pointers), identically on both machines.
     if (haveMap) game.SetStateMap(&stateMap);
-    // The noise mask is built in, so every copy of a build masks the same
-    // words; [mod] noise_file swaps in a file (for learning new words: stress
-    // and learnnoise write to it).
     const std::wstring noisePath = dir + L"\\" + (config.noiseFile.empty() ? L"sfv_noise.txt" : config.noiseFile);
     SetNoisePath(noisePath);
     if (!config.noiseFile.empty() && game.LoadNoise(noisePath)) {
@@ -146,29 +132,27 @@ DWORD WINAPI ModMain(LPVOID self) {
         game.LoadNoiseText(reinterpret_cast<const char*>(kBuiltinNoise), sizeof(kBuiltinNoise));
         Log("noise mask: built in (%zu words)", game.NoiseWords());
     }
-    Log("game files: %s", GameFilesText().c_str());
-    // The mod paks' indexes (a few ms each): which change battle data.
+    Log("game files: %s", FilesGameText().c_str());
     std::thread([] {
         ThreadGuard running;
         Log("mods: %s", ScanModPaks().Text().c_str());
     }).detach();
 
     if (!InstallProbes(image, config, &game, &stateMap, stateMapPath)) return 0;
-    // The content the Steam account owns, into the profile as it loads (entitlements.h).
-    InstallEntitlements(image.base, iniPath);
-    HookProcessEnd();
+    EntitlementsInstall(image.base, iniPath);
+    CrashHookProcessEnd();
     InputInstall(config.virtualPads, config.alwaysActive);
     ControlInstall(dir + L"\\sfv_cmd" + suffix + L".txt");
     OverlayInstall(panelPath);
     UiSoundInstall(image);
     OverlaySetBuild(std::string("Polarity ") + kModVersion);
     if (migrated.moved) OverlaySetMigratedNotice();
-    InstallUpdater(dir, kModVersion, Narrow(config.updateUrl), config.updateCheck);
+    UpdateStart(dir, kModVersion, Narrow(config.updateUrl), config.updateCheck);
     InstallBattleSetup(image);
-    InstallBootProbes(image, config.verbose);
-    InstallFreePlayGuard(image);
+    BootInstallProbes(image, config.verbose);
+    BootInstallFreePlayGuard(image);
     FlowInstallProbes(image);
-    WatchLoginStatus();
+    BootWatchLoginStatus();
     BattleInstallDriver(image, &game);
     InstallCameraRollback(image);
     InstallHudStep(image);
@@ -180,7 +164,7 @@ DWORD WINAPI ModMain(LPVOID self) {
     WeyveService::SetHideCountry(!config.netplay.shareCountry);
     RoomsScreenSetStreamerMode(config.netplay.streamerMode);
     RoomsSetWordFilter(config.netplay.wordFilter);
-    InstallReportUploads(config.reportDir, Narrow(config.reportUrl), kModVersion, config.netplay.uploadReports);
+    ReportsInstall(config.reportDir, Narrow(config.reportUrl), kModVersion, config.netplay.uploadReports);
 
     switch (config.mode) {
         case Mode::Netplay:
@@ -188,17 +172,14 @@ DWORD WINAPI ModMain(LPVOID self) {
             if (config.mode == Mode::Playback) {
                 ReplayFile rf;
                 std::string error;
-                if (LoadReplay(Utf8Path(config.playbackFile), &rf, &error)) {
+                if (LoadReplay(FilesUtf8Path(config.playbackFile), &rf, &error)) {
                     Log("playback: %s, %d frames, build %s (this build %s)", Narrow(config.playbackFile).c_str(),
                         rf.FrameCount(), rf.gameBuild.c_str(), game.BuildId().c_str());
                 } else {
                     Log("playback: %s", error.c_str());
                 }
             }
-            // NetplaySession and VerifyReplay drive the game through
-            // SfvGame::BeginMatch/ReadLocalInput/Advance, which need the phase 3
-            // input and tick hooks. Until those exist the mod stays in probe mode.
-            Log("%s needs the phase 3 input and tick hooks; running probes only", ModeName(config.mode));
+            Log("%s needs the phase 3 input and tick hooks; running probes only", ConfigModeName(config.mode));
             break;
         }
         default:

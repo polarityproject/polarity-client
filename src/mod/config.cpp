@@ -1,3 +1,5 @@
+// The settings files: reading polarity.ini and the panel, saving the player's choices (docs/startup.md).
+
 #include "mod/config.h"
 
 #include "core/random_stage.h"
@@ -15,16 +17,16 @@ namespace sfv::mod {
 
 namespace {
 
+constexpr unsigned char kUtf16Bom[] = {0xFF, 0xFE};
+constexpr const char* kOldPublicServer = "159.69.32.141";
+constexpr int kDefaultUdpPort = 47001;
+
 std::string Ascii(const std::wstring& w) {
     std::string s;
     for (wchar_t c : w) s += c < 128 ? static_cast<char>(c) : '?';
     return s;
 }
 
-// A value as UTF-8, read from the file itself: Windows' ini functions read a
-// file without a BOM in the system's code page, which mangles UTF-8 (what
-// Notepad saves). A UTF-16 file (BOM) works too. "" when missing; `found`
-// says whether the key is there.
 std::string ReadUtf8(const std::wstring& path, const std::string& section, const std::string& key, bool* found = nullptr) {
     if (found) *found = false;
     HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
@@ -34,7 +36,7 @@ std::string ReadUtf8(const std::wstring& path, const std::string& section, const
     DWORD got = 0;
     while (ReadFile(f, buf, sizeof(buf), &got, nullptr) && got) bytes.append(buf, got);
     CloseHandle(f);
-    if (bytes.size() >= 2 && static_cast<unsigned char>(bytes[0]) == 0xFF && static_cast<unsigned char>(bytes[1]) == 0xFE) {
+    if (bytes.size() >= 2 && static_cast<unsigned char>(bytes[0]) == kUtf16Bom[0] && static_cast<unsigned char>(bytes[1]) == kUtf16Bom[1]) {
         std::wstring w(reinterpret_cast<const wchar_t*>(bytes.data() + 2), (bytes.size() - 2) / 2);
         const int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
         std::string u(static_cast<size_t>(n), '\0');
@@ -89,22 +91,14 @@ int ReadInt(const std::wstring& path, const wchar_t* section, const wchar_t* key
 
 namespace {
 
-// The public server before 0.3.0 (159.69.32.141, kept up for 0.2.x only): a
-// choice of it saved then means the public one, which is the rooms VPS now
-// (kDefaultServer).
 bool IsOldPublicServer(const std::string& server) {
-    return server == "159.69.32.141" || server.rfind("159.69.32.141:", 0) == 0;
+    return server == kOldPublicServer || server.rfind(std::string(kOldPublicServer) + ":", 0) == 0;
 }
 
-// The player's choices in [netplay]: pick (with its variant), stage, input delay,
-// own frame rate in the HUD; from the panel also name and spectators. With onlyPresent (the overlay's file) a missing key keeps the value
-// read before.
 void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPresent) {
     const wchar_t* kAbsent = L"\x01";
     auto has = [&](const wchar_t* key) { return !onlyPresent || ReadString(path, L"netplay", key, kAbsent) != kAbsent; };
     if (has(L"input_delay")) n.inputDelay = static_cast<uint8_t>(ReadInt(path, L"netplay", L"input_delay", 2));
-    // fixed_delay: "auto" or 0-8 frames. Before it, delay_setting had 0 for
-    // Auto and 1-8; those carry over.
     if (has(L"fixed_delay")) {
         const std::wstring v = ReadString(path, L"netplay", L"fixed_delay", L"auto");
         const bool frames = !v.empty() && v[0] >= L'0' && v[0] <= L'9';
@@ -127,17 +121,11 @@ void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPr
             n.pick.variation = static_cast<uint8_t>(ReadInt(path, L"netplay", L"variant", 0));
         }
     }
-    // A stage code ("CHN"), "random", or nothing (keep the stage the game has
-    // prepared); resolved against the stage table when hosting.
     if (has(L"stage")) n.stageCode = Ascii(ReadString(path, L"netplay", L"stage", L""));
-    // The stages random leaves out ("CHN,S25"), once the player has a list.
     if (const std::wstring off = ReadString(path, L"netplay", L"random_stages_off", kAbsent); off != kAbsent) {
         n.randomOff = ParseStageMask(Ascii(off));
         n.randomOffSaved = true;
     }
-    // Set in the panel (the main file has them in [weyve] and [netplay]).
-    // The panel keeps a name outside ASCII as hex (name_utf8): Windows' ini
-    // functions write a file without a BOM in the system's code page.
     if (onlyPresent) {
         bool found = false;
         const std::string hex = ReadUtf8(path, "netplay", "name_utf8", &found);
@@ -146,7 +134,6 @@ void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPr
     }
     if (onlyPresent && has(L"allow_spectators")) n.allowSpectators = ReadInt(path, L"netplay", L"allow_spectators", 1) != 0;
     if (onlyPresent && has(L"upload_reports")) n.uploadReports = ReadInt(path, L"netplay", L"upload_reports", 1) != 0;
-    // The Debug tab's server switch, and the servers used before.
     if (onlyPresent && has(L"server")) {
         const std::string server = Ascii(ReadString(path, L"netplay", L"server", L""));
         if (!server.empty() && !IsOldPublicServer(server)) n.server = n.savedServer = server;
@@ -158,7 +145,7 @@ void ReadNetplayChoices(const std::wstring& path, NetplayOptions& n, bool onlyPr
             size_t end = list.find(';', at);
             if (end == std::string::npos) end = list.size();
             const std::string one = list.substr(at, end - at);
-            if (end > at && !IsOldPublicServer(one)) n.recentServers.push_back(one); // the old public server: gone
+            if (end > at && !IsOldPublicServer(one)) n.recentServers.push_back(one);
             at = end + 1;
         }
     }
@@ -175,11 +162,11 @@ void Write(const std::wstring& path, const wchar_t* key, const std::string& valu
 
 } // namespace
 
-void SaveRandomStagesOff(const std::wstring& path, const std::vector<std::string>& off) {
+void ConfigSaveRandomStagesOff(const std::wstring& path, const std::vector<std::string>& off) {
     Write(path, L"random_stages_off", FormatStageMask(off));
 }
 
-void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const std::string& stage) {
+void ConfigSaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const std::string& stage) {
     Write(path, L"character", n.hasPick ? UnpackCode(n.pick.character) : "");
     Write(path, L"costume", std::to_string(n.pick.costume));
     Write(path, L"color", std::to_string(n.pick.color + 1));
@@ -187,8 +174,6 @@ void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const
     Write(path, L"vskill", std::to_string(n.pick.vskill + 1));
     Write(path, L"vtrigger", std::to_string(n.pick.vtrigger + 1));
     Write(path, L"variant", std::to_string(n.pick.variation));
-    // The character's loadout, for when it is picked again (ReadLoadouts):
-    // costume, color, comment, V-Skill, V-Trigger, variant as stored above.
     if (n.hasPick) {
         const std::string code = UnpackCode(n.pick.character);
         const std::string loadout = std::to_string(n.pick.costume) + " " + std::to_string(n.pick.color + 1) + " " +
@@ -200,7 +185,6 @@ void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const
     Write(path, L"stage", stage);
     Write(path, L"input_delay", std::to_string(n.inputDelay));
     Write(path, L"fixed_delay", n.delaySetting >= 0 ? std::to_string(n.delaySetting) : std::string("auto"));
-    // ASCII as it is; anything else as hex in name_utf8 (see ReadNetplayChoices).
     const bool ascii = std::all_of(n.name.begin(), n.name.end(), [](char ch) { return static_cast<unsigned char>(ch) < 0x80; });
     std::string hex;
     for (unsigned char ch : n.name) {
@@ -222,11 +206,10 @@ void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const
     Write(path, L"recent_servers", recent);
 }
 
-std::map<std::string, PlayerSetup> ReadLoadouts(const std::wstring& path) {
+std::map<std::string, PlayerSetup> ConfigReadLoadouts(const std::wstring& path) {
     std::map<std::string, PlayerSetup> loadouts;
     std::vector<wchar_t> buf(32768);
     const DWORD n = GetPrivateProfileSectionW(L"loadouts", buf.data(), static_cast<DWORD>(buf.size()), path.c_str());
-    // "KEN=3 5 0 2 1 0\0CMY=...\0\0"
     for (size_t at = 0; at < n && buf[at];) {
         const std::wstring entry(buf.data() + at);
         at += entry.size() + 1;
@@ -255,18 +238,18 @@ namespace {
 std::wstring g_mainIni;
 }
 
-std::wstring MainIniPath() { return g_mainIni; }
+std::wstring ConfigMainIniPath() { return g_mainIni; }
 
-int ReadMainIni(const wchar_t* section, const wchar_t* key, int fallback) {
+int ConfigReadMainIni(const wchar_t* section, const wchar_t* key, int fallback) {
     return g_mainIni.empty() ? fallback : static_cast<int>(GetPrivateProfileIntW(section, key, fallback, g_mainIni.c_str()));
 }
 
-void SaveMainIni(const wchar_t* section, const wchar_t* key, int value) {
+void ConfigSaveMainIni(const wchar_t* section, const wchar_t* key, int value) {
     if (g_mainIni.empty()) return;
     WritePrivateProfileStringW(section, key, std::to_wstring(value).c_str(), g_mainIni.c_str());
 }
 
-Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const std::wstring& panelPath) {
+Config ConfigLoad(const std::wstring& path, const std::wstring& dllDir, const std::wstring& panelPath) {
     g_mainIni = path;
     Config c;
     const std::wstring mode = ReadString(path, L"mod", L"mode", L"probe");
@@ -276,9 +259,6 @@ Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const st
     else if (mode == L"playback") c.mode = Mode::Playback;
     else c.mode = Mode::Probe;
 
-    // Off unless asked for: F9 / F10 load states in any battle, offline ones
-    // too. Releases up to 0.1.3 shipped savestate_hotkeys=1; updates keep the
-    // ini, so that key is no longer read.
     c.savestateHotkeys = ReadInt(path, L"probe", L"debug_hotkeys", 0) != 0;
     c.forceOfflineFrames = ReadInt(path, L"probe", L"force_offline_frames", 0) != 0;
     c.forceEnable = ReadInt(path, L"probe", L"force_enable", 0) != 0;
@@ -295,18 +275,13 @@ Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const st
     NetplayOptions& n = c.netplay;
     n.udp = ReadString(path, L"netplay", L"transport", L"weyve") == L"udp";
     n.server = Ascii(ReadString(path, L"weyve", L"server", L""));
-    // Updates replace the DLLs, never this file: an install from 0.2.x keeps
-    // its [weyve] server=159.69.32.141:5555, which means the public server.
     if (n.server.empty() || IsOldPublicServer(n.server)) n.server = kDefaultServer;
-    n.name = ReadUtf8(path, "weyve", "name"); // UTF-8 (Notepad's default)
+    n.name = ReadUtf8(path, "weyve", "name");
     n.allowSpectators = ReadInt(path, L"netplay", L"allow_spectators", 1) != 0;
     n.uploadReports = ReadInt(path, L"netplay", L"upload_reports", 1) != 0;
-    n.udpPort = static_cast<uint16_t>(ReadInt(path, L"netplay", L"udp_port", 47001));
+    n.udpPort = static_cast<uint16_t>(ReadInt(path, L"netplay", L"udp_port", kDefaultUdpPort));
     const std::wstring host = ReadString(path, L"netplay", L"udp_host", L"127.0.0.1");
     n.udpHost = Ascii(host);
-    // lockstep_round_stages, not lockstep_presentation: every release's ini
-    // had lockstep_presentation=1 (and updates keep a player's ini), so the
-    // old key is left unread and the round's stages roll back by default.
     n.lockstepPresentation = ReadInt(path, L"netplay", L"lockstep_round_stages", 0) != 0;
     n.lockstepDelay = ReadInt(path, L"netplay", L"lockstep_delay", 1) != 0;
     n.lockstepTransitions = ReadInt(path, L"netplay", L"lockstep_round_transitions", 1) != 0;
@@ -342,7 +317,7 @@ Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const st
     return c;
 }
 
-const char* ModeName(Mode mode) {
+const char* ConfigModeName(Mode mode) {
     switch (mode) {
         case Mode::Off: return "off";
         case Mode::Probe: return "probe";

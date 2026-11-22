@@ -148,7 +148,7 @@ T At(const uint8_t* p, size_t offset) {
 
 int ReadChoice(std::atomic<int>& cache, const wchar_t* key, int fallback) {
     int v = cache;
-    if (v < 0) cache = v = ReadMainIni(L"framemeter", key, fallback) ? 1 : 0;
+    if (v < 0) cache = v = ConfigReadMainIni(L"framemeter", key, fallback) ? 1 : 0;
     return v;
 }
 
@@ -674,12 +674,12 @@ bool FrameMeterInReplays() { return ReadChoice(g_replays, L"replays", 0) != 0; }
 
 void FrameMeterSetInTraining(bool on) {
     g_training = on ? 1 : 0;
-    SaveMainIni(L"framemeter", L"training", on ? 1 : 0);
+    ConfigSaveMainIni(L"framemeter", L"training", on ? 1 : 0);
 }
 
 void FrameMeterSetInReplays(bool on) {
     g_replays = on ? 1 : 0;
-    SaveMainIni(L"framemeter", L"replays", on ? 1 : 0);
+    ConfigSaveMainIni(L"framemeter", L"replays", on ? 1 : 0);
 }
 
 void FrameMeterSetForced(bool on) {

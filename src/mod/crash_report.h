@@ -32,30 +32,30 @@ namespace sfv::mod {
 // At start, before the log rotates: when the previous run of this instance
 // ended badly, makes its report. What it found, for the log once it is open
 // ("" when the previous run ended well).
-std::string CheckPreviousRun(const std::wstring& suffix, const std::string& version);
+std::string CrashCheckPreviousRun(const std::wstring& suffix, const std::string& version);
 // Marks this run as running; installs the fault handler and its writer.
-void InstallCrashHandler(const std::wstring& suffix, const std::string& version);
+void CrashInstallHandler(const std::wstring& suffix, const std::string& version);
 // The process ends itself or exits: a clean end unless a fault came just
 // before (then the engine is ending it for that fault).
-void OnProcessExit(const char* how);
+void CrashOnProcessExit(const char* how);
 // Before a hot reload: a clean end, and the handler and writer go.
-void RemoveCrashHandler();
+void CrashRemoveHandler();
 // Hooks TerminateProcess (the engine ends the game with it, also after a
 // crash) and the C runtime's exit (the game quitting): needs MinHook
 // initialised.
-void HookProcessEnd();
+void CrashHookProcessEnd();
 // The game is quitting (its window closed, or the runtime's exit): a fault
 // from here on is not reported, and the run ends well. The game itself
 // faulted in its exit now and then (quit while a character loads).
-void OnQuitting(const char* how);
+void CrashOnQuitting(const char* how);
 // From the scene's tick (flow.cpp): the game thread is alive (the freeze
 // watch).
-void NoteGameTick();
+void CrashNoteGameTick();
 // Report uploads on or off in this run (report_upload.cpp, at start and on
 // every change): a run that ends badly with them off keeps its report on this
-// PC (KeepReportLocal), also when the next run sends reports. Test runs turn
+// PC (ReportsKeepLocal), also when the next run sends reports. Test runs turn
 // them off, and the games they kill used to reach the server that way.
-void NoteRunUploads(bool on);
+void CrashNoteRunUploads(bool on);
 
 // Around code that faults on purpose and catches it (guarded reads; calls,
 // not an object: a function with __try cannot hold one): the fault handler

@@ -1,3 +1,5 @@
+// The offline start, the login watch and the free play check (docs/startup.md).
+
 #include "mod/boot.h"
 
 #include "mod/crash_report.h"
@@ -21,22 +23,11 @@ namespace sfv::mod {
 
 namespace {
 
-// Blueprint GetLoginState's native body: online subsystem -> identity ->
-// GetLoginStatus(local user).
 constexpr uintptr_t kGetLoginStatus = 0x73BB90;
-// InitialState's step "continue offline": clears the online mode flag (global,
-// rva 0x3A91FC1, via 0x69D800), marks the scene manager (+0x451 = 0) and
-// switches to the main menu. The state schedules it itself (step function at
-// +0x338) when it gives up on the login.
 constexpr uintptr_t kInitialStateGoOffline = 0x5E4ED0;
-// Sets OnlineSubsystemKiwi +0x1022, the login dialog's "offline" sets 0.
 constexpr uintptr_t kSetOnlineSubsystemFlag = 0x750950;
-// Scene states run one step function at a time: +0x338, after +0x378 frames.
 constexpr uint32_t kStateStep = 0x338;
 constexpr uint32_t kStateStepDelay = 0x378;
-// InitialState's steps: local preparation (0x600D20 ... 0x6014A0), then
-// 0x601820 starts the login and waits for it (about 30 s when the servers
-// cannot be reached). The offline route replaces that step.
 constexpr uintptr_t kInitialStateLoginStep = 0x601820;
 constexpr int kOfflineWaitFrames = 60 * 60;
 
@@ -61,7 +52,6 @@ std::string Address(const sockaddr* a) {
     return buf;
 }
 
-// Network calls, logged with how long they took.
 using GetAddrInfoWFn = INT(WSAAPI*)(PCWSTR, PCWSTR, const ADDRINFOW*, PADDRINFOW*);
 using GetAddrInfoFn = INT(WSAAPI*)(PCSTR, PCSTR, const ADDRINFOA*, PADDRINFOA*);
 using ConnectFn = int(WSAAPI*)(SOCKET, const sockaddr*, int);
@@ -154,14 +144,12 @@ bool HookExport(const wchar_t* module, const char* name, void* detour, void** or
 }
 
 void WatchStep() {
-    const int status = LoginStatus();
+    const int status = BootLoginStatus();
     const int last = g_lastStatus.exchange(status);
     if (status != last) Log("boot: login status %d (was %d)", status, last);
     if (!Stopping()) FlowRunOnGameThreadAfter(30, WatchStep);
 }
 
-// Waits (once per frame) for InitialState to reach its login step, then
-// replaces that step with the offline route.
 void OfflineAtLoginStep(uint8_t* state, int frame) {
     if (Stopping()) return;
     if (!state) {
@@ -188,14 +176,13 @@ void OfflineAtLoginStep(uint8_t* state, int frame) {
 
 } // namespace
 
-void GoOfflineFromTitle() {
+void BootGoOfflineFromTitle() {
     FlowRunOnGameThreadAfter(1, [] { OfflineAtLoginStep(nullptr, 0); });
 }
 
 using InFreePlayPeriodFn = bool (*)(void* info);
 InFreePlayPeriodFn g_origInFreePlayPeriod = nullptr;
-std::atomic<int> g_freePlayAnswer{-1}; // the game's own last answer, for the log
-// Research: `freeplay off` lets the game decide, `freeplay fail` says ended.
+std::atomic<int> g_freePlayAnswer{-1};
 enum class FreePlay { Guard,
                       Game,
                       Fail };
@@ -216,13 +203,13 @@ bool InFreePlayPeriodDetour(void* info) {
     return true;
 }
 
-void SetFreePlayGuard(const std::string& mode) {
+void BootSetFreePlayGuard(const std::string& mode) {
     g_freePlay = mode == "off" ? FreePlay::Game : mode == "fail" ? FreePlay::Fail
                                                                  : FreePlay::Guard;
     Log("boot: free play guard %s", mode.c_str());
 }
 
-bool InstallFreePlayGuard(const GameImage& image) {
+bool BootInstallFreePlayGuard(const GameImage& image) {
     const game::CodeSite& site = game::kInFreePlayPeriod;
     void* target = image.At<void*>(site.rva);
     if (std::memcmp(target, site.bytes, sizeof(site.bytes)) != 0) {
@@ -236,7 +223,7 @@ bool InstallFreePlayGuard(const GameImage& image) {
     return ok;
 }
 
-bool InstallBootProbes(const GameImage& image, bool logNetwork) {
+bool BootInstallProbes(const GameImage& image, bool logNetwork) {
     g_base = image.base;
     if (!logNetwork) return true;
     bool ok = HookExport(L"ws2_32.dll", "GetAddrInfoW", reinterpret_cast<void*>(&GetAddrInfoWDetour),
@@ -256,14 +243,9 @@ bool InstallBootProbes(const GameImage& image, bool logNetwork) {
     return ok;
 }
 
-int LoginStatus() {
+int BootLoginStatus() {
     using Fn = uint8_t (*)();
-    // The getter takes the identity interface (rva 0x73BEC0) without a null
-    // check (0x73BBCB): early in a start the online subsystem can have none
-    // yet, and the watch's call ended the game there (access violation
-    // reading 0, 5 to 50 s after the start; six crash reports from 0.2.6.1 to
-    // 0.3.1, some players twice in a row). A fault reads as status -1.
-    CrashGuardEnter(); // a fault here is expected, not a crash
+    CrashGuardEnter();
     __try {
         const int status = reinterpret_cast<Fn>(g_base + kGetLoginStatus)();
         CrashGuardLeave();
@@ -274,7 +256,7 @@ int LoginStatus() {
     }
 }
 
-void WatchLoginStatus() {
+void BootWatchLoginStatus() {
     FlowRunOnGameThread(WatchStep);
 }
 

@@ -1,5 +1,5 @@
 #pragma once
-// The move from SFVR to Polarity (docs/polarity-migration-plan.md, 4.2). An
+// The move from SFVR to Polarity (docs/startup.md). An
 // SFVR install that updates gets Polarity's loader and polarity.dll from
 // SFVR's updater; the first Polarity start moves the rest:
 //   sfv_rollback[.N].ini, sfv_rollback.panel[.N].ini -> polarity...ini

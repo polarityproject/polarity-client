@@ -100,7 +100,7 @@ void NetplayDriver::ControlTick() {
         hello.build = build_;
         hello.role = role_;
         hello.name = name_;
-        hello.reports = ReportUploadsOn();
+        hello.reports = ReportsOn();
         hello.seatToken = ticket_.seatToken;
         Send(hello);
         return;
@@ -475,7 +475,7 @@ void NetplayDriver::OnHostMessage(uint64_t from, const lobby::Message& m, State 
             lobby::Message accept;
             accept.type = lobby::Type::Accept;
             accept.name = name_;
-            accept.reports = ReportUploadsOn();
+            accept.reports = ReportsOn();
             if (from == peer_) {
                 NotePeerReports(m.reports);
                 accept.role = Role::Player;

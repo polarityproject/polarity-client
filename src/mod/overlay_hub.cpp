@@ -11,7 +11,7 @@ void UseServer(const std::string& chosen) {
         recent.erase(std::remove(recent.begin(), recent.end(), chosen), recent.end());
         recent.insert(recent.begin(), chosen);
         if (recent.size() > 6) recent.resize(6);
-        if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, o, o.stageCode);
+        if (!g_panelPath.empty()) ConfigSaveNetplayChoices(g_panelPath, o, o.stageCode);
         Log("overlay: server %s for the next sessions", chosen.c_str());
     });
 }
@@ -85,7 +85,7 @@ std::vector<SettingsRow> SettingsRows() {
     {
         SettingsRow& r = row("checkstart", "UPDATES", "Check at start");
         r.arrows = true;
-        r.value = ReadMainIni(L"update", L"check", 1) ? "On" : "Off";
+        r.value = ConfigReadMainIni(L"update", L"check", 1) ? "On" : "Off";
         r.kicker = "UPDATES";
         r.title = "Check at start";
         r.lines = {"Checks for a new version each time the game starts. Nothing installs without asking you."};
@@ -212,7 +212,7 @@ std::vector<SettingsRow> SettingsRows() {
         r.action = "Open";
         r.kicker = "POLARITY FOLDER";
         std::string path;
-        for (wchar_t ch : DataDir()) path += ch < 128 ? static_cast<char>(ch) : '_';
+        for (wchar_t ch : FilesDataDir()) path += ch < 128 ? static_cast<char>(ch) : '_';
         r.title = path;
         r.lines = {"Holds logs, match recordings and crash reports."};
         r.hint = "Opens in Explorer. The game stays open.";
@@ -248,12 +248,12 @@ void ApplySetting(const SettingsInput& in) {
     if (in.row == "install" && in.confirm) {
         if (UpdateViewNow().state == UpdateView::State::Ready) {
             std::string error;
-            if (!RestartGame(g_window, &error)) g_packResult = "Couldn't restart: " + error + ". Close the game and start it again.";
+            if (!UpdateRestartGame(g_window, &error)) g_packResult = "Couldn't restart: " + error + ". Close the game and start it again.";
         } else UpdateInstall();
     } else if (in.row == "check" && in.confirm) UpdateCheck();
     else if (in.row == "bench" && in.confirm) OpenBenchmarkModal(false);
     else if (in.row == "benchlast" && in.confirm) OpenBenchmarkModal(true);
-    else if (in.row == "checkstart" && in.delta) SaveMainIni(L"update", L"check", ReadMainIni(L"update", L"check", 1) ? 0 : 1);
+    else if (in.row == "checkstart" && in.delta) ConfigSaveMainIni(L"update", L"check", ConfigReadMainIni(L"update", L"check", 1) ? 0 : 1);
     else if (in.row == "hitboxes" && in.delta) HitboxesSetInTraining(!HitboxesInTraining());
     else if (in.row == "framemeter" && in.delta) FrameMeterSetInTraining(!FrameMeterInTraining());
     else if (in.row == "name" && in.typed) {
@@ -265,7 +265,7 @@ void ApplySetting(const SettingsInput& in) {
         NetOptions().delaySetting = next;
         Act([next] {
             NetOptions().delaySetting = next;
-            if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, NetOptions(), NetOptions().stageCode);
+            if (!g_panelPath.empty()) ConfigSaveNetplayChoices(g_panelPath, NetOptions(), NetOptions().stageCode);
             Log("overlay: input delay setting %s", next >= 0 ? std::to_string(next).c_str() : "auto");
         });
     } else if (in.row == "fps" && in.delta) {
@@ -295,16 +295,16 @@ void ApplySetting(const SettingsInput& in) {
             UseServer(next);
             RoomsClose();
         }
-    } else if (in.row == "folder" && in.confirm) OpenDataFolder();
+    } else if (in.row == "folder" && in.confirm) FilesOpenDataFolder();
     else if (in.row == "pack" && in.confirm) {
         std::string error;
-        const std::wstring zip = PackLogsToShare(&error);
+        const std::wstring zip = FilesPackLogsToShare(&error);
         if (zip.empty()) g_packResult = "Could not pack the logs: " + error;
         else {
             std::string name;
             for (wchar_t ch : zip.substr(zip.find_last_of(L'\\') + 1)) name += ch < 128 ? static_cast<char>(ch) : '_';
             g_packResult = "Packed " + name;
-            OpenDataFolder(zip);
+            FilesOpenDataFolder(zip);
         }
     }
 }
@@ -464,7 +464,7 @@ void SetTableSkills(int vskill, int vtrigger) {
             NetOptions().hasPick = o.hasPick;
             NetOptions().pick = o.pick;
         }
-        if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, NetOptions(), NetOptions().stageCode);
+        if (!g_panelPath.empty()) ConfigSaveNetplayChoices(g_panelPath, NetOptions(), NetOptions().stageCode);
     });
     Log("overlay: the card's pick: %s V-Skill %d V-Trigger %d", g_tables.charas[c.chara].c_str(), c.vskill, c.vtrigger);
 }
@@ -780,7 +780,7 @@ void DrawHubScreens(bool takeInput) {
             break;
         case HubAction::UpdateRestart: {
             std::string error;
-            if (!RestartGame(g_window, &error)) g_restartError = error;
+            if (!UpdateRestartGame(g_window, &error)) g_restartError = error;
             break;
         }
         case HubAction::UpdateRetry:

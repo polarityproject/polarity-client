@@ -64,7 +64,7 @@ void BenchmarkCommand(const std::string&, std::stringstream& ss) {
     } else if (what == "file") {
         std::string file;
         std::getline(ss >> std::ws, file);
-        const std::string path = file.find(':') != std::string::npos ? file : Utf8Path(MatchesDir()) + "\\" + file;
+        const std::string path = file.find(':') != std::string::npos ? file : FilesUtf8Path(FilesMatchesDir()) + "\\" + file;
         if (!ReplayRequestBenchmark(path)) Log("benchmark: not started");
     } else if (!StartBenchmark(kPolarityVersion)) Log("benchmark: not started");
 }
@@ -286,22 +286,22 @@ void ReportsCommand(const std::string&, std::stringstream& ss) {
     ss >> what;
     if (what == "url") {
         ss >> url;
-        SetReportUrl(url);
+        ReportsSetUrl(url);
         Log("reports: server %s", url.empty() ? "as configured" : url.c_str());
-    } else SendReadyReports();
+    } else ReportsSendReady();
 }
 
 void UpdateCommand(const std::string&, std::stringstream& ss) {
     std::string what, url;
     ss >> what >> url;
     if (what == "check") {
-        if (!url.empty()) SetUpdateUrl(url);
+        if (!url.empty()) UpdateSetUrl(url);
         UpdateCheck();
     } else if (what == "install") UpdateInstall();
     else if (what == "pretend" && !url.empty()) UpdatePretendVersion(url);
     else if (what == "restart") {
         std::string error;
-        if (!RestartGame(InputGameWindow(), &error)) Log("update: restart: %s", error.c_str());
+        if (!UpdateRestartGame(InputGameWindow(), &error)) Log("update: restart: %s", error.c_str());
     }
     const UpdateView v = UpdateViewNow();
     Log("update: state %d, this build %s, site's %s, %llu of %llu bytes%s%s", static_cast<int>(v.state), v.current.c_str(),
@@ -311,7 +311,7 @@ void UpdateCommand(const std::string&, std::stringstream& ss) {
 
 void PacklogsCommand(const std::string&, std::stringstream&) {
     std::string error;
-    if (PackLogsToShare(&error).empty()) Log("files: cannot pack the logs: %s", error.c_str());
+    if (FilesPackLogsToShare(&error).empty()) Log("files: cannot pack the logs: %s", error.c_str());
 }
 
 void ServerCommand(const std::string&, std::stringstream& ss) {
@@ -457,7 +457,7 @@ void RelayonlyCommand(const std::string&, std::stringstream& ss) {
 void FreeplayCommand(const std::string&, std::stringstream& ss) {
     std::string what;
     ss >> what;
-    SetFreePlayGuard(what);
+    BootSetFreePlayGuard(what);
 }
 
 void OverlayCommand(const std::string&, std::stringstream& ss) {

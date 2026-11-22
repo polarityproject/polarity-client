@@ -48,13 +48,13 @@ struct UpdateView {
 
 // From the mod's start: `gameDir` is where the game's files are (the DLL's
 // folder). With `checkNow`, checks in the background at once.
-void InstallUpdater(const std::wstring& gameDir, const std::string& currentVersion, const std::string& url, bool checkNow);
+void UpdateStart(const std::wstring& gameDir, const std::string& currentVersion, const std::string& url, bool checkNow);
 UpdateView UpdateViewNow();
 // Both run in the background; ignored while a check or download runs.
 void UpdateCheck();
 void UpdateInstall();
 // For tests: another site (empty: the configured one).
-void SetUpdateUrl(const std::string& url);
+void UpdateSetUrl(const std::string& url);
 // Checks unless a check ended within `maxAgeMs` (or one runs, or an update
 // is already found): what Custom Rooms asks before letting a player in, so
 // only the latest client plays there.
@@ -69,6 +69,6 @@ void UpdatePretendVersion(const std::string& version);
 // one to end first: the game allows one copy of itself), then `window` is
 // asked to close. False (and why) if the new process could not start; this
 // game then keeps running.
-bool RestartGame(void* window, std::string* error);
+bool UpdateRestartGame(void* window, std::string* error);
 
 } // namespace sfv::mod

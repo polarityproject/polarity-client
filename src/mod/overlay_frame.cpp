@@ -112,7 +112,7 @@ void Draw(IDXGISwapChain* swapChain) {
         bootWarmed = true;
         FlowRunOnGameThread([data = PreviewSelectData()] {
             ProfileFavorites favorites;
-            ReadProfileFavorites(&favorites);
+            ProfileReadFavorites(&favorites);
             SelectWarmBootTextures(data, favorites.chara, favorites.stage);
             std::lock_guard lock(g_favoritesMutex);
             g_favorites = favorites;

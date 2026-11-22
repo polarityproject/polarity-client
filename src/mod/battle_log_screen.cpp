@@ -46,7 +46,7 @@ void ReadFolder() {
     if (g_reading.exchange(true)) return;
     std::thread([] {
         ThreadGuard running;
-        const std::wstring dir = ReplaysDir();
+        const std::wstring dir = FilesReplaysDir();
         std::vector<Entry> found;
         std::map<std::string, Entry> cache;
         {
@@ -58,7 +58,7 @@ void ReadFolder() {
         if (h != INVALID_HANDLE_VALUE) {
             do {
                 if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-                const std::string path = Utf8Path(dir + L"\\" + fd.cFileName);
+                const std::string path = FilesUtf8Path(dir + L"\\" + fd.cFileName);
                 const uint64_t size = (static_cast<uint64_t>(fd.nFileSizeHigh) << 32) | fd.nFileSizeLow;
                 const int64_t modified = (static_cast<int64_t>(fd.ftLastWriteTime.dwHighDateTime) << 32) | fd.ftLastWriteTime.dwLowDateTime;
                 auto it = cache.find(path);
@@ -82,7 +82,7 @@ void ReadFolder() {
             for (const Entry& e : found) g_cache[e.path] = e;
             g_entries = std::move(found);
         }
-        Log("battle log: %zu files read in %s", g_cache.size(), Utf8Path(dir).c_str());
+        Log("battle log: %zu files read in %s", g_cache.size(), FilesUtf8Path(dir).c_str());
         g_read = true;
         g_generation++;
         g_reading = false;
@@ -367,8 +367,8 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
         }
         if (Pressed({ImGuiKey_GamepadFaceUp}, false)) {
             UiSoundPlay(UiSound::Decide);
-            EnsureDirectory(ReplaysDir());
-            ShellExecuteW(nullptr, L"open", L"explorer.exe", (L"\"" + ReplaysDir() + L"\"").c_str(), nullptr, SW_SHOWNORMAL);
+            FilesEnsureDirectory(FilesReplaysDir());
+            ShellExecuteW(nullptr, L"open", L"explorer.exe", (L"\"" + FilesReplaysDir() + L"\"").c_str(), nullptr, SW_SHOWNORMAL);
         }
         if (focused && Pressed({ImGuiKey_GamepadFaceLeft}, false) && g_bySets && focused->set) {
             UiSoundPlay(UiSound::Decide);

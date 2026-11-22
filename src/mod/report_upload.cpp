@@ -1,3 +1,5 @@
+// Report uploads: desync and crash reports sent to the report server (docs/startup.md).
+
 #include "mod/report_upload.h"
 
 #include "mod/crash_report.h"
@@ -23,28 +25,29 @@ namespace sfv::mod {
 namespace {
 
 constexpr DWORD kTimeoutMs = 15000;
-constexpr uint64_t kMaxFileBytes = 16ull << 20;       // the server's limit
-constexpr int64_t kMaxAgeSeconds = 14 * 24 * 3600;    // older reports stay home
-constexpr int64_t kNoLogAfterSeconds = 30 * 60;       // a report of this run without its match log
-constexpr auto kFirstLook = std::chrono::seconds(30); // after the mod's start
-constexpr auto kRetryEvery = std::chrono::minutes(5); // while something is left to send
+constexpr uint64_t kMaxFileBytes = 16ull << 20;
+constexpr int64_t kMaxAgeSeconds = 14 * 24 * 3600;
+constexpr int64_t kNoLogAfterSeconds = 30 * 60;
+constexpr auto kFirstLook = std::chrono::seconds(30);
+constexpr auto kRetryEvery = std::chrono::minutes(5);
+constexpr auto kWakeEvery = std::chrono::milliseconds(250);
+constexpr uint64_t kFileTimeTicksPerSecond = 10000000;
 
 std::mutex g_mutex;
 std::wstring g_dir;
-std::string g_configured; // [report] url, else kDefaultReportUrl
-std::string g_url;        // under g_mutex
+std::string g_configured;
+std::string g_url;
 std::string g_version;
 std::atomic<bool> g_on{true};
 std::atomic<bool> g_busy{false};
-std::atomic<bool> g_again{false}; // asked while a round ran: one more after it
-std::atomic<bool> g_left{false};  // the last round left something to send
-std::atomic<bool> g_match{false}; // a match runs: no retries meanwhile
+std::atomic<bool> g_again{false};
+std::atomic<bool> g_left{false};
+std::atomic<bool> g_match{false};
 std::atomic<int> g_sent{0};
-int64_t g_started = 0; // the mod's start, seconds since 1601
+int64_t g_started = 0;
 
 std::wstring Wide(const std::string& s) { return std::wstring(s.begin(), s.end()); }
 
-// The name's ASCII (the mod's own report names are; anything else is not one).
 bool Ascii(const std::wstring& w, std::string* out) {
     out->clear();
     for (wchar_t c : w) {
@@ -65,7 +68,6 @@ bool ReadFile(const std::wstring& path, std::vector<uint8_t>* out) {
     return true;
 }
 
-// POST `body` to `url`; the HTTP status, or 0 when the server was not reached.
 DWORD Post(const std::string& url, const std::vector<uint8_t>& body, std::string* error) {
     const std::wstring wurl = Wide(url);
     URL_COMPONENTS parts{};
@@ -108,16 +110,14 @@ DWORD Post(const std::string& url, const std::vector<uint8_t>& body, std::string
     return status;
 }
 
-// One side's files of one match.
 struct Side {
     std::vector<std::string> files;
     bool desync = false, log = false;
-    int64_t newest = 0; // seconds since 1601 (the newest file)
+    int64_t newest = 0;
 };
 
-int64_t Seconds(const FILETIME& t) { return static_cast<int64_t>((uint64_t(t.dwHighDateTime) << 32 | t.dwLowDateTime) / 10000000); }
+int64_t Seconds(const FILETIME& t) { return static_cast<int64_t>((uint64_t(t.dwHighDateTime) << 32 | t.dwLowDateTime) / kFileTimeTicksPerSecond); }
 
-// "<...>_<match id>_<p1|p2|spec>[_desync].<sfvr|log>" -> "<match id>_<side>".
 bool SideKey(const std::string& name, std::string* key, bool* desync, bool* log) {
     const size_t dot = name.rfind('.');
     if (dot == std::string::npos) return false;
@@ -142,7 +142,6 @@ bool SideKey(const std::string& name, std::string* key, bool* desync, bool* log)
     return true;
 }
 
-// "<date>_<time>_crash_<id>.<log|dmp>" (crash_report.h).
 bool CrashName(const std::string& name) {
     if (name.size() != 38 || (name.compare(34, 4, ".log") != 0 && name.compare(34, 4, ".dmp") != 0)) return false;
     if (name.compare(19, 7, "_crash_") != 0) return false;
@@ -159,8 +158,6 @@ bool CrashName(const std::string& name) {
     return true;
 }
 
-// File names, one a line: uploaded.txt (sent) and kept.txt (made while
-// uploads were off: never sent, KeepReportLocal).
 std::set<std::string> NameList(const std::wstring& dir, const wchar_t* list) {
     std::set<std::string> names;
     FILE* f = _wfopen((dir + L"\\" + list).c_str(), L"r");
@@ -190,19 +187,18 @@ enum class Sent { Now,
                   Refused,
                   Later };
 
-// One file of `dir` to the server's `path` ("reports", "crashes").
 Sent SendFile(const std::string& url, const char* path, const std::wstring& dir, const std::string& name) {
     std::vector<uint8_t> body;
     if (!ReadFile(dir + L"\\" + Wide(name), &body)) return Sent::Refused;
     std::string error;
     const DWORD status = Post(url + "/v1/" + path + "/" + name, body, &error);
-    if (status == 200 || status == 201) {
+    if (status == HTTP_STATUS_OK || status == HTTP_STATUS_CREATED) {
         Log("reports: sent %s (%zu KB)", name.c_str(), body.size() / 1024);
         MarkSent(dir, name);
         return Sent::Now;
     }
-    if (status == 400 || status == 404 || status == 411 || status == 413) {
-        // Refused for what it is: sending it again would not help.
+    if (status == HTTP_STATUS_BAD_REQUEST || status == HTTP_STATUS_NOT_FOUND || status == HTTP_STATUS_LENGTH_REQUIRED ||
+        status == HTTP_STATUS_REQUEST_TOO_LARGE) {
         Log("reports: the server refused %s (%lu)", name.c_str(), status);
         MarkSent(dir, name);
         return Sent::Refused;
@@ -211,9 +207,8 @@ Sent SendFile(const std::string& url, const char* path, const std::wstring& dir,
     return Sent::Later;
 }
 
-// The crash reports (crash_report.h), each report's .log and .dmp.
 bool SendCrashes(const std::string& url) {
-    const std::wstring dir = CrashesDir();
+    const std::wstring dir = FilesCrashesDir();
     std::vector<std::string> names;
     WIN32_FIND_DATAW fd;
     HANDLE find = FindFirstFileW((dir + L"\\*_crash_*").c_str(), &fd);
@@ -241,8 +236,6 @@ bool SendCrashes(const std::string& url) {
     return true;
 }
 
-// Sends every side that is ready; false when the server could not take more
-// (not reached, busy): the rest waits for the next round.
 bool SendRound() {
     std::string url;
     {
@@ -260,7 +253,7 @@ bool SendRound() {
         bool desync = false, log = false;
         if (!Ascii(fd.cFileName, &name) || !SideKey(name, &key, &desync, &log)) continue;
         if ((uint64_t(fd.nFileSizeHigh) << 32 | fd.nFileSizeLow) > kMaxFileBytes) {
-            continue; // a full recording (testing): too large for the server
+            continue;
         }
         Side& s = sides[key];
         s.files.push_back(name);
@@ -275,14 +268,12 @@ bool SendRound() {
     const int64_t now = Seconds(nowFt);
     const std::set<std::string> sent = SentList(g_dir);
     const std::set<std::string> kept = NameList(g_dir, L"kept.txt");
-    bool waiting = false; // a side whose match log may still come
+    bool waiting = false;
     for (const auto& [key, s] : sides) {
         if (!s.desync || now - s.newest > kMaxAgeSeconds) continue;
         bool keep = false;
         for (const std::string& name : s.files) keep = keep || kept.count(name);
         if (keep) continue;
-        // No match log: the match may still be on, unless the files are from
-        // before this run (the game closed or crashed in the match).
         if (!s.log && s.newest >= g_started && now - s.newest < kNoLogAfterSeconds) {
             for (const std::string& name : s.files) waiting = waiting || !sent.count(name);
             continue;
@@ -317,11 +308,11 @@ void Round() {
 
 } // namespace
 
-void InstallReportUploads(const std::wstring& reportDir, const std::string& url, const std::string& modVersion, bool on) {
+void ReportsInstall(const std::wstring& reportDir, const std::string& url, const std::string& modVersion, bool on) {
     g_dir = reportDir;
     g_version = modVersion;
     g_on = on;
-    NoteRunUploads(on);
+    CrashNoteRunUploads(on);
     g_configured = url.empty() ? kDefaultReportUrl : url;
     while (!g_configured.empty() && g_configured.back() == '/') g_configured.pop_back();
     {
@@ -332,15 +323,12 @@ void InstallReportUploads(const std::wstring& reportDir, const std::string& url,
     GetSystemTimeAsFileTime(&nowFt);
     g_started = Seconds(nowFt);
     Log("reports: desync reports %s (%s)", on ? "are sent to" : "are not sent; the server would be", g_configured.c_str());
-    // A first look a little after the start, then again every few minutes
-    // while something is left (the server not reached, a match log to come),
-    // but not during a match: the upload would share the line with it.
     std::thread([] {
         ThreadGuard running;
         auto next = std::chrono::steady_clock::now() + kFirstLook;
         bool first = true;
         while (!Stopping()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            std::this_thread::sleep_for(kWakeEvery);
             if (std::chrono::steady_clock::now() < next || g_match) continue;
             if (first || g_left) Round();
             first = false;
@@ -349,24 +337,24 @@ void InstallReportUploads(const std::wstring& reportDir, const std::string& url,
     }).detach();
 }
 
-void KeepReportLocal(const std::wstring& dir, const std::string& name) { AddName(dir, L"kept.txt", name); }
+void ReportsKeepLocal(const std::wstring& dir, const std::string& name) { AddName(dir, L"kept.txt", name); }
 
-void SetReportUploads(bool on) {
-    NoteRunUploads(on);
+void ReportsSetOn(bool on) {
+    CrashNoteRunUploads(on);
     if (g_on.exchange(on) == on) return;
     Log("reports: desync reports %s", on ? "are sent" : "are not sent");
     if (on) Round();
 }
 
-void SendReadyReports() { Round(); }
+void ReportsSendReady() { Round(); }
 
-void SetMatchRunning(bool running) { g_match = running; }
+void ReportsSetMatchRunning(bool running) { g_match = running; }
 
-bool ReportUploadsOn() { return g_on; }
+bool ReportsOn() { return g_on; }
 
 int ReportsSent() { return g_sent; }
 
-void SetReportUrl(const std::string& url) {
+void ReportsSetUrl(const std::string& url) {
     std::string u = url.empty() ? g_configured : url;
     while (!u.empty() && u.back() == '/') u.pop_back();
     std::lock_guard lock(g_mutex);

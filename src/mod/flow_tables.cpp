@@ -102,7 +102,7 @@ bool FlowIsSelectableStage(int index) {
 int FlowRandomStage(uint64_t roll, bool ownedOnly, const std::vector<std::string>& off) {
     std::vector<RandomStageChoice> stages;
     for (int i = 0; i < FlowStageCount(); i++) {
-        if (!FlowIsSelectableStage(i) || (ownedOnly && !OwnsEntitlement(FlowStageAvailableCode(i)))) continue;
+        if (!FlowIsSelectableStage(i) || (ownedOnly && !EntitlementsOwns(FlowStageAvailableCode(i)))) continue;
         const int base = FlowStageSettingBase(i);
         stages.push_back({i, FlowStageCode(i), base >= 0 ? FlowStageCode(base) : ""});
     }

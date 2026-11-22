@@ -348,7 +348,7 @@ void ReplayDriver::Finish(SfvGame& game) {
     if (stress_ == 0 && keepFrom_ >= 0 && kept_.FrameCount() > 0) {
         kept_.finalThrough = kept_.FrameCount() - 1;
         const std::string stem = name_.substr(0, name_.rfind('.'));
-        const std::string path = Utf8Path(MatchesDir()) + "\\" + stem + "_kept.sfvr";
+        const std::string path = FilesUtf8Path(FilesMatchesDir()) + "\\" + stem + "_kept.sfvr";
         std::string error;
         if (SaveReplay(kept_, path, &error, ReplayDetail::Full)) Log("replay: kept this run as %s", path.c_str());
         else Log("replay: cannot keep this run: %s", error.c_str());
@@ -387,9 +387,9 @@ void ReplayDriver::Finish(SfvGame& game) {
             const std::string name = "benchmark_" + std::to_string(static_cast<long long>(std::time(nullptr))) + "_" + failDumpLabel_ +
                                      "_frame" + std::to_string(failDumpFrame_) + ".sfvr";
             std::string error;
-            if (SaveReplay(d, Utf8Path(LogsDir() + L"\\" + std::wstring(name.begin(), name.end())), &error, ReplayDetail::Full)) {
+            if (SaveReplay(d, FilesUtf8Path(FilesLogsDir() + L"\\" + std::wstring(name.begin(), name.end())), &error, ReplayDetail::Full)) {
                 run.dump = name;
-                PruneOldest(LogsDir(), L"benchmark_*.sfvr", 6);
+                FilesPruneOldest(FilesLogsDir(), L"benchmark_*.sfvr", 6);
                 Log("replay: benchmark state dump %s", name.c_str());
             } else Log("replay: cannot save the benchmark state dump: %s", error.c_str());
             failDump_.clear();

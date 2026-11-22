@@ -71,7 +71,7 @@ void SaveMyCharacter() {
             NetOptions().hasPick = o.hasPick;
             NetOptions().pick = o.pick;
         }
-        if (!g_panelPath.empty()) SaveNetplayChoices(g_panelPath, NetOptions(), o.stageCode);
+        if (!g_panelPath.empty()) ConfigSaveNetplayChoices(g_panelPath, NetOptions(), o.stageCode);
     });
     Log("overlay: my character saved: %s costume %d color %d, stage %s, delay %s", g_tables.charas[c.chara].c_str(), c.costume, c.color,
         o.stageCode.c_str(), delay >= 0 ? std::to_string(delay).c_str() : "auto");
@@ -84,7 +84,7 @@ void SetRandomOff(std::vector<std::string> off, const char* why) {
     Act([list] {
         NetOptions().randomOff = list;
         NetOptions().randomOffSaved = true;
-        if (!g_panelPath.empty()) SaveRandomStagesOff(g_panelPath, list);
+        if (!g_panelPath.empty()) ConfigSaveRandomStagesOff(g_panelPath, list);
     });
     Log("overlay: random stages (%s): leaving out '%s'", why, FormatStageMask(g_randomOff).c_str());
 }

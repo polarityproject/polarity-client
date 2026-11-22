@@ -30,6 +30,6 @@ struct ProfileFavorites {
 
 // Game thread (it walks the object list once, a few ms). False when the
 // main profile is not loaded.
-bool ReadProfileFavorites(ProfileFavorites* out);
+bool ProfileReadFavorites(ProfileFavorites* out);
 
 } // namespace sfv::mod

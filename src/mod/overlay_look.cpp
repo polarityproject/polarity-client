@@ -82,7 +82,7 @@ std::pair<void*, int> EmbeddedFont(int id) {
 const std::vector<uint8_t>& CjkFont() {
     static const std::vector<uint8_t> data = [] {
         std::vector<uint8_t> out;
-        const std::wstring path = DataDir() + L"\\fonts\\NotoSansCJK-Medium.ttc";
+        const std::wstring path = FilesDataDir() + L"\\fonts\\NotoSansCJK-Medium.ttc";
         if (FILE* f = _wfopen(path.c_str(), L"rb")) {
             std::fseek(f, 0, SEEK_END);
             out.resize(static_cast<size_t>(std::max(0L, std::ftell(f))));

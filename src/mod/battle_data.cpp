@@ -137,12 +137,12 @@ std::string ModScan::Short() const {
 const ModScan& ScanModPaks() {
     static const ModScan scan = [] {
         ModScan s;
-        for (const std::wstring& full : OtherPaks()) {
+        for (const std::wstring& full : FilesOtherPaks()) {
             ModPak p;
             const size_t at = full.find(L"\\Content\\Paks\\");
-            p.name = Utf8Path(at == std::wstring::npos ? full : full.substr(at + 14));
+            p.name = FilesUtf8Path(at == std::wstring::npos ? full : full.substr(at + 14));
             PakIndex index;
-            p.readable = ReadPakIndex(Utf8Path(full), &index, &p.error);
+            p.readable = ReadPakIndex(FilesUtf8Path(full), &index, &p.error);
             if (p.readable) {
                 p.files = index.entries.size();
                 std::set<std::string> move, stage;
@@ -220,8 +220,8 @@ DataCheck LastDataCheck() {
 
 void DumpLoadedBattleData() {
     const std::vector<Loaded> loaded = ReadLoaded();
-    const std::wstring dir = ResearchDir();
-    const std::string path = Utf8Path(dir + L"\\battle_data.txt");
+    const std::wstring dir = FilesResearchDir();
+    const std::string path = FilesUtf8Path(dir + L"\\battle_data.txt");
     FILE* f = nullptr;
     _wfopen_s(&f, (dir + L"\\battle_data.txt").c_str(), L"ab");
     for (const Loaded& l : loaded) {

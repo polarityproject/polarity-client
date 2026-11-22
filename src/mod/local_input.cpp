@@ -274,7 +274,7 @@ LRESULT CALLBACK ActiveWndProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         case WM_CLOSE:
         case WM_ENDSESSION:
-            OnQuitting("window closed");
+            CrashOnQuitting("window closed");
             NetLeave();
             break;
         default:

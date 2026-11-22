@@ -170,7 +170,7 @@ std::string FlowVariantLabel(const std::string& code, uint8_t variation);
 struct CostumeSpec {
     std::string name;        // "Battle Outfit 1", "Track Suit", a team's name
     std::vector<int> colors; // sorted
-    // Entitlement codes (entitlements.h, OwnsEntitlement): the character's
+    // Entitlement codes (entitlements.h, EntitlementsOwns): the character's
     // (playable, listed), the costume's, each color's (by color id).
     std::string charaCode, charaVisibleCode, costumeCode;
     std::map<int, std::string> colorCodes;

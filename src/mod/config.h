@@ -58,22 +58,22 @@ struct Config {
 
 // panelPath: the overlay's saved choices (polarity.panel[.N].ini); its
 // [netplay] keys override the main file's.
-Config LoadConfig(const std::wstring& path, const std::wstring& dllDir, const std::wstring& panelPath = L"");
+Config ConfigLoad(const std::wstring& path, const std::wstring& dllDir, const std::wstring& panelPath = L"");
 // Writes the player's choices (pick, stage, delay, prediction window, name,
 // spectators allowed, own frame rate shown) to the overlay's file. `stage`: a code, "random" or "" (as prepared).
-void SaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const std::string& stage);
+void ConfigSaveNetplayChoices(const std::wstring& path, const NetplayOptions& n, const std::string& stage);
 // My character's Random stages (`random_stages_off`, core/random_stage.h)
-// into the overlay's file, nothing else (SaveNetplayChoices leaves the key
+// into the overlay's file, nothing else (ConfigSaveNetplayChoices leaves the key
 // alone: only the list's own changes write it).
-void SaveRandomStagesOff(const std::wstring& path, const std::vector<std::string>& off);
-// Each character's loadout as last saved with it (SaveNetplayChoices keeps the
+void ConfigSaveRandomStagesOff(const std::wstring& path, const std::vector<std::string>& off);
+// Each character's loadout as last saved with it (ConfigSaveNetplayChoices keeps the
 // pick's in [loadouts] of the overlay's file), by character code.
-std::map<std::string, PlayerSetup> ReadLoadouts(const std::wstring& path);
-const char* ModeName(Mode mode);
-// polarity.ini as LoadConfig read it, and one value written into it
+std::map<std::string, PlayerSetup> ConfigReadLoadouts(const std::wstring& path);
+const char* ConfigModeName(Mode mode);
+// polarity.ini as ConfigLoad read it, and one value written into it
 // (Polarity settings' Check at start and At start).
-std::wstring MainIniPath();
-void SaveMainIni(const wchar_t* section, const wchar_t* key, int value);
-int ReadMainIni(const wchar_t* section, const wchar_t* key, int fallback);
+std::wstring ConfigMainIniPath();
+void ConfigSaveMainIni(const wchar_t* section, const wchar_t* key, int value);
+int ConfigReadMainIni(const wchar_t* section, const wchar_t* key, int fallback);
 
 } // namespace sfv::mod

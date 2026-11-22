@@ -150,7 +150,7 @@ void Collect(SfvGame& game, std::vector<WorldBox>& boxes) {
 
 int ReadChoice(std::atomic<int>& cache, const wchar_t* key, int fallback) {
     int v = cache;
-    if (v < 0) cache = v = ReadMainIni(L"hitboxes", key, fallback) ? 1 : 0;
+    if (v < 0) cache = v = ConfigReadMainIni(L"hitboxes", key, fallback) ? 1 : 0;
     return v;
 }
 
@@ -162,12 +162,12 @@ bool HitboxesInReplays() { return ReadChoice(g_replays, L"replays", 0) != 0; }
 
 void HitboxesSetInTraining(bool on) {
     g_training = on ? 1 : 0;
-    SaveMainIni(L"hitboxes", L"training", on ? 1 : 0);
+    ConfigSaveMainIni(L"hitboxes", L"training", on ? 1 : 0);
 }
 
 void HitboxesSetInReplays(bool on) {
     g_replays = on ? 1 : 0;
-    SaveMainIni(L"hitboxes", L"replays", on ? 1 : 0);
+    ConfigSaveMainIni(L"hitboxes", L"replays", on ? 1 : 0);
 }
 
 void HitboxesSetForced(bool on) {

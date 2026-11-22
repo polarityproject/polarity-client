@@ -17,14 +17,14 @@
 //
 // On with [mod] steam_entitlements=1 (the default). The list the profile
 // loaded is kept either way: the mod's own screens offer what it owns
-// (OwnsEntitlement), as the game's menus do.
+// (EntitlementsOwns), as the game's menus do.
 
 #include <cstdint>
 #include <string>
 
 namespace sfv::mod {
 
-void InstallEntitlements(uintptr_t imageBase, const std::wstring& iniPath);
+void EntitlementsInstall(uintptr_t imageBase, const std::wstring& iniPath);
 
 // Whether the profile owns the content behind an entitlement code the way the
 // game's own menus decide it: the code is in the list the profile loaded
@@ -32,8 +32,8 @@ void InstallEntitlements(uintptr_t imageBase, const std::wstring& iniPath);
 // An empty code is always owned. Until a profile has loaded, or when its list could not be
 // read, everything counts as owned (the mod's screens then stay open). Any
 // thread.
-bool OwnsEntitlement(const std::string& code);
-// True once a profile's list was read (OwnsEntitlement then answers for it).
+bool EntitlementsOwns(const std::string& code);
+// True once a profile's list was read (EntitlementsOwns then answers for it).
 bool EntitlementsKnown();
 
 } // namespace sfv::mod

@@ -66,6 +66,28 @@ the key means a new one and a build that players install by hand.
    the new build takes over when the game restarts. Polarity offers to
    restart it. The next start deletes the `.old` files.
 
+With checks at start on, the client checks again every 15 minutes while the
+game runs, so a release made while someone plays reaches them too (rooms
+then ask for it).
+
+Nothing in `update.json` counts until its signature checks out. An install
+downloads only the files that differ from the game folder's copies, so the
+bundled font (18 MB), which rarely changes, isn't downloaded again. Files
+are staged flat in `Polarity\update\`; each one's place under the game
+folder comes from its path (`Polarity/fonts/x.ttc`, or the old site's
+`SFVR/fonts/x.ttc`, goes to `Polarity\fonts\x.ttc`). When the version is the
+one running but a data file is missing from the game folder (an updater
+before 0.3.0 installed without `more_files`), that file alone is installed
+at once. Files that are there stay, so a build being worked on keeps its
+own. A start also removes what an earlier update left: the replaced files
+and the staging folder of a download that didn't finish.
+
+The restart runs the same command line, with Steam's arguments, in this
+process's environment, which has Steam's app id, so the game doesn't
+relaunch through Steam. The new process gets the pid to wait for under two
+names: `SFVR_WAIT_PID` is for a loader from before Polarity that an update
+could not replace.
+
 Players on different versions can't play each other. Custom rooms list only
 rooms of the player's own version, and a room joined by code from another
 version is left at once.
