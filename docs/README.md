@@ -8,6 +8,7 @@
 | [overlay.md](overlay.md) | the mod's screens: drawing into the game's frames, input, the hub and rooms |
 | [local-input.md](local-input.md) | how the game reads the local input; virtual pads, the pause filter and the game's window |
 | [battle-driver.md](battle-driver.md) | the battle's frame loop under a driver: random state, the job order, sounds |
+| [snapshot.md](snapshot.md) | the game state the mod saves and loads: its regions, what it adds, what it masks |
 | [flow.md](flow.md) | the game's scenes, battles and tables as the mod follows and drives them |
 | [desync-replays.md](desync-replays.md) | match recordings (`.sfvr`), desync reports, the `polarity` tool, replaying a recording in the game |
 | [keeper.md](keeper.md) | polarity-keeper: rooms, the public list, tables, spectator relays |

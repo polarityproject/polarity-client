@@ -179,7 +179,7 @@ void RfindCommand(const std::string&, std::stringstream& ss) {
 void WarmupsleepCommand(const std::string&, std::stringstream& ss) {
     int ms = 0;
     ss >> ms;
-    SetWarmupSleep(ms);
+    GameSetWarmupSleep(ms);
     Log("control: warm-up ticks wait %d ms", ms);
 }
 
@@ -187,10 +187,10 @@ void WatchcameraCommand(const std::string&, std::stringstream& ss) {
     std::string when;
     ss >> when;
     if (when == "new") {
-        WatchNextCamera();
+        GameWatchNextCamera();
         Log("control: the next battle camera is watched from its construction");
     } else {
-        WatchCameraAtFreeze();
+        GameWatchCameraAtFreeze();
         Log("control: the camera is watched from the next freeze");
     }
 }
@@ -203,7 +203,7 @@ void EmptystageCommand(const std::string&, std::stringstream&) {
 void WarmupextraCommand(const std::string&, std::stringstream& ss) {
     int n = 0;
     ss >> n;
-    SetWarmupExtra(n);
+    GameSetWarmupExtra(n);
     Log("control: %d warm-up ticks after the objects", n);
 }
 
@@ -273,14 +273,14 @@ void SoundrollbackCommand(const std::string&, std::stringstream& ss) {
 void FrameidsCommand(const std::string&, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    SetGameFrameIds(on != 0);
+    GameSetFrameIds(on != 0);
     Log("restore: callbacks get %s frame id", on ? "the game's" : "the mod's old");
 }
 
 void LeanresimCommand(const std::string&, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    SetLeanResim(on != 0);
+    GameSetLeanResim(on != 0);
     FlowSetResimTaskSkip(on ? FlowDefaultLeanResimTasks() : std::vector<uintptr_t>{});
     Log("resim: replayed ticks %s", on ? "without presentation the newest tick makes up for" : "each a whole battle update");
 }
@@ -345,7 +345,7 @@ void WatchregionCommand(const std::string&, std::stringstream& ss) {
     size_t offset = 0;
     int bytes = 8;
     ss >> name >> std::hex >> offset >> std::dec >> bytes;
-    WatchRegionOfNextBattle(name, offset, bytes);
+    GameWatchRegionOfNextBattle(name, offset, bytes);
 }
 
 void RoundinfoCommand(const std::string&, std::stringstream&) {
@@ -405,7 +405,7 @@ void SkipcallbacksCommand(const std::string&, std::stringstream& ss) {
         if (slash == std::string::npos) continue;
         keys.push_back(std::stoull(word.substr(0, slash), nullptr, 16) << 32 | std::stoull(word.substr(slash + 1), nullptr, 16));
     }
-    SetSkippedLoadCallbacks(std::move(keys));
+    GameSetSkippedLoadCallbacks(std::move(keys));
 }
 
 constexpr Command kCommands[] = {

@@ -258,6 +258,8 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/image.cpp
     src/mod/probes.cpp
     src/mod/sfv_game.cpp
+    src/mod/sfv_game_camera.cpp
+    src/mod/sfv_game_regions.cpp
     src/mod/status.cpp
     src/mod/replay_checks.cpp
     src/mod/replay_driver.cpp

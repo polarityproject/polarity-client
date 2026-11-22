@@ -88,10 +88,10 @@ struct NetplayOptions {
     int maxDumps = 24;                  // ... at most this many
     bool fullRecordings = false;        // recordings keep every frame's region hashes, not only around desyncs (testing)
     bool skipSaves = true;              // saves that can never be loaded skip their copy (netplay.h)
-    bool skipLoadCallbacks = true;      // loads leave out the costliest game callbacks (DefaultSkippedLoadCallbacks)
+    bool skipLoadCallbacks = true;      // loads leave out the costliest game callbacks (GameDefaultSkippedLoadCallbacks)
     bool verifyLoads = true;            // loads checked against their save's checksum (netplay.h)
     unsigned int verifyLoadsEvery = 16; // ... every this many loads (1: all)
-    bool leanResim = true;              // replayed ticks without presentation work (sfv_game.h SetLeanResim)
+    bool leanResim = true;              // replayed ticks without presentation work (sfv_game.h GameSetLeanResim)
     bool cameraRollback = true;         // camera views follow rollbacks (camera_rollback.h)
     bool hashOnConfirm = true;          // frames on predicted inputs hashed once confirmed (NetplayConfig)
     bool menuAfterMatch = true;         // back to the main menu when a session ends or on leave

@@ -30,7 +30,7 @@ namespace sfv::mod {
 
 // True for a value that is an address in use in this process (heap, image):
 // the AddressTest for state hashing (core/state.h).
-bool LooksLikeAddress(uint64_t value);
+bool GameLooksLikeAddress(uint64_t value);
 
 // Which 8-byte words of each region hold pointers. Learned from local matches
 // by mode=learn_statemap and shipped with the mod, so every peer masks the
@@ -50,38 +50,38 @@ struct StateMap {
 
 // Diagnostics: a write watch on a region (by its canonical name, "s884.0") of
 // the next battle, from the moment its region list is built.
-void WatchRegionOfNextBattle(const std::string& name, size_t offset, int length);
-void ArmPendingRegionWatch(const std::vector<StateRegion>& regions, uintptr_t imageBase);
+void GameWatchRegionOfNextBattle(const std::string& name, size_t offset, int length);
+void GameArmPendingRegionWatch(const std::vector<StateRegion>& regions, uintptr_t imageBase);
 
 // Game callbacks a load does not run, by key (thunk rva << 32 | the rva of
 // the function its context names), as the load cost lines print them. Empty:
 // all run. Set at start from [netplay] skip_load_callbacks; `skipcallbacks`
 // changes it (research).
-void SetSkippedLoadCallbacks(std::vector<uint64_t> keys);
+void GameSetSkippedLoadCallbacks(std::vector<uint64_t> keys);
 // The callbacks loads leave out by default ([netplay] skip_load_callbacks).
-std::vector<uint64_t> DefaultSkippedLoadCallbacks();
+std::vector<uint64_t> GameDefaultSkippedLoadCallbacks();
 
 // Test (`warmupsleep <ms>`): each neutral warm-up tick before the battle's
 // objects exist waits this long first, so a game reaches them after more
 // ticks (a slower PC's warm-up; 0 off).
-void SetWarmupSleep(int ms);
+void GameSetWarmupSleep(int ms);
 // The frame id the game's restore callbacks get: the game's own (InputUnit
 // +0x217C, +0x2180; on by default) or the mod's old {frame, 0x5346}.
-void SetGameFrameIds(bool on);
+void GameSetFrameIds(bool on);
 // Replayed ticks without presentation work the newest tick makes up for
 // (on by default; [netplay] lean_resim): BattleFrame::Update's parts
 // without scheduler phase 8 and some phase-4 tasks (flow_tasks.cpp
 // kLeanResimTasks). Off: every tick is a whole BattleFrame::Update.
-void SetLeanResim(bool on);
-bool LeanResimOn();
+void GameSetLeanResim(bool on);
+bool GameLeanResimOn();
 // Test (`warmupextra <n>`): n more neutral ticks once the objects exist (as
 // the camera wait runs them), to see what they do to a session.
-void SetWarmupExtra(int ticks);
+void GameSetWarmupExtra(int ticks);
 // `watchcamera`: SfvGame::WatchCameraIfAsked at the next freeze.
-void WatchCameraAtFreeze();
+void GameWatchCameraAtFreeze();
 // `watchcamera new`: write watches on the next battle camera from its
 // constructor (rva 0x3C72A0) on, to see what sets it up.
-void WatchNextCamera();
+void GameWatchNextCamera();
 
 class SfvGame : public IGame {
 public:
@@ -305,7 +305,7 @@ private:
     bool IsEffectRegion(const StateRegion& r) const;
     void RunPostRestoreCallbacks(const game::FrameId& gameId, const game::FrameId& oldId);
     void LatchInputs(); // InputUnit::LatchFrame, after a tick or a load
-    // One battle tick: a whole BattleFrame::Update, or for a replayed tick its parts (SetLeanResim).
+    // One battle tick: a whole BattleFrame::Update, or for a replayed tick its parts (GameSetLeanResim).
     void RunBattleTick(bool replayed);
 
     struct ProbeCapture {

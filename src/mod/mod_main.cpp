@@ -173,8 +173,8 @@ DWORD WINAPI ModMain(LPVOID self) {
     InstallCameraRollback(image);
     InstallHudStep(image);
     SetCameraRollback(config.netplay.cameraRollback);
-    if (config.netplay.skipLoadCallbacks) SetSkippedLoadCallbacks(DefaultSkippedLoadCallbacks());
-    SetLeanResim(config.netplay.leanResim);
+    if (config.netplay.skipLoadCallbacks) GameSetSkippedLoadCallbacks(GameDefaultSkippedLoadCallbacks());
+    GameSetLeanResim(config.netplay.leanResim);
     if (!config.netplay.leanResim) FlowSetResimTaskSkip({});
     NetInstall(&game, config.reportDir, kModVersion, config.netplay);
     WeyveService::SetHideCountry(!config.netplay.shareCountry);
