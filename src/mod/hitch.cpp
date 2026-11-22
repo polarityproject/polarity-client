@@ -63,9 +63,11 @@ void AddTick(bool replayed) {
     if (replayed) g_replayed.fetch_add(1, std::memory_order_relaxed);
 }
 
+namespace {
 std::atomic<bool> g_capturing{false};
 std::mutex g_captureMutex;
 std::vector<CapturedFrame> g_captured;
+} // namespace
 
 void BeginCapture() {
     std::lock_guard lock(g_captureMutex);

@@ -24,6 +24,10 @@
 
 namespace sfv::mod::ui {
 
+bool g_drawing = true;
+
+namespace {
+
 std::mutex g_texMutex;
 std::map<std::string, TextureView> g_textures;
 std::set<std::string> g_requested;
@@ -37,7 +41,6 @@ struct TexRetry {
 };
 
 std::vector<TexRetry> g_texRetries;
-bool g_drawing = true;
 constexpr int64_t kFadeInMs = 150;
 std::map<std::string, int> g_texTries;
 constexpr int kTextureTries = 6;
@@ -104,6 +107,8 @@ void LoadTextures() {
     }
     FlowRunOnGameThread(LoadTextures);
 }
+
+} // namespace
 
 const TextureView* Texture(const std::string& path) {
     bool failed = false;
@@ -197,7 +202,9 @@ uint32_t MappedPadKeys(int vk) {
     return bits;
 }
 
+namespace {
 ImGuiKey g_clickKey = ImGuiKey_None, g_clickNext = ImGuiKey_None;
+} // namespace
 
 void ClickPad(ImGuiKey key) { g_clickNext = key; }
 

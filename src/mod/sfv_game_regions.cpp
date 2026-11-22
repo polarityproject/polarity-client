@@ -142,9 +142,11 @@ void GameWatchRegionOfNextBattle(const std::string& name, size_t offset, int len
     Log("watch: armed for region %s +0x%zx (%d bytes) in the next region list", name.c_str(), offset, length);
 }
 
+namespace {
 bool IsPoolWatch() { return g_regionWatchName.size() > 2 && g_regionWatchName.compare(g_regionWatchName.size() - 2, 2, ".*") == 0; }
 
 std::map<const uint8_t*, std::vector<uint8_t>> g_poolWatchSeen;
+} // namespace
 
 void GameCheckChangeWatch(const std::vector<StateRegion>& regions, uintptr_t imageBase) {
     std::lock_guard lock(g_regionWatchMutex);
@@ -197,11 +199,15 @@ constexpr size_t kCameraRegionSize = 528, kCameraRegionAt = 0x100, kCameraPartAt
 constexpr size_t kCameraShakeAt = 0x310, kCameraShakeSize = 0x10;
 constexpr size_t kCameraShakeFieldsAt = 0x2E0;
 
+namespace {
+
 bool IsBattleCamera(const uint8_t* camera, uintptr_t imageBase) {
     return IsReadable(camera + kCameraPartAt, 8) &&
            *reinterpret_cast<const uintptr_t*>(camera + kCameraPartAt) == imageBase + kCameraPartVtable &&
            IsReadable(camera + kCameraShakeAt, kCameraShakeSize);
 }
+
+} // namespace
 
 constexpr uint32_t kVitalityOwnerVtable = 0x2C51718;
 constexpr size_t kVitalityRegionSize = 372, kVitalityRegionAt = 0xC0, kVitalityOwnerAt = 0xB0;

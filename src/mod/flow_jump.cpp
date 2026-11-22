@@ -56,11 +56,15 @@ std::string FlowJumpStageCode() {
     return g_jumpStage;
 }
 
+namespace {
+
 std::atomic<int> g_jumpGeneration{0};
 
 std::atomic<int> g_jumpRetries{0};
 
 constexpr int kJumpRetries = 5;
+
+} // namespace
 
 void FlowCancelBattleJump() {
     g_jumpGeneration++;

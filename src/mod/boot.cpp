@@ -180,6 +180,8 @@ void BootGoOfflineFromTitle() {
     FlowRunOnGameThreadAfter(1, [] { OfflineAtLoginStep(nullptr, 0); });
 }
 
+namespace {
+
 using InFreePlayPeriodFn = bool (*)(void* info);
 InFreePlayPeriodFn g_origInFreePlayPeriod = nullptr;
 std::atomic<int> g_freePlayAnswer{-1};
@@ -202,6 +204,8 @@ bool InFreePlayPeriodDetour(void* info) {
     }
     return true;
 }
+
+} // namespace
 
 void BootSetFreePlayGuard(const std::string& mode) {
     g_freePlay = mode == "off" ? FreePlay::Game : mode == "fail" ? FreePlay::Fail

@@ -13,6 +13,7 @@
 #include "mod/config.h"
 #include "mod/control.h"
 #include "mod/local_input.h"
+#include "mod/mod_main.h"
 #include "mod/crash_report.h"
 #include "mod/flow.h"
 #include "mod/overlay.h"

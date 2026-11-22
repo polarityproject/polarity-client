@@ -7,15 +7,12 @@
 #include "mod/lifecycle.h"
 #include "mod/log.h"
 #include "mod/netplay_driver.h"
+#include "mod/mod_main.h"
 #include "mod/overlay.h"
 #include "mod/watch.h"
 
 #include <MinHook.h>
 #include <windows.h>
-
-namespace sfv::mod {
-DWORD WINAPI ModMain(LPVOID self);
-}
 
 namespace {
 

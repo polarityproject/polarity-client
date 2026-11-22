@@ -263,6 +263,8 @@ namespace sfv::mod {
 
 using namespace overlay;
 
+namespace {
+
 HWND GameWindow() {
     HWND found = nullptr;
     EnumWindows(
@@ -291,6 +293,8 @@ void InstallPresentHooks() {
                     MH_EnableHook(g_presentTarget) == MH_OK && MH_EnableHook(g_resizeTarget) == MH_OK;
     Log("overlay %s (F1 or Back + Start)", ok ? "installed" : "NOT installed");
 }
+
+} // namespace
 
 bool OverlayInstall(const std::wstring& panelPath) {
     g_panelPath = panelPath;

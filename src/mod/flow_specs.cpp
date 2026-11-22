@@ -138,9 +138,9 @@ void ReadLoungeComments() {
     Log("flow: %zu Battle Lounge comments (room titles)", g_comments.size());
 }
 
-} // namespace
-
 std::atomic<bool> g_commentsReading{false};
+
+} // namespace
 
 std::string FlowLoungeCommentText(int id) {
     {
