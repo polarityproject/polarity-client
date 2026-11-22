@@ -535,7 +535,7 @@ void RviewCommand(const std::string&, std::stringstream& ss) {
         ReplaySetExperiment(what, arg != 0);
         return;
     }
-    if (what == "callpace" || what == "callafter") {
+    if (what == "callpace" || what == "callafter" || what == "runticks") {
         ReplaySetExperimentValue(what, arg);
         return;
     }

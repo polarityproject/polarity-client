@@ -154,7 +154,13 @@ The controls (pad buttons; the stripe shows them):
   start.
 
 A run behind the black that passes a round's end waits until the KO
-screen, which plays in real time, is over. The game-thread queue does not
+screen, which plays in real time, is over. A run takes at most 16 ticks per
+rendered frame. With 32 or more, a round jump on the Steam Deck parted from
+the recording from one point of a fight on (the camera, the fighters' effect
+lists and their simulation objects); 24 still matched. Lean ticks, the
+camera rollback and the sound rollback are not the cause: with each turned
+off it still parted. Which part of the game's once-a-frame work falls behind
+is not known. The game-thread queue does not
 run during a driven fight, so the driver runs it itself.
 
 The HUD's banners and timer are movies that advance once per rendered

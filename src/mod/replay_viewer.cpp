@@ -122,6 +122,8 @@ bool ReplayDriver::ViewerFrame(SfvGame& game) {
         return false;
     }
     const int runFrom = frame_;
+    int ran = 0;
+    const auto room = [&] { return g_runTicks <= 0 || ran++ < g_runTicks; };
     const auto koScreenOver = [&] {
         if (GetTickCount64() < koHoldUntil_) return false;
         const int pace = g_callPace;
@@ -131,7 +133,7 @@ bool ReplayDriver::ViewerFrame(SfvGame& game) {
     };
     if (target_ >= 0) {
         const ULONGLONG until = GetTickCount64() + 40;
-        while (frame_ < target_ - 1 && frame_ <= last_ && GetTickCount64() < until && koScreenOver()) {
+        while (frame_ < target_ - 1 && frame_ <= last_ && GetTickCount64() < until && koScreenOver() && room()) {
             Simulate(game, frame_ < target_ - 1 - warm_);
         }
         if ((frame_ >= target_ - 1 || frame_ > last_) && koScreenOver()) {
@@ -143,7 +145,7 @@ bool ReplayDriver::ViewerFrame(SfvGame& game) {
         }
     } else if (runToFight_ >= 0) {
         const ULONGLONG until = GetTickCount64() + 40;
-        while (!wasFight_ && frame_ <= last_ && GetTickCount64() < until && koScreenOver() && !FlowMatchDecided()) Simulate(game, true);
+        while (!wasFight_ && frame_ <= last_ && GetTickCount64() < until && koScreenOver() && !FlowMatchDecided() && room()) Simulate(game, true);
         if (wasFight_ || frame_ > last_ || FlowMatchDecided()) {
             const int target = std::exchange(runToFight_, -1);
             if (wasFight_) Seek(game, target);
@@ -155,7 +157,7 @@ bool ReplayDriver::ViewerFrame(SfvGame& game) {
         }
     } else if (findRound_) {
         const ULONGLONG until = GetTickCount64() + 40;
-        while (findRound_ && frame_ <= last_ && GetTickCount64() < until && koScreenOver() && !holdUntil_) {
+        while (findRound_ && frame_ <= last_ && GetTickCount64() < until && koScreenOver() && !holdUntil_ && room()) {
             const size_t known = roundCalls_.size();
             const size_t soundMark = BattleSoundCaptureMark();
             Simulate(game, true);

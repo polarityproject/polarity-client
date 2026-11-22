@@ -75,7 +75,9 @@ inline std::atomic<bool> g_callKeys{true}, g_crossRounds{false}, g_anyKeys{false
 
 inline std::atomic<bool> g_skipIntro{true};
 
-inline std::atomic<int> g_callPace{0}, g_callAfter{90};
+// A run behind the black takes at most this many ticks per rendered frame (docs/replays.md); 0: no cap.
+constexpr int kRunTicksPerFrame = 16;
+inline std::atomic<int> g_callPace{0}, g_callAfter{90}, g_runTicks{kRunTicksPerFrame};
 
 inline std::atomic<int> g_latch{-1}; // `latch tick|game`: the pad latch the next replay uses (-1: by recording)
 

@@ -150,6 +150,7 @@ bool ReplayRequestBenchmark(const std::string& path) {
 void ReplaySetExperimentValue(const std::string& what, int value) {
     if (what == "callpace") g_callPace = value;
     else if (what == "callafter") g_callAfter = value;
+    else if (what == "runticks") g_runTicks = value;
     Log("rview: %s %d", what.c_str(), value);
 }
 

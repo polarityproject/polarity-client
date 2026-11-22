@@ -86,6 +86,7 @@ are ready at once, and the player is named "Player <instance + 1>" unless
 | `replay view <file> [hold <frame> <seconds>]` | the Battle Log's playback of a recording (`rview` controls it) |
 | `replay <file> [stress <distance>] [watch <from> <to> <region>] [keep <from> <to>] [cold] [trap <frame> <region> <hex offset> <bytes>]... [hold <frame> <seconds>] [mispredict <delay> [remote 1\|2]] [latch tick\|game]`, `replay stop` | plays a recording back in the game ([desync-replays.md](desync-replays.md)) |
 | `rview pause \| play \| toggle \| step <n> \| seek <frame> \| round <1\|-1> \| fast <n> \| leave \| status` | the viewed replay's controls |
+| `rview runticks <n>` | research: a run's ticks per rendered frame at most (default 16; 0: no cap) |
 | `benchmark`, `benchmark dump <frame>\|off`, `benchmark file <path>` | the built-in round under rollback stress 8, as Settings starts it; with `dump`, runs save that frame's state |
 | `update [check [url]] \| install \| pretend <version> \| restart` | the updater (updater.h) |
 | `reports [send] [url <address>]` | desync report uploads (report_upload.h) |
