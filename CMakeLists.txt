@@ -296,6 +296,8 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/battle_data.cpp
     src/mod/rooms_screen.cpp
     src/mod/room_screen.cpp
+    src/mod/room_modals.cpp
+    src/mod/room_parts.cpp
     src/mod/watch_chat.cpp
     src/mod/watch_panel.cpp
     src/mod/fight_ui.cpp

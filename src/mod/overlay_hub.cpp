@@ -583,7 +583,7 @@ void DrawHubScreens(bool takeInput) {
     const CardPick tablePick = TablePick(o, live.offlineChara);
     if (tablePick.editable) RoomsSetSkills(tablePick.vskill, tablePick.vtrigger);
     else RoomsSetSkills(0, 0);
-    SetCardPick(tablePick);
+    RoomSetCardPick(tablePick);
     live.myChara = tablePick.chara.empty() ? live.offlineChara : tablePick.chara;
     live.myStage = live.offlineStage;
     for (size_t i = 0; i < g_tables.stages.size(); i++) {
@@ -650,9 +650,9 @@ void DrawHubScreens(bool takeInput) {
     if (rooms.state == S::Room) {
         if (roomShown != rooms.room) {
             roomShown = rooms.room;
-            ResetRoomScreen();
+            RoomReset();
             OpenRoomsScreen();
-            if (!g_createRules.empty() && rooms.owner == rooms.self) QueueTableRules(g_createRules);
+            if (!g_createRules.empty() && rooms.owner == rooms.self) RoomQueueTableRules(g_createRules);
             g_createRules.clear();
         }
         unsigned opponentPing = 0;
@@ -664,18 +664,18 @@ void DrawHubScreens(bool takeInput) {
                 }
             }
         }
-        SetCardDelay(NetPreferredDelay(opponentPing));
+        RoomSetCardDelay(NetPreferredDelay(opponentPing));
         static bool namesSet = false;
         if (!namesSet && g_tables.loaded) {
             namesSet = true;
             std::vector<std::pair<std::string, std::string>> names;
             for (size_t i = 0; i < g_tables.charas.size() && i < g_tables.labels.size(); i++) names.push_back({g_tables.charas[i], g_tables.labels[i]});
-            SetCharaNames(std::move(names));
+            RoomSetCharaNames(std::move(names));
             std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::string>>> skills;
             for (size_t i = 0; i < g_tables.charas.size() && i < g_tables.vskills.size() && i < g_tables.vtriggers.size(); i++) {
                 skills[g_tables.charas[i]] = {g_tables.vskills[i], g_tables.vtriggers[i]};
             }
-            SetSkillNames(std::move(skills));
+            RoomSetSkillNames(std::move(skills));
         }
         RoomScreenInput in;
         {
@@ -693,9 +693,9 @@ void DrawHubScreens(bool takeInput) {
             h.preloaded[1] = h.linked && nv.seats[1].preloaded;
             h.jumping = h.session && (nv.phase == P::Jumping || nv.phase == P::Loading || nv.phase == P::Running);
             h.played = h.session ? nv.played : 0;
-            SetTableHandoff(h);
+            RoomSetTableHandoff(h);
         }
-        if (!g_myCharacterOpen) DrawRoomScreen(fonts, rooms, takeInput, &in);
+        if (!g_myCharacterOpen) RoomDrawScreen(fonts, rooms, takeInput, &in);
         if (in.cancelHandoff) {
             RoomsCancelHandoff();
             Log("overlay: the connecting modal's Cancel");

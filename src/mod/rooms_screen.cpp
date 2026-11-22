@@ -535,7 +535,7 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     int barClick = -1;
     if (g.rulesOpen && (busy || g.focus != kCreate)) g.rulesOpen = false;
     if (g.rulesOpen) {
-        StepTableRules(g.rules);
+        RoomStepTableRules(g.rules);
     } else if (!busy) {
         if (!g.inPanel) {
             if (Up()) g.focus = g.focus == kCode ? kCreate : g.focus == 0 ? kCode
@@ -722,7 +722,7 @@ void DrawRoomsScreen(const HubFonts& f, const RoomsView& v, bool takeInput, Room
     if (g.rulesOpen) {
         int clicked = -1;
         const PromptList modalPrompts = {{"button_a", "Done"}, {"button_b", "Cancel"}};
-        DrawTableRules(f, g.rules, "NEW ROOM", "Players see these when they browse rooms.", kSoft, modalPrompts, &clicked);
+        RoomDrawTableRules(f, g.rules, "NEW ROOM", "Players see these when they browse rooms.", kSoft, modalPrompts, &clicked);
         if (Confirm() || Pressed({ImGuiKey_GamepadStart}, false)) g.rulesOpen = false;
         else if (Back()) {
             g.rules.rules = g.rulesBefore;

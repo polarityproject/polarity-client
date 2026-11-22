@@ -183,6 +183,58 @@ with its loadout and the profile's stage. Its Random stages list is kept
 apart from the pick and saved once the player has one. Its loading bar runs
 on the time a character takes, since the asset queue gives no progress.
 
+## The room screen
+
+A room's screen (`room_*.cpp`) shows its tables on the left, four in
+view, and the players and chat on the right. The table that has the focus
+has a gold strip. Each table shows its rules and how many wait in its queue,
+not counting watchers. The seats show each player's character facing the
+score, opaque over the face and fading out only in the art's last quarter.
+On the focused open table, the seat A would take reads "Sit here as P1" (or
+P2).
+
+The player list has eight rows: this player first, then the others, oldest
+first. Each row's character art is moved so the face lands clear of the
+name, by a face point marked by hand for each character. A row shows the
+player's activity, their ping colored by the delay it suggests (a cloud when
+it goes through a relay), and their connection. Muting a player hides their
+chat for this player only.
+
+The chat's newest line is at the bottom. Scrolled up, new lines do not move
+the view, and a chip says how many wait below. Someone else's line plays the
+chat sound, unless they are muted, and the joined and left lines play the
+room's sounds. Lines already there when the room opened play none. With the
+word filter on, chat shows the masked names and starred text. Enter starts
+typing when the game's keys leave it free (by default it is Start). On a
+pad, Back + Y starts typing; on a Steam Deck, Steam + X brings up the
+keyboard. Back alone, released without Y, copies the room's code, as Ctrl+C
+does.
+
+The your-turn card comes up with each call of this player's table, and a
+call of the same two again is a new card. Ready stands as the keeper has
+it. The card has the V-Skill, V-Trigger and input delay for the match; the
+opponent's choices show gold for a moment when they change. Its timer is
+the keeper's call less 1.5 s for the trip to the keeper, counted from when
+the call first showed here, even while this game was still coming back from
+a battle. The last five seconds tick until this player is ready. A player
+who runs out of time goes to the back of the queue.
+
+From both players' Ready to the match loading, the connecting modal lists
+the steps: both ready, the match set up, connected (with the ping),
+characters loaded, starting the match. A step in progress for 3 s or more
+shows its seconds. Cancel works until the match loads, and only before the
+set's first game.
+
+The owner sets the table rules (Start), which apply from each table's next
+set; changed tables are sent one a frame. The creation form's rules go once
+the keeper is in the room to take them. The owner can also remove a player
+(X on the player). The leave dialog says what leaving does: this player's
+place at a table is lost, and the longest present after them becomes the
+owner, or the room closes if they are the last. While the room has no keeper
+it is paused: the tables are on hold until the rooms server reconnects, and
+chat still works. Training (LB) fills the wait while this player is seated
+or queued with no set on.
+
 ## The select screen
 
 The select screen draws the game's character select its own way, with the

@@ -205,7 +205,7 @@ void RoomsCommand(const std::string&, std::stringstream& ss) {
     } else if (what == "mute") {
         uint32_t id = 0;
         ss >> id;
-        ToggleMuteForTest(id);
+        RoomToggleMuteForTest(id);
     } else if (what == "chat") {
         std::string text;
         std::getline(ss, text);

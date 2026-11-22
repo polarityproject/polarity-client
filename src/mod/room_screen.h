@@ -62,16 +62,16 @@ struct TableRulesEditor {
 
 // One frame's input: LB and RB the table, up and down the row, left and
 // right its value. Render thread, inside an ImGui frame.
-void StepTableRules(TableRulesEditor& e);
+void RoomStepTableRules(TableRulesEditor& e);
 // The modal: "Table rules" under `kicker`, `hint` (in `hintCol`) above its
 // prompts; a clicked prompt's index in `clicked`.
-void DrawTableRules(const HubFonts& f, const TableRulesEditor& e, const char* kicker, const std::string& hint, ImU32 hintCol,
-                    const std::vector<std::pair<const char*, std::string>>& prompts, int* clicked);
+void RoomDrawTableRules(const HubFonts& f, const TableRulesEditor& e, const char* kicker, const std::string& hint, ImU32 hintCol,
+                        const std::vector<std::pair<const char*, std::string>>& prompts, int* clicked);
 
 // A new room's owner: the rules the creation form set (FormatRules, one a
 // table), sent to the keeper once it is in the room (call after
-// ResetRoomScreen; tables left at the defaults are not sent).
-void QueueTableRules(const std::vector<std::string>& rules);
+// RoomReset; tables left at the defaults are not sent).
+void RoomQueueTableRules(const std::vector<std::string>& rules);
 
 // What this player plays at the tables, for the your-turn card's V-Skill and
 // V-Trigger rows: the character, its V-Skill and V-Trigger (from 1); not
@@ -82,9 +82,9 @@ struct CardPick {
     bool editable = false;
 };
 
-void SetCardPick(const CardPick& pick);
+void RoomSetCardPick(const CardPick& pick);
 // Each character's V-Skill and V-Trigger names (the game's), by code.
-void SetSkillNames(std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::string>>> names);
+void RoomSetSkillNames(std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::string>>> names);
 
 // This player's table session as the overlay sees it (NetView), for the
 // connecting modal.
@@ -99,19 +99,19 @@ struct TableHandoff {
     int played = 0;         // games of the set played so far
 };
 
-void SetTableHandoff(const TableHandoff& handoff);
+void RoomSetTableHandoff(const TableHandoff& handoff);
 
-void ResetRoomScreen(); // a new room: dialogs shut, nothing typed, nobody muted
+void RoomReset(); // a new room: dialogs shut, nothing typed, nobody muted
 // Testing (`rooms mute <member id>`): as A on a player's row, mute or unmute.
-void ToggleMuteForTest(uint32_t id);
+void RoomToggleMuteForTest(uint32_t id);
 // Whether this player muted that member's chat (this session; the watch chat too).
 bool RoomMemberMuted(uint32_t id);
 // `delaySuggestion`: the your-turn card's starting delay (Polarity settings, or
 // with Auto the suggestion for the ping to the opponent).
-void DrawRoomScreen(const HubFonts& fonts, const RoomsView& view, bool takeInput, RoomScreenInput* input);
+void RoomDrawScreen(const HubFonts& fonts, const RoomsView& view, bool takeInput, RoomScreenInput* input);
 // Ready to start a card at this delay (the overlay works it out per opponent).
-void SetCardDelay(int frames);
+void RoomSetCardDelay(int frames);
 // A character's name for the seat cards ("Chun-Li"), from the overlay's tables.
-void SetCharaNames(std::vector<std::pair<std::string, std::string>> codeToName);
+void RoomSetCharaNames(std::vector<std::pair<std::string, std::string>> codeToName);
 
 } // namespace sfv::mod
