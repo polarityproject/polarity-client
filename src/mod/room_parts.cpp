@@ -108,7 +108,7 @@ void Seat(ImDrawList* d, const HubFonts& f, float x, float y, const RoomMember* 
         const std::string who = Ellipsize(bold, 21, Upper(m->name), 164 - flagW);
         const float nameW = TextW(bold, 21, who);
         const float left = p2 ? tx : tx - nameW - flagW;
-        if (flag) DrawFlag(d, f.strong, m->country, left, y + 89, 13, dim ? 0.45f : 1.0f);
+        if (flag) RoomsScreenDrawFlag(d, f.strong, m->country, left, y + 89, 13, dim ? 0.45f : 1.0f);
         StageText(d, bold, 21, left + flagW, y + 82, Dim(kCream, dim), who);
         if (ready) StageText(d, bold, 15, tx, y + 11, Dim(kGreen, dim), "READY", align);
     }
@@ -274,10 +274,10 @@ void Players(ImDrawList* d, const HubFonts& f, const RoomsView& v) {
         }
         float x = 994;
         if (m.owner) {
-            DrawCrown(d, x, ty + 17, 0.85f, kGold);
+            RoomsScreenDrawCrown(d, x, ty + 17, 0.85f, kGold);
             x += 20;
         }
-        if (const float fw = DrawFlag(d, f.strong, m.country, x, ty + 4, 15)) x += fw + 8;
+        if (const float fw = RoomsScreenDrawFlag(d, f.strong, m.country, x, ty + 4, 15)) x += fw + 8;
         ImFont* bold = f.bold ? f.bold : f.strong;
         std::string who = Upper(m.name);
         const bool muted = g.muted.count(m.id) > 0;
@@ -325,9 +325,9 @@ void Chat(ImDrawList* d, const HubFonts& f, const RoomsView& v, bool* clickedBox
     if (!v.chat.empty()) {
         const ChatLine& last = v.chat.back();
         if (g.chatHeard && (last.from != g.chatHeardFrom || last.text != g.chatHeardText)) {
-            if (last.from && last.from != v.self && !g.muted.count(last.from)) PlayUi(UiSound::ChatPost);
-            else if (!last.from && last.text.size() > 7 && last.text.compare(last.text.size() - 7, 7, " joined") == 0) PlayUi(UiSound::Joined);
-            else if (!last.from && last.text.size() > 5 && last.text.compare(last.text.size() - 5, 5, " left") == 0) PlayUi(UiSound::Left);
+            if (last.from && last.from != v.self && !g.muted.count(last.from)) UiSoundPlay(UiSound::ChatPost);
+            else if (!last.from && last.text.size() > 7 && last.text.compare(last.text.size() - 7, 7, " joined") == 0) UiSoundPlay(UiSound::Joined);
+            else if (!last.from && last.text.size() > 5 && last.text.compare(last.text.size() - 5, 5, " left") == 0) UiSoundPlay(UiSound::Left);
         }
         g.chatHeard = true;
         g.chatHeardFrom = last.from;

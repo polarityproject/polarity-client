@@ -49,8 +49,8 @@ void StepBenchmarkLaunch() {
     if (l.step == 2 && g_benchModal == BenchModal::Loading && now - l.blackFrom >= kBenchToBlack) {
         g_benchModal = BenchModal::None;
         g_benchReturn = true;
-        CloseSettingsScreen();
-        CloseHub();
+        SettingsScreenHide();
+        HubHide();
     }
     const ReplayView v = ReplayViewNow();
     const bool running = v.active && v.benchmark && v.frame > 0;
@@ -169,7 +169,7 @@ void DrawBenchmarkModal(const HubFonts& f, bool takeInput) {
     ImDrawList* d = ImGui::GetForegroundDrawList();
     ImFont* bold = f.bold ? f.bold : f.strong;
     g_inputOn = takeInput;
-    SetUiSoundSet(UiSoundSet::Menu);
+    UiSoundUseSet(UiSoundSet::Menu);
     int clicked = -1;
     if (g_benchModal == BenchModal::Confirm) {
         ModalSpec m;

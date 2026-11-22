@@ -280,7 +280,7 @@ void ApplySetting(const SettingsInput& in) {
         SaveChoices();
     } else if (in.row == "streamer" && in.delta) {
         g_choices.streamerMode = !g_choices.streamerMode;
-        SetStreamerMode(g_choices.streamerMode);
+        RoomsScreenSetStreamerMode(g_choices.streamerMode);
         SaveChoices();
     } else if (in.row == "reports" && in.delta) {
         g_choices.uploadReports = !g_choices.uploadReports;
@@ -493,7 +493,7 @@ void DrawHubScreens(bool takeInput) {
     if (g_roomsWhenReady && g_tables.loaded) {
         g_roomsWhenReady = false;
         RoomsClearNotice();
-        OpenRoomsScreen();
+        RoomsScreenShow();
     }
     if (!RoomsOpened()) {
         OpenHubRooms(o);
@@ -528,22 +528,22 @@ void DrawHubScreens(bool takeInput) {
     } else failedSince = 0;
     if (RoomsScreenOpen() && !SettingsScreenOpen() && rooms.state == RoomsView::State::Failed) {
         Log("hub: the rooms server is gone: the rooms screen gives way to the hub's modal");
-        CloseRoomsScreen();
-        ShowRoomsProblem();
+        RoomsScreenHide();
+        HubShowRoomsProblem();
     }
     const UpdateView update = UpdateViewNow();
     if (RoomsScreenOpen() && !SettingsScreenOpen() && UpdatePending(update) && rooms.state != RoomsView::State::Room &&
         rooms.state != RoomsView::State::Creating && rooms.state != RoomsView::State::Joining) {
         Log("hub: Polarity %s is out: the rooms screen gives way to the hub's update modal", update.latest.c_str());
-        CloseRoomsScreen();
-        OpenUpdateModal();
+        RoomsScreenHide();
+        HubOpenUpdateModal();
     }
     static std::string offered;
-    if (UpdateModalOpen()) offered = update.latest;
+    if (HubUpdateModalOpen()) offered = update.latest;
     if (HubOpen() && !RoomsScreenOpen() && !SettingsScreenOpen() && update.state == UpdateView::State::Available &&
-        update.latest != offered && !UpdateModalOpen()) {
+        update.latest != offered && !HubUpdateModalOpen()) {
         offered = update.latest;
-        OpenUpdateModal();
+        HubOpenUpdateModal();
     }
     HubLive live;
     live.player = NetLocalPlayerName();
@@ -597,7 +597,7 @@ void DrawHubScreens(bool takeInput) {
     static bool warmed = false;
     if (!warmed) {
         warmed = true;
-        WarmHubTextures(live);
+        HubWarmTextures(live);
     }
     const HubFonts fonts{g_fontHuge, g_fontBig, g_fontBody, g_fontBold};
     if (BattleLogOpen()) {
@@ -632,7 +632,7 @@ void DrawHubScreens(bool takeInput) {
                 if (!done) Log("battle log: no battle scene %.0f s after Watch: closing", kLaunchGiveUp);
                 g_logLaunch = {};
                 BattleLogHide();
-                CloseHub();
+                HubHide();
             }
         }
         return;
@@ -640,9 +640,9 @@ void DrawHubScreens(bool takeInput) {
     if (SettingsScreenOpen()) {
         SettingsInput in;
         const bool modal = g_benchModal != BenchModal::None;
-        DrawSettingsScreen(fonts, BuildVersion(), SettingsRows(), takeInput && !modal, &in);
+        SettingsScreenDraw(fonts, BuildVersion(), SettingsRows(), takeInput && !modal, &in);
         if (!in.row.empty()) ApplySetting(in);
-        if (in.back && !modal) CloseSettingsScreen();
+        if (in.back && !modal) SettingsScreenHide();
         if (modal) DrawBenchmarkModal(fonts, takeInput);
         return;
     }
@@ -651,7 +651,7 @@ void DrawHubScreens(bool takeInput) {
         if (roomShown != rooms.room) {
             roomShown = rooms.room;
             RoomReset();
-            OpenRoomsScreen();
+            RoomsScreenShow();
             if (!g_createRules.empty() && rooms.owner == rooms.self) RoomQueueTableRules(g_createRules);
             g_createRules.clear();
         }
@@ -733,10 +733,10 @@ void DrawHubScreens(bool takeInput) {
     if (!RoomsScreenOpen()) RoomsPeek("");
     if (RoomsScreenOpen()) {
         RoomsScreenInput in;
-        DrawRoomsScreen(fonts, rooms, takeInput, &in);
+        RoomsScreenDraw(fonts, rooms, takeInput, &in);
         RoomsPeek(in.focusedRoom);
         if (in.clearNotice) RoomsClearNotice();
-        if (in.settings_) OpenSettingsScreen(rooms.otherBuild.empty() ? "server" : "check");
+        if (in.settings_) SettingsScreenShow(rooms.otherBuild.empty() ? "server" : "check");
         if (in.create) {
             g_createRules = in.tableRules;
             RoomsCreate(in.settings);
@@ -745,17 +745,17 @@ void DrawHubScreens(bool takeInput) {
             g_createRules.clear();
             RoomsJoin(in.join);
         }
-        if (in.back) CloseRoomsScreen();
+        if (in.back) RoomsScreenHide();
         return;
     }
-    switch (DrawHub(fonts, live, takeInput)) {
+    switch (HubDraw(fonts, live, takeInput)) {
         case HubAction::PlayOffline:
-            CloseHub();
+            HubHide();
             RoomsClose();
             break;
         case HubAction::CustomRooms:
             if (UpdateCheckIfStale(5 * 60 * 1000)) {
-                ShowRoomsProblem();
+                HubShowRoomsProblem();
                 break;
             }
             if (!g_tables.loaded) {
@@ -763,10 +763,10 @@ void DrawHubScreens(bool takeInput) {
                 break;
             }
             RoomsClearNotice();
-            OpenRoomsScreen();
+            RoomsScreenShow();
             break;
         case HubAction::Settings:
-            OpenSettingsScreen();
+            SettingsScreenShow();
             break;
         case HubAction::BattleLog:
             BattleLogShow();

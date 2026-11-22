@@ -96,7 +96,7 @@ void RoomDrawScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     const uint32_t callNumber = callTable >= 0 ? v.tableViews[callTable].s.call : 0;
     if (callTable != g.cardTable || callNumber != g.cardCall) {
         if (callTable != g.cardTable) g.cardDelay = g_suggestedDelay;
-        if (callTable >= 0) PlayUi(UiSound::YourTurn);
+        if (callTable >= 0) UiSoundPlay(UiSound::YourTurn);
         g.cardTick = -1;
         g.cardTable = callTable;
         g.cardCall = callNumber;
@@ -276,21 +276,21 @@ void RoomDrawScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     if (g.table < g.scroll) g.scroll = static_cast<float>(g.table);
     if (g.table > g.scroll + kTablesInView - 1) g.scroll = static_cast<float>(g.table - kTablesInView + 1);
 
-    const bool hideCode = StreamerMode();
+    const bool hideCode = RoomsScreenStreamerMode();
     const std::string code = WeyveService::DisplayCode(v.room);
     const char* access = v.isPublic ? "Public" : "Private";
-    const float codeW = hideCode ? DrawHiddenCode(nullptr, 0, 0, 20, 0) : TextW(f.strong, 20, code);
+    const float codeW = hideCode ? RoomsScreenDrawHiddenCode(nullptr, 0, 0, 20, 0) : TextW(f.strong, 20, code);
     const float lineW = (paused ? 0 : TextW(f.strong, 20, access) + 16) + TextW(f.body, 20, "Code") + 6 + codeW + 20 + 38 +
                         TextW(f.body, 20, "Copy code");
-    const std::string title = RoomTitleText(v.title, NameOf(v, v.owner));
-    float x = 48 + FitText(d, f.display, 40, 26, 1552 - 48 - 30 - lineW, g_v.P(48, 22), Rgba(255, 255, 255), title, 0, true) + 30;
+    const std::string title = RoomsScreenTitleText(v.title, NameOf(v, v.owner));
+    float x = 48 + RoomsScreenFitText(d, f.display, 40, 26, 1552 - 48 - 30 - lineW, g_v.P(48, 22), Rgba(255, 255, 255), title, 0, true) + 30;
     if (!paused) {
         StageText(d, f.strong, 20, x, 39, v.isPublic ? kGreen : kSoft, access);
         x += TextW(f.strong, 20, access) + 16;
     }
     StageText(d, f.body, 20, x, 39, kCream, "Code");
     x += TextW(f.body, 20, "Code") + 6;
-    if (hideCode) x += DrawHiddenCode(d, x, 39, 20, kGold) + 20;
+    if (hideCode) x += RoomsScreenDrawHiddenCode(d, x, 39, 20, kGold) + 20;
     else {
         StageText(d, f.strong, 20, x, 39, kGold, code);
         x += TextW(f.strong, 20, code) + 20;
@@ -425,7 +425,7 @@ void RoomDrawScreen(const HubFonts& f, const RoomsView& v, bool takeInput, RoomS
     if (g.cardTable >= 0) Card(d, f, v, g.cardTable, prompts, lead.empty() ? text : lead + "  " + text, lead.empty() ? kSoft : leadCol, &clicked);
     else if (handoffTable >= 0) HandoffModal(d, f, v, handoffTable, steps, stepSeconds, prompts, &clicked);
     else if (g.modal == Modal::Leaving) {
-        Dialog(d, f, StreamerMode() ? std::string("ROOM") : "ROOM \xC2\xB7 " + WeyveService::DisplayCode(v.room), "Leave the room?", LeaveText(v), false, "Leave",
+        Dialog(d, f, RoomsScreenStreamerMode() ? std::string("ROOM") : "ROOM \xC2\xB7 " + WeyveService::DisplayCode(v.room), "Leave the room?", LeaveText(v), false, "Leave",
                "Stay", prompts, &clicked, &pressed);
     } else if (g.modal == Modal::Remove) {
         Dialog(d, f, "OWNER", "Remove " + NameOf(v, g.removing) + "?", "They won't be able to rejoin.", true,

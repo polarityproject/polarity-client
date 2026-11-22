@@ -301,7 +301,7 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
             g_ui.row = 0;
         } else if (loadout && a) {
             in->ready = true;
-            PlayUi(UiSound::ReadyOn);
+            UiSoundPlay(UiSound::ReadyOn);
         } else if (ready && a && live.myCharacter) {
             in->done = true;
         }
@@ -315,7 +315,7 @@ void Render(ImDrawList* d, const SelectFonts& f, const SelectLive& live, SelectI
         }
         if (Back()) {
             if (grid && live.myCharacter) in->cancel = true;
-            else if (ready && !live.bothReady) in->unready = true, PlayUi(UiSound::ReadyOff);
+            else if (ready && !live.bothReady) in->unready = true, UiSoundPlay(UiSound::ReadyOff);
             else if (loadout) g_ui.loadout = false;
             else if (grid && live.host) in->unlockStage = true;
             else OpenLeave();
@@ -421,7 +421,7 @@ void SelectDrawLive(const SelectFonts& f, const SelectLive& live, float alpha, b
     d->AddRectFilled(ImVec2(0, 0), ImGui::GetIO().DisplaySize, Rgba(6, 8, 11));
     d->PushClipRect(g_v.P(0, 0), g_v.P(1600, 900), true);
     g_inputOn = takeInput;
-    if (takeInput) SetUiSoundSet(live.stageLocked ? UiSoundSet::CharaSelect : UiSoundSet::Menu);
+    if (takeInput) UiSoundUseSet(live.stageLocked ? UiSoundSet::CharaSelect : UiSoundSet::Menu);
     Render(d, f, live, input);
     g_inputOn = false;
     d->PopClipRect();

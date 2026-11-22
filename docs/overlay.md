@@ -77,6 +77,29 @@ Japanese and Korean share take the player's own shapes. Fonts are built for
 the screen's size (1.0 at 720 lines) and again when it changes; ImGui makes
 glyphs as text needs them, so names in any script draw without a rebuild.
 
+The screens share one toolkit (`ui_kit.cpp`). The game's textures are read
+from the paks on the mod's own threads; one the paks cannot give loads on
+the game thread, a few milliseconds' worth a frame: a screen's first frames
+ask for about 80, and all of them in one frame held the game about 5 s after
+a join. A texture drawn on screen goes ahead of those asked for in advance.
+Each fades in as it arrives, and a missing one leaves its place dark. A
+texture whose view is not made yet is asked for again a few times; a view
+8 pixels or smaller is the engine's white stand-in and is not kept. Images
+are sized in steps of 32 px, so a window resize asks for few new sizes, and
+a new size swaps in once its fade-in is over.
+
+Directions repeat while held; A and B count once per press, since a long
+frame (a character loading) would turn a held A into a repeat. Every
+direction plays the menus' up and down cursor sound. A click on a prompt's
+button glyph acts as that button on the next frame. The mouse wheel carries
+a touchpad's fractions of a notch over to the next frame.
+
+Behind the hub's screens is the Capcom Pro Tour arena's stage picture
+(S21's `StageSelectBG`, 2048 x 512), darkened, with a light grain over it.
+Panes show a blurred copy of the stage behind them under their tint, and a
+soft shadow; a pane over a fight has no solid core under it, since the fight
+shows through.
+
 Latency is colored by the delay the link suggests; a relayed link shows a
 cloud and its ping in yellow. The other player's frame rate is averaged over
 3 s, since it moves around 60 as rollback catches up.
@@ -164,6 +187,42 @@ The browser with its server gone goes back to the hub, which says why. Only
 the latest client plays in Custom Rooms: an update out takes the browser to
 the hub's update modal, and opening the rooms first checks for one unless a
 check ended in the last 5 minutes.
+
+At launch the hub stays black until the backdrop's art is in (1.5 s at
+most), then fades in. The fade counts drawn frames, each at most 1/30 s,
+since the game's first seconds at the menu hitch (frames of 60 to 180 ms)
+and ate a fade timed by the clock. A Custom Rooms tile that can't be used
+opens a modal saying why instead of a dead screen. While the hub is still
+connecting the modal waits, and Custom Rooms opens by itself once the server
+answers. The update modal shows the release's first paragraph of notes, the
+download's progress, then Restart now or why it failed.
+
+On the rooms screen, a room code uses 32 characters: A to Z and 2 to 9,
+without I, O, 0 and 1. In streamer mode a typed code shows as dots, and a
+friend's code stays hidden too. Typing on a keyboard goes straight into the
+code field, every key as itself, since a code has the letters of the game's
+keys. A public room's row shows the owner's flag from the rooms server's
+lookup, or the two letters in a plate when the game has no flag for the
+country. The flag textures are 128 x 64 with the flag in the middle 96 x 64.
+A character's face is a crop of its select-grid icon in a frame leaning at
+the icon's own angle, so it is neither sheared nor stretched.
+
+In Polarity settings the cursor skips rows that can't be used. A value too
+long for its row (a folder's path) shows its end, and typed text sits where
+the value does.
+
+The mod's menu sounds are the game's own: `PlayGameSE` (rva 0x80DD30 maps a
+`GameSoundSECue` to the system cue sheet's id, rva 0x777F40 plays it on the
+system SE player), through the CriWare plugin's play request, which takes
+requests from any thread. They follow the game's SE volume: the options
+apply it to the CriWare category `M_SE` at the setting x 0.9 (rva
+0xA77BCF), and the game's own apply sets every category from
+`KWOptionSettingsSave` (game instance, rva 0x521690, then the system save,
+rva 0x68E0D0, then +0x60). A muted run's sounds are stopped before the
+volumes come back, with a moment for the stops to reach the sound thread
+first, or a tail slips out. The mod's own menu sounds are never stopped as
+part of a muted run. A press that moved and chose in one frame is heard as
+the choice.
 
 A table's ticket starts its set with the player's My character, ready at
 once, and the delay chosen on the your-turn card (the setting, or with Auto

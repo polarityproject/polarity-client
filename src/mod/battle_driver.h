@@ -115,7 +115,7 @@ void BattleLogBonePositions(int count, uintptr_t from);
 // Research: logs the next `count` CriWare cue plays (tick, resimulated or not, thread).
 void BattleLogSoundPlays(int count);
 // The sounds the game asks for between BattleBeginSoundCapture and
-// BattleStopCapturedSounds (a muted run: ui_sound.h MuteGameSounds) are stopped by
+// BattleStopCapturedSounds (a muted run: ui_sound.h UiSoundMuteGame) are stopped by
 // the latter (what is left of them, which unmuting would make heard); it
 // returns how many were asked for. A thread marked exempt (the mod's own
 // menu sounds) is not captured.

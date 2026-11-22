@@ -248,17 +248,17 @@ void Draw(IDXGISwapChain* swapChain) {
     static bool hubBooted = false;
     if (!hubBooted && atMenus) {
         hubBooted = true;
-        OpenHub(true);
+        HubShow(true);
     }
     if (HubOpen() && !atMenus && !g_logLaunch.active && !g_benchLaunch.active) {
-        CloseHub();
-        CloseRoomsScreen();
+        HubHide();
+        RoomsScreenHide();
         BattleLogHide();
     }
     if (g_benchReturn && atMenus && !ReplayViewNow().active) {
         g_benchReturn = false;
-        OpenHub();
-        OpenSettingsScreen("bench");
+        HubShow();
+        SettingsScreenShow("bench");
         BenchmarkResult r;
         if (TakeBenchmarkResult(&r)) {
             g_benchShown = r;
@@ -268,7 +268,7 @@ void Draw(IDXGISwapChain* swapChain) {
     }
     if (g_reopenLog && atMenus && g_tables.loaded && !ReplayViewNow().active) {
         g_reopenLog = false;
-        OpenHub();
+        HubShow();
         BattleLogShow();
         BattleLogRefresh();
     }
@@ -278,11 +278,11 @@ void Draw(IDXGISwapChain* swapChain) {
     if (RoomsTakeAbort()) Act([] { NetLeave(); });
     if (!HubOpen() && atMenus && g_tables.loaded && RoomsOpened()) {
         if (RoomsSnapshot().state == RoomsView::State::Room) {
-            OpenHub();
+            HubShow();
             g_backToRooms = false;
         } else if (g_backToRooms) {
-            OpenHub();
-            OpenRoomsScreen();
+            HubShow();
+            RoomsScreenShow();
             g_backToRooms = false;
         }
     }
@@ -381,7 +381,7 @@ void Draw(IDXGISwapChain* swapChain) {
         std::lock_guard lock(g_textureMutex);
         texture = g_texture != nullptr;
     }
-    FlushUiSounds();
+    UiSoundFlush();
     const bool draw = visible || preview || liveAlpha > 0 || session || hint || HubOpen() || !g_toasts.empty() || g_preview.Any() || texture ||
                       ReplayViewNow().active || HitboxesVisible() || FrameMeterVisible();
     if (!draw || (!g_rtv && !CreateTarget(swapChain))) {

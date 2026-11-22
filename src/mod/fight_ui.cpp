@@ -1,7 +1,7 @@
 #include "mod/fight_ui.h"
 
 #include "mod/log.h"
-#include "mod/rooms_screen.h" // DrawFlag
+#include "mod/rooms_screen.h" // RoomsScreenDrawFlag
 #include "mod/ui_kit.h"
 
 #include <imgui.h>
@@ -109,7 +109,7 @@ void DrawVote(const HubFonts& f, const VoteSide (&sides)[2], bool armed, bool ta
         while (name.size() > 1 && TextW(f.body, 15, name) > maxName) name.pop_back();
         const float nameW = TextW(f.body, 15, name);
         Text(d, f.body, g_v.L(15), g_v.P(x1 - 22, y0 + 13), look::kSoft, name, 1);
-        DrawFlag(d, f.strong, s.country, x1 - 22 - nameW - 8 - 20, y0 + 16, 13);
+        RoomsScreenDrawFlag(d, f.strong, s.country, x1 - 22 - nameW - 8 - 20, y0 + 16, 13);
         float y = y0 + 44 + 16;
         // The score: the set's, or this session's wins.
         const std::string wins = std::to_string(s.wins);

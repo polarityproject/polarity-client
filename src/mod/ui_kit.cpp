@@ -1,3 +1,5 @@
+// The screens' shared toolkit: textures, input, drawing helpers and the look (docs/overlay.md).
+
 #include "mod/ui_kit.h"
 
 #include "core/input_delay.h"
@@ -9,7 +11,7 @@
 
 #include <unknwn.h>
 
-#include <imgui_internal.h> // the draw list's white pixel, IM_PI
+#include <imgui_internal.h>
 
 #include <algorithm>
 #include <chrono>
@@ -22,43 +24,28 @@
 
 namespace sfv::mod::ui {
 
-// ----- the game's textures --------------------------------------------------
-
-// Read from the paks on the mod's own threads (pak_textures.h); one the
-// paks cannot give is loaded on the game thread instead. The render thread
-// draws the views once they are there (a missing one leaves its place
-// dark) and fades each in (kFadeInMs).
 std::mutex g_texMutex;
 std::map<std::string, TextureView> g_textures;
 std::set<std::string> g_requested;
-std::deque<std::string> g_texQueue; // asked for, not loaded yet (in order)
-std::set<std::string> g_texDrawn;   // asked for again by drawing: moved to the queue's front once
-bool g_texLoading = false;          // LoadTextures is on its way
+std::deque<std::string> g_texQueue;
+std::set<std::string> g_texDrawn;
+bool g_texLoading = false;
 
-// A texture loaded without its view yet (the render thread had not made its
-// resource): asked for again a little later, a few times. Once failed it
-// stayed blank for the whole run (Gill's grid icon, once). A view of a few
-// pixels is the engine's stand-in until then (white): kept, the stage
-// frame's shadow showed as a white box behind "Random" on one PC.
 struct TexRetry {
     std::string path;
     std::chrono::steady_clock::time_point due;
 };
 
 std::vector<TexRetry> g_texRetries;
-bool g_drawing = true; // false while SelectWarmTextures asks ahead (render thread only)
+bool g_drawing = true;
 constexpr int64_t kFadeInMs = 150;
 std::map<std::string, int> g_texTries;
 constexpr int kTextureTries = 6;
-constexpr uint32_t kStandInSize = 8; // a view this small (either side) is a stand-in
+constexpr uint32_t kStandInSize = 8;
 constexpr auto kTextureRetryAfter = std::chrono::milliseconds(250);
-// Since the queue last ran dry: how many loaded, in how long (the log line).
 int g_texBatch = 0;
 double g_texBatchMs = 0, g_texSlowestMs = 0;
 
-// On the game thread: the queue's textures, a few ms' worth a frame. The
-// screen's first frames ask for about 80: all in one frame held the game
-// ~5 s after a join (presses lost).
 void LoadTextures() {
     const auto start = std::chrono::steady_clock::now();
     for (;;) {
@@ -73,7 +60,7 @@ void LoadTextures() {
                 g_texQueue.push_back(std::move(r->path));
                 r = g_texRetries.erase(r);
             }
-            if (g_texQueue.empty() && !g_texRetries.empty()) break; // the next frame looks again
+            if (g_texQueue.empty() && !g_texRetries.empty()) break;
             if (g_texQueue.empty()) {
                 g_texLoading = false;
                 if (g_texBatch >= 10) {
@@ -115,20 +102,17 @@ void LoadTextures() {
         g_texBatchMs += ms;
         g_texSlowestMs = std::max(g_texSlowestMs, ms);
     }
-    FlowRunOnGameThread(LoadTextures); // the rest next frame
+    FlowRunOnGameThread(LoadTextures);
 }
 
 const TextureView* Texture(const std::string& path) {
     bool failed = false;
-    // Asked for by drawing (not ahead of time): it goes first.
     if (const TextureView* t = PakTexture(path, 0, g_drawing, &failed)) return t;
     if (!failed) return nullptr;
     std::lock_guard lock(g_texMutex);
     const auto it = g_textures.find(path);
     if (it != g_textures.end()) return it->second.srv ? &it->second : nullptr;
     if (!g_requested.insert(path).second) {
-        // Asked for ahead of time (SelectWarmTextures) and drawn now: it
-        // loads next (looked for once: drawing asks every frame).
         if (g_texDrawn.insert(path).second) {
             const auto queued = std::find(g_texQueue.begin(), g_texQueue.end(), path);
             if (queued != g_texQueue.end() && queued != g_texQueue.begin()) {
@@ -159,8 +143,6 @@ void Glyph(ImDrawList* d, const char* name, ImVec2 a, ImVec2 b, ImU32 tint, bool
     const TextureView* t = Texture(path);
     if (!t) return;
     if (shadow) {
-        // shadow-text's 0 2px 4px at .8, for a 32 px glyph: a 64 px copy,
-        // blurred 4 px (2 design), with 12 px of room round it.
         constexpr uint32_t kSide = 64, kPad = 12;
         TexLook look;
         look.shadow = true;
@@ -188,7 +170,6 @@ void BeginScreen() {
     g_v.oy = (screen.y - 900 * g_v.s) / 2;
 }
 
-// Every vertex drawn since `from` at `alpha` (the screen's fade).
 void FadeFrom(ImDrawList* d, int from, float alpha) {
     if (alpha >= 1) return;
     const float k = std::clamp(alpha, 0.0f, 1.0f);
@@ -199,9 +180,7 @@ void FadeFrom(ImDrawList* d, int from, float alpha) {
     }
 }
 
-// ----- input ----------------------------------------------------------------
-
-bool g_inputOn = false; // this frame reads input
+bool g_inputOn = false;
 bool g_textEntry = false;
 
 namespace {
@@ -218,19 +197,17 @@ uint32_t MappedPadKeys(int vk) {
     return bits;
 }
 
-ImGuiKey g_clickKey = ImGuiKey_None, g_clickNext = ImGuiKey_None; // a glyph clicked: this frame's button, the next's
+ImGuiKey g_clickKey = ImGuiKey_None, g_clickNext = ImGuiKey_None;
 
 void ClickPad(ImGuiKey key) { g_clickNext = key; }
 
 namespace {
-// The research command's wheel (TestWheel): taken at the next frame's start,
-// used for that frame in place of the mouse.
 std::mutex g_testWheelMutex;
 ImVec2 g_testWheelNextAt;
 float g_testWheelNext = 0;
 ImVec2 g_testWheelAt;
 float g_testWheel = 0;
-float g_wheelLeft = 0; // a touchpad's fractions of a notch, carried over
+float g_wheelLeft = 0;
 } // namespace
 
 void BeginInputFrame() {
@@ -256,7 +233,7 @@ int WheelSteps(ImVec2 a, ImVec2 b) {
         over = m.x >= a.x && m.x < b.x && m.y >= a.y && m.y < b.y;
     }
     if (!over || wheel == 0) return 0;
-    if (g_wheelLeft != 0 && (g_wheelLeft > 0) != (wheel > 0)) g_wheelLeft = 0; // turned back
+    if (g_wheelLeft != 0 && (g_wheelLeft > 0) != (wheel > 0)) g_wheelLeft = 0;
     g_wheelLeft += wheel;
     const int steps = static_cast<int>(g_wheelLeft);
     g_wheelLeft -= static_cast<float>(steps);
@@ -293,9 +270,6 @@ ImGuiKey PadKeyOfGlyph(const char* glyph) {
     return ImGuiKey_None;
 }
 
-// Directions repeat while held; A and B count once per press (a long
-// frame, a character loading, would make a held A a repeat: the loadout's
-// Ready right after the grid's Select).
 bool Pressed(std::initializer_list<ImGuiKey> keys, bool repeat) {
     if (!g_inputOn) return false;
     for (ImGuiKey k : keys) {
@@ -304,19 +278,13 @@ bool Pressed(std::initializer_list<ImGuiKey> keys, bool repeat) {
     return false;
 }
 
-// The keyboard's keys come as the pad's (SetKeyboardMap): no keys of the
-// mod's own beside them, so a keyboard works as in the game's menus.
-// Each also notes the game's menu sound for it (ui_sound.h), played once at
-// the end of the frame.
 namespace {
 bool Sounded(bool pressed, UiSound sound) {
-    if (pressed) PlayUi(sound);
+    if (pressed) UiSoundPlay(sound);
     return pressed;
 }
 } // namespace
 
-// Every direction plays the menus' up/down cursor sound (the left/right
-// one, UiSound::Step, sounded wrong for moving between the hub's tiles).
 bool Left() { return Sounded(Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}), UiSound::Cursor); }
 
 bool Right() { return Sounded(Pressed({ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight}), UiSound::Cursor); }
@@ -329,7 +297,6 @@ bool Confirm() { return Sounded(Pressed({ImGuiKey_GamepadFaceDown}, false), UiSo
 
 bool Back() { return Sounded(Pressed({ImGuiKey_GamepadFaceRight}, false), UiSound::Cancel); }
 
-// Y: the stage's next setting.
 bool NextSetting() {
     return Pressed({ImGuiKey_GamepadFaceUp}, false);
 }
@@ -350,8 +317,6 @@ bool MouseInQuad(const ImVec2 (&q)[4]) {
     }
     return inside;
 }
-
-// ----- drawing helpers --------------------------------------------------------
 
 ImU32 Rgba(int r, int g, int b, int a) { return IM_COL32(r, g, b, a); }
 
@@ -381,7 +346,6 @@ void Text(ImDrawList* d, ImFont* f, float size, ImVec2 at, ImU32 c, const std::s
     d->AddText(f, size, p, c, t.c_str());
 }
 
-// A quad with a color per edge (top two corners one color, bottom two another).
 void GradientQuad(ImDrawList* d, const ImVec2 (&q)[4], ImU32 top, ImU32 bottom) {
     const ImVec2 uv = d->_Data->TexUvWhitePixel;
     d->PrimReserve(6, 4);
@@ -399,19 +363,16 @@ void GradientQuad(ImDrawList* d, const ImVec2 (&q)[4], ImU32 top, ImU32 bottom) 
 }
 
 const TextureView* TextureSized(const std::string& path, float pixels) {
-    // In steps of 32 px, so a window resize asks for few new sizes.
     const uint32_t side = std::max(32u, static_cast<uint32_t>(std::ceil(pixels / 32.0f)) * 32u);
     const TextureView* full = Texture(path);
     bool failed = false;
     const TextureView* shrunk = PakTexture(path, side, g_drawing, &failed);
-    // Swapped in once its fade-in is over, so the art does not flash.
     if (shrunk && (!full || TextureClockMs() - shrunk->readyMs >= kFadeInMs)) return shrunk;
     return full;
 }
 
 ImTextureID Id(const TextureView* t) { return reinterpret_cast<ImTextureID>(t->srv); }
 
-// A texture's tint while it fades in after arriving.
 ImU32 FadeIn(const TextureView* t, ImU32 tint) {
     const int64_t age = TextureClockMs() - t->readyMs;
     if (age >= kFadeInMs || age < 0) return tint;
@@ -433,7 +394,6 @@ void ImageFadeX(ImDrawList* d, const TextureView* t, ImVec2 a, ImVec2 b, ImVec2 
         const uint32_t v = static_cast<uint32_t>(std::clamp(alpha, 0.0f, 1.0f) * base + 0.5f);
         return (col & ~IM_COL32_A_MASK) | v << IM_COL32_A_SHIFT;
     };
-    // The fade's stretch of the screen, and its alpha at a screen x.
     const float fa = fadeB > fadeA ? fadeA : a.x, fb = fadeB > fadeA ? fadeB : b.x;
     auto alphaAt = [&](float x) {
         const float f = (x - fa) / (fb - fa);
@@ -446,12 +406,10 @@ void ImageFadeX(ImDrawList* d, const TextureView* t, ImVec2 a, ImVec2 b, ImVec2 
         }
         return stops[count - 1].alpha;
     };
-    // The image's x at a screen x, as a texture coordinate.
     auto u = [&](float x) {
         const float f = (x - a.x) / (b.x - a.x);
         return mirror ? uv1.x - (uv1.x - uv0.x) * f : uv0.x + (uv1.x - uv0.x) * f;
     };
-    // A strip from each stop to the next, within the image.
     float xs[34];
     int n = 0;
     xs[n++] = a.x;
@@ -483,7 +441,6 @@ void ImageFadeX(ImDrawList* d, const TextureView* t, ImVec2 a, ImVec2 b, ImVec2 
     d->PopTexture();
 }
 
-// The timer's infinity (a lemniscate; the fonts may not have the glyph).
 void Infinity(ImDrawList* d, ImVec2 c, float w, ImU32 col) {
     for (int i = 0; i <= 48; i++) {
         const float t = IM_PI * 2 * i / 48;
@@ -525,9 +482,6 @@ void IconLinkType(ImDrawList* d, ImVec2 c, float s, int link, ImU32 col) {
     else if (link == 2) IconWifi(d, ImVec2(c.x, c.y - 1 * s), s, col);
 }
 
-// The prompts at the top right: the game's pad icons with what they do here.
-// A click acts as the button (A and B on the next frame).
-
 void DrawPrompts(ImDrawList* d, ImFont* text, const std::vector<Prompt>& prompts, float right, float top) {
     for (int i = static_cast<int>(prompts.size()) - 1; i >= 0; i--) {
         const Prompt& p = prompts[i];
@@ -543,14 +497,11 @@ void DrawPrompts(ImDrawList* d, ImFont* text, const std::vector<Prompt>& prompts
     }
 }
 
-// ----- the 1d look ------------------------------------------------------------
-
 using namespace look;
 
 namespace {
 
-const char* const kStage = "/Game/Stage/S21/UI/StageSelectBG"; // the Capcom Pro Tour arena, 2048 x 512
-// The stage covers the design space's full height, 4:1: x -1000 to 2600.
+const char* const kStage = "/Game/Stage/S21/UI/StageSelectBG";
 constexpr float kStageX0 = -1000, kStageW = 3600;
 constexpr ImU32 kGlassPanel = IM_COL32(10, 12, 16, 140);
 constexpr ImU32 kGlassModal = IM_COL32(10, 12, 16, 214);
@@ -560,18 +511,15 @@ constexpr ImU32 kEdgeModal = IM_COL32(236, 228, 206, 115);
 constexpr ImU32 kHighlight = IM_COL32(255, 255, 255, 77);
 constexpr ImU32 kOutline = IM_COL32(0, 0, 0, 140);
 constexpr ImU32 kStrip = IM_COL32(0, 0, 0, 82);
-// The stage art drawn behind a whole screen, as the CSS: brightness 0.88,
-// then the flat scrim (6,8,11 at 15%).
 constexpr ImU32 kStageTint = IM_COL32(224, 224, 224, 255);
 constexpr ImU32 kScrim = IM_COL32(6, 8, 11, 38);
-constexpr ImU32 kGrain = IM_COL32(255, 255, 255, 22); // the noise over the backdrop
+constexpr ImU32 kGrain = IM_COL32(255, 255, 255, 22);
 
 ImU32 WithAlpha(ImU32 c, float k) {
     const ImU32 a = static_cast<ImU32>(((c >> IM_COL32_A_SHIFT) & 0xFF) * std::clamp(k, 0.0f, 1.0f));
     return (c & ~IM_COL32_A_MASK) | (a << IM_COL32_A_SHIFT);
 }
 
-// A quad with one color at its first two corners and another at the last two.
 void Quad(ImDrawList* d, ImVec2 p0, ImVec2 p1, ImVec2 p2, ImVec2 p3, ImU32 c01, ImU32 c23) {
     const ImVec2 uv = d->_Data->TexUvWhitePixel;
     d->PrimReserve(6, 4);
@@ -588,11 +536,6 @@ void Quad(ImDrawList* d, ImVec2 p0, ImVec2 p1, ImVec2 p2, ImVec2 p3, ImU32 c01, 
     d->PrimWriteVtx(p3, uv, c23);
 }
 
-// The stage's picture between design x0..x1, y0..y1 at its own place: the
-// backdrop (blur-stage 4 px, saturate 1.1) or a pane's copy (blur-glass
-// 18 px, saturate 1.25). `pixels`: the copy's width; the blur is in design
-// units, so the same whatever the window's size. Until the blurred one is
-// made: nothing (the ground), or the plain one if it cannot be.
 void StageAt(ImDrawList* d, float x0, float y0, float x1, float y1, uint32_t pixels, float blur, float saturate, ImU32 tint) {
     TexLook look;
     look.blur = blur * pixels / kStageW;
@@ -610,7 +553,6 @@ void StageAt(ImDrawList* d, float x0, float y0, float x1, float y1, uint32_t pix
 int g_backdropEnd = -1;
 
 bool BackdropReady() {
-    // Backdrop's stage art (StageAt's look, 1024 px): loaded, or it never will.
     TexLook look;
     look.blur = 4.0f * 1024 / kStageW;
     look.saturate = 1.1f;
@@ -621,7 +563,6 @@ bool BackdropReady() {
 void Backdrop(ImDrawList* d, float alpha) {
     const ImVec2 screen = ImGui::GetIO().DisplaySize;
     d->AddRectFilled(ImVec2(0, 0), screen, WithAlpha(kGround, alpha));
-    // Softened a little: a copy about a quarter of the drawn width, stretched.
     const float left = std::max(kStageX0, -g_v.ox / g_v.s), right = std::min(kStageX0 + kStageW, (screen.x - g_v.ox) / g_v.s);
     StageAt(d, left, 0, right, 900, 1024, 4, 1.1f, WithAlpha(kStageTint, alpha));
     d->AddRectFilled(ImVec2(0, 0), screen, WithAlpha(kScrim, alpha));
@@ -630,8 +571,6 @@ void Backdrop(ImDrawList* d, float alpha) {
 }
 
 void Grain(ImDrawList* d, float alpha) {
-    // A 256 px tile of noise at about a screen pixel each (two on a big
-    // screen), laid over lightly.
     const TextureView* n = NoiseTexture(256);
     if (!n) return;
     const ImVec2 screen = ImGui::GetIO().DisplaySize;
@@ -643,7 +582,6 @@ void Grain(ImDrawList* d, float alpha) {
 }
 
 const TextureView* BlurredStage(const std::string& path, float blur, float saturate, bool* failed) {
-    // 1024 px across the stage's 3600 design units (it is 4:1 at 900 high).
     TexLook look;
     look.blur = blur * 1024 / kStageW;
     look.saturate = saturate;
@@ -651,22 +589,16 @@ const TextureView* BlurredStage(const std::string& path, float blur, float satur
 }
 
 void DropShadow(ImDrawList* d, float x0, float y0, float x1, float y1, float offset, float blur, float alpha, bool core) {
-    // A solid core under the box (hidden by an opaque pane), and a feather
-    // from its edge out to `blur`, falling to nothing.
     const ImU32 in = IM_COL32(0, 0, 0, static_cast<int>(255 * alpha)), out = IM_COL32(0, 0, 0, 0);
     const ImVec2 a = g_v.P(x0, y0 + offset), b = g_v.P(x1, y1 + offset);
     const float r = g_v.L(blur);
     if (core) d->AddRectFilled(a, b, in);
-    // No core (a translucent pane: the fight shows through it): the offset
-    // still leaves a strip below the box the feather starts under, which
-    // read as a gap between the pane and its shadow. That strip, solid.
     else if (offset > 0) d->AddRectFilled(g_v.P(x0, y1), b, in);
     const ImVec2 A(a.x - r, a.y - r), B(b.x + r, b.y + r);
-    Quad(d, ImVec2(a.x, a.y), ImVec2(b.x, a.y), ImVec2(b.x, A.y), ImVec2(a.x, A.y), in, out); // top
-    Quad(d, ImVec2(b.x, b.y), ImVec2(a.x, b.y), ImVec2(a.x, B.y), ImVec2(b.x, B.y), in, out); // bottom
-    Quad(d, ImVec2(a.x, b.y), ImVec2(a.x, a.y), ImVec2(A.x, a.y), ImVec2(A.x, b.y), in, out); // left
-    Quad(d, ImVec2(b.x, a.y), ImVec2(b.x, b.y), ImVec2(B.x, b.y), ImVec2(B.x, a.y), in, out); // right
-    // The corners: a fan from the box's corner to the feather's.
+    Quad(d, ImVec2(a.x, a.y), ImVec2(b.x, a.y), ImVec2(b.x, A.y), ImVec2(a.x, A.y), in, out);
+    Quad(d, ImVec2(b.x, b.y), ImVec2(a.x, b.y), ImVec2(a.x, B.y), ImVec2(b.x, B.y), in, out);
+    Quad(d, ImVec2(a.x, b.y), ImVec2(a.x, a.y), ImVec2(A.x, a.y), ImVec2(A.x, b.y), in, out);
+    Quad(d, ImVec2(b.x, a.y), ImVec2(b.x, b.y), ImVec2(B.x, b.y), ImVec2(B.x, a.y), in, out);
     const ImVec2 corners[4][3] = {{a, ImVec2(a.x, A.y), ImVec2(A.x, a.y)},
                                   {ImVec2(b.x, a.y), ImVec2(B.x, a.y), ImVec2(b.x, A.y)},
                                   {b, ImVec2(b.x, B.y), ImVec2(B.x, b.y)},
@@ -694,13 +626,9 @@ void DropShadow(ImDrawList* d, float x0, float y0, float x1, float y1, float off
 }
 
 void Pane(ImDrawList* d, float x0, float y0, float x1, float y1, Glass kind, ImU32 edge) {
-    // shadow-pane: 0 6px 20px rgba(0,0,0,.35) (a fight's pane has nothing
-    // opaque inside, so no core under it).
     DropShadow(d, x0, y0, x1, y1, 6, 18, 0.32f, kind != Glass::Fight);
     const ImVec2 a = g_v.P(x0, y0), b = g_v.P(x1, y1);
     if (kind != Glass::Fight) {
-        // The glass: the stage behind it, blurred (a 256 px copy stretched),
-        // under the tint. Until the copy is there: the ground.
         d->AddRectFilled(a, b, kGround);
         StageAt(d, x0, y0, x1, y1, 512, 18, 1.25f, kStageTint);
         d->AddRectFilled(a, b, kScrim);
@@ -735,8 +663,6 @@ void Control(ImDrawList* d, float x0, float y0, float x1, float y1, bool focused
 }
 
 void StageText(ImDrawList* d, ImFont* f, float size, float x, float y, ImU32 c, const std::string& t, float align) {
-    // shadow-text: 0 2px 4px rgba(0,0,0,.8), 0 0 12px rgba(0,0,0,.5): a
-    // copy 2 px down, and a soft halo of four copies round it.
     const float px = TextPx(size);
     const ImVec2 w = f->CalcTextSizeA(px, FLT_MAX, 0, t.c_str());
     const ImVec2 p(g_v.P(x, y).x - w.x * align, g_v.P(x, y).y);
@@ -756,7 +682,6 @@ void ScrollBar(ImDrawList* d, float x, float y0, float y1, float first, float in
     const float h = y1 - y0;
     const float top = y0 + h * std::clamp(first / total, 0.0f, 1.0f), len = std::max(h * inView / total, 12.0f);
     if (stage) {
-        // On the stage: a dark track framed, a gold thumb.
         DropShadow(d, x - 1, y0, x + 6, y1, 2, 6, 0.3f, false);
         d->AddRectFilled(g_v.P(x - 1, y0), g_v.P(x + 6, y1), IM_COL32(6, 8, 11, 199));
         d->AddRect(g_v.P(x - 1, y0), g_v.P(x + 6, y1), kEdgeControl, 0, 0, std::max(1.0f, g_v.L(1)));
@@ -793,7 +718,6 @@ int StageTextFit(ImDrawList* d, ImFont* f, float size, float smallest, float x, 
         StageText(d, f, s, x, y, c, t);
         return 1;
     }
-    // Two lines (by words) a little above and below, the second cut to fit.
     std::string first, rest = t;
     if (lines > 1) {
         size_t cut = std::string::npos;
@@ -823,7 +747,6 @@ int StageTextFit(ImDrawList* d, ImFont* f, float size, float smallest, float x, 
 
 void PromptLine(ImDrawList* d, ImFont* /*body*/, ImFont* bold, const std::string& lead, ImU32 leadCol, const std::string& text,
                 const PromptList& prompts, int* clicked) {
-    // The prompts first (right to left), then the hint in the room left.
     *clicked = -1;
     const float left = PromptRow(d, bold, 20, prompts, 1564, 849, 36, true, clicked);
     float x = 48;
@@ -831,12 +754,11 @@ void PromptLine(ImDrawList* d, ImFont* /*body*/, ImFont* bold, const std::string
         StageText(d, bold, 20, x, 855, leadCol, lead);
         x += TextW(bold, 20, lead) + 14;
     }
-    // The hint in the prompts' own weight and colour (the light one read as fainter).
     StageTextFit(d, bold, 20, 17, x, 855, left - 36 - x, kCream, text);
 }
 
 float Modal(ImDrawList* d, ImFont* bold, ImFont* body, const ModalSpec& m, int* clicked) {
-    NoteModalDrawn();
+    UiSoundNoteModal();
     const ImVec2 screen = ImGui::GetIO().DisplaySize;
     d->AddRectFilled(ImVec2(0, 0), screen, IM_COL32(4, 5, 7, 153));
     const float x1 = m.x0 + m.w, y1 = m.y0 + m.h;
@@ -844,12 +766,10 @@ float Modal(ImDrawList* d, ImFont* bold, ImFont* body, const ModalSpec& m, int* 
     Strip(d, m.x0 + 2, m.y0 + 2, x1 - 2, m.y0 + 44, false);
     Text(d, bold, g_v.L(16), g_v.P(m.x0 + 28, m.y0 + 12), m.danger ? kDanger : kGold, m.kicker);
     if (!m.aside.empty()) Text(d, body, g_v.L(17), g_v.P(x1 - 28, m.y0 + 11), m.asideCol, m.aside, 1);
-    // The footer: the hint, then this modal's own prompts.
     Strip(d, m.x0 + 2, y1 - 48, x1 - 2, y1 - 2, false);
     if (clicked) *clicked = -1;
     const float left = PromptRow(d, bold, 17, m.prompts, x1 - 22, y1 - 39, 28, false, clicked);
     if (!m.hint.empty()) {
-        // Cut to the room the prompts leave.
         std::string hint = m.hint;
         const float room = left - 24 - (m.x0 + 28);
         while (hint.size() > 1 && TextW(body, 17, hint) > room) hint.pop_back();

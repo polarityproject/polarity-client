@@ -403,7 +403,7 @@ void ReplayDriver::Finish(SfvGame& game) {
     }
     std::function<void()> leave;
     if (viewer_ && !restarting_) {
-        MuteGameSounds(false);
+        UiSoundMuteGame(false);
         BattleStopCapturedSounds();
         BattleRecordSounds(false);
         std::lock_guard lock(g_viewMutex);

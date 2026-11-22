@@ -3,7 +3,7 @@
 namespace sfv::mod::overlay {
 
 void AddToast(const std::string& text, ImVec4 color, int seconds) {
-    if (!g_inMatch) PlayUi(color.x > 0.9f && color.y < 0.5f ? UiSound::NoticeError : UiSound::Notice);
+    if (!g_inMatch) UiSoundPlay(color.x > 0.9f && color.y < 0.5f ? UiSound::NoticeError : UiSound::Notice);
     if (g_toasts.size() >= 5) g_toasts.erase(g_toasts.begin());
     g_toasts.push_back({text, color, GetTickCount64() + seconds * 1000ull, GetTickCount64()});
 }

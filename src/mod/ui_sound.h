@@ -7,7 +7,7 @@
 //
 // The screens' input (ui_kit.h) notes the common ones by itself: Up and Down
 // the cursor, Left and Right the step, A decide, B cancel. A screen names
-// the others (an error, a window opening, a notice) with PlayUi. Each frame
+// the others (an error, a window opening, a notice) with UiSoundPlay. Each frame
 // plays at most one of each, and a cursor or step gives way to a decide,
 // cancel or error in the same frame.
 
@@ -47,25 +47,25 @@ enum class UiSoundSet : uint8_t {
     CharaSelect // character select's: the select screen
 };
 
-void InstallUiSound(const GameImage& image);
+void UiSoundInstall(const GameImage& image);
 // Any thread. Played at the end of the render thread's frame.
-void PlayUi(UiSound sound);
+void UiSoundPlay(UiSound sound);
 // The render thread, while a screen draws: its set for this frame's sounds.
-void SetUiSoundSet(UiSoundSet set);
+void UiSoundUseSet(UiSoundSet set);
 // The render thread: a modal (ui::Modal) is on screen this frame. One that
 // appears plays Open; one that goes away plays Close (unless the press that
 // closed it already made its own sound).
-void NoteModalDrawn();
+void UiSoundNoteModal();
 // The render thread, once a frame after every screen drew: plays what came.
-void FlushUiSounds();
+void UiSoundFlush();
 // The game's sounds but its music silenced (true) or back to the player's
 // settings (false): for a replay's fast runs, whose ticks would play every
 // hit and voice. Mutes the CriWare categories M_SE, M_VOICE, M_SYS_VOICE and
 // M_EXTRA_VOICE; unmuting runs the game's own apply of its Sound options
 // (rva 0x79BDE0), so the player's volumes come back exactly. Game thread.
-void MuteGameSounds(bool mute);
-bool GameSoundsMuted();
+void UiSoundMuteGame(bool mute);
+bool UiSoundGameMuted();
 // Research and tests (`uisound <name|cue number>`): plays now, logs the cue.
-bool PlayUiNamed(const std::string& name);
+bool UiSoundPlayNamed(const std::string& name);
 
 } // namespace sfv::mod

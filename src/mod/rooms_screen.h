@@ -30,38 +30,38 @@ struct RoomsScreenInput {
     bool settings_ = false;              // open Polarity settings (wrong build, no server)
 };
 
-void OpenRoomsScreen();
-void CloseRoomsScreen();
+void RoomsScreenShow();
+void RoomsScreenHide();
 bool RoomsScreenOpen();
-void DrawRoomsScreen(const HubFonts& fonts, const RoomsView& view, bool takeInput, RoomsScreenInput* input);
+void RoomsScreenDraw(const HubFonts& fonts, const RoomsView& view, bool takeInput, RoomsScreenInput* input);
 
 // Shared with the room screen: a character's face in a slanted frame, the
 // owner's crown, the player glyph.
-void DrawFace(ImDrawList* d, const std::string& chara, float x, float y, float w, float h);
+void RoomsScreenDrawFace(ImDrawList* d, const std::string& chara, float x, float y, float w, float h);
 // A room's title as this game shows it: the game's own Battle Lounge comment
 // (its language; the keeper's English until the table is read) with the
 // characters' names; no title: "<owner>'s room".
-std::string RoomTitleText(const keeper::RoomTitle& title, const std::string& owner);
-void DrawCrown(ImDrawList* d, float x, float y, float scale, ImU32 col);
+std::string RoomsScreenTitleText(const keeper::RoomTitle& title, const std::string& owner);
+void RoomsScreenDrawCrown(ImDrawList* d, float x, float y, float scale, ImU32 col);
 // Text that shrinks to `maxW` (design units): its size down to `minSize`,
 // then cut with an ellipsis. The width drawn.
 // `stage`: text with nothing behind it (the light drop shadow under it).
-float FitText(ImDrawList* d, ImFont* f, float size, float minSize, float maxW, ImVec2 at, ImU32 c, std::string t, float align = 0,
-              bool stage = false);
+float RoomsScreenFitText(ImDrawList* d, ImFont* f, float size, float minSize, float maxW, ImVec2 at, ImU32 c, std::string t, float align = 0,
+                         bool stage = false);
 // Streamer mode (Polarity settings): room codes are not shown on the rooms
 // screens (Copy code still copies it). Any thread.
-void SetStreamerMode(bool on);
-bool StreamerMode();
+void RoomsScreenSetStreamerMode(bool on);
+bool RoomsScreenStreamerMode();
 // In place of a room code at `size` (the text's design size, from its top
 // at y): six dots. The width (d null: only measured).
-float DrawHiddenCode(ImDrawList* d, float x, float y, float size, ImU32 col);
+float RoomsScreenDrawHiddenCode(ImDrawList* d, float x, float y, float size, ImU32 col);
 // A player's country flag (the game's own, CommonAsset/CountryFlags), `h`
 // tall from (x, y) in design units; a country the game has no flag for shows
 // its two letters. Nothing for "" (unknown, or the player hides it). The
 // width drawn: kFlagAspect x h for a flag, a little more for the letters; 0
 // for nothing.
 constexpr float kFlagAspect = 1.5f;
-float DrawFlag(ImDrawList* d, ImFont* tagFont, const std::string& country, float x, float y, float h, float alpha = 1);
-void DrawPerson(ImDrawList* d, float x, float y, float size, ImU32 col);
+float RoomsScreenDrawFlag(ImDrawList* d, ImFont* tagFont, const std::string& country, float x, float y, float h, float alpha = 1);
+void RoomsScreenDrawPerson(ImDrawList* d, float x, float y, float size, ImU32 col);
 
 } // namespace sfv::mod

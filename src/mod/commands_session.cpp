@@ -149,12 +149,12 @@ void PresenceCommand(const std::string&, std::stringstream& ss) {
 void SettingsCommand(const std::string&, std::stringstream& ss) {
     std::string row, what;
     ss >> row >> what;
-    if (row == "close") CloseSettingsScreen();
+    if (row == "close") SettingsScreenHide();
     else if (what == "type") {
         std::string text;
         std::getline(ss >> std::ws, text);
-        OpenSettingsScreenTyping(row, text);
-    } else OpenSettingsScreen(row);
+        SettingsScreenShowTyping(row, text);
+    } else SettingsScreenShow(row);
 }
 
 void RoomsCommand(const std::string&, std::stringstream& ss) {
@@ -163,7 +163,7 @@ void RoomsCommand(const std::string&, std::stringstream& ss) {
     ss >> what;
     if (what == "open") {
         RoomsOpen(o.server, TestName(), o.server == kDefaultServer ? kDefaultServerAlsoPort : o.serverAlsoPort, o.keeperKey);
-        OpenRoomsScreen();
+        RoomsScreenShow();
     } else if (what == "close") {
         RoomsClose();
     } else if (what == "create") {
@@ -176,7 +176,7 @@ void RoomsCommand(const std::string&, std::stringstream& ss) {
             Log("rooms: no such title '%s' (5, or 3,RYU,KEN)", title.c_str());
             return;
         }
-        OpenRoomsScreen();
+        RoomsScreenShow();
         if (!RoomsCreate(s)) Log("rooms: not open");
     } else if (what == "join") {
         std::string code;
@@ -418,7 +418,7 @@ void UipadsCommand(const std::string&, std::stringstream& ss) {
 void UisoundCommand(const std::string&, std::stringstream& ss) {
     std::string name;
     ss >> name;
-    if (!PlayUiNamed(name)) Log("uisound: no sound %s", name.c_str());
+    if (!UiSoundPlayNamed(name)) Log("uisound: no sound %s", name.c_str());
 }
 
 void VoicelangCommand(const std::string&, std::stringstream& ss) {
@@ -473,13 +473,13 @@ void OverlayCommand(const std::string&, std::stringstream& ss) {
                                     watching == "spectate");
     } else if (what == "hide") OverlaySetVisible(false);
     else if (what == "rooms") {
-        OpenHub();
-        OpenRoomsScreen();
-    } else if (what == "hub") CloseRoomsScreen();
+        HubShow();
+        RoomsScreenShow();
+    } else if (what == "hub") RoomsScreenHide();
     else if (what == "benchresult") {
         OverlayShowLastBenchmarkResult();
     } else if (what == "battlelog") {
-        OpenHub();
+        HubShow();
         BattleLogShow();
     } else if (what == "preview") {
         std::string rest;

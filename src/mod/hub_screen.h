@@ -77,19 +77,19 @@ enum class HubAction { None,
 
 // `fromBlack`: at launch, in place of the game's main menu: it fades in
 // from black (the menu never shows), else over whatever is there.
-void OpenHub(bool fromBlack = false);
-void CloseHub();
+void HubShow(bool fromBlack = false);
+void HubHide();
 // Custom Rooms' modal on the hub (HubLive::roomsProblem): the rooms screen
 // lost its server, so it gave way to the hub saying why.
-void ShowRoomsProblem();
+void HubShowRoomsProblem();
 // The update modal: the found update, its download, then Restart.
-void OpenUpdateModal();
-bool UpdateModalOpen();
+void HubOpenUpdateModal();
+bool HubUpdateModalOpen();
 bool HubOpen();
 // Draws the hub (fading in when opened) and, with `takeInput`, returns what
 // the player chose this frame.
-HubAction DrawHub(const HubFonts& fonts, const HubLive& live, bool takeInput);
+HubAction HubDraw(const HubFonts& fonts, const HubLive& live, bool takeInput);
 // Its pictures, asked for ahead (they load behind whatever is drawn).
-void WarmHubTextures(const HubLive& live);
+void HubWarmTextures(const HubLive& live);
 
 } // namespace sfv::mod

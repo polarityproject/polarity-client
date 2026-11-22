@@ -160,7 +160,7 @@ DWORD WINAPI ModMain(LPVOID self) {
     InputInstall(config.virtualPads, config.alwaysActive);
     ControlInstall(dir + L"\\sfv_cmd" + suffix + L".txt");
     OverlayInstall(panelPath);
-    InstallUiSound(image);
+    UiSoundInstall(image);
     OverlaySetBuild(std::string("Polarity ") + kModVersion);
     if (migrated.moved) OverlaySetMigratedNotice();
     InstallUpdater(dir, kModVersion, Narrow(config.updateUrl), config.updateCheck);
@@ -178,7 +178,7 @@ DWORD WINAPI ModMain(LPVOID self) {
     if (!config.netplay.leanResim) FlowSetResimTaskSkip({});
     NetInstall(&game, config.reportDir, kModVersion, config.netplay);
     WeyveService::SetHideCountry(!config.netplay.shareCountry);
-    SetStreamerMode(config.netplay.streamerMode);
+    RoomsScreenSetStreamerMode(config.netplay.streamerMode);
     RoomsSetWordFilter(config.netplay.wordFilter);
     InstallReportUploads(config.reportDir, Narrow(config.reportUrl), kModVersion, config.netplay.uploadReports);
 

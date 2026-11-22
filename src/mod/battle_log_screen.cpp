@@ -329,7 +329,7 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
     const Row* focused = selectable.empty() ? nullptr : &rows[selectable[g_focus]];
 
     if (g_modal == LogModal::None && takeInput) {
-        SetUiSoundSet(UiSoundSet::Menu);
+        UiSoundUseSet(UiSoundSet::Menu);
         if (!selectable.empty()) {
             if (Up()) g_focus = std::max(0, g_focus - 1);
             if (Down()) g_focus = std::min(static_cast<int>(selectable.size()) - 1, g_focus + 1);
@@ -349,29 +349,29 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
             }
         }
         if (Pressed({ImGuiKey_GamepadL1}, false) || Pressed({ImGuiKey_GamepadR1}, false)) {
-            PlayUi(UiSound::Step);
+            UiSoundPlay(UiSound::Step);
             g_bySets = !g_bySets;
             g_focus = 0;
             g_scroll = 0;
         }
         if (Pressed({ImGuiKey_GamepadL2}, false)) {
-            PlayUi(UiSound::Decide);
+            UiSoundPlay(UiSound::Decide);
             g_modal = LogModal::Characters;
             g_modalSide = 0;
         }
         if (Pressed({ImGuiKey_GamepadR2}, false)) {
-            PlayUi(UiSound::Decide);
+            UiSoundPlay(UiSound::Decide);
             g_modal = LogModal::Opponent;
             g_modalRow[0] = 0;
             g_modalScroll[0] = 0;
         }
         if (Pressed({ImGuiKey_GamepadFaceUp}, false)) {
-            PlayUi(UiSound::Decide);
+            UiSoundPlay(UiSound::Decide);
             EnsureDirectory(ReplaysDir());
             ShellExecuteW(nullptr, L"open", L"explorer.exe", (L"\"" + ReplaysDir() + L"\"").c_str(), nullptr, SW_SHOWNORMAL);
         }
         if (focused && Pressed({ImGuiKey_GamepadFaceLeft}, false) && g_bySets && focused->set) {
-            PlayUi(UiSound::Decide);
+            UiSoundPlay(UiSound::Decide);
             g_expanded = g_expanded == focused->set->key ? 0 : focused->set->key;
         }
         if (focused && Confirm()) {
@@ -381,7 +381,7 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
             } else if (focused->entry) {
                 const Entry& e = *focused->entry;
                 if (!ReplayCompatible(e.header.gameBuild, live.buildId)) {
-                    PlayUi(UiSound::Error);
+                    UiSoundPlay(UiSound::Error);
                 } else {
                     in->watch = e.path;
                     in->watchTitle = Upper2(battlelog::NameOf(e, 0)) + " vs " + Upper2(battlelog::NameOf(e, 1));
@@ -672,7 +672,7 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
                 g_scroll = 0;
             }
             if (Pressed({ImGuiKey_GamepadFaceUp}, false)) {
-                PlayUi(UiSound::Decide);
+                UiSoundPlay(UiSound::Decide);
                 g_filter.mine = g_filter.theirs = 0;
                 g_focus = 0;
             }
@@ -743,10 +743,10 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
                 g_search.erase(n);
             }
             if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)) {
-                PlayUi(UiSound::Decide);
+                UiSoundPlay(UiSound::Decide);
                 g_typing = false;
             } else if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
-                PlayUi(UiSound::Cancel);
+                UiSoundPlay(UiSound::Cancel);
                 g_typing = false;
                 g_search.clear();
             }
@@ -754,7 +754,7 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
             if (!list.empty() && Up()) row = std::max(0, row - 1);
             if (!list.empty() && Down()) row = std::min(static_cast<int>(list.size()) - 1, row + 1);
             if (Pressed({ImGuiKey_GamepadFaceLeft}, false)) {
-                PlayUi(UiSound::Decide);
+                UiSoundPlay(UiSound::Decide);
                 g_typing = true;
             }
             if (Confirm() && !list.empty()) {
@@ -764,7 +764,7 @@ void BattleLogDraw(const HubFonts& f, const BattleLogLive& live, bool takeInput,
                 g_scroll = 0;
             }
             if (Pressed({ImGuiKey_GamepadFaceUp}, false)) {
-                PlayUi(UiSound::Decide);
+                UiSoundPlay(UiSound::Decide);
                 g_filter.opponent.clear();
                 g_search.clear();
                 g_modal = LogModal::None;

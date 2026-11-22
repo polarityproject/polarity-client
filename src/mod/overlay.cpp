@@ -105,7 +105,7 @@ void FeedPads(ImGuiIO& io) {
             OverlaySetVisible(false);
         } else if (g_hubAllowed && !HubOpen()) {
             Log("overlay: Back + Start: the hub");
-            OpenHub();
+            HubShow();
         } else if (g_spectating) g_watchPanelTap = true;
         else if (g_inMatch) OverlaySetVisible(true);
     }
@@ -343,8 +343,8 @@ void OverlayRequestScreenshot(const std::string& path, int scale) {
 }
 
 void OverlayShowLastBenchmarkResult() {
-    OpenHub();
-    OpenSettingsScreen("benchlast");
+    HubShow();
+    SettingsScreenShow("benchlast");
     OpenBenchmarkModal(true);
 }
 

@@ -1,3 +1,5 @@
+// The hub: its tiles, the Custom Rooms panel, the problem and update modals (docs/overlay.md).
+
 #include "mod/hub_screen.h"
 
 #include "mod/log.h"
@@ -25,8 +27,8 @@ struct Entry {
     HubAction action;
     const char* title;
     Icon icon;
-    std::string info; // the tile's and the panel's live line
-    std::string text; // the bottom stripe
+    std::string info;
+    std::string text;
     std::string chara, stage;
 };
 
@@ -35,15 +37,16 @@ struct Frame {
 };
 
 std::atomic<bool> g_open{false};
-int g_focus = 1;          // the last entry used keeps focus (0 Play Offline, 1 Custom Rooms, 2 Battle Log, 3 My Character)
-int g_column = 0;         // the left column's entry right comes back to (0 or 2)
-double g_openedAt = 0;    // ImGui time, for the fade in
-bool g_fromBlack = false; // ... from black (at launch)
-float g_blackFade = 0;    // from black: seconds of the fade drawn so far
+// The tiles, in the entries' order: the left column (Play Offline over the
+// Battle Log), Custom Rooms and My Character.
+constexpr int kPlayOffline = 0, kCustomRooms = 1, kBattleLog = 2, kMyCharacter = 3;
+int g_focus = kCustomRooms;
+int g_column = kPlayOffline;
+double g_openedAt = 0;
+bool g_fromBlack = false;
+float g_blackFade = 0;
 bool g_clickedTile = false;
 
-// The grid: the left column this PC's own (Play Offline over the Battle
-// Log), Custom Rooms under the panel with My Character beside it.
 const Frame kFrames[] = {{60, 118, 470, 345}, {546, 464, 650, 360}, {60, 479, 470, 345}, {1212, 464, 328, 360}};
 constexpr Frame kPanel{546, 118, 994, 330};
 
@@ -69,7 +72,6 @@ std::vector<Entry> Entries(const HubLive& live) {
     };
 }
 
-// A picture filling `a`..`b` (design units) without stretching: cropped.
 void Cover(ImDrawList* d, const TextureView* t, float x, float y, float w, float h, ImU32 tint) {
     if (!t || !t->width || !t->height) return;
     const float ta = float(t->width) / float(t->height), fa = w / h;
@@ -87,7 +89,6 @@ void Cover(ImDrawList* d, const TextureView* t, float x, float y, float w, float
     (void)d;
 }
 
-// The mock-up's icons, on a 24-unit grid at `size` design units.
 void DrawIcon(ImDrawList* d, Icon icon, float cx, float cy, float size, ImU32 col) {
     const float k = size / 24.0f;
     auto at = [&](float x, float y) { return g_v.P(cx + (x - 12) * k, cy + (y - 12) * k); };
@@ -101,7 +102,6 @@ void DrawIcon(ImDrawList* d, Icon icon, float cx, float cy, float size, ImU32 co
         d->AddCircleFilled(at(15.5f, 11.2f), g_v.L(0.9f * k), col);
         d->AddCircleFilled(at(17.3f, 13), g_v.L(0.9f * k), col);
     } else if (icon == Icon::Log) {
-        // A list: three lines, a play mark before the first.
         d->AddTriangleFilled(at(3, 4.5f), at(3, 9.5f), at(7, 7), col);
         d->AddLine(at(9.5f, 7), at(21, 7), col, stroke);
         d->AddLine(at(3, 12.5f), at(21, 12.5f), col, stroke);
@@ -113,8 +113,6 @@ void DrawIcon(ImDrawList* d, Icon icon, float cx, float cy, float size, ImU32 co
     }
 }
 
-// The panel over the Custom Rooms tile: the focused entry's stage and
-// character inside a glass pane, its name and one tagline on them.
 void DrawPanel(ImDrawList* d, const HubFonts& f, const Entry& e) {
     const Frame p = kPanel;
     DropShadow(d, p.x, p.y, p.x + p.w, p.y + p.h, 6, 18, 0.32f, true);
@@ -138,8 +136,6 @@ void DrawPanel(ImDrawList* d, const HubFonts& f, const Entry& e) {
     d->AddLine(ImVec2(a.x + edge, a.y + edge + 0.5f), ImVec2(b.x - edge, a.y + edge + 0.5f), Rgba(255, 255, 255, 77), std::max(1.0f, g_v.L(1)));
 }
 
-// My Character's tile: the pick's stage behind its character, the name
-// strip at the top and the subtitle ("Seth VS1 / VT2") along the bottom.
 void DrawPickTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame& r, bool on) {
     Pane(d, r.x, r.y, r.x + r.w, r.y + r.h);
     d->PushClipRect(g_v.P(r.x + 2, r.y + 2), g_v.P(r.x + r.w - 2, r.y + r.h - 2), true);
@@ -147,11 +143,10 @@ void DrawPickTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame&
     d->AddRectFilled(g_v.P(r.x, r.y), g_v.P(r.x + r.w, r.y + r.h), Rgba(10, 12, 16, 70));
     if (!e.chara.empty()) {
         if (const TextureView* art = TextureSized(CharaTex(e.chara, "PartCharacter"), g_v.L(380))) {
-            const float size = 380, x = r.x + (r.w - size) / 2, y = r.y + 44; // the head under the name strip
+            const float size = 380, x = r.x + (r.w - size) / 2, y = r.y + 44;
             Image(d, art, g_v.P(x, y), g_v.P(x + size, y + size));
         }
     }
-    // The subtitle on a dark band, legible over any stage.
     d->AddRectFilledMultiColor(g_v.P(r.x, r.y + r.h - 96), g_v.P(r.x + r.w, r.y + r.h), Rgba(0, 0, 0, 0), Rgba(0, 0, 0, 0), Rgba(0, 0, 0, 200),
                                Rgba(0, 0, 0, 200));
     d->PopClipRect();
@@ -166,9 +161,6 @@ void DrawPickTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame&
     if (on) Ring(d, r.x, r.y, r.x + r.w, r.y + r.h);
 }
 
-// A tile: a glass pane with its name in a strip (gold with the focus) and
-// its icon; no description inside it (the hint at the bottom says it).
-// `state`: live state on the strip's right (the rooms' counts).
 void DrawTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame& r, bool on, const std::string& state) {
     if (e.icon == Icon::None) return DrawPickTile(d, f, e, r, on);
     Pane(d, r.x, r.y, r.x + r.w, r.y + r.h);
@@ -180,14 +172,11 @@ void DrawTile(ImDrawList* d, const HubFonts& f, const Entry& e, const Frame& r, 
     if (on) Ring(d, r.x, r.y, r.x + r.w, r.y + r.h);
 }
 
-bool g_problemOpen = false; // the Custom Rooms modal (HubLive::roomsProblem)
-int g_problemChoice = 0;    // its focused button
-bool g_updateOpen = false;  // the update modal
+bool g_problemOpen = false;
+int g_problemChoice = 0;
+bool g_updateOpen = false;
 int g_updateChoice = 0;
 
-// The modal: what is wrong and what can be done. While connecting it waits,
-// and Custom Rooms opens by itself once it can; a problem gone (the server
-// answered) does the same.
 HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live) {
     using P = HubLive::RoomsProblem;
     if (live.roomsProblem == P::None) {
@@ -198,7 +187,7 @@ HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live
     ImFont* bold = f.bold ? f.bold : f.strong;
     const std::string server = live.roomsServer.empty() ? std::string("the rooms server") : live.roomsServer;
     std::string title, text;
-    const char* primary = nullptr; // the first button, besides Close
+    const char* primary = nullptr;
     HubAction primaryAction = HubAction::None;
     switch (live.roomsProblem) {
         case P::Connecting:
@@ -268,7 +257,7 @@ HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live
     }
     if (Confirm() || pressed >= 0) {
         const bool primaryChosen = primary && g_problemChoice == 0;
-        if (!primaryChosen || primaryAction != HubAction::RetryRooms) g_problemOpen = false; // Try again keeps it up (it opens the rooms once they answer)
+        if (!primaryChosen || primaryAction != HubAction::RetryRooms) g_problemOpen = false;
         if (primaryChosen && primaryAction == HubAction::UpdateInstall) {
             g_updateOpen = true;
             g_updateChoice = 0;
@@ -278,8 +267,6 @@ HubAction DrawRoomsProblem(ImDrawList* d, const HubFonts& f, const HubLive& live
     return HubAction::None;
 }
 
-// The update modal: what is out (its notes), Update now; the download's
-// progress; then Restart now, or why it failed.
 HubAction DrawUpdateModal(ImDrawList* d, const HubFonts& f, const HubLive& live) {
     using S = UpdateView::State;
     const UpdateView& u = live.update;
@@ -292,7 +279,6 @@ HubAction DrawUpdateModal(ImDrawList* d, const HubFonts& f, const HubLive& live)
     switch (u.state) {
         case S::Available: {
             title = "Polarity " + u.latest + " is out";
-            // The first paragraph of the notes, cut to a few lines.
             std::string notes = u.notes.substr(0, u.notes.find("\n\n"));
             if (notes.size() > 360) notes = notes.substr(0, notes.rfind(' ', 357)) + "...";
             text = notes.empty() ? "A new version is ready to download." : notes;
@@ -378,14 +364,13 @@ HubAction DrawUpdateModal(ImDrawList* d, const HubFonts& f, const HubLive& live)
             return HubAction::None;
         }
         g_updateChoice = 0;
-        return primaryAction; // the modal stays: its next state shows
+        return primaryAction;
     }
     return HubAction::None;
 }
 
 void DrawTop(ImDrawList* d, const HubFonts& f, const HubLive& live) {
     StageText(d, f.display, 42, 800, 30, Rgba(255, 255, 255), "Polarity", 0.5f);
-    // Right to left: the version, the player.
     float x = 1560;
     const float y = 22;
     StageText(d, f.body, 20, x, y, look::kSoft, live.version, 1);
@@ -395,7 +380,7 @@ void DrawTop(ImDrawList* d, const HubFonts& f, const HubLive& live) {
 
 } // namespace
 
-void OpenHub(bool fromBlack) {
+void HubShow(bool fromBlack) {
     if (!g_open.exchange(true)) {
         g_openedAt = -1;
         g_fromBlack = fromBlack;
@@ -404,22 +389,22 @@ void OpenHub(bool fromBlack) {
     }
 }
 
-void CloseHub() {
+void HubHide() {
     if (g_open.exchange(false)) Log("hub: closed");
 }
 
 bool HubOpen() { return g_open; }
 
-void OpenUpdateModal() {
+void HubOpenUpdateModal() {
     if (!g_updateOpen) Log("hub: update modal open");
     g_updateOpen = true;
     g_updateChoice = 0;
     g_problemOpen = false;
 }
 
-bool UpdateModalOpen() { return g_updateOpen; }
+bool HubUpdateModalOpen() { return g_updateOpen; }
 
-void WarmHubTextures(const HubLive& live) {
+void HubWarmTextures(const HubLive& live) {
     g_drawing = false;
     for (const char* icon : {"button_a", "button_start"}) Texture(PadTex(icon));
     for (const std::string& c : {live.roomsChara, live.offlineChara, live.myChara}) {
@@ -431,17 +416,13 @@ void WarmHubTextures(const HubLive& live) {
     g_drawing = true;
 }
 
-HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput) {
+HubAction HubDraw(const HubFonts& f, const HubLive& live, bool takeInput) {
     if (!g_open || !f.display || !f.strong || !f.body) return HubAction::None;
     BeginScreen();
     const double now = ImGui::GetTime();
     if (g_openedAt < 0) g_openedAt = now;
     float alpha = static_cast<float>(std::clamp((now - g_openedAt) / 0.25, 0.0, 1.0));
     if (g_fromBlack) {
-        // At launch: black until the backdrop's art is in (or 1.5 s), then a
-        // fade counted in drawn frames, each at most 1/30 s: the game's
-        // first seconds at the menu hitch (frames of 60-180 ms), which ate
-        // a fade timed by the clock.
         const bool ready = BackdropReady() || now - g_openedAt > 1.5;
         if (ready && g_blackFade == 0) Log("hub: fading in from black after %.0f ms", (now - g_openedAt) * 1000);
         if (ready) g_blackFade += std::min(ImGui::GetIO().DeltaTime, 1.0f / 30);
@@ -449,7 +430,6 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput) {
     }
     ImDrawList* d = ImGui::GetBackgroundDrawList();
     if (g_fromBlack) {
-        // At launch the game's main menu is behind: black under the fade.
         if (alpha < 1) d->AddRectFilled(ImVec2(0, 0), ImGui::GetIO().DisplaySize, IM_COL32(0, 0, 0, 255));
         else g_fromBlack = false;
     }
@@ -457,22 +437,17 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput) {
     Backdrop(d);
     d->PushClipRect(g_v.P(0, 0), g_v.P(1600, 900), true);
     g_inputOn = takeInput;
-    if (takeInput) SetUiSoundSet(UiSoundSet::MainMenu); // the hub stands for the main menu
+    if (takeInput) UiSoundUseSet(UiSoundSet::MainMenu);
     const std::vector<Entry> entries = Entries(live);
     const int count = static_cast<int>(entries.size());
     g_focus = std::clamp(g_focus, 0, count - 1);
 
-    // Input: left and right between the column and the online tiles; the
-    // mouse focuses what it is over and a click selects it.
     HubAction action = HubAction::None;
-    // Left and right along the bottom row (the column, Custom Rooms, My
-    // Character), up and down in the column (it remembers which of its two
-    // right left).
-    const bool inColumn = g_focus == 0 || g_focus == 2;
-    if (!g_problemOpen && !g_updateOpen && Left()) g_focus = g_focus == 3 ? 1 : g_column;
-    if (!g_problemOpen && !g_updateOpen && Right()) g_focus = inColumn ? 1 : 3;
-    if (!g_problemOpen && !g_updateOpen && inColumn && (Up() || Down())) g_focus = g_focus == 0 ? 2 : 0;
-    if (g_focus == 0 || g_focus == 2) g_column = g_focus;
+    const bool inColumn = g_focus == kPlayOffline || g_focus == kBattleLog;
+    if (!g_problemOpen && !g_updateOpen && Left()) g_focus = g_focus == kMyCharacter ? kCustomRooms : g_column;
+    if (!g_problemOpen && !g_updateOpen && Right()) g_focus = inColumn ? kCustomRooms : kMyCharacter;
+    if (!g_problemOpen && !g_updateOpen && inColumn && (Up() || Down())) g_focus = g_focus == kPlayOffline ? kBattleLog : kPlayOffline;
+    if (g_focus == kPlayOffline || g_focus == kBattleLog) g_column = g_focus;
     for (int i = 0; i < count && !g_problemOpen && !g_updateOpen; i++) {
         const Frame& r = kFrames[i];
         if (takeInput && MouseIn(g_v.P(r.x, r.y), g_v.P(r.x + r.w, r.y + r.h))) {
@@ -494,8 +469,7 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput) {
     else if (g_problemOpen) action = DrawRoomsProblem(d, f, live);
     else {
         if (Confirm() || std::exchange(g_clickedTile, false)) action = entries[g_focus].action;
-        if (Pressed({ImGuiKey_GamepadStart}, false)) action = HubAction::Settings, PlayUi(UiSound::Decide);
-        // Custom Rooms that cannot be used: why, in a modal, not a dead screen.
+        if (Pressed({ImGuiKey_GamepadStart}, false)) action = HubAction::Settings, UiSoundPlay(UiSound::Decide);
         if (action == HubAction::CustomRooms && live.roomsProblem != HubLive::RoomsProblem::None) {
             action = HubAction::None;
             g_problemOpen = true;
@@ -513,7 +487,7 @@ HubAction DrawHub(const HubFonts& f, const HubLive& live, bool takeInput) {
     return action;
 }
 
-void ShowRoomsProblem() {
+void HubShowRoomsProblem() {
     g_problemOpen = true;
     g_problemChoice = 0;
 }

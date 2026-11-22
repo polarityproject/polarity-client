@@ -92,7 +92,7 @@ void Card(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, const Pro
     const double left = std::clamp(total - (RoomsClockMs() - v.tableViews[t].callSeenMs) / 1000.0, 0.0, total);
     const float ty = y0 + 296;
     const int second = static_cast<int>(std::ceil(left));
-    if (!g.cardReady && !s.ready[mySeat] && second > 0 && second <= 5 && second != g.cardTick) PlayUi(UiSound::Countdown);
+    if (!g.cardReady && !s.ready[mySeat] && second > 0 && second <= 5 && second != g.cardTick) UiSoundPlay(UiSound::Countdown);
     g.cardTick = second;
     if (g.cardReady || s.ready[mySeat]) {
         Text(d, f.display, g_v.L(28), g_v.P(x0 + w / 2, ty + 40), kGreen, "READY", 0.5f);
@@ -184,7 +184,7 @@ void HandoffModal(ImDrawList* d, const HubFonts& f, const RoomsView& v, int t, c
     if (other && g_names.count(other->chara)) Text(d, f.body, g_v.L(14), g_v.P(tx, y0 + 70), kSoft, g_names[other->chara]);
     Text(d, f.display, g_v.L(28), g_v.P(tx, y0 + 92), kCream, "vs");
     float nx = tx + TextW(f.display, 28, "vs") + 12;
-    if (other && other->country.size() == 2) nx += DrawFlag(d, f.strong, other->country, nx, y0 + 103, 13) + 10;
+    if (other && other->country.size() == 2) nx += RoomsScreenDrawFlag(d, f.strong, other->country, nx, y0 + 103, 13) + 10;
     Text(d, f.display, g_v.L(28), g_v.P(nx, y0 + 92), kCream, Ellipsize(f.display, 28, Upper(NameOf(v, otherId)), x1 - 28 - nx));
     float y = y0 + 158;
     for (const HandoffStep& st : steps) {

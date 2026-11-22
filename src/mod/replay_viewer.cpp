@@ -76,15 +76,15 @@ bool ReplayDriver::ViewerFrame(SfvGame& game) {
         BattleRecordSounds(true);
         Log("replay: viewing %s, %d frames%s", title_.c_str(), last_ + 1, startAt_ > 0 ? " (restarted)" : "");
         if (startAt_ > 0) {
-            MuteGameSounds(true);
+            UiSoundMuteGame(true);
             target_ = startAt_;
             startAt_ = -1;
         } else if (g_skipIntro) {
             Log("replay: on to round 1's call, past the intro");
             findRound_ = true;
-            MuteGameSounds(true);
+            UiSoundMuteGame(true);
         }
-        if (GameSoundsMuted()) BattleBeginSoundCapture();
+        if (UiSoundGameMuted()) BattleBeginSoundCapture();
     }
     std::vector<std::pair<ReplayControl, int>> commands;
     {
@@ -137,7 +137,7 @@ bool ReplayDriver::ViewerFrame(SfvGame& game) {
             Simulate(game, frame_ < target_ - 1 - warm_);
         }
         if ((frame_ >= target_ - 1 || frame_ > last_) && koScreenOver()) {
-            if (!quiet_) MuteGameSounds(false);
+            if (!quiet_) UiSoundMuteGame(false);
             if (frame_ == target_ - 1 && frame_ <= last_) Simulate(game, false);
             Log("replay: at frame %d (seek done), %s", frame_ - 1, HudStepReport().c_str());
             target_ = -1;
@@ -166,7 +166,7 @@ bool ReplayDriver::ViewerFrame(SfvGame& game) {
                 Log("replay: on at round call %d, frame %d (%s)", static_cast<int>(roundCalls_.size()), roundCalls_.back(), HudStepReport().c_str());
                 if (roundCalls_.back() + 1 == frame_) {
                     BattleKeepCapturedFrom(soundMark);
-                    MuteGameSounds(false);
+                    UiSoundMuteGame(false);
                 } else Seek(game, roundCalls_.back() + 1);
                 if (restarting_) {
                     Finish(game);
@@ -176,7 +176,7 @@ bool ReplayDriver::ViewerFrame(SfvGame& game) {
         }
         if (findRound_ && frame_ > last_) {
             findRound_ = false;
-            MuteGameSounds(false);
+            UiSoundMuteGame(false);
         }
     } else if (!paused_ && frame_ <= last_) {
         for (int k = 0; k < std::max(1, fast_) && frame_ <= last_ && (k == 0 || wasFight_); k++) Simulate(game, false);
@@ -257,7 +257,7 @@ void ReplayDriver::Simulate(SfvGame& game, bool lean) {
 void ReplayDriver::Seek(SfvGame& game, int target, bool quiet) {
     target = std::clamp(target, 1, last_ + 1);
     if (target == frame_ || keys_.empty()) return;
-    MuteGameSounds(true);
+    UiSoundMuteGame(true);
     quiet_ = quiet;
     if (target < frame_) {
         const int shown = frame_ - 1;
@@ -298,7 +298,7 @@ void ReplayDriver::Seek(SfvGame& game, int target, bool quiet) {
     }
     target_ = target;
     if (target_ == frame_) {
-        if (!quiet_) MuteGameSounds(false);
+        if (!quiet_) UiSoundMuteGame(false);
         target_ = -1;
     }
 }
@@ -306,7 +306,7 @@ void ReplayDriver::Seek(SfvGame& game, int target, bool quiet) {
 void ReplayDriver::EndQuiet() {
     if (!quiet_) return;
     quiet_ = false;
-    MuteGameSounds(false);
+    UiSoundMuteGame(false);
 }
 
 void ReplayDriver::RestartAt(SfvGame& game, int target) {
@@ -357,7 +357,7 @@ void ReplayDriver::Control(SfvGame& game, ReplayControl c, int arg) {
                 if (next != roundCalls_.end()) Seek(game, *next + 1);
                 else if (frame_ <= last_) {
                     findRound_ = true;
-                    MuteGameSounds(true);
+                    UiSoundMuteGame(true);
                 }
             } else Seek(game, PreviousRoundTarget());
             break;

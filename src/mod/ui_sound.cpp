@@ -1,3 +1,5 @@
+// The mod's menu sounds, the game's own cues and volumes, and muting the game (docs/overlay.md).
+
 #include "mod/ui_sound.h"
 
 #include "mod/battle_driver.h"
@@ -14,37 +16,20 @@
 namespace sfv::mod {
 namespace {
 
-// KWGameBlueprintFunction::PlayGameSE's work (what the game's menus call):
-// (const uint8_t* cue, const uint8_t* mode). The cue is a GameSoundSECue,
-// mapped to the system cue sheet's id by rva 0x80DD30 and played by 0x777F40
-// on the system SE player (mode 0, as the menus pass), through the CriWare
-// plugin's play request (0xEE7F10, which takes requests from any thread: a
-// locked queue the sound thread drains). It checks itself that the sound
-// system is up (0x771900).
 constexpr game::CodeSite kPlayGameSe{
     "PlayGameSE", 0x52AE30, {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xDA, 0x48, 0x8B, 0xF9}};
 using PlayFn = void (*)(const uint8_t* cue, const uint8_t* mode);
 PlayFn g_play = nullptr;
 uintptr_t g_base = 0;
 
-// What the game's options apply its SE volume with (rva 0xA77BCF, the Sound
-// options' SE slider): the CriWare category "M_SE" set to the setting x 0.9,
-// through the plugin's function table (rva 0x39C10D8: set a category's
-// volume by name). Every cue of that category follows it, the menus' and so
-// these. Research only (`uisound volume=<0..1>`): the test of that.
 constexpr uint32_t kCategoryVolumeByName = 0x39C10D8;
 using CategoryVolumeFn = void (*)(const char* category, float volume);
-// The game's apply of KWOptionSettingsSave's sound volumes to the categories
-// (M_BGM, M_SE x 0.9, M_VOICE, M_SYS_VOICE, M_EXTRA_VOICE), and how its
-// options menu finds that save: game instance (rva 0x521690) -> system save
-// (0x68E0D0) -> +0x60.
 constexpr uint32_t kApplySoundOptions = 0x79BDE0;
 constexpr uint32_t kGameInstance = 0x521690;
 constexpr uint32_t kSystemSave = 0x68E0D0;
 constexpr uint32_t kOptionsOfSystemSave = 0x60;
 bool g_muted = false;
 
-// GameSoundSECue (enuminfo GameSoundSECue): the values used here.
 enum Cue : uint8_t {
     MAINMENU_DECISION1 = 1,
     MAINMENU_CURSOR1 = 2,
@@ -74,7 +59,7 @@ enum Cue : uint8_t {
     LOUNGE_READY_OFF = 81,
     LOUNGE_PLAYERS_TURN_COUNT_DOWN_SE = 86,
     LOUNGE_COMMING_PLAYERS_TURN_SE = 87,
-    kCueCount = 103, // GameSoundSECue_MAX
+    kCueCount = 103,
 };
 
 constexpr size_t kSounds = static_cast<size_t>(UiSound::Count);
@@ -113,20 +98,20 @@ const char* const kNames[kSounds] = {"cursor", "step", "decide", "cancel", "erro
 
 std::mutex g_mutex;
 std::array<bool, kSounds> g_pending{};
-UiSoundSet g_set = UiSoundSet::Menu;            // render thread
-bool g_modalNow = false, g_modalBefore = false; // render thread
+UiSoundSet g_set = UiSoundSet::Menu;
+bool g_modalNow = false, g_modalBefore = false;
 
 void PlayCue(uint8_t cue) {
     if (!g_play || cue >= kCueCount) return;
     const uint8_t mode = 0;
-    BattleSetSoundCaptureExempt(true); // a menu sound of the mod's: never stopped as a muted run's
+    BattleSetSoundCaptureExempt(true);
     g_play(&cue, &mode);
     BattleSetSoundCaptureExempt(false);
 }
 
 } // namespace
 
-void InstallUiSound(const GameImage& image) {
+void UiSoundInstall(const GameImage& image) {
     const auto* code = image.At<const uint8_t*>(kPlayGameSe.rva);
     if (std::memcmp(code, kPlayGameSe.bytes, sizeof(kPlayGameSe.bytes)) != 0) {
         Log("ui sound: signature mismatch at %s: the mod's screens stay silent", kPlayGameSe.name);
@@ -136,9 +121,9 @@ void InstallUiSound(const GameImage& image) {
     g_base = image.base;
 }
 
-bool GameSoundsMuted() { return g_muted; }
+bool UiSoundGameMuted() { return g_muted; }
 
-void MuteGameSounds(bool mute) {
+void UiSoundMuteGame(bool mute) {
     if (!g_base || mute == g_muted) return;
     auto setVolume = *reinterpret_cast<CategoryVolumeFn*>(g_base + kCategoryVolumeByName);
     if (!setVolume) return;
@@ -149,12 +134,7 @@ void MuteGameSounds(bool mute) {
         Log("ui sound: the game's sounds muted (music stays)");
         return;
     }
-    // What the muted stretch started and is still playing (a jump's run: the
-    // last round's end, the new round's set-up) is stopped, not heard as the
-    // volumes come back.
     const int stopped = BattleStopCapturedSounds();
-    // The stops go through the plugin's queue to its sound thread while the
-    // volumes apply at once: a moment for them first, or a tail slips out.
     if (stopped > 0) Sleep(35);
     using GetFn = void* (*)();
     using OfFn = void* (*)(void*);
@@ -164,7 +144,6 @@ void MuteGameSounds(bool mute) {
                         ? *reinterpret_cast<void**>(static_cast<uint8_t*>(system) + kOptionsOfSystemSave)
                         : nullptr;
     if (!options) {
-        // Without the save, the categories at full: better than silent.
         for (const char* category : {"M_SE", "M_VOICE", "M_SYS_VOICE", "M_EXTRA_VOICE"}) setVolume(category, 1.0f);
         Log("ui sound: the options save not found; sounds unmuted at full volume");
     } else {
@@ -175,17 +154,17 @@ void MuteGameSounds(bool mute) {
     g_muted = false;
 }
 
-void PlayUi(UiSound sound) {
+void UiSoundPlay(UiSound sound) {
     if (sound >= UiSound::Count) return;
     std::lock_guard lock(g_mutex);
     g_pending[static_cast<size_t>(sound)] = true;
 }
 
-void SetUiSoundSet(UiSoundSet set) { g_set = set; }
+void UiSoundUseSet(UiSoundSet set) { g_set = set; }
 
-void NoteModalDrawn() { g_modalNow = true; }
+void UiSoundNoteModal() { g_modalNow = true; }
 
-void FlushUiSounds() {
+void UiSoundFlush() {
     std::array<bool, kSounds> now;
     {
         std::lock_guard lock(g_mutex);
@@ -195,17 +174,13 @@ void FlushUiSounds() {
     const UiSoundSet set = std::exchange(g_set, UiSoundSet::Menu);
     auto has = [&](UiSound s) { return now[static_cast<size_t>(s)]; };
     auto drop = [&](UiSound s) { now[static_cast<size_t>(s)] = false; };
-    // A modal appearing or going away.
     const bool modal = std::exchange(g_modalNow, false);
     if (modal && !g_modalBefore) now[static_cast<size_t>(UiSound::Open)] = true;
     if (!modal && g_modalBefore && !has(UiSound::Decide) && !has(UiSound::Cancel) && !has(UiSound::Error)) {
         now[static_cast<size_t>(UiSound::Close)] = true;
     }
     g_modalBefore = modal;
-    // Ready and its undoing are the press's sound.
     if (has(UiSound::ReadyOn) || has(UiSound::ReadyOff)) drop(UiSound::Decide), drop(UiSound::Cancel);
-    // An error stands for the decide the same press noted; a press that moved
-    // and chose in one frame is heard as the choice.
     if (has(UiSound::Error)) now[static_cast<size_t>(UiSound::Decide)] = false;
     if (has(UiSound::Decide) || has(UiSound::Cancel) || has(UiSound::Error)) {
         now[static_cast<size_t>(UiSound::Cursor)] = now[static_cast<size_t>(UiSound::Step)] = false;
@@ -216,7 +191,7 @@ void FlushUiSounds() {
     }
 }
 
-bool PlayUiNamed(const std::string& name) {
+bool UiSoundPlayNamed(const std::string& name) {
     for (size_t i = 0; i < kSounds; i++) {
         if (name == kNames[i]) {
             const uint8_t cue = CueOf(static_cast<UiSound>(i), UiSoundSet::Menu);
@@ -225,7 +200,6 @@ bool PlayUiNamed(const std::string& name) {
             return true;
         }
     }
-    // Research: `uisound cat=M_BGM:0` sets one CriWare category's volume.
     if (name.rfind("cat=", 0) == 0 && g_base) {
         const size_t colon = name.find(':');
         auto fn = *reinterpret_cast<CategoryVolumeFn*>(g_base + kCategoryVolumeByName);

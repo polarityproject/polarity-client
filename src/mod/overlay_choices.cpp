@@ -346,7 +346,7 @@ void SaveChoices() {
         NetOptions().shareCountry = o.shareCountry;
         WeyveService::SetHideCountry(!o.shareCountry);
         NetOptions().streamerMode = o.streamerMode;
-        SetStreamerMode(o.streamerMode);
+        RoomsScreenSetStreamerMode(o.streamerMode);
         NetOptions().wordFilter = o.wordFilter;
         RoomsSetWordFilter(o.wordFilter);
         NetOptions().inputDelay = o.inputDelay;

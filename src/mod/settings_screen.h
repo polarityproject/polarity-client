@@ -43,12 +43,12 @@ struct SettingsInput {
     bool back = false;
 };
 
-void OpenSettingsScreen(const std::string& focusRow = "");
+void SettingsScreenShow(const std::string& focusRow = "");
 // Test (`settings <row> type <text>`): opened on that row, typing that text.
-void OpenSettingsScreenTyping(const std::string& focusRow, const std::string& text);
-void CloseSettingsScreen();
+void SettingsScreenShowTyping(const std::string& focusRow, const std::string& text);
+void SettingsScreenHide();
 bool SettingsScreenOpen();
-void DrawSettingsScreen(const HubFonts& fonts, const std::string& version, const std::vector<SettingsRow>& rows, bool takeInput,
+void SettingsScreenDraw(const HubFonts& fonts, const std::string& version, const std::vector<SettingsRow>& rows, bool takeInput,
                         SettingsInput* input);
 
 } // namespace sfv::mod

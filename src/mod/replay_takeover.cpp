@@ -113,7 +113,7 @@ void ReplayDriver::TakeoverFadeOut() {
 
 void ReplayDriver::TakeoverRewind(SfvGame& game) {
     const int stopped = BattleStopCapturedSounds();
-    MuteGameSounds(true);
+    UiSoundMuteGame(true);
     Log("replay: rewinding the takeover from frame %d (%d of its sounds stopped)", frame_ - 1, stopped);
     if (!wasFight_ && !tk_.ko.empty() && tk_.ticks <= kTakeoverKoTicks) {
         LoadRegions(game.Regions(), tk_.ko.data());
@@ -145,7 +145,7 @@ void ReplayDriver::TakeoverLoad(SfvGame& game) {
         wasFight_ = FlowRoundInFight();
         paused_ = true;
         tk_ = Takeover{};
-        MuteGameSounds(false);
+        UiSoundMuteGame(false);
     }
     crossFight_ = false;
     Log("replay: back to frame %d after the takeover (%s, from frame %d)", start - 1, k >= 0 ? "from a keyframe" : "the kept state",

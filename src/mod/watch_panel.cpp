@@ -1,6 +1,6 @@
 #include "mod/watch_panel.h"
 
-#include "mod/rooms_screen.h" // DrawFlag
+#include "mod/rooms_screen.h" // RoomsScreenDrawFlag
 #include "mod/ui_kit.h"
 
 #include <imgui.h>
@@ -68,7 +68,7 @@ void DrawWatchPanel(const HubFonts& f, const WatchPanelLive& live, float alpha, 
             Text(d, f.display, g_v.L(size), g_v.P(x, ty), look::kSoft, "vs");
             x += TextW(f.display, size, "vs") + 12;
         }
-        if (const float fw = DrawFlag(d, f.strong, live.countries[i], x, y + 11, 15)) x += fw + 12;
+        if (const float fw = RoomsScreenDrawFlag(d, f.strong, live.countries[i], x, y + 11, 15)) x += fw + 12;
         Text(d, f.display, g_v.L(size), g_v.P(x, ty), look::kCream, names[i]);
         x += TextW(f.display, size, names[i]) + 12;
     }

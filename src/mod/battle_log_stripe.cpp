@@ -79,7 +79,7 @@ void BattleLogDrawStripe(const HubFonts& f, bool takeInput) {
     ImDrawList* d = ImGui::GetForegroundDrawList();
     ImFont* bold = f.bold ? f.bold : f.strong;
     g_inputOn = takeInput;
-    SetUiSoundSet(UiSoundSet::Menu);
+    UiSoundUseSet(UiSoundSet::Menu);
     if (v.benchmark) {
         if (takeInput && Back()) ReplayApplyControl(ReplayControl::Leave);
         g_inputOn = false;
@@ -99,7 +99,7 @@ void BattleLogDrawStripe(const HubFonts& f, bool takeInput) {
     }
     if (v.takeover >= 0) {
         if (takeInput && Pressed({ImGuiKey_GamepadStart}, false)) {
-            PlayUi(UiSound::Cancel);
+            UiSoundPlay(UiSound::Cancel);
             ReplayApplyControl(ReplayControl::TakeoverStop);
         }
         g_inputOn = false;
@@ -134,7 +134,7 @@ void BattleLogDrawStripe(const HubFonts& f, bool takeInput) {
     };
     if (takeInput && g_jump.phase == JumpFade::In && !v.seeking) {
         if (const int dir = jumpPressed(); dir != 0) {
-            PlayUi(UiSound::Step);
+            UiSoundPlay(UiSound::Step);
             const double shown = std::clamp(1 - (ImGui::GetTime() - g_jump.since) / kFadeIn, 0.0, 1.0);
             g_jump = {JumpFade::Out, dir, ImGui::GetTime() - shown * kFadeOut, 0};
         }
@@ -147,28 +147,28 @@ void BattleLogDrawStripe(const HubFonts& f, bool takeInput) {
             const int side = Pressed({ImGuiKey_GamepadFaceLeft}, false) ? 0 : Pressed({ImGuiKey_GamepadFaceUp}, false) ? 1
                                                                                                                        : -1;
             if (side >= 0) {
-                PlayUi(UiSound::Decide);
+                UiSoundPlay(UiSound::Decide);
                 ReplayApplyControl(ReplayControl::Takeover, side);
             }
         }
         if (Confirm()) ReplayApplyControl(ReplayControl::Toggle);
         if (Pressed({ImGuiKey_GamepadBack}, false)) {
-            PlayUi(UiSound::Decide);
+            UiSoundPlay(UiSound::Decide);
             HitboxesSetInReplays(!HitboxesInReplays());
         }
         if (Pressed({ImGuiKey_GamepadStart}, false)) {
-            PlayUi(UiSound::Decide);
+            UiSoundPlay(UiSound::Decide);
             FrameMeterSetInReplays(!FrameMeterInReplays());
         }
         if (Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}) && v.frame > v.backLimit) ReplayApplyControl(ReplayControl::Step, -1);
         if (Pressed({ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight}) && v.canStepForward) {
-            PlayUi(UiSound::Cursor);
+            UiSoundPlay(UiSound::Cursor);
             ReplayApplyControl(ReplayControl::Step, 1);
         }
         if (g_jump.phase == JumpFade::None) {
             const int dir = jumpPressed();
             if (dir != 0) {
-                PlayUi(UiSound::Step);
+                UiSoundPlay(UiSound::Step);
                 g_jump = {JumpFade::Out, dir, ImGui::GetTime(), 0};
             }
         }
