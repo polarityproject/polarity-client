@@ -154,11 +154,11 @@ void BattleLogDrawStripe(const HubFonts& f, bool takeInput) {
         if (Confirm()) ReplayApplyControl(ReplayControl::Toggle);
         if (Pressed({ImGuiKey_GamepadBack}, false)) {
             PlayUi(UiSound::Decide);
-            SetHitboxesInReplays(!HitboxesInReplays());
+            HitboxesSetInReplays(!HitboxesInReplays());
         }
         if (Pressed({ImGuiKey_GamepadStart}, false)) {
             PlayUi(UiSound::Decide);
-            SetFrameMeterInReplays(!FrameMeterInReplays());
+            FrameMeterSetInReplays(!FrameMeterInReplays());
         }
         if (Pressed({ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft}) && v.frame > v.backLimit) ReplayApplyControl(ReplayControl::Step, -1);
         if (Pressed({ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight}) && v.canStepForward) {

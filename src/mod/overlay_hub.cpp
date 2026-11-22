@@ -254,8 +254,8 @@ void ApplySetting(const SettingsInput& in) {
     else if (in.row == "bench" && in.confirm) OpenBenchmarkModal(false);
     else if (in.row == "benchlast" && in.confirm) OpenBenchmarkModal(true);
     else if (in.row == "checkstart" && in.delta) SaveMainIni(L"update", L"check", ReadMainIni(L"update", L"check", 1) ? 0 : 1);
-    else if (in.row == "hitboxes" && in.delta) SetHitboxesInTraining(!HitboxesInTraining());
-    else if (in.row == "framemeter" && in.delta) SetFrameMeterInTraining(!FrameMeterInTraining());
+    else if (in.row == "hitboxes" && in.delta) HitboxesSetInTraining(!HitboxesInTraining());
+    else if (in.row == "framemeter" && in.delta) FrameMeterSetInTraining(!FrameMeterInTraining());
     else if (in.row == "name" && in.typed) {
         std::snprintf(g_choices.name, sizeof(g_choices.name), "%s", in.text.c_str());
         SaveChoices();

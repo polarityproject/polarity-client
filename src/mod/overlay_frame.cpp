@@ -371,8 +371,8 @@ void Draw(IDXGISwapChain* swapChain) {
     }
     const bool hint = !visible && !preview && !HubOpen() && (phase == NetView::Phase::Idle || phase == NetView::Phase::Ended) && OnMenuScreen();
     if (hint) DrawMenuHint();
-    DrawHitboxes(ImGui::GetBackgroundDrawList(), ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
-    DrawFrameMeter(ImGui::GetBackgroundDrawList(), g_fontBold);
+    HitboxesDraw(ImGui::GetBackgroundDrawList(), ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
+    FrameMeterDraw(ImGui::GetBackgroundDrawList(), g_fontBold);
     DrawPreviews();
     DrawNotices(session && (phase == NetView::Phase::Running || phase == NetView::Phase::PostMatch), view);
     DrawTexturePreview();

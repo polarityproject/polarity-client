@@ -50,6 +50,8 @@ constexpr size_t kEffectLiveA = 0x11C0, kEffectLiveB = 0x1358;
 constexpr size_t kHitList = 0x120, kHitListEnd = 0x1608, kHurtList = 0x1610, kHurtListEnd = 0x3040;
 constexpr size_t kEntrySize = 0x78, kEntryType = 0x30, kEntryId = 0x50, kEntryVtableAt = 0x58;
 constexpr uint32_t kEntryVtable = 0x2C4D6F8;
+constexpr uint32_t kEmptyEntryId = 0xFFFFFFFFu;
+constexpr uint8_t kHitProximity = 4, kHitProjectileCancel = 5;
 
 // A move file's script header (the runner's +0x40): +0 the first hitbox's
 // frame, +8 the interrupt frame (from it, any action cancels the script: its

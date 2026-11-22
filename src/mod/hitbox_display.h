@@ -33,22 +33,22 @@ struct WorldBox {
 
 // The saved choices (polarity.ini [hitboxes] training / replays).
 bool HitboxesInTraining();
-void SetHitboxesInTraining(bool on);
+void HitboxesSetInTraining(bool on);
 bool HitboxesInReplays();
-void SetHitboxesInReplays(bool on);
+void HitboxesSetInReplays(bool on);
 // Research (`hitboxes 0|1`): shown in any battle, whatever the choices.
-void SetHitboxesForced(bool on);
+void HitboxesSetForced(bool on);
 
 // Game thread, after each rendered battle frame (battle_driver.cpp): the
 // boxes of the frame about to be drawn, when they are to be shown.
-void CollectHitboxes(SfvGame& game);
+void HitboxesCollect(SfvGame& game);
 // Whether the overlay has boxes to draw now (it renders a frame for them).
 bool HitboxesVisible();
 // Render thread (overlay): the boxes, on `d`, over a display of that size.
-void DrawHitboxes(ImDrawList* d, float width, float height);
+void HitboxesDraw(ImDrawList* d, float width, float height);
 
 // Research (`boxlog <ticks>`): each collection's boxes per actor.
-void LogHitboxes(int frames);
-std::vector<WorldBox> HitboxSnapshot();
+void HitboxesLog(int frames);
+std::vector<WorldBox> HitboxesSnapshot();
 
 } // namespace sfv::mod

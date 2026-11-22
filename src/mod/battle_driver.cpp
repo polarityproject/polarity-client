@@ -52,7 +52,7 @@ void BattleFrameDetour(uint8_t* battleFrame) {
         hitch::Scope timed(hitch::Part::BattleFrame);
         g_origBattleFrame(battleFrame);
     }
-    CollectHitboxes(*g_game);
+    HitboxesCollect(*g_game);
     FrameMeterFrame(*g_game);
     BattleCineLogFrame();
     BattleCamTraceRecord(TraceAt::Frame);

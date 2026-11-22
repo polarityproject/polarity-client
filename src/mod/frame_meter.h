@@ -25,11 +25,11 @@ namespace sfv::mod {
 class SfvGame;
 
 bool FrameMeterInTraining();
-void SetFrameMeterInTraining(bool on);
+void FrameMeterSetInTraining(bool on);
 bool FrameMeterInReplays();
-void SetFrameMeterInReplays(bool on);
+void FrameMeterSetInReplays(bool on);
 // Research (`framemeter 0|1`): shown in any battle, whatever the choices.
-void SetFrameMeterForced(bool on);
+void FrameMeterSetForced(bool on);
 
 // Game thread, as each battle tick starts (the state the last one left).
 void FrameMeterTick(SfvGame& game);
@@ -39,8 +39,8 @@ void FrameMeterFrame(SfvGame& game);
 // Whether the overlay has a meter to draw now.
 bool FrameMeterVisible();
 // Render thread (overlay): the meter, in the 1600 x 900 design space (g_v).
-void DrawFrameMeter(ImDrawList* d, ImFont* bold);
+void FrameMeterDraw(ImDrawList* d, ImFont* bold);
 // Research (`fmlog <ticks>`): each tick's classification.
-void LogFrameMeter(int ticks);
+void FrameMeterLog(int ticks);
 
 } // namespace sfv::mod

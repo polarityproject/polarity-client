@@ -54,7 +54,15 @@ jumps and takeover rewinds show the right boxes for the frame loaded.
 
 - **Camera:** the `KWBattleCameraManager` of the controller with a local
   player, reached from the battle camera through `KBP_BattlePlayerController`
-  (+0x390). Its POV (location, rotation, horizontal FOV) is at +0x370.
+  (+0x390), the controller with a local player (+0x360). Its POV
+  (location, rotation, horizontal FOV, then the aspect ratio at +0x28) is at
+  +0x370. The battle camera (its 528-byte region from +0x100; a sub-object
+  with vtable rva 0x2C4F4A0 at +0xE8) points at both battle player
+  controllers (+0x198, +0x1C0). Only when that path doesn't hold does the
+  display walk every object for the controller, which takes about 0.5 s; it
+  looks once per battle.
+- **Aspect:** the game draws a 16:9 view with bars around it in a window of
+  another shape (tested at 4:3 and 21:9). Lines are 2 px at 1080p.
 - **Mapping:** battle units × 100 = Unreal units, on the Y = 0 plane.
 - **Projection:** perspective from the POV, into the 16:9 rectangle the game
   draws centred in the back buffer, in back-buffer pixels. The render

@@ -1,3 +1,5 @@
+// The hitbox display: the actors' box lists drawn through the game's camera (docs/hitbox-display.md).
+
 #include "mod/hitbox_display.h"
 
 #include "mod/battle_actors.h"
@@ -24,17 +26,18 @@ namespace sfv::mod {
 
 namespace {
 
-using namespace actor; // battle_actors.h
+using namespace actor;
 
-// The player controller's PlayerCameraManager (+0x390), whose CameraCache.POV (+0x370) is the view
-// drawn: location, rotation (pitch, yaw, roll), FOV (horizontal), ...,
-// aspect ratio (+0x28).
-constexpr size_t kCameraManager = 0x390, kPov = 0x370;
-constexpr ULONGLONG kStaleMs = 250;  // no collection this long: the battle is gone
-constexpr ULONGLONG kPausedMs = 150; // no battle tick this long out of a replay: the game is paused
+constexpr size_t kCameraManager = 0x390, kPov = 0x370, kPovAspect = 0x28, kLocalPlayer = 0x360;
+constexpr size_t kBattleCameraRegionSize = 528, kBattleCameraRegionAt = 0x100, kBattleCameraPartVtableAt = 0x18;
+constexpr uint32_t kBattleCameraPartVtable = 0x2C4F4A0;
+constexpr size_t kBattleControllers[] = {0x198, 0x1C0};
+constexpr size_t kBoxX = 0, kBoxY = 4, kBoxW = 12, kBoxH = 16;
+constexpr ULONGLONG kStaleMs = 250;
+constexpr ULONGLONG kPausedMs = 150;
 
 uintptr_t g_base = 0;
-std::atomic<int> g_training{-1}, g_replays{-1}; // -1: not read yet
+std::atomic<int> g_training{-1}, g_replays{-1};
 std::atomic<bool> g_forced{false};
 std::atomic<int> g_log{0};
 
@@ -56,14 +59,8 @@ bool ClassNamed(const void* object, const char* part) {
     return object && IsReadable(object, 0x30) && ue4::ObjectName(ue4::ClassOf(object)).find(part) != std::string::npos;
 }
 
-// The drawn camera's manager: the PlayerCameraManager (+0x390) of the player
-// controller that has a local player (+0x360). The battle camera (the
-// game's region of 528 bytes from its +0x100; its sub-object with vtable
-// 0x2C4F4A0 at +0xE8) points at both battle player controllers (+0x198,
-// +0x1C0); the object walk (as replay_driver's CameraText, ~0.5 s) only when
-// that path does not hold.
 const uint8_t* ManagerOf(const uint8_t* controller) {
-    if (!ClassNamed(controller, "PlayerController") || !IsReadable(controller + kCameraManager, 8) || !At<const void*>(controller, 0x360)) {
+    if (!ClassNamed(controller, "PlayerController") || !IsReadable(controller + kCameraManager, 8) || !At<const void*>(controller, kLocalPlayer)) {
         return nullptr;
     }
     const auto* manager = At<const uint8_t*>(controller, kCameraManager);
@@ -73,10 +70,10 @@ const uint8_t* ManagerOf(const uint8_t* controller) {
 const uint8_t* FindCameraManager(SfvGame& game) {
     if (!ue4::EnsureObjects(g_base)) return nullptr;
     for (const StateRegion& r : game.Regions()) {
-        if (r.size != 528 || !IsReadable(r.ptr - 0x100, 0x200)) continue;
-        if (At<uintptr_t>(r.ptr - 0x18, 0) != g_base + 0x2C4F4A0) continue;
-        for (size_t at : {size_t{0x198}, size_t{0x1C0}}) {
-            if (const uint8_t* m = ManagerOf(At<const uint8_t*>(r.ptr - 0x100, at))) return m;
+        if (r.size != kBattleCameraRegionSize || !IsReadable(r.ptr - kBattleCameraRegionAt, 0x200)) continue;
+        if (At<uintptr_t>(r.ptr - kBattleCameraPartVtableAt, 0) != g_base + kBattleCameraPartVtable) continue;
+        for (size_t at : kBattleControllers) {
+            if (const uint8_t* m = ManagerOf(At<const uint8_t*>(r.ptr - kBattleCameraRegionAt, at))) return m;
         }
     }
     const uint8_t* found = nullptr;
@@ -104,7 +101,7 @@ void Collect(SfvGame& game, std::vector<WorldBox>& boxes) {
         const bool fighter = vt == kFighterVtable;
         if (!fighter && vt != kEffectVtable) continue;
         const uint32_t side = At<uint32_t>(r.ptr, kSide);
-        if (side > 1) continue; // an effect slot never used
+        if (side > 1) continue;
         if (!fighter && !At<uint32_t>(r.ptr, kEffectLiveA) && !At<uint32_t>(r.ptr, kEffectLiveB)) continue;
         const auto* pos = At<const uint8_t*>(r.ptr - kPosition, 0);
         const size_t xy = fighter ? kFighterXY : kEffectXY;
@@ -120,8 +117,8 @@ void Collect(SfvGame& game, std::vector<WorldBox>& boxes) {
                 const uint8_t* e = r.ptr + at;
                 if (At<uintptr_t>(e, kEntryVtableAt) != entryVtable) continue;
                 const uint32_t id = At<uint32_t>(e, kEntryId);
-                if (id == 0xFFFFFFFFu) continue;
-                const float bx = At<float>(e, 0), by = At<float>(e, 4), bw = At<float>(e, 12), bh = At<float>(e, 16);
+                if (id == kEmptyEntryId) continue;
+                const float bx = At<float>(e, kBoxX), by = At<float>(e, kBoxY), bw = At<float>(e, kBoxW), bh = At<float>(e, kBoxH);
                 if (!(bw > 0 && bh > 0)) continue;
                 WorldBox b{side ? px - bx - bw : px + bx, py + by, bw, bh, WorldBox::Hurt};
                 if (hit) {
@@ -163,28 +160,25 @@ bool HitboxesInTraining() { return ReadChoice(g_training, L"training", 1) != 0; 
 
 bool HitboxesInReplays() { return ReadChoice(g_replays, L"replays", 0) != 0; }
 
-void SetHitboxesInTraining(bool on) {
+void HitboxesSetInTraining(bool on) {
     g_training = on ? 1 : 0;
     SaveMainIni(L"hitboxes", L"training", on ? 1 : 0);
 }
 
-void SetHitboxesInReplays(bool on) {
+void HitboxesSetInReplays(bool on) {
     g_replays = on ? 1 : 0;
     SaveMainIni(L"hitboxes", L"replays", on ? 1 : 0);
 }
 
-void SetHitboxesForced(bool on) {
+void HitboxesSetForced(bool on) {
     g_forced = on;
     Log("hitboxes: %s in any battle", on ? "forced on" : "back to the choices");
 }
 
-void CollectHitboxes(SfvGame& game) {
+void HitboxesCollect(SfvGame& game) {
     if (!g_base) g_base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     if (!Wanted()) return;
-    // Training's pause menu stops the ticks (a paused replay runs none either,
-    // but keeps its picture): no boxes over the game's menu.
     if (!ReplayViewNow().active && GetTickCount64() - game.LastTickMs() > kPausedMs) return;
-    // The camera manager once per battle (a new region layout).
     if (game.LayoutVersion() != g_cameraLayout) {
         g_cameraLayout = game.LayoutVersion();
         const uint8_t* manager = FindCameraManager(game);
@@ -205,26 +199,22 @@ bool HitboxesVisible() {
     return g_camera.load() && GetTickCount64() - g_collectedAt.load() < kStaleMs;
 }
 
-std::vector<WorldBox> HitboxSnapshot() {
+std::vector<WorldBox> HitboxesSnapshot() {
     std::lock_guard lock(g_mutex);
     return g_boxes;
 }
 
-void LogHitboxes(int frames) { g_log = frames; }
+void HitboxesLog(int frames) { g_log = frames; }
 
-void DrawHitboxes(ImDrawList* d, float width, float height) {
+void HitboxesDraw(ImDrawList* d, float width, float height) {
     if (!HitboxesVisible()) return;
-    // The camera as drawn this frame (the manager still the one found: its
-    // vtable checked, the object gone with the battle).
     const uint8_t* manager = g_camera;
     if (!manager || !IsReadable(manager, kPov + 0x30) || At<uintptr_t>(manager, 0) != g_cameraVtable) return;
     float pov[7];
     std::memcpy(pov, manager + kPov, sizeof(pov));
-    // The game draws a view of the camera's aspect (16:9) with bars around
-    // it in a window of another shape (tested at 4:3 and 21:9).
-    float aspect = At<float>(manager, kPov + 0x28);
+    float aspect = At<float>(manager, kPov + kPovAspect);
     if (!(aspect > 1.2f && aspect < 2.5f)) aspect = 16.0f / 9.0f;
-    const std::vector<WorldBox> boxes = HitboxSnapshot();
+    const std::vector<WorldBox> boxes = HitboxesSnapshot();
     if (boxes.empty() || !(pov[6] > 1 && pov[6] < 170)) return;
     float vx = 0, vy = 0, vw = width, vh = height;
     if (width / height > aspect) {
@@ -238,7 +228,7 @@ void DrawHitboxes(ImDrawList* d, float width, float height) {
     const float cp = std::cos(pov[3] * kRad), sp = std::sin(pov[3] * kRad);
     const float cy = std::cos(pov[4] * kRad), sy = std::sin(pov[4] * kRad);
     const float f[3] = {cp * cy, cp * sy, sp}, r[3] = {-sy, cy, 0}, u[3] = {-sp * cy, -sp * sy, cp};
-    const float scale = vw * 0.5f / std::tan(pov[6] * 0.5f * kRad); // horizontal FOV over the view's width
+    const float scale = vw * 0.5f / std::tan(pov[6] * 0.5f * kRad);
     bool ok = true;
     auto project = [&](float bx, float by) {
         const float p[3] = {bx * 100.0f - pov[0], -pov[1], by * 100.0f - pov[2]};
@@ -250,9 +240,8 @@ void DrawHitboxes(ImDrawList* d, float width, float height) {
         return ImVec2(vx + vw * 0.5f + (p[0] * r[0] + p[1] * r[1] + p[2] * r[2]) / depth * scale,
                       vy + vh * 0.5f - (p[0] * u[0] + p[1] * u[1] + p[2] * u[2]) / depth * scale);
     };
-    const float line = std::max(1.0f, height / 540.0f); // 2 px at 1080p
+    const float line = std::max(1.0f, height / 540.0f);
     d->PushClipRect(ImVec2(vx, vy), ImVec2(vx + vw, vy + vh), false);
-    // Back to front: throwable and hurt under the attacking boxes.
     for (WorldBox::Kind kind : {WorldBox::Throwable, WorldBox::Hurt, WorldBox::Proximity, WorldBox::Throw, WorldBox::Hit}) {
         for (const WorldBox& b : boxes) {
             if (b.kind != kind) continue;

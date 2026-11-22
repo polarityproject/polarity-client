@@ -1,3 +1,5 @@
+// The frame meter: what each fighter does per tick, drawn as two bars (docs/frame-meter.md).
+
 #include "mod/frame_meter.h"
 
 #include "mod/battle_actors.h"
@@ -28,8 +30,8 @@ namespace sfv::mod {
 
 namespace {
 
-using namespace actor; // battle_actors.h
-using namespace ui;    // ui_kit.h
+using namespace actor;
+using namespace ui;
 
 enum Kind : uint8_t { Empty,
                       Idle,
@@ -47,9 +49,6 @@ enum Kind : uint8_t { Empty,
                       Armor,
                       ArmorFree };
 
-// Runs count FirstActive with Active, ArmorFree with Armor; Empty (not
-// recorded) is neutral too. Armor while free to act (outside a move, or in
-// its IASA frames) is armor to see and neutral to count.
 Kind Group(Kind k) { return k == FirstActive ? Active : k == ArmorFree ? Armor
                                                     : k == Empty       ? Idle
                                                                        : k; }
@@ -61,42 +60,45 @@ const char* KindName(Kind k) {
     return names[k];
 }
 
-constexpr int N = 90;                // blocks: 1.5 s
-constexpr ULONGLONG kStaleMs = 250;  // no refresh this long: the battle is gone
-constexpr ULONGLONG kPausedMs = 150; // no battle tick this long out of a replay: the game is paused
+constexpr uint32_t kMaxSections = 64, kMaxSectionsAt = 0x100000;
+constexpr int N = 90;
+constexpr ULONGLONG kStaleMs = 250;
+constexpr ULONGLONG kPausedMs = 150;
 
-// A block's milestones, drawn as a white border on its top, right and bottom.
 enum Edge : uint8_t { EdgeAirborne = 1,
                       EdgeLanding = 2,
                       EdgeEnd = 4 };
 
 struct Meter {
     Kind kind[2][N]{};
-    uint16_t count[2][N]{}; // a run's length, over its last block (0: none)
-    bool lane[2][N]{};      // the player's projectile is out
-    uint8_t edge[2][N]{};   // Edge bits
-    bool mark[N]{};         // a super freeze or cinematic held the meter before this block
+    uint16_t count[2][N]{};
+    bool lane[2][N]{};
+    uint8_t edge[2][N]{};
+    bool mark[N]{};
     int startup[2] = {-1, -1}, total[2] = {-1, -1}, adv[2] = {0, 0};
     bool advKnown[2] = {false, false};
 };
 
-// One battle frame as read: what the meter is built from. A viewed replay
-// keeps one per recording frame, so that a step or a seek rebuilds the meter
-// as the frames led there.
+// Why a frame is not counted: hitstop, a super freeze or cinematic, or outside a round's fight.
+enum class Hold : uint8_t { Counted,
+                            Hitstop,
+                            Freeze,
+                            OutsideFight };
+
 struct Record {
     bool valid = false;
-    uint8_t hold = 0; // 0 counted; 1 hitstop; 2 a super freeze or a cinematic; 3 outside a round's fight
+    Hold hold = Hold::Counted;
     Kind kind[2] = {Idle, Idle};
     bool lane[2] = {false, false};
     bool air[2] = {false, false};
-    bool attack[2] = {false, false}; // the script has hitboxes of its own
-    bool move[2] = {false, false};   // the script has the counter-hit state on some frame (Sample::move)
+    bool attack[2] = {false, false};
+    bool move[2] = {false, false};
     uint32_t script[2] = {0, 0};
-    int frame[2] = {0, 0};                             // the script's frame (a hand-over lands past 0, a new move at 0)
-    int interrupt[2] = {0, 0}, firstHit[2] = {-1, -1}; // fmlog: what classified it
+    int frame[2] = {0, 0};
+    int interrupt[2] = {0, 0}, firstHit[2] = {-1, -1};
     bool hit[2] = {false, false}, counter[2] = {false, false};
     uint32_t side[2] = {0, 0};
-    int round = 0; // a replay's round, from its call (the meter starts again with each); training: 0
+    int round = 0;
 };
 
 struct Run {
@@ -106,16 +108,16 @@ struct Run {
 };
 
 struct Player {
-    const uint8_t* actor = nullptr; // R
-    const uint8_t* state = nullptr; // S (battle_actors.h)
+    const uint8_t* actor = nullptr;
+    const uint8_t* state = nullptr;
     Run run;
     Kind lastWritten = Idle;
     uint32_t script = ~0u;
-    bool doing = false;      // the last frame was an action
-    bool actionable = true;  // the last frame was neutral or IASA
-    bool air = false;        // the last frame was airborne
-    int actionableSince = 0; // the frame it became so
-    int moveStart = -1;      // the open move's first frame, -1 none
+    bool doing = false;
+    bool actionable = true;
+    bool air = false;
+    int actionableSince = 0;
+    int moveStart = -1;
 };
 
 uintptr_t g_base = 0;
@@ -123,18 +125,16 @@ std::atomic<int> g_training{-1}, g_replays{-1};
 std::atomic<bool> g_forced{false};
 std::atomic<int> g_log{0};
 
-// Game thread.
 Meter g_m;
 Player g_p[2];
 uint64_t g_layout = ~0ull;
-int g_written = 0; // blocks written in this bar (the next one's index)
+int g_written = 0;
 bool g_hasContent = false, g_ended = true, g_pendingMark = false, g_exchange = false;
-bool g_armed = false;          // both fighters have been free to act since the battle (or a reset) began
-std::vector<Record> g_records; // a viewed replay's, by recording frame
-int g_applied = -1;            // the last recording frame the meter is built to
-int g_round = 0;               // the round of the last frame applied (Record::round)
+bool g_armed = false;
+std::vector<Record> g_records;
+int g_applied = -1;
+int g_round = 0;
 
-// Shared with the overlay.
 std::mutex g_mutex;
 Meter g_shown;
 std::atomic<ULONGLONG> g_tickAt{0};
@@ -156,12 +156,11 @@ bool IsActor(const uint8_t* r, uint32_t vtable) {
     return r && IsReadable(r - kPosition, kPosition) && At<uintptr_t>(r - kVtableAt, 0) == g_base + vtable;
 }
 
-// The move file's section of that type in a script, or nullptr.
 const uint8_t* Section(const uint8_t* script, int type, uint32_t* count) {
     if (!IsReadable(script, 64)) return nullptr;
     const uint32_t n = At<uint32_t>(script, kScriptSections);
     const uint32_t at = At<uint32_t>(script, kScriptSectionsAt);
-    if (n == 0 || n > 64 || at > 0x100000 || !IsReadable(script + at, n * kSectionSize)) return nullptr;
+    if (n == 0 || n > kMaxSections || at > kMaxSectionsAt || !IsReadable(script + at, n * kSectionSize)) return nullptr;
     for (uint32_t i = 0; i < n; i++) {
         const uint8_t* s = script + at + i * kSectionSize;
         if (At<int16_t>(s, 0) != type) continue;
@@ -171,8 +170,6 @@ const uint8_t* Section(const uint8_t* script, int type, uint32_t* count) {
     return nullptr;
 }
 
-// The script's status flags on that frame (sections whose condition needs no
-// script state); frame -1: on any of its frames.
 uint32_t StatusFlags(const uint8_t* script, int frame) {
     uint32_t count = 0;
     const uint8_t* s = Section(script, kSectionStatus, &count);
@@ -184,13 +181,12 @@ uint32_t StatusFlags(const uint8_t* script, int frame) {
     uint32_t flags = 0;
     for (uint32_t e = 0; e < count; e++) {
         if (frame >= 0 && (frame < At<int32_t>(ticks, e * 8) || frame >= At<int32_t>(ticks, e * 8 + 4))) continue;
-        if (flagsAt && At<int32_t>(s + flagsAt, e * 16) != 0) continue; // active only in some script state
+        if (flagsAt && At<int32_t>(s + flagsAt, e * 16) != 0) continue;
         flags |= At<uint32_t>(data, e * 8);
     }
     return flags;
 }
 
-// A hurtbox's armor effect, from the move file (its id: box << 8 | script << 16).
 int ArmorEffect(const uint8_t* script, uint32_t box) {
     uint32_t count = 0;
     const uint8_t* s = Section(script, kSectionHurtboxes, &count);
@@ -205,8 +201,8 @@ struct Sample {
     int frame = 0, interrupt = -1, firstHit = -1;
     bool held = false, cinematic = false, frozen = false, stun = false;
     bool hit = false, strike = false, projectile = false, hurt = false, parry = false, armor = false, counter = false, air = false;
-    bool move = false; // the script has the counter-hit state on some frame: a move, all of it
-    bool jump = false; // one of the jump's scripts
+    bool move = false;
+    bool jump = false;
     uint32_t side = 0;
 };
 
@@ -235,15 +231,15 @@ Sample Read(const uint8_t* r, const uint8_t* state) {
     const uintptr_t entryVtable = g_base + kEntryVtable;
     for (size_t at = kHitList; at + kEntrySize <= kHitListEnd; at += kEntrySize) {
         const uint8_t* e = r + at;
-        if (At<uintptr_t>(e, kEntryVtableAt) != entryVtable || At<uint32_t>(e, kEntryId) == 0xFFFFFFFFu) continue;
+        if (At<uintptr_t>(e, kEntryVtableAt) != entryVtable || At<uint32_t>(e, kEntryId) == kEmptyEntryId) continue;
         const uint8_t type = e[kEntryType];
-        if (type != 4 && type <= 5) s.hit = true; // proximity guard boxes are not an attack
+        if (type != kHitProximity && type <= kHitProjectileCancel) s.hit = true;
     }
     for (size_t at = kHurtList; at + kEntrySize <= kHurtListEnd; at += kEntrySize) {
         const uint8_t* e = r + at;
         if (At<uintptr_t>(e, kEntryVtableAt) != entryVtable) continue;
         const uint32_t id = At<uint32_t>(e, kEntryId);
-        if (id == 0xFFFFFFFFu) continue;
+        if (id == kEmptyEntryId) continue;
         const uint32_t type = At<uint32_t>(e, kEntryType);
         s.hurt = true;
         if (type & 1) s.strike = true;
@@ -259,37 +255,12 @@ Sample Read(const uint8_t* r, const uint8_t* state) {
 }
 
 Kind Classify(const Sample& s) {
-    // A script's interrupt frame is where the character can act again, as
-    // sfvsim has it: a damage script's speed is scaled so that it comes as
-    // the hit or block stun ends. 0 means none (basic scripts).
     const bool interruptible = s.interrupt > 0;
-    const bool stand = s.script == kScriptStand; // see `action` below
+    const bool stand = s.script == kScriptStand;
     const bool past = interruptible && s.frame >= s.interrupt;
-    // The jump's scripts (pre-jump, airborne, landing: the same indices in
-    // every character's move file) are actions too: the character is
-    // committed to them, even where the script has no interrupt frame.
-    // So is any script with the counter-hit state on some frame, all of it,
-    // and any airborne frame. A move that throws a projectile has no hitbox
-    // of its own, and many have no interrupt frame either: the script plays
-    // to its end or to the landing. Kage's and Akuma's air fireballs (Kage's
-    // A_HADO: counter-hit state on frames 0-8 of 43), Ryu's Critical Arts
-    // (CA_SHINKUU: 0-127 of 190) and Cammy's VT2 dive kick on hit
-    // (VT2_ATK_HIT: 0-14, then airborne) read as neutral past their
-    // counter-hit frames; her EX Cannon Strike bouncing off (EX_STRIKE_HIT /
-    // _GUARD) carries no flag at all but the air one. In every move file
-    // looked at, the counter-hit state is only in moves, and the airborne
-    // scripts without it are jumps, damage (stun) and moves.
-    // STAND is standing, free to act, whatever its move file carries:
-    // Akuma's and Birdie's STAND have a first hitbox frame (Akuma's at 401,
-    // the long idle pose standing still plays) with no attack ever out, and
-    // read as recovery, so the meter never began (both were never free to
-    // act) and the idle counted as a move.
     const bool action = !stand && (interruptible || s.jump || s.firstHit >= 0 || s.counter || s.move || s.air);
-    // Proximity guard (the move file's FGUARD scripts) holds the guard pose
-    // with no attack blocked yet: the state object counts it as stun too.
     if (s.script >= kScriptFirstFakeGuard && s.script <= kScriptLastFakeGuard) return ProxGuard;
     if (s.stun) return past ? Idle : Stun;
-    // (Akuma's long idle pose has a strike box out on its STAND frames 401-402.)
     if (s.hit && !stand) return Active;
     if (s.parry) return Parry;
     if (action || !s.hurt) {
@@ -297,19 +268,12 @@ Kind Classify(const Sample& s) {
         if (!s.strike) return StrikeInv;
         if (!s.projectile) return ProjInv;
     }
-    // Armor (a live hurtbox that takes hits without stun), whatever else the
-    // frame is: in a move's startup or recovery, or while free to act.
     if (s.armor) return action && !past ? Armor : ArmorFree;
     if (s.counter && !stand) return Counter;
     if (!action) return Idle;
     return past ? Iasa : Recovery;
 }
 
-// A side's fighter actors, when it has more than one: a helper is a fighter
-// too. R. Mika's Nadeshiko is a third fighter actor on R. Mika's side, with
-// R. Mika's move file, standing in STAND at frame 0 where the round began,
-// her script not run unless she is called in (and her state object's side
-// is -1). With three fighters the meter never found its two and stayed off.
 struct Candidate {
     const uint8_t* actor;
     uint32_t script;
@@ -327,11 +291,6 @@ bool RunnerNow(const uint8_t* r, uint32_t* script, int32_t* frame) {
     return true;
 }
 
-// The two fighters' actors and state objects, P1 first, paired by side: at
-// a battle's start P1 is on the left. Not yet (false) while the sides are
-// not set apart, or while a side with a helper has not shown which of its
-// fighters plays: the one whose script runs while the other's stands still
-// (a player's STAND loops its frames; an idle helper's stays at 0).
 bool FindFighters(SfvGame& game) {
     std::vector<const uint8_t*> actors[2];
     const uint8_t* states[2] = {};
@@ -342,7 +301,6 @@ bool FindFighters(SfvGame& game) {
             if (side <= 1 && actors[side].size() < 4) actors[side].push_back(r.ptr);
         } else if (r.size == kStateRegionSize && IsReadable(r.ptr - kStateRegionAt, kStateSide + 4) &&
                    At<uintptr_t>(r.ptr - kStateRegionAt, 0) == g_base + kStateVtable) {
-            // A helper's state object has no side (-1).
             const uint32_t side = At<uint32_t>(r.ptr - kStateRegionAt, kStateSide);
             if (side > 1) continue;
             states[side] = r.ptr - kStateRegionAt;
@@ -361,7 +319,6 @@ bool FindFighters(SfvGame& game) {
             chosen[side] = actors[side][0];
             continue;
         }
-        // Which of them runs its script since the last look.
         std::vector<Candidate>& seen = g_candidates[side];
         std::vector<Candidate> now;
         const uint8_t* running = nullptr;
@@ -390,14 +347,6 @@ bool FindFighters(SfvGame& game) {
     return true;
 }
 
-// A projectile's owner: the fighter it faced like when it appeared (an
-// effect is spawned facing as its owner faces), kept for the effect's life,
-// which its spawn point marks (its position object's +0x1D0, fixed while it
-// lives; a slot used again starts elsewhere). Told by side on each frame
-// instead, a projectile left out while its owner crossed over (Urien's
-// Aegis Reflector, then a jump over the opponent) counted for the other
-// player. The game keeps no owner link near the effect (research
-// 2026-11-12: no pointer to either fighter around the 16 slots).
 struct EffectOwner {
     const uint8_t* slot = nullptr;
     uint64_t spawn = 0;
@@ -411,7 +360,6 @@ float FighterX(int i) {
     return pos && IsReadable(pos + kFighterXY, 4) ? At<float>(pos, kFighterXY) : 0.0f;
 }
 
-// The owner of the live effect at `slot` (side, spawn point as read now).
 int EffectOwnerOf(const uint8_t* slot, uint32_t side, uint64_t spawn, const Sample s[2]) {
     for (EffectOwner& e : g_effectOwners) {
         if (e.slot != slot) continue;
@@ -419,8 +367,6 @@ int EffectOwnerOf(const uint8_t* slot, uint32_t side, uint64_t spawn, const Samp
         g_effectOwners.erase(g_effectOwners.begin() + (&e - g_effectOwners.data()));
         break;
     }
-    // Appeared now: the fighter on its side; with both on one side (as one
-    // passes the other), the one nearer where it appeared.
     int owner = 0;
     if (s[0].side != s[1].side) owner = s[0].side == side ? 0 : 1;
     else {
@@ -432,7 +378,6 @@ int EffectOwnerOf(const uint8_t* slot, uint32_t side, uint64_t spawn, const Samp
     return owner;
 }
 
-// Each fighter as last read: its script, and whether that read was stun.
 struct Seen {
     uint32_t script = ~0u;
     bool stun = false;
@@ -440,8 +385,6 @@ struct Seen {
 
 Seen g_seen[2];
 
-// The frame the game is on now, read into a record (false: the fighters are
-// gone, a new battle). `fight`: in a round's fight (replays; else always).
 bool ReadFrame(SfvGame& game, bool fight, Record* out) {
     Record r;
     Sample s[2];
@@ -450,26 +393,15 @@ bool ReadFrame(SfvGame& game, bool fight, Record* out) {
         s[i] = Read(g_p[i].actor, g_p[i].state);
         if (!s[i].ok) return false;
     }
-    // The state object's flag drops as a hit or a block lands, on the very
-    // read the fighter changes script (to a damage or guard script), and
-    // stays down through the stun, a knockdown and getting up. It drops in
-    // some of the fighter's own moves too, with no hit: Akuma's air fireball
-    // landing (ZANKU_GND) has it down on frames 6-9, which read as stun
-    // after the recovery and ended the move with no Total. So it is stun
-    // only from a script change on (2026-11-13).
     for (int i = 0; i < 2; i++) {
         s[i].stun = s[i].stun && (s[i].script != g_seen[i].script || g_seen[i].stun);
         g_seen[i] = {s[i].script, s[i].stun};
     }
     r.valid = true;
-    // Hitstop (both held), a super freeze and a cinematic are not counted.
     const bool freeze = s[0].frozen || s[1].frozen || s[0].cinematic || s[1].cinematic;
-    r.hold = !fight ? 3 : freeze               ? 2
-                      : s[0].held && s[1].held ? 1
-                                               : 0;
-    // The players' projectiles: live effect slots with an attacking box, each
-    // in its owner's lane (EffectOwnerOf; every frame, freezes too, so that
-    // one spawned in a super freeze is seen as it appears).
+    r.hold = !fight ? Hold::OutsideFight : freeze               ? Hold::Freeze
+                                       : s[0].held && s[1].held ? Hold::Hitstop
+                                                                : Hold::Counted;
     for (const StateRegion& reg : game.Regions()) {
         if (reg.size != kRegionSize || !IsActor(reg.ptr, kEffectVtable)) continue;
         const uint32_t side = At<uint32_t>(reg.ptr, kSide);
@@ -482,11 +414,11 @@ bool ReadFrame(SfvGame& game, bool fight, Record* out) {
         const auto* pos = At<const uint8_t*>(reg.ptr - kPosition, 0);
         const uint64_t spawn = pos && IsReadable(pos + kEffectSpawnXY, 8) ? At<uint64_t>(pos, kEffectSpawnXY) : 0;
         const int owner = EffectOwnerOf(reg.ptr, side, spawn, s);
-        if (r.hold != 0) continue;
+        if (r.hold != Hold::Counted) continue;
         bool hit = false;
         for (size_t at = kHitList; at + kEntrySize <= kHitListEnd && !hit; at += kEntrySize) {
             const uint8_t* e = reg.ptr + at;
-            hit = At<uintptr_t>(e, kEntryVtableAt) == g_base + kEntryVtable && At<uint32_t>(e, kEntryId) != 0xFFFFFFFFu &&
+            hit = At<uintptr_t>(e, kEntryVtableAt) == g_base + kEntryVtable && At<uint32_t>(e, kEntryId) != kEmptyEntryId &&
                   e[kEntryType] != 4 && e[kEntryType] <= 5;
         }
         if (hit) r.lane[owner] = true;
@@ -510,12 +442,10 @@ bool ReadFrame(SfvGame& game, bool fight, Record* out) {
 
 void EndRun(int i) {
     Run& run = g_p[i].run;
-    // A single block needs no count (and its label would run into the next).
     if (run.group != Idle && run.length > 1 && run.cell >= 0) g_m.count[i][run.cell] = static_cast<uint16_t>(std::min(run.length, 9999));
     run = Run{};
 }
 
-// An empty bar; the numbers of the last moves stay.
 void ClearBar() {
     const Meter keep = g_m;
     g_m = Meter{};
@@ -535,7 +465,6 @@ void ClearBar() {
     g_exchange = false;
 }
 
-// As at a battle's start: nothing recorded, nothing known.
 void Reset() {
     ClearBar();
     g_armed = false;
@@ -562,7 +491,6 @@ void Write(const Record& r) {
         g_m.kind[i][cell] = k;
         g_m.count[i][cell] = 0;
         g_m.lane[i][cell] = r.lane[i];
-        // The first airborne frame after the pre-jump, the first landing frame.
         g_m.edge[i][cell] = r.air[i] && !g_p[i].air ? EdgeAirborne : !r.air[i] && g_p[i].air ? EdgeLanding
                                                                                              : 0;
         g_p[i].lastWritten = k;
@@ -570,7 +498,6 @@ void Write(const Record& r) {
     g_m.mark[cell] = g_pendingMark;
     g_pendingMark = false;
     if (g_written + 1 >= N) {
-        // Wrapped: the block after the newest is cleared (where the next goes).
         const int c = (cell + 1) % N;
         for (int i = 0; i < 2; i++) {
             g_m.kind[i][c] = Empty;
@@ -585,25 +512,12 @@ void Write(const Record& r) {
     g_ended = false;
 }
 
-// Each move's startup, total and the frame advantage after an exchange.
 void Count(const Record& r, int index) {
     for (int i = 0; i < 2; i++) {
         Player& p = g_p[i];
         const Kind k = r.kind[i];
         const bool actionable = Actionable(k);
         const bool doing = !actionable && k != Stun && k != ProxGuard;
-        // A move starts when the character acts from neutral or IASA, or
-        // cancels into a script with hitboxes of its own, from that script's
-        // start, with startup frames before its first hitbox. A script
-        // handing over to its follow-up, a landing or a recovery is the same
-        // move, and so are hand-overs of a held move let go of: Urien's st.HP
-        // begins as 5HP_HOLD and goes on as 5HP from its frame 7 (counted
-        // from there, its startup read 5F, not 12F); his st.HK begins as #605
-        // and goes on as #606 from its frame 0 with its hitbox out on that
-        // very frame (counted from there, 1F, not 9F). No move that starts
-        // anew has a hitbox on its first frame. Out of a jump, a move without
-        // hitboxes of its own starts anew too (an air fireball: its startup
-        // from its own first frame, not from the pre-jump).
         const bool fromJump = p.script >= kScriptFirstJump && p.script <= kScriptLastJump;
         const bool newScript = r.script[i] != p.script && r.frame[i] == 0;
         if (doing && (!p.doing || (newScript && ((r.attack[i] && r.firstHit[i] > 0) || (fromJump && r.move[i] && !r.attack[i]))))) {
@@ -634,34 +548,27 @@ void Count(const Record& r, int index) {
     }
 }
 
-// One frame into the meter.
 void Apply(const Record& r) {
-    // A frame not read (a replay's frame never played): what follows is not
-    // joined to what came before.
     if (!r.valid) {
         ClearBar();
         g_armed = false;
         return;
     }
-    // A replay's next round, from its call (after the round's set-up, the
-    // screen's load): the meter as at a battle's start, bars and numbers.
     if (r.round != g_round) {
         Reset();
         g_round = r.round;
     }
-    if (r.hold == 3) return;
-    if (r.hold == 2) {
+    if (r.hold == Hold::OutsideFight) return;
+    if (r.hold == Hold::Freeze) {
         if (g_hasContent && !g_ended) g_pendingMark = true;
         return;
     }
-    if (r.hold == 1) return;
-    // Not before both have been free to act (a battle's or training's start).
+    if (r.hold == Hold::Hitstop) return;
     const bool bothFree = Actionable(r.kind[0]) && Actionable(r.kind[1]);
     if (!g_armed && !bothFree) return;
     g_armed = true;
     const bool neutral = r.kind[0] == Idle && r.kind[1] == Idle && !r.lane[0] && !r.lane[1];
     if (neutral) {
-        // Both neutral: the meter holds, its last frame marked.
         if (g_hasContent && !g_ended) {
             const int last = (g_written - 1) % N;
             for (int i = 0; i < 2; i++) {
@@ -673,8 +580,6 @@ void Apply(const Record& r) {
         Count(r, g_written);
         return;
     }
-    // An action that does not carry on an exchange (the other player free to
-    // act, not in stun or in an action of their own) starts a new bar.
     bool fresh = !g_hasContent;
     for (int i = 0; i < 2; i++) {
         const Kind k = r.kind[i];
@@ -696,24 +601,20 @@ bool Wanted(bool* replay, int* frame, bool* fight) {
     const ReplayView v = ReplayViewNow();
     *replay = v.active;
     *frame = v.frame;
-    // A replay's round: from its FIGHT to its KO (not the intro, the KO and
-    // the win poses).
     *fight = !v.active || v.roundFrame >= 0;
     if (g_forced) return true;
     if (v.active) return !v.benchmark && FrameMeterInReplays();
     return FrameMeterInTraining() && FlowCurrentScene() == "TrainingBattleState";
 }
 
-// A viewed replay (not the benchmark's) with its meter hidden still records.
 bool RecordsHidden(bool replay) { return replay && !ReplayViewNow().benchmark; }
 
-// A new battle's fighters (the region layout changed): false while not there.
 bool Ready(SfvGame& game, bool replay) {
     if (game.LayoutVersion() == g_layout) return true;
     if (!FindFighters(game)) return false;
     g_layout = game.LayoutVersion();
     g_records.clear();
-    g_effectOwners.clear(); // (only here: a replay's rebuilds keep the live projectiles' owners)
+    g_effectOwners.clear();
     g_seen[0] = g_seen[1] = Seen{};
     g_applied = -1;
     Reset();
@@ -728,8 +629,6 @@ void Store(int frame, const Record& r) {
     g_records[frame] = r;
 }
 
-// A replay's meter as the frames up to `frame` built it: on from where it
-// is when they follow on, else again from the start.
 void BuildTo(int frame) {
     if (frame == g_applied) return;
     if (frame < g_applied || g_applied < 0) {
@@ -750,12 +649,10 @@ void LogRecord(int index, const Record& r) {
                       r.lane[i] ? "+proj" : "", r.air[i] ? "+air" : "", r.side[i], r.interrupt[i], r.firstHit[i], r.hit[i] ? ", box" : "",
                       r.counter[i] ? ", cnt" : "", r.move[i] ? ", move" : "");
     }
-    Log("fmlog %d: hold %d | P1 %s | P2 %s | written %d | startup %d/%d, total %d/%d", index, r.hold, side[0], side[1], g_written,
+    Log("fmlog %d: hold %d | P1 %s | P2 %s | written %d | startup %d/%d, total %d/%d", index, static_cast<int>(r.hold), side[0], side[1], g_written,
         g_m.startup[0], g_m.startup[1], g_m.total[0], g_m.total[1]);
 }
 
-// Text over the fight: a thin black outline round it and a drop shadow under
-// it, so it reads on any stage (`s`: the design scale).
 void OutlinedText(ImDrawList* d, ImFont* f, float px, ImVec2 at, ImU32 color, const std::string& t, float align, float s) {
     const ImVec2 size = f->CalcTextSizeA(px, FLT_MAX, 0, t.c_str());
     const ImVec2 p(std::round(at.x - size.x * align), std::round(at.y));
@@ -775,30 +672,27 @@ bool FrameMeterInTraining() { return ReadChoice(g_training, L"training", 1) != 0
 
 bool FrameMeterInReplays() { return ReadChoice(g_replays, L"replays", 0) != 0; }
 
-void SetFrameMeterInTraining(bool on) {
+void FrameMeterSetInTraining(bool on) {
     g_training = on ? 1 : 0;
     SaveMainIni(L"framemeter", L"training", on ? 1 : 0);
 }
 
-void SetFrameMeterInReplays(bool on) {
+void FrameMeterSetInReplays(bool on) {
     g_replays = on ? 1 : 0;
     SaveMainIni(L"framemeter", L"replays", on ? 1 : 0);
 }
 
-void SetFrameMeterForced(bool on) {
+void FrameMeterSetForced(bool on) {
     g_forced = on;
     Log("framemeter: %s in any battle", on ? "forced on" : "back to the choices");
 }
 
-void LogFrameMeter(int ticks) { g_log = ticks; }
+void FrameMeterLog(int ticks) { g_log = ticks; }
 
 void FrameMeterTick(SfvGame& game) {
     if (!g_base) g_base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     bool replay = false, fight = true;
     int frame = 0;
-    // A viewed replay keeps its records while the meter is hidden: shown
-    // again it is built from them at once (it was reset, empty until the
-    // next exchange, and a step back found nothing before the show).
     if (!Wanted(&replay, &frame, &fight) && !RecordsHidden(replay)) {
         g_layout = ~0ull;
         return;
@@ -806,8 +700,6 @@ void FrameMeterTick(SfvGame& game) {
     if (!Ready(game, replay)) return;
     Record r;
     if (replay) {
-        // The state this tick starts from is the one after the frame before
-        // it: that frame's record (BuildTo applies it once it is on screen).
         const int f = ReplayTickFrame() - 1;
         if (f < 0 || !ReadFrame(game, ReplayTickInFight(), &r)) return;
         r.round = ReplayTickRound();
@@ -831,9 +723,6 @@ void FrameMeterFrame(SfvGame& game) {
     const bool wanted = Wanted(&replay, &frame, &fight);
     if ((!wanted && !RecordsHidden(replay)) || !Ready(game, replay)) return;
     if (replay) {
-        // The frame on screen: its record (the state now), then the meter
-        // built to it, whichever way the replay got there (hidden: only the
-        // record).
         Record r;
         if (ReadFrame(game, fight, &r)) {
             r.round = ReplayViewNow().callRound;
@@ -844,7 +733,6 @@ void FrameMeterFrame(SfvGame& game) {
         g_tickAt = GetTickCount64();
         return;
     }
-    // Training's pause menu stops the ticks: no meter over the game's menu.
     if (GetTickCount64() - game.LastTickMs() <= kPausedMs) g_tickAt = GetTickCount64();
 }
 
@@ -853,7 +741,7 @@ bool FrameMeterVisible() {
     return at && GetTickCount64() - at < kStaleMs;
 }
 
-void DrawFrameMeter(ImDrawList* d, ImFont* bold) {
+void FrameMeterDraw(ImDrawList* d, ImFont* bold) {
     if (!FrameMeterVisible() || !bold) return;
     Meter m;
     {
@@ -861,10 +749,6 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold) {
         m = g_shown;
     }
     BeginScreen();
-    // Design units: the bars centred on the screen (x 260..1340), above the
-    // V-Trigger gauges; the blocks are laid on whole pixels (one pitch and
-    // gap for every block, the N centred on x 800), so no gap differs. P1's
-    // numbers above its bar, P2's under its own (both on the left).
     constexpr float cx = 800, y0 = 624, pitch = 12, gap = 2, h = 20;
     constexpr float kTextSize = 21, kCountSize = 20;
     constexpr float kCounts[2] = {y0 + 25, y0 + 103}, kLanes[2] = {y0 + 46, y0 + 98}, kBars[2] = {y0 + 52, y0 + 76};
@@ -898,8 +782,6 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold) {
             default: return Rgba(10, 12, 16, 158);
         }
     };
-    // A solid black bar under each row (the gaps between blocks black too),
-    // a thin black border round it, a drop shadow under that.
     const float border = std::max(1.0f, std::round(1.5f * s));
     const float edgePx = std::max(1.0f, std::round(1.5f * s));
     for (int i = 0; i < 2; i++) {
@@ -917,8 +799,6 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold) {
                 const float stripe = std::max(1.0f, std::round(3 * s));
                 for (float sy = 0; sy < hPx; sy += 2 * stripe) d->AddRectFilled(ImVec2(x, y + sy), ImVec2(x + wPx, y + std::min(sy + stripe, hPx)), look::kCream);
             }
-            // Milestones (the first airborne frame, the first landing frame,
-            // a sequence's last frame): white on the top, right and bottom.
             if (m.edge[i][c]) {
                 const ImU32 white = IM_COL32(255, 255, 255, 255);
                 d->AddRectFilled(ImVec2(x, y), ImVec2(x + wPx, y + edgePx), white);
@@ -942,12 +822,10 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold) {
         d->AddRectFilled(ImVec2(x, top), ImVec2(x + w2, bottom), look::kCream);
     }
 
-    // The numbers, each at the left: P1's above the meter, P2's under it
-    // ("P1 Startup 6F · Total 20F · Advantage +5F").
     struct Piece {
         std::string text;
         ImU32 color;
-        float gap; // design units before it
+        float gap;
     };
 
     for (int i = 0; i < 2; i++) {
@@ -965,7 +843,6 @@ void DrawFrameMeter(ImDrawList* d, ImFont* bold) {
                                                                                                      : look::kCream);
         }
         if (!pieces.empty()) pieces.front().gap = 10;
-        // The player colours (overlay.cpp kP1 / kP2): P1 blue, P2 red.
         pieces.insert(pieces.begin(), Piece{i == 0 ? "P1" : "P2", i == 0 ? Rgba(92, 158, 255) : Rgba(255, 92, 77), 0});
         float x = left;
         const float ty = rowY(kTexts[i]);

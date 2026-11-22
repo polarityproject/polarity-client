@@ -98,7 +98,7 @@ void RsnapCommand(const std::string&, std::stringstream&) {
 void BoxlogCommand(const std::string&, std::stringstream& ss) {
     int ticks = 60;
     ss >> ticks;
-    LogHitboxes(ticks);
+    HitboxesLog(ticks);
 }
 
 void WinsizeCommand(const std::string&, std::stringstream& ss) {
@@ -129,7 +129,7 @@ void FreezeCommand(const std::string&, std::stringstream& ss) {
 void FramemeterCommand(const std::string&, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    SetFrameMeterForced(on != 0);
+    FrameMeterSetForced(on != 0);
 }
 
 void BattledataCommand(const std::string&, std::stringstream& ss) {
@@ -143,13 +143,13 @@ void BattledataCommand(const std::string&, std::stringstream& ss) {
 void FmlogCommand(const std::string&, std::stringstream& ss) {
     int ticks = 120;
     ss >> ticks;
-    LogFrameMeter(ticks);
+    FrameMeterLog(ticks);
 }
 
 void HitboxesCommand(const std::string&, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    SetHitboxesForced(on != 0);
+    HitboxesSetForced(on != 0);
 }
 
 void RdumpCommand(const std::string&, std::stringstream& ss) {

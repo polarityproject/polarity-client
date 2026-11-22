@@ -74,7 +74,9 @@ The numbers on the left:
   IASA, or a change into a script with its own hitboxes at that script's
   frame 0. A hand-over later in a script is the same move: Urien's st.HP
   starts as 5HP_HOLD and, released early, goes on as 5HP from its frame 7, so
-  it reads Startup 12F.
+  it reads Startup 12F. His st.HK starts as script 605 and goes on as 606
+  from its frame 0 with a hitbox out on that frame, which reads 9F, not 1F:
+  no move that starts anew has a hitbox on its first frame.
 - **Moves without hitboxes or an interrupt frame,** such as air fireballs,
   Ryu's Critical Arts and Cammy's EX Cannon Strike, count as moves for as
   long as their script runs, because the counter-hit state appears only in
@@ -119,7 +121,12 @@ while it's open.
   reads Startup 3F, Total 10F, Advantage +4F.
 - **Projectile owner:** the fighter whose side the effect had when it
   appeared, kept for the effect's life (its spawn point marks it). With both
-  fighters on one side at that moment, the one nearer the spawn point.
+  fighters on one side at that moment, the one nearer the spawn point. The
+  game keeps no link from an effect to its owner. Told by side on each frame
+  instead, a projectile left out while its owner crossed over (Urien's Aegis
+  Reflector, then a jump over the opponent) counted for the other player.
+  Effects are read on every frame, freezes included, so one spawned in a
+  super freeze shows as it appears.
 
 The research command `ftrace <ticks>` logs every snapshot word that changes
 per tick, with each fighter's script and frame.
