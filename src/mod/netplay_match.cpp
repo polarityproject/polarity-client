@@ -135,7 +135,7 @@ void NetplayDriver::WatchMatch(const lobby::MatchEntry& e) {
     }
     matchId_ = e.id;
     options_.predictionWindow = kPredictionWindow;
-    Log("netplay: to watch match %s; %s", Hex64(e.id).c_str(), DescribeSetup(e.setup).c_str());
+    Log("netplay: to watch match %s; %s", Hex64(e.id).c_str(), BattleSetupDescribe(e.setup).c_str());
     next_ = Next::Jump;
 }
 
@@ -381,7 +381,7 @@ void NetplayDriver::FinishMatch(SfvGame& game, bool keepSetup) {
     game.exclusiveTicks = false;
     FlowSetRoundDirectorPerTick(false, false);
     InputScriptedPad(0, false);
-    if (!keepSetup) ClearPendingSetup();
+    if (!keepSetup) BattleSetupClearPending();
     if (session_) {
         const auto rf = WithSummary(session_->Recording(), false);
         const auto rb = session_->RollbackStats();
@@ -421,7 +421,7 @@ ReplayFile NetplayDriver::WithSummary(ReplayFile rf, bool leftEarly) {
     s.winner = static_cast<int8_t>(leftEarly ? -1 : matchWinner_);
     s.ending = leftEarly || matchWinner_ < 0 ? 1 : 0;
     s.rounds = matchRounds_;
-    const std::vector<RoundResult> fights = RoundsFromFrameFlags(rf.frameFlags);
+    const std::vector<RoundResult> fights = ReplayRoundsFromFlags(rf.frameFlags);
     if (s.rounds.size() < fights.size()) s.rounds.resize(fights.size());
     for (size_t i = 0; i < fights.size(); i++) {
         s.rounds[i].fightFrame = fights[i].fightFrame;

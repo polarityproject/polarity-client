@@ -680,7 +680,7 @@ void NetplayDriver::OnGuestMessage(uint64_t from, const lobby::Message& m, State
             }
             matchId_ = m.matchId;
             options_.predictionWindow = kPredictionWindow;
-            Log("netplay: match %s; %s", Hex64(matchId_).c_str(), DescribeSetup(setup_).c_str());
+            Log("netplay: match %s; %s", Hex64(matchId_).c_str(), BattleSetupDescribe(setup_).c_str());
             next_ = Next::Jump;
             break;
         }

@@ -184,24 +184,24 @@ void TestTexturePackage() {
     i32(0x9E2A83C1); // the package tag that closes the file
     TexPackage p;
     std::string error;
-    CHECK(ParseTexturePackage(pkg.data(), pkg.size(), &p, &error));
+    CHECK(TexParsePackage(pkg.data(), pkg.size(), &p, &error));
     CHECK(p.format == TexFormat::Bgra8 && p.width == 4 && p.height == 2 && p.mips.size() == 2);
     CHECK(p.mips.size() == 2 && p.mips[0].offset == static_cast<size_t>(end) && p.mips[1].width == 2 && p.mips[1].size == 8);
-    CHECK(PickMip(p, 0) == &p.mips[0] && PickMip(p, 2) == &p.mips[1] && PickMip(p, 3) == &p.mips[0] && PickMip(p, 1) == &p.mips[1]);
+    CHECK(TexPickMip(p, 0) == &p.mips[0] && TexPickMip(p, 2) == &p.mips[1] && TexPickMip(p, 3) == &p.mips[0] && TexPickMip(p, 1) == &p.mips[1]);
     TexImage image;
-    CHECK(MipImage(pkg.data(), pkg.size(), p, p.mips[0], 2, &image, &error));
+    CHECK(TexMipImage(pkg.data(), pkg.size(), p, p.mips[0], 2, &image, &error));
     // 4x2 into 2x1: each pixel is a red and a clear blue one: red, half alpha.
     CHECK(image.width == 2 && image.height == 1 && image.bytes.size() == 8);
     CHECK(image.bytes.size() == 8 && image.bytes[0] == 0 && image.bytes[2] == 255 && image.bytes[3] == 128);
-    CHECK(MipImage(pkg.data(), pkg.size(), p, p.mips[1], 0, &image, &error) && image.width == 2 && image.bytes[2] == 30);
+    CHECK(TexMipImage(pkg.data(), pkg.size(), p, p.mips[1], 0, &image, &error) && image.width == 2 && image.bytes[2] == 30);
     // Broken ones are refused: a cut file, a mip size that does not halve.
-    CHECK(!ParseTexturePackage(pkg.data(), static_cast<size_t>(end) + 4, &p, &error));
+    CHECK(!TexParsePackage(pkg.data(), static_cast<size_t>(end) + 4, &p, &error));
     // Without the tag the data ends the file.
-    CHECK(ParseTexturePackage(pkg.data(), pkg.size() - 4, &p, &error) && p.mips.size() == 2 && p.mips[0].offset == static_cast<size_t>(end));
+    CHECK(TexParsePackage(pkg.data(), pkg.size() - 4, &p, &error) && p.mips.size() == 2 && p.mips[0].offset == static_cast<size_t>(end));
     std::vector<uint8_t> bad = pkg;
     const int32_t three = 3;
     std::memcpy(bad.data() + offsetAt + 8 + 8 + 4 + 20 + 8, &three, 4); // the second mip's width
-    CHECK(!ParseTexturePackage(bad.data(), bad.size(), &p, &error));
+    CHECK(!TexParsePackage(bad.data(), bad.size(), &p, &error));
     CHECK(TexBytes(TexFormat::Bc1, 6, 6) == 4 * 8 && TexBytes(TexFormat::Bc3, 1, 1) == 16);
     // BC3, as the pad glyphs are: mips below 4x4 stored as 4x4, all inline.
     pkg.clear();
@@ -224,38 +224,38 @@ void TestTexturePackage() {
         i32(side);
     }
     i32(0x9E2A83C1);
-    CHECK(ParseTexturePackage(pkg.data(), pkg.size(), &p, &error) && p.format == TexFormat::Bc3 && p.mips.size() == 3);
-    CHECK(MipImage(pkg.data(), pkg.size(), p, *PickMip(p, 0), 4, &image, &error) && image.format == TexFormat::Bc3 &&
+    CHECK(TexParsePackage(pkg.data(), pkg.size(), &p, &error) && p.format == TexFormat::Bc3 && p.mips.size() == 3);
+    CHECK(TexMipImage(pkg.data(), pkg.size(), p, *TexPickMip(p, 0), 4, &image, &error) && image.format == TexFormat::Bc3 &&
           image.width == 8 && image.bytes.size() == 64 && image.bytes[0] == 8);
     // BC1: one block, white and black ends; indices 0,1,2,3 across the first row.
     const uint8_t bc1[8] = {0xFF, 0xFF, 0x00, 0x00, 0xE4, 0, 0, 0};
     std::vector<uint8_t> px;
-    CHECK(DecodeBc(TexFormat::Bc1, bc1, 8, 4, 4, &px) && px.size() == 64);
+    CHECK(TexDecodeBc(TexFormat::Bc1, bc1, 8, 4, 4, &px) && px.size() == 64);
     CHECK(px.size() == 64 && px[0] == 255 && px[3] == 255 && px[4] == 0 && px[8] == 170 && px[12] == 85 && px[16] == 255);
     // c0 <= c1: three colours and a clear one (index 3).
     const uint8_t bc1clear[8] = {0x00, 0x00, 0xFF, 0xFF, 0xC0, 0, 0, 0};
-    CHECK(DecodeBc(TexFormat::Bc1, bc1clear, 8, 4, 4, &px) && px[12 + 3] == 0 && px[3] == 255);
+    CHECK(TexDecodeBc(TexFormat::Bc1, bc1clear, 8, 4, 4, &px) && px[12 + 3] == 0 && px[3] == 255);
     // BC3: alpha ends 255 and 0, the first pixel index 1 (0), the rest 0 (255).
     uint8_t bc3[16] = {255, 0, 1, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0};
-    CHECK(DecodeBc(TexFormat::Bc3, bc3, 16, 4, 4, &px) && px[3] == 0 && px[7] == 255 && px[0] == 255);
-    CHECK(!DecodeBc(TexFormat::Bc5, bc3, 16, 4, 4, &px) && !DecodeBc(TexFormat::Bc1, bc1, 7, 4, 4, &px));
+    CHECK(TexDecodeBc(TexFormat::Bc3, bc3, 16, 4, 4, &px) && px[3] == 0 && px[7] == 255 && px[0] == 255);
+    CHECK(!TexDecodeBc(TexFormat::Bc5, bc3, 16, 4, 4, &px) && !TexDecodeBc(TexFormat::Bc1, bc1, 7, 4, 4, &px));
     // A look decodes BC: the 8x8 BC3 above, blurred, comes back BGRA8.
     TexLook look;
     look.blur = 1;
-    CHECK(MipImage(pkg.data(), pkg.size(), p, *PickMip(p, 0), 0, &image, &error, look) && image.format == TexFormat::Bgra8 &&
+    CHECK(TexMipImage(pkg.data(), pkg.size(), p, *TexPickMip(p, 0), 0, &image, &error, look) && image.format == TexFormat::Bgra8 &&
           image.width == 8 && image.bytes.size() == 256);
     // Blur: a lone opaque pixel spreads, keeps its colour (premultiplied), and its total alpha.
     std::vector<uint8_t> dot(9 * 9 * 4, 0);
     dot[(4 * 9 + 4) * 4 + 2] = 200;
     dot[(4 * 9 + 4) * 4 + 3] = 255;
-    BlurBgra(dot, 9, 9, 1);
+    TexBlur(dot, 9, 9, 1);
     int total = 0;
     for (size_t i = 3; i < dot.size(); i += 4) total += dot[i];
     CHECK(dot[(4 * 9 + 4) * 4 + 3] < 255 && dot[(4 * 9 + 5) * 4 + 3] > 0 && dot[(4 * 9 + 5) * 4 + 2] == 200);
     CHECK(total > 240 && total < 270);
     // Saturate 0: grey; pad: clear round it; shadow: black, alpha kept.
     std::vector<uint8_t> red = {0, 0, 255, 255};
-    SaturateBgra(red, 0);
+    TexSaturate(red, 0);
     CHECK(red[0] == red[1] && red[1] == red[2] && red[2] == 54);
     const std::vector<uint8_t> padded = PadBgra({1, 2, 3, 4}, 1, 1, 1);
     CHECK(padded.size() == 36 && padded[3] == 0 && padded[16] == 1 && padded[19] == 4);

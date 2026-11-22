@@ -251,9 +251,9 @@ void TestBattleLog() {
     // still on at the end.
     {
         const std::vector<uint8_t> flags = {0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1};
-        const std::vector<RoundResult> r = RoundsFromFrameFlags(flags);
+        const std::vector<RoundResult> r = ReplayRoundsFromFlags(flags);
         CHECK(r.size() == 2 && r[0].fightFrame == 4 && r[0].endFrame == 7 && r[1].fightFrame == 11 && r[1].endFrame == -1);
-        CHECK(RoundsFromFrameFlags({}).empty());
+        CHECK(ReplayRoundsFromFlags({}).empty());
     }
     ReplayFile full;
     CHECK(DeserializeReplay(bytes.data(), bytes.size(), &full, &error) && full.summary.setGame == 1 && full.FrameCount() == 50);

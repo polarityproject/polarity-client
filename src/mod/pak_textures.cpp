@@ -242,9 +242,9 @@ void Work() {
             }
             ok = file && ReadPackage(file, path, &bytes, &error);
             if (!file) error = "no pak file";
-            if (ok) ok = ParseTexturePackage(bytes.data(), bytes.size(), &package, &error);
-            const TexMip* mip = ok ? PickMip(package, look.Any() ? 0 : maxSide) : nullptr;
-            if (ok) ok = mip && MipImage(bytes.data(), bytes.size(), package, *mip, maxSide, &image, &error, look);
+            if (ok) ok = TexParsePackage(bytes.data(), bytes.size(), &package, &error);
+            const TexMip* mip = ok ? TexPickMip(package, look.Any() ? 0 : maxSide) : nullptr;
+            if (ok) ok = mip && TexMipImage(bytes.data(), bytes.size(), package, *mip, maxSide, &image, &error, look);
         }
         const bool now = ok && device && freeThreaded;
         if (now) ok = Upload(device, image, &view, &error);
@@ -417,7 +417,7 @@ void PakTexturesDumpPackage(const std::string& path, const std::string& file) {
         std::fclose(f);
     }
     TexPackage package;
-    if (!ParseTexturePackage(bytes.data(), bytes.size(), &package, &error)) {
+    if (!TexParsePackage(bytes.data(), bytes.size(), &package, &error)) {
         Log("paktex dump %s: %zu bytes -> %s; not parsed: %s", path.c_str(), bytes.size(), file.c_str(), error.c_str());
         return;
     }

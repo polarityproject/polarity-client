@@ -263,7 +263,7 @@ MatchSetup NetplayDriver::ChooseSetup(bool rematch) {
         s.stage = stage < 0 ? kKeepStage : static_cast<uint16_t>(stage);
     } else {
         MatchSetup current;
-        ReadMatchSetup(&current);
+        BattleSetupRead(&current);
         lobby::Seat joiner;
         MatchSetup last;
         {
@@ -274,7 +274,7 @@ MatchSetup NetplayDriver::ChooseSetup(bool rematch) {
         }
         s.players[1] = joiner.hasPick ? joiner.pick : current.players[1];
         for (int i = 0; rematch && i < kNumPlayers; i++) {
-            if (!IsElevenPick(s.players[i])) continue;
+            if (!BattleSetupIsEleven(s.players[i])) continue;
             s.players[i] = RollEleven(last.players[i]);
             Log("netplay: rematch: P%d's Eleven plays %s", i + 1, UnpackCode(s.players[i].character).c_str());
         }

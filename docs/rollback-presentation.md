@@ -62,6 +62,18 @@ The fix is in `src/mod/camera_rollback.{h,cpp}`:
   itself asks again for the view the loaded state has, which is how a throw
   that didn't happen goes back to the fight camera.
 
+The camera manager's fields, as the setter and the update (rva 0x1BACE12)
+use them: `ViewTarget.Target` (+0x9E8), `PendingViewTarget.Target`
+(+0xD30) and `BlendTimeToGo` (+0x1078), which the update counts down by
+the frame's time; at 0 the pending target becomes the view. A request with
+no target names the manager's owner. `FViewTargetTransitionParams` is the
+blend time, the blend function (a byte), the blend exponent and
+`bLockOutgoing` (bit 0). A blend started in a replayed tick is moved on as
+far as it would be had the tick run in its own frame, since the update
+counts blends down per rendered frame. Some requests are made only once
+(the KO's), so putting back an older request was wrong. The journal keeps
+requests from the last 600 ticks, further back than any rollback reaches.
+
 `[netplay] camera_rollback=0` (or the `camrollback 0` command) restores the
 game's own behaviour. `camlog 1` logs every request.
 

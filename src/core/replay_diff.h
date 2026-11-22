@@ -40,11 +40,11 @@ DiffReport DiffReplays(const ReplayFile& a, const ReplayFile& b);
 // reported. Off shows every differing byte.
 void SetDiffIgnoresAddresses(bool ignore);
 
-std::vector<size_t> MatchRegions(const std::vector<RegionInfo>& regions, const std::vector<uint8_t>& a,
-                                 const std::vector<uint8_t>& b);
+std::vector<size_t> DiffMatchRegions(const std::vector<RegionInfo>& regions, const std::vector<uint8_t>& a,
+                                     const std::vector<uint8_t>& b);
 
 // Byte ranges (whole 8-byte words) that differ between two dumps with the same
-// region layout, after pairing regions with MatchRegions. Words holding an
+// region layout, after pairing regions with DiffMatchRegions. Words holding an
 // address on both sides are not reported.
 std::vector<ByteRange> DiffStates(const std::vector<RegionInfo>& regions, const std::vector<uint8_t>& a,
                                   const std::vector<uint8_t>& b, size_t maxRanges = 4096);

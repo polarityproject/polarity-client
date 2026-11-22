@@ -117,6 +117,67 @@ mod hooks that reset and makes the Versus loader once more after it. The
 loader starts once the battle state has run a few frames with it: a loader
 started in the same frame as the switch never completes its stage request.
 
+## The battle's setup
+
+`battle_setup.cpp` writes a match's setup into the battle data. Two hooks
+apply it: `BattleSetting::CheckPlayers` (rva 0x7B33B0), once when character
+select ends, and `BattleActor::ReadSettings` (rva 0x6A45E0), when the battle
+is created. A pending setup is used up by the battle jumped into, which has
+asked for its stage before it is created. Left pending, every later battle
+the player started (Arcade, Versus, Training) got it: the last session's
+stage in every stage request, even the menus' `BLK`, and Ryu and Ken after
+Battle now. A session sets both again before each match's jump.
+
+Per player:
+
+- The character code is written twice, in ASCII and in UTF-16, both NUL
+  padded.
+- The character version is the setup's (in sessions, the final game's).
+  Without one the game keeps the version already in the record when the new
+  character has it too (rva 0x56B2E0), so it would depend on who played
+  before; -1 makes it resolve to the last entry of the character's version
+  list. Once the battle is set up, the record holds the version it resolved
+  to; a version the game lacks becomes its latest.
+- A costume's variant (the buttons the menus see held at load) sets dress
+  state 1 in all 7 rounds' entries. The special looks of Urien and Akira are
+  unique battle parameters (Urien's third at 2, Akira's first at 1).
+- The voice language is not part of the match: each game writes its own
+  player's choice.
+- Each player gets their own pad id, as local Versus sets them: the marker
+  over each fighter at the round's start names the pad, and with 0 for both
+  it showed "Player 1" over both (2026-11-04). The battle's input does not
+  come from the pads, since the mod injects each side's.
+
+For the whole battle:
+
+- The mode is local Versus. A battle entered straight from another gets its
+  data from defaults that are not local Versus: infinite time, and player 2
+  a CPU.
+- The rules: best of 1, 3 or 5 rounds, and the timer in frames. The timer
+  has no "infinite": 0 and below end the round at once. The round count also
+  goes to +0x08 rather than being left to this game's own setting, since
+  each hit's gauge gain is divided by it.
+- The stage index is kept the same as the level, so whatever reads the index
+  sees the stage played. The level itself comes from the stage request.
+- The stage code is written as the menus write it. A battle started from
+  another battle's results has none, so its fighters had no stage data and
+  no stage transition.
+- The battle situation's count of matches played is written too. Left alone
+  it stayed as the menus or the last battle left it: 0 after a jump, so both
+  sides read 100%.
+
+For research, `uniqueparam` writes `KWBattlePlayerSetting::SetUniqueParam`
+values (+0x128, 8 ints) with the next setups, where -1 leaves one alone, and
+`setrounds` writes another round count at +0x08, as a game that kept
+another count would.
+
+The roster the mod offers leaves out entries with a handful of costumes or
+fewer: random select, dummies, assist and event characters. Names starting
+with `*NDK` and untranslated `ID_...` names are placeholders, and X codes
+are helpers (X01 is the partner Akira's V-Trigger calls in). Eleven is a
+pick of a character's `0C` costume, and the look rules take that costume's
+color 2 of 2 as Eleven's other color.
+
 ## The character cache and preloads
 
 The character cache keeps characters' assets loaded in slots. The slots in

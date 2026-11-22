@@ -94,53 +94,53 @@ constexpr uint32_t kData = 0x28;
 constexpr uint32_t kBattleCount = 0x60;
 } // namespace situation
 
-bool InstallBattleSetup(const GameImage& image);
+bool BattleSetupInstall(const GameImage& image);
 
 // The battle data block, or nullptr outside the menus/battle that use it.
 uint8_t* BattleData();
-bool ReadMatchSetup(MatchSetup* out);
-bool ApplyMatchSetup(const MatchSetup& setup);
+bool BattleSetupRead(MatchSetup* out);
+bool BattleSetupApply(const MatchSetup& setup);
 
 // Applied by the hooks the next time a battle is set up, until cleared.
-void SetPendingSetup(const MatchSetup& setup);
-void ClearPendingSetup();
-bool HasPendingSetup();
+void BattleSetupSetPending(const MatchSetup& setup);
+void BattleSetupClearPending();
+bool BattleSetupHasPending();
 // Research: a SetUniqueParam value (player 0/1, index 0-7; -1 clears) for
 // the next battles.
-void SetUniqueParamOverride(int player, int index, int value);
-// Testing: the +0x08 round count ApplyMatchSetup writes, as a game that kept
+void BattleSetupSetUniqueParam(int player, int index, int value);
+// Testing: the +0x08 round count BattleSetupApply writes, as a game that kept
 // another count would (0: the match's own, from its rules).
-void SetMatchRoundsForTest(int rounds);
+void BattleSetupSetRoundsForTest(int rounds);
 // Counts battle setups seen (CheckPlayers calls) and battles created
 // (ReadSettings calls), to notice a jump into battle happened.
 int BattleSetupCount();
-int BattleCreationCount();
+int BattleSetupCreations();
 
-std::string DescribeSetup(const MatchSetup& setup);
-void LogBattleSetup(const char* when);
+std::string BattleSetupDescribe(const MatchSetup& setup);
+void BattleSetupLog(const char* when);
 
 // The same-look rule's view of the game's data (core/look.h): Eleven is a
 // fighter in its 0C costume, the other Eleven wears its color 2 (bronze),
 // and a costume's colors are listed as the select screen lists them.
-LookRules GameLookRules();
+LookRules BattleSetupLookRules();
 // Eleven plays a fighter in its 0C costume (the silver model).
-bool IsElevenPick(const PlayerSetup& p);
+bool BattleSetupIsEleven(const PlayerSetup& p);
 
 // Whether character table entry `index` is a fighter: random select,
 // dummies, helpers and event characters are not. A name the game has not
 // loaded yet does not count against it.
-bool IsFighter(int index);
+bool BattleSetupIsFighter(int index);
 // The color ids of a costume as the select screen lists them (EX colors,
 // 100.., after the rest); empty when not known.
-std::vector<int> CostumeColorIds(int index, int costume);
+std::vector<int> BattleSetupColorIds(int index, int costume);
 
 // This game's tables for core/pick_check.h. Not from the game thread: a
 // character's V-Comments may load there first (FlowVCommentNames).
-PickTables GamePickTables();
+PickTables BattleSetupPickTables();
 // Testing (pickcheck): runs every pick the select screen offers, with every
 // color, the last V-Skill, V-Trigger and V-Comment and all its variants, and
 // every selectable stage through the check, and logs what it refused. Not
 // from the game thread.
-void LogOfferedPickCheck();
+void BattleSetupLogPickCheck();
 
 } // namespace sfv::mod

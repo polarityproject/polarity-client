@@ -20,13 +20,13 @@
 
 namespace sfv::mod {
 
-bool InstallCameraRollback(const GameImage& image);
+bool CameraInstall(const GameImage& image);
 
 // On by default; `camrollback 0|1` (0: the game's own reset on loads).
-void SetCameraRollback(bool on);
+void CameraSetRollback(bool on);
 bool CameraRollbackOn();
 // Research: logs every request and what was done with it (`camlog 1|0`).
-void SetCameraRollbackLog(bool on);
+void CameraSetLog(bool on);
 
 // The game's post-restore callback that resets the views (skipped while on).
 constexpr uintptr_t kCameraResetCallback = 0x330DB0;

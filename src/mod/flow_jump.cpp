@@ -84,12 +84,12 @@ std::string FlowCurrentScene() { return LastScene(); }
 uint64_t FlowBattleSceneSwitches() { return g_battleSwitches; }
 
 void FlowJumpToBattle() {
-    if (!HasPendingSetup()) {
+    if (!BattleSetupHasPending()) {
         MatchSetup setup;
         setup.players[0].character = PackCode("RYU");
         setup.players[1].character = PackCode("KEN");
         setup.stage = kKeepStage;
-        SetPendingSetup(setup);
+        BattleSetupSetPending(setup);
         Log("flow: jump to battle without a match setup: Ryu against Ken in local Versus");
     }
     const int generation = ++g_jumpGeneration;

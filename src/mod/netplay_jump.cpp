@@ -35,7 +35,7 @@ void NetplayDriver::BeginJump() {
     switchesAtJump_ = FlowBattleSceneSwitches();
     ReleaseResults();
     if (nextDelay_ >= 0) options_.inputDelay = static_cast<uint8_t>(nextDelay_.exchange(-1));
-    const MatchSetup shown = ShownSetup(setup_, ViewerSide(), GameLookRules());
+    const MatchSetup shown = ShownSetup(setup_, ViewerSide(), BattleSetupLookRules());
     for (int p = 0; p < kNumPlayers; p++) {
         if (shown.players[p].color != setup_.players[p].color) {
             Log("netplay: both players on one look: P%d shows here in color %u (picked %u)", p + 1, shown.players[p].color + 1u,
@@ -47,8 +47,8 @@ void NetplayDriver::BeginJump() {
         std::lock_guard lock(mutex_);
         pending.played = static_cast<uint16_t>(played_);
     }
-    SetPendingSetup(pending);
-    creationsAtJump_ = BattleCreationCount();
+    BattleSetupSetPending(pending);
+    creationsAtJump_ = BattleSetupCreations();
     warmedUp_ = false;
     frozenFrames_ = 0;
     selfLoaded_ = false;
@@ -81,18 +81,18 @@ void NetplayDriver::RunJump() {
     Log("netplay: jumping into the battle (stage %s)", setup_.stage == kKeepStage ? "as prepared" : FlowStageCode(setup_.stage).c_str());
     FlowJumpToBattle();
     const auto direct = Clock::now() + std::chrono::seconds(kDirectJumpSeconds);
-    while (!stop_ && !Stopping() && GetState() == State::Jumping && BattleCreationCount() == creationsAtJump_ &&
+    while (!stop_ && !Stopping() && GetState() == State::Jumping && BattleSetupCreations() == creationsAtJump_ &&
            Clock::now() < direct) {
         Sleep(kJumpPollMs);
     }
-    if (stop_ || Stopping() || GetState() != State::Jumping || BattleCreationCount() != creationsAtJump_) return;
+    if (stop_ || Stopping() || GetState() != State::Jumping || BattleSetupCreations() != creationsAtJump_) return;
     Log("netplay: no battle %d s after the jump", kDirectJumpSeconds);
     SetStatus("could not start the battle (see the log)");
     EndSession("could not start the battle (see the log)");
 }
 
 bool NetplayDriver::FrameWhileLoading(SfvGame& game) {
-    if (BattleCreationCount() == creationsAtJump_) return false;
+    if (BattleSetupCreations() == creationsAtJump_) return false;
 
     if (!warmedUp_) {
         game.ForgetBattleObjects();
@@ -122,7 +122,7 @@ bool NetplayDriver::FrameWhileLoading(SfvGame& game) {
         }
         frozenChecksum_ = FoldChecksum(hashes.data(), hashes.size());
         KeepFrozenState();
-        ReadMatchSetup(&loadedSetup_);
+        BattleSetupRead(&loadedSetup_);
         Log("netplay: battle objects ready after %d neutral ticks (%zu regions, checksum %08X); frozen",
             game.ObjectsAt(), hashes.size(), frozenChecksum_);
         game.WatchCameraIfAsked();
@@ -131,7 +131,7 @@ bool NetplayDriver::FrameWhileLoading(SfvGame& game) {
             game.CameraWaitTicks() ? (" (" + std::to_string(game.CameraWaitTicks()) + " ticks after the objects)").c_str() : "",
             game.CameraNotStarted() ? "; the camera has not begun its setup" : "");
         game.ArmStartProbe();
-        Log("netplay: loaded %s", DescribeSetup(loadedSetup_).c_str());
+        Log("netplay: loaded %s", BattleSetupDescribe(loadedSetup_).c_str());
         CheckBattleDataSoon("match");
         NoteSessionActivity("match");
     }
@@ -149,12 +149,12 @@ bool NetplayDriver::FrameWhileLoading(SfvGame& game) {
             peer = peerLoadedSetup_;
             peerChecksum = peerChecksum_;
         }
-        const LookRules rules = GameLookRules();
+        const LookRules rules = BattleSetupLookRules();
         const std::string mismatch =
             SetupMismatch(RealPicks(loadedSetup_, setup_, ViewerSide(), rules), RealPicks(peer, setup_, host_ ? 1 : 0, rules));
         if (!mismatch.empty()) {
             Log("netplay: the battles differ (%s); here %s | there %s", mismatch.c_str(),
-                DescribeSetup(loadedSetup_).c_str(), DescribeSetup(peer).c_str());
+                BattleSetupDescribe(loadedSetup_).c_str(), BattleSetupDescribe(peer).c_str());
             EndSession("battles differ: " + mismatch);
             return true;
         }

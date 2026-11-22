@@ -411,7 +411,7 @@ int CmdLearnPeers(int argc, char** argv) {
         for (const auto& da : a.dumps) {
             const StateDump* db = b.FindDump(da.frame);
             if (!db || da.frame > maxFrame || da.bytes.size() < total || db->bytes.size() < total) continue;
-            const auto match = MatchRegions(a.regions, da.bytes, db->bytes);
+            const auto match = DiffMatchRegions(a.regions, da.bytes, db->bytes);
             for (size_t r = 0; r < a.regions.size(); r++) {
                 for (size_t w = 0; w + 8 <= a.regions[r].size; w += 8) {
                     uint64_t va, vb;

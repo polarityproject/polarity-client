@@ -139,6 +139,29 @@ not hold, a table that is gone) is refused; races between players show up
 here. A member the room bans is barred until they reconnect, since the
 rooms server's ban holds the connection.
 
+A table's state travels as one line:
+`<phase>|<p1>|<p2>|<ready bits>|<w1>|<w2>|<code>|<stayer>|<streak>|<last winner>|<last loser>|<lw>|<ll>|<call>|<call seconds>|<watch>|<again>`.
+Older keepers send 15 fields (before the relay's room, `watch`) or 16
+(before playing on, `again`), and readers take all three.
+
+After a set, who may stay depends on the rotation: the winner, the loser, or
+nobody (round robin), while they have played fewer than the stays limit's
+sets in a row at the table. The others go to the back of the queue. When
+both go back, whoever has now played two sets in a row waits longest;
+otherwise the loser goes first. So three players at a round robin table take
+turns whoever wins.
+
+The public list sorts rooms with open seats first, then rooms with room to
+queue, then full rooms, and by members within each. A room's listing gives
+its Polarity version as `client_version` (players list and join only their
+own version's rooms; null from a keeper before versions) and again as
+`sfvr_version`, its name before 0.4.0, for readers written then. It lists
+every table with its rules, state, seats (player 1, player 2; null when
+open) and the running set's score; the room's `rules` stays the first
+table's. Names and codes in the list have no tabs, newlines or commas (the
+list's separators) and nothing below space, and JSON strings show bytes
+that are not valid UTF-8 as U+FFFD, since names are players' own.
+
 ## Spectator relays
 
 A table set can be watched through a relay (`core/spectate_relay.h`): the

@@ -17,7 +17,7 @@
 namespace sfv {
 
 // What the check needs from the game's tables (battle_setup.h
-// GamePickTables).
+// BattleSetupPickTables).
 struct PickTables {
     std::function<int(const std::string& code)> charaIndex; // -1: no such character
     std::function<bool(int index)> isFighter;

@@ -208,17 +208,17 @@ void Run(const Step& s) {
             InputConnectVirtual(s.user, true);
             break;
         case Step::Setup:
-            SetPendingSetup(s.setup);
-            Log("setup pending: %s", DescribeSetup(s.setup).c_str());
+            BattleSetupSetPending(s.setup);
+            Log("setup pending: %s", BattleSetupDescribe(s.setup).c_str());
             break;
         case Step::Net:
             RunCommand(s.line);
             break;
         case Step::ShowSetup:
-            LogBattleSetup("now");
+            BattleSetupLog("now");
             break;
         case Step::ClearSetup:
-            ClearPendingSetup();
+            BattleSetupClearPending();
             Log("setup cleared");
             break;
         case Step::Scan:

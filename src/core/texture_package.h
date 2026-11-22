@@ -42,11 +42,11 @@ struct TexPackage {
 
 // False (and why) for a package this does not understand: no platform data,
 // mips whose sizes disagree, compressed bulk data, a format not listed.
-bool ParseTexturePackage(const uint8_t* data, size_t size, TexPackage* out, std::string* error);
+bool TexParsePackage(const uint8_t* data, size_t size, TexPackage* out, std::string* error);
 
 // The mip to draw at most `maxSide` pixels on its longer side: the smallest
 // one that still covers it, else the largest (0: the largest). Null if none.
-const TexMip* PickMip(const TexPackage& package, uint32_t maxSide);
+const TexMip* TexPickMip(const TexPackage& package, uint32_t maxSide);
 
 // An image the overlay can upload: BGRA8 rows (pitch = width * 4) or BC
 // blocks as stored.
@@ -71,15 +71,15 @@ struct TexLook {
 // formats (BGRA8; RGB10A2 becomes BGRA8): scaled down by averaging, with the
 // colours weighted by alpha so cut-out edges stay clean. BC mips as they are,
 // unless `look` asks for something (then decoded, shrunk and done).
-bool MipImage(const uint8_t* data, size_t size, const TexPackage& package, const TexMip& mip, uint32_t maxSide,
-              TexImage* out, std::string* error, const TexLook& look = {});
+bool TexMipImage(const uint8_t* data, size_t size, const TexPackage& package, const TexMip& mip, uint32_t maxSide,
+                 TexImage* out, std::string* error, const TexLook& look = {});
 
 // BC1 or BC3 blocks to BGRA8 rows (width x height; blocks cover whole 4x4s).
 // False for another format or too few bytes.
-bool DecodeBc(TexFormat format, const uint8_t* blocks, size_t size, uint32_t width, uint32_t height, std::vector<uint8_t>* bgra);
+bool TexDecodeBc(TexFormat format, const uint8_t* blocks, size_t size, uint32_t width, uint32_t height, std::vector<uint8_t>* bgra);
 // BGRA8 in place: a gaussian blur (premultiplied, edges clamped); CSS saturate().
-void BlurBgra(std::vector<uint8_t>& bgra, uint32_t width, uint32_t height, float sigma);
-void SaturateBgra(std::vector<uint8_t>& bgra, float amount);
+void TexBlur(std::vector<uint8_t>& bgra, uint32_t width, uint32_t height, float sigma);
+void TexSaturate(std::vector<uint8_t>& bgra, float amount);
 // BGRA8 with `pad` clear pixels added on every side.
 std::vector<uint8_t> PadBgra(const std::vector<uint8_t>& bgra, uint32_t width, uint32_t height, uint32_t pad);
 // Monochrome noise, side x side BGRA8: each pixel white or black, its alpha

@@ -42,7 +42,7 @@ std::string FindRecording(const std::string& name) {
 
 namespace replay {
 
-ReplayDriver::ReplayDriver(ReplayFile rf, std::string name, int stress, int watchFrom, int watchTo, std::string watchRegion) : rf_(std::move(rf)), name_(std::move(name)), stress_(stress), creationsAtJump_(BattleCreationCount()), watchFrom_(watchFrom), watchTo_(watchTo), watchRegion_(std::move(watchRegion)) {
+ReplayDriver::ReplayDriver(ReplayFile rf, std::string name, int stress, int watchFrom, int watchTo, std::string watchRegion) : rf_(std::move(rf)), name_(std::move(name)), stress_(stress), creationsAtJump_(BattleSetupCreations()), watchFrom_(watchFrom), watchTo_(watchTo), watchRegion_(std::move(watchRegion)) {
     last_ = rf_.finalThrough >= 0 ? std::min(rf_.finalThrough, rf_.FrameCount() - 1) : rf_.FrameCount() - 1;
 }
 
@@ -84,7 +84,7 @@ bool ReplayDriver::OnFrame(SfvGame& game) {
     }
     if (!jumped_) {
         if (viewer_ || bench_) FlowPumpGameThread();
-        if (BattleCreationCount() == creationsAtJump_) return false;
+        if (BattleSetupCreations() == creationsAtJump_) return false;
         jumped_ = true;
         game.ForgetBattleObjects();
         game.BeginWarmup();
@@ -201,10 +201,10 @@ void ReplayRequest(const std::string& path, int stressDistance, int watchFrom, i
         Log("replay: %s: %s", full.c_str(), error.c_str());
         return;
     }
-    PickVerdict check = SetupCheck(rf.setup, GamePickTables());
+    PickVerdict check = SetupCheck(rf.setup, BattleSetupPickTables());
     for (int tries = 0; check.kind == PickVerdict::Kind::NotYet && tries < 30; tries++) {
         Sleep(100);
-        check = SetupCheck(rf.setup, GamePickTables());
+        check = SetupCheck(rf.setup, BattleSetupPickTables());
     }
     if (!check.Fine()) {
         Log("replay: %s: this game does not have its setup (%s)", full.c_str(),
@@ -214,13 +214,13 @@ void ReplayRequest(const std::string& path, int stressDistance, int watchFrom, i
     stressDistance = std::clamp(stressDistance, 0, 30);
     const std::string name = full.substr(full.find_last_of("\\/") + 1);
     Log("replay: %s, %d frames (confirmed through %d), build %s, %s%s", name.c_str(), rf.FrameCount(), rf.finalThrough,
-        rf.gameBuild.c_str(), DescribeSetup(rf.setup).c_str(),
+        rf.gameBuild.c_str(), BattleSetupDescribe(rf.setup).c_str(),
         stressDistance ? (", stress distance " + std::to_string(stressDistance)).c_str() : "");
     std::vector<PreloadPick> picks;
     for (const PlayerSetup& p : rf.setup.players) {
         if (p.character) picks.push_back({UnpackCode(p.character), static_cast<int>(p.costume), p.version});
     }
-    SetPendingSetup(ShownSetup(rf.setup, rf.localPlayer == 1 ? 1 : 0, GameLookRules()));
+    BattleSetupSetPending(ShownSetup(rf.setup, rf.localPlayer == 1 ? 1 : 0, BattleSetupLookRules()));
     FlowSetPendingStage(rf.setup.stage == kKeepStage ? "" : FlowStageCode(rf.setup.stage));
     Log("replay: stage %s", rf.setup.stage == kKeepStage ? "as prepared" : FlowStageCode(rf.setup.stage).c_str());
     auto* driver = new ReplayDriver(std::move(rf), name, stressDistance, watchFrom, watchTo, watchRegion);

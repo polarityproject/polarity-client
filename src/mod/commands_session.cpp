@@ -711,7 +711,7 @@ void StartskewCommand(const std::string&, std::stringstream&) {
 }
 
 void PickcheckCommand(const std::string&, std::stringstream&) {
-    LogOfferedPickCheck();
+    BattleSetupLogPickCheck();
 }
 
 void BadpickCommand(const std::string&, std::stringstream& ss) {
@@ -725,7 +725,7 @@ void BadpickCommand(const std::string&, std::stringstream& ss) {
 void SetroundsCommand(const std::string&, std::stringstream& ss) {
     int rounds = 0;
     ss >> rounds;
-    SetMatchRoundsForTest(rounds);
+    BattleSetupSetRoundsForTest(rounds);
     Log("setrounds %d: match setups write it from now on", rounds);
 }
 

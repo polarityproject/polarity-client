@@ -72,7 +72,7 @@ struct RoundResult {
 
 // The rounds' action frames from a session's per-frame flags
 // (ReplayFile::frameFlags), in order; a round still on at the end has endFrame -1.
-std::vector<RoundResult> RoundsFromFrameFlags(const std::vector<uint8_t>& flags);
+std::vector<RoundResult> ReplayRoundsFromFlags(const std::vector<uint8_t>& flags);
 
 struct MatchSummary {
     bool present = false;

@@ -61,6 +61,56 @@ than `prediction_window + 1` before the end may still hold predicted inputs;
 the file marks that boundary (`finalThrough`) and tools only trust frames up
 to it.
 
+### The file's layout
+
+A file is `SFVR` and a u32 version, then chunks of a u32 tag, a u32 size and
+the payload, closed by an `END ` chunk holding the CRC-32 of every byte
+before it. Readers skip chunks they don't know, so later versions can add
+data without breaking older tools. META, SETP and INFO come first and are
+never compressed, since lists read them from the file's start; the region
+table after them ends the header. INFO has its own version (2: each round's
+first action frame, at the end). Fields added to SETP go after its fixed
+part, so older files without them still read. A file is written to a
+temporary name and renamed, so a crash never leaves half a report.
+
+Region hashes are delta coded. Most regions don't change every frame, so
+each frame stores a bitmap of the regions whose hash differs from the frame
+before, and only those hashes. In version 3, kept frames come in runs, each
+starting from a zero row, so a run's first frame stores every region.
+
+A chunk goes inside a PACK chunk (the tag, the size before compression, the
+compressed bytes) when that saves a tenth; chunks under 512 bytes stay as
+they are. Since every count comes from the file, readers set limits: at most
+64 million region hashes (frames times regions, 512 MB), where recordings
+hold 8.4 million at most, and 256 MB unpacked in all, where recordings
+unpack to 25 MB at most.
+
+A round's fight runs from the frame after the one whose tick turned it on to
+the one whose tick turned it off (the KO).
+
+### Compression
+
+PACK chunks use Windows' XPRESS Huffman codec from `cabinet.dll`
+(`core/compress.cpp`). Its functions are looked up at run time rather than
+imported: Wine's `cabinet.dll` (Proton, the Steam Deck) had none of them
+until 2026, and an import Wine lacks becomes a stub that ends the process
+when called. Steam Deck players' games closed as their first match's
+recording was saved, after its results screen (0.2.6). Without the codec,
+chunks stay uncompressed.
+
+Reading uses Windows' codec where there is one, and otherwise a decoder of
+the mod's own, so recordings made on Windows (and the benchmark's round)
+read on a Steam Deck too. The format ([MS-XCA] 2.2.4) is blocks of 65536
+output bytes, each after a table of 512 4-bit code lengths (256 bytes, the
+low nibble for the even symbol), then a bit stream read 16 bits (little
+endian) at a time, most significant bit first, with the bytes of long match
+lengths in between. The code is canonical: shorter codes first, then by
+symbol. Symbols under 256 are bytes, and the others matches: the length in
+the low 4 bits (plus 3; 15 means more in the bytes that follow) and the
+offset's bit count in the next 4 (the offset is that many bits plus
+1 << count). Data that would not get smaller is stored as it is, the same
+size in as out, as Windows' own decoder reads it.
+
 The hashes are per region (XXH64, pointer words masked), and their fold is the
 32-bit checksum GekkoNet exchanges for live desync detection. Live detection
 and offline analysis therefore always agree.
@@ -116,6 +166,18 @@ polarity inputs p1.sfvr 700 740         # what the players pressed around the fr
 | match setups differ / state before frame 0 differs | the peers started different matches | fix lobby → `MatchSetup` sync; the listed regions show what differed |
 | confirmed inputs differ from frame N | netcode or transport bug | GekkoNet/transport, not the game |
 | state diverges at frame N with identical inputs | nondeterminism | the region list and byte ranges say where; then `verify` each file |
+
+`diff` pairs regions by size, since the peers' region orders may differ: a
+region mismatches when no region of the same size on the other side has its
+hash, and within each size regions pair up greedily by fewest differing
+words. A name such as `s128.0~s128.3` means the peers listed that region at
+different places. The confirmed inputs are compared whatever the states do,
+since they tell the netcode's part apart from the game's. For byte ranges it
+prefers dumps of the first diverging frame, or else the earliest later frame
+both peers dumped. Offline there is no process to ask whether a word is an
+address, so a value above 1 TB, where 64-bit Windows puts heaps and images
+(two packed int32 rarely get there), counts as one, and addresses on both
+sides compare equal.
 
 `verify` plays one file back deterministically: start the recorded setup, feed
 the recorded inputs, compare every frame's region hashes.

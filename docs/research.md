@@ -31,6 +31,20 @@ The mod reads textures from the paks on its own threads (2 workers) through the 
 
 A texture path such as `/Game/Chara/RYU/Hud/PartCharacter` maps to its package's name in the paks. A file over 64 MB is not read. The look of an image is worked out from its largest mip, since BC images are not shrunk otherwise. Images read wait for the render thread, which makes a few textures a frame, since each costs a copy into the device; those not reached wait for the next frame. A new device gets nothing from the last one: textures are made again on request, and a view still drawn this frame stays valid, since it holds its texture. The batch's log line gives the frames presented while it loaded, the longest, and how many took over 20 ms.
 
+`core/texture_package.cpp` reads a texture's package without the engine. It
+looks for every `PF_` format name that is an FString with a plausible header
+before it (the name table has the same strings without one), tries the
+game's own layout first (a `bCooked` flag, no `SizeZ`), then the others.
+Each mip is a `bCooked` int32 where the layout has one, the bulk data, then
+its sizes. Offsets of data at the end of the file count from where the
+package's bulk data starts: the end of the file less all of it, before the
+package tag that closes the file. Each mip halves the last, down to 1;
+block formats stop at one 4x4 block, so the pad glyphs' 2x2 and 1x1 mips say
+4x4. A zlib-compressed mip is not read. BC1 and BC3 decode to BGRA here,
+premultiplied so clear pixels don't darken what they touch. The noise
+texture is made rather than read: xorshift32, two bytes averaged so the
+grain is softer, and lighter or darker than what is under it, never greyer.
+
 ### The mod paks' indexes
 
 `core/pak_index.cpp` reads a pak's index to learn which files it holds, such as battle data. The footer is the magic, the version, the index offset, the index size and the index hash (44 bytes); versions 1 to 3 are read. The game's own paks have an encrypted-index flag byte before the footer. Paks made with older tools (u4pak, UnrealPak before 4.16) end their index right at the footer, and reading the flag as given turned every mod pak of a 0.4.2 host into "index out of the file" (2026-11-13), so the flag is read only when there is room for it. An index entry is a path (an FString: its length with the terminator, negative for UTF-16), the offset, the size, the uncompressed size, the compression, a timestamp in version 1, a 20-byte hash, and in version 3 the compression blocks, the encrypted flag and the block size. Paths are made relative (`../../../StreetFighterV/Content/Chara/...` becomes `StreetFighterV/Content/Chara/...`), and battle data is found by its place: `Chara/<C>/BattleResource/[<v>/]<file>`, and stage data at `Chara/<C>/DataAsset/StageData/DA_<C>_Stage_<S>`.

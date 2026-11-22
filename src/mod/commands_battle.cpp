@@ -39,8 +39,8 @@ void WatchphaseCommand(const std::string&, std::stringstream&) {
 void CamrollbackCommand(const std::string& cmd, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    if (cmd == "camlog") FlowRunOnGameThread([on] { SetCameraRollbackLog(on != 0); });
-    else FlowRunOnGameThread([on] { SetCameraRollback(on != 0); });
+    if (cmd == "camlog") FlowRunOnGameThread([on] { CameraSetLog(on != 0); });
+    else FlowRunOnGameThread([on] { CameraSetRollback(on != 0); });
 }
 
 void HudstepCommand(const std::string&, std::stringstream& ss) {
@@ -336,7 +336,7 @@ void DrawlogCommand(const std::string&, std::stringstream& ss) {
 void UniqueparamCommand(const std::string&, std::stringstream& ss) {
     int player = 0, index = 0, value = -1;
     ss >> player >> index >> value;
-    SetUniqueParamOverride(player, index, value);
+    BattleSetupSetUniqueParam(player, index, value);
     Log("uniqueparam: P%d [%d] = %d", player + 1, index, value);
 }
 

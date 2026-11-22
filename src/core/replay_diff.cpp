@@ -1,3 +1,5 @@
+// Comparing two recordings: setups, inputs, region hashes and dumps (docs/desync-replays.md).
+
 #include "core/replay_diff.h"
 
 #include "core/state.h"
@@ -31,9 +33,6 @@ uint64_t Word(const std::vector<uint8_t>& s, size_t at) {
     return v;
 }
 
-// Offline there is no process to ask, so: a value in the range where 64-bit
-// Windows puts heaps and images (above 1 TB; two packed int32 rarely get
-// there). Addresses on both sides compare equal.
 bool g_offlineAddresses = true;
 
 bool PlausibleAddress(uint64_t v) { return g_offlineAddresses && v >= 0x10000000000ull && v < 0x800000000000ull; }
@@ -57,8 +56,8 @@ size_t CountDiffering(const std::vector<uint8_t>& a, size_t ai, const std::vecto
 
 void SetDiffIgnoresAddresses(bool ignore) { g_offlineAddresses = ignore; }
 
-std::vector<size_t> MatchRegions(const std::vector<RegionInfo>& regions, const std::vector<uint8_t>& a,
-                                 const std::vector<uint8_t>& b) {
+std::vector<size_t> DiffMatchRegions(const std::vector<RegionInfo>& regions, const std::vector<uint8_t>& a,
+                                     const std::vector<uint8_t>& b) {
     std::vector<size_t> offsets(regions.size());
     size_t base = 0;
     for (size_t r = 0; r < regions.size(); r++) {
@@ -69,7 +68,6 @@ std::vector<size_t> MatchRegions(const std::vector<RegionInfo>& regions, const s
     for (size_t r = 0; r < regions.size(); r++) match[r] = r;
     if (base > a.size() || base > b.size()) return match;
 
-    // Within each size, pair regions greedily by fewest differing words.
     size_t first = 0;
     while (first < regions.size()) {
         size_t last = first;
@@ -101,7 +99,7 @@ std::vector<size_t> MatchRegions(const std::vector<RegionInfo>& regions, const s
 std::vector<ByteRange> DiffStates(const std::vector<RegionInfo>& regions, const std::vector<uint8_t>& a,
                                   const std::vector<uint8_t>& b, size_t maxRanges) {
     std::vector<ByteRange> out;
-    const std::vector<size_t> match = MatchRegions(regions, a, b);
+    const std::vector<size_t> match = DiffMatchRegions(regions, a, b);
     std::vector<size_t> offsets(regions.size());
     size_t total = 0;
     for (size_t r = 0; r < regions.size(); r++) {
@@ -170,15 +168,12 @@ DiffReport DiffReplays(const ReplayFile& a, const ReplayFile& b) {
     const size_t regionCount = a.RegionCount();
     auto mismatchedRegions = [&](int frame) {
         std::vector<size_t> out;
-        // A compact recording keeps region hashes only around its desyncs.
         if (!a.HasRegionHashes(frame) || !b.HasRegionHashes(frame)) {
             rep.notes.push_back("no region hashes for frame " + std::to_string(frame) +
                                 " in both files (compact recordings keep them only around desyncs): "
                                 "the differing regions are unknown");
             return out;
         }
-        // A region mismatches when no region of the same size on the other
-        // side has its hash (the peers' region orders may differ).
         const uint64_t* ha = a.FrameHashes(frame);
         const uint64_t* hb = b.FrameHashes(frame);
         for (size_t i = 0; i < regionCount; i++) {
@@ -191,8 +186,6 @@ DiffReport DiffReplays(const ReplayFile& a, const ReplayFile& b) {
         return out;
     };
 
-    // The confirmed inputs are compared whatever the states do: they tell
-    // the netcode's part apart from the game's.
     const int lastConfirmed = std::min({a.FrameCount() - 1, b.FrameCount() - 1, std::max(a.finalThrough, b.finalThrough)});
     rep.inputsComparedThrough = lastConfirmed;
     for (int f = 0; f <= lastConfirmed && rep.firstInputMismatch < 0; f++) {
@@ -220,8 +213,6 @@ DiffReport DiffReplays(const ReplayFile& a, const ReplayFile& b) {
     }
 
     if (rep.firstStateMismatch >= 0) {
-        // Prefer dumps of the first diverging frame; otherwise the earliest
-        // later frame both peers dumped still shows which bytes drifted.
         const StateDump *da = nullptr, *db = nullptr;
         for (const auto& d : a.dumps) {
             const StateDump* other = b.FindDump(d.frame);
@@ -252,7 +243,6 @@ std::string FormatDiff(const DiffReport& rep, const ReplayFile& a) {
     auto regionName = [&](size_t i) {
         return Format("#%zu %s (%" PRIu64 " bytes)", i, a.regions[i].name.c_str(), a.regions[i].size);
     };
-    // "s128.0" or, when the peers listed it at different places, "s128.0~s128.3".
     auto pairName = [&](const ByteRange& br) {
         std::string n = a.regions[br.region].name;
         if (br.regionB != br.region) n += "~" + a.regions[br.regionB].name;

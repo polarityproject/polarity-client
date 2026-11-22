@@ -46,8 +46,8 @@ int* GaugeAddDetour(uint8_t* gauge, int* out, int amount, int flags) {
         std::memcpy(vitality, gauge + kGaugeVitalityOff, sizeof(vitality));
     }
     int* result = g_origGaugeAdd(gauge, out, amount, flags);
-    if (BattleCreationCount() != g_gaugeBattle) {
-        g_gaugeBattle = BattleCreationCount();
+    if (BattleSetupCreations() != g_gaugeBattle) {
+        g_gaugeBattle = BattleSetupCreations();
         g_gaugeLogs = 0;
     }
     if (readable && g_gaugeLogs++ < kGaugeLogsPerBattle) {

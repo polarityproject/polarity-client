@@ -163,7 +163,7 @@ uint64_t PreDetour(uint8_t* unit, void* a2, void* a3, void* a4) {
             LogStack("RollbackUnit::Pre", g.image.base);
             g.stackTicks = kExtraStackTicks;
         }
-        LogBattleSetup("at battle start");
+        BattleSetupLog("at battle start");
     }
 
     if (g.config.mode == Mode::Probe) HandleHotkeys();

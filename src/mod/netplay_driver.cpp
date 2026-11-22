@@ -109,7 +109,7 @@ void ReturnToMenuOnceBattleRuns(SfvGame& game, uint64_t switchesAtJump, NoBattle
         if (FlowBattleSceneSwitches() > switchesAtJump + 1 || BattleCurrentFrameDriver()) return;
         if (FlowBattleSceneSwitches() != switchesAtJump && game.BattleRunning()) {
             Log("netplay: the battle of the session that ended during its jump runs: back to the menu");
-            ClearPendingSetup();
+            BattleSetupClearPending();
             FlowReturnToMainMenu(1);
             return;
         }
@@ -117,7 +117,7 @@ void ReturnToMenuOnceBattleRuns(SfvGame& game, uint64_t switchesAtJump, NoBattle
             ReturnToMenuOnceBattleRuns(game, switchesAtJump, none, framesLeft - 10);
             return;
         }
-        ClearPendingSetup();
+        BattleSetupClearPending();
         if (none == NoBattle::Menu) {
             Log("netplay: no battle after the ended session's jump: back to the menu");
             FlowReturnToMainMenu(1);
@@ -420,7 +420,7 @@ void NetplayDriver::Stop() {
             ReturnToMenuOnceBattleRuns(game_, switchesAtJump_, NoBattle::Stay);
         }
     } else {
-        ClearPendingSetup();
+        BattleSetupClearPending();
     }
     control_ = gekko_ = nullptr;
     mux_.reset();
@@ -515,7 +515,7 @@ void NetplayDriver::StartMatch(bool rematch) {
         setup_ = setup;
     }
     matchId_ = rng_();
-    Log("netplay: match %s; %s", Hex64(matchId_).c_str(), DescribeSetup(setup_).c_str());
+    Log("netplay: match %s; %s", Hex64(matchId_).c_str(), BattleSetupDescribe(setup_).c_str());
     next_ = Next::Jump;
 }
 

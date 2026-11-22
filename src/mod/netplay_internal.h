@@ -443,7 +443,7 @@ private:
     std::string relayHost_;                           // under mutex_
 
     std::thread thread_;
-    const PickTables pickTables_ = GamePickTables();
+    const PickTables pickTables_ = BattleSetupPickTables();
     std::thread jump_;
     std::atomic<bool> stop_{false};
     Clock::time_point lastBeat_;

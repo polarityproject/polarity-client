@@ -1,3 +1,5 @@
+// Match recordings (.sfvr): chunks, delta-coded region hashes, packing and limits (docs/desync-replays.md).
+
 #include "core/replay_file.h"
 
 #include "core/compress.h"
@@ -8,13 +10,6 @@
 #include <cstdio>
 #include <cstring>
 #include <new>
-
-// Layout: "SFVR" u32 version, then chunks {u32 tag, u32 size, payload}, closed
-// by an "END " chunk holding the CRC-32 of every byte before it. Unknown chunks
-// are skipped so later versions can add data without breaking older tools.
-// Version 3 (version 2 still reads): a checksum per frame (SUMS), region hashes
-// for windows of frames (HWIN, in place of HASH: every frame), and any chunk
-// may come compressed inside a PACK chunk.
 
 namespace sfv {
 
@@ -31,7 +26,7 @@ constexpr uint32_t kSetup = Tag("SETP");
 constexpr uint32_t kRegions = Tag("RGNS");
 constexpr uint32_t kInitial = Tag("INIT");
 constexpr uint32_t kInputs = Tag("INPT");
-constexpr uint32_t kHashes = Tag("HASH"); // version 2
+constexpr uint32_t kHashes = Tag("HASH");
 constexpr uint32_t kChecksums = Tag("SUMS");
 constexpr uint32_t kHashWindows = Tag("HWIN");
 constexpr uint32_t kPack = Tag("PACK");
@@ -39,6 +34,10 @@ constexpr uint32_t kEvents = Tag("EVNT");
 constexpr uint32_t kDump = Tag("DUMP");
 constexpr uint32_t kInfo = Tag("INFO");
 constexpr uint32_t kEnd = Tag("END ");
+constexpr uint32_t kSummaryVersion = 2;
+constexpr uint32_t kMaxSummaryRounds = 64;
+constexpr size_t kMinPackedBody = 512, kPackHeader = 8;
+constexpr size_t kHeaderReadBytes = 16384, kReadBlock = 65536;
 
 class Writer {
 public:
@@ -137,7 +136,6 @@ void WriteSetup(Writer& w, const MatchSetup& s) {
     w.U8(s.roundsToWin);
     w.U16(s.timerSeconds);
     w.U64(s.seed);
-    // After the fixed part, so older files (without it) still read.
     for (const auto& p : s.players) w.U8(p.variation);
     for (int i = 0; i < kNumPlayers; i++) w.U16(s.wins[i]);
     for (int i = 0; i < kNumPlayers; i++) w.U16(s.streaks[i]);
@@ -170,9 +168,6 @@ void ReadSetup(Reader& r, MatchSetup& s) {
     }
 }
 
-// Most regions do not change every frame, so each frame stores a bitmap of the
-// regions whose hash differs from the previous frame and only those hashes.
-// `prev` holds the row before `first` and ends as the row of the last frame.
 void WriteHashRows(Writer& w, const ReplayFile& rf, int first, int count, std::vector<uint64_t>& prev) {
     const size_t regions = rf.RegionCount();
     std::vector<uint8_t> bitmap((regions + 7) / 8);
@@ -205,11 +200,8 @@ bool ReadHashRows(Reader& r, ReplayFile& rf, int first, int count, std::vector<u
     return r.ok();
 }
 
-// The most region hashes a file may hold (frames times regions, 512 MB):
-// both counts come from the file. Recordings hold 8.4 million at most.
 constexpr uint64_t kMaxHashes = uint64_t{64} << 20;
 
-// Version 2: every frame's region hashes, from the state before frame 0 on.
 bool ReadHashes(Reader& r, ReplayFile& rf, std::string* error) {
     const uint32_t frames = r.Get<uint32_t>();
     const uint32_t regions = r.Get<uint32_t>();
@@ -227,7 +219,6 @@ bool ReadHashes(Reader& r, ReplayFile& rf, std::string* error) {
     return ReadHashRows(r, rf, 0, static_cast<int>(frames), prev);
 }
 
-// The frames a file keeps region hashes for (see ReplayDetail).
 std::vector<uint8_t> KeptFrames(const ReplayFile& rf, ReplayDetail detail) {
     const int frames = rf.FrameCount();
     std::vector<uint8_t> keep(size_t(frames), 0);
@@ -243,8 +234,6 @@ std::vector<uint8_t> KeptFrames(const ReplayFile& rf, ReplayDetail detail) {
     return keep;
 }
 
-// Version 3: runs of consecutive kept frames, each starting from a zero row
-// (its first frame stores every region).
 void WriteHashWindows(Writer& w, const ReplayFile& rf, const std::vector<uint8_t>& keep) {
     const int frames = rf.FrameCount();
     std::vector<std::pair<int, int>> windows;
@@ -300,7 +289,7 @@ bool ReadSummary(Reader& c, MatchSummary& s) {
     s.winner = static_cast<int8_t>(c.Get<uint8_t>());
     s.ending = c.Get<uint8_t>();
     const uint32_t n = c.Get<uint32_t>();
-    if (n > 64) return false;
+    if (n > kMaxSummaryRounds) return false;
     s.rounds.resize(n);
     for (auto& r : s.rounds) {
         r.endFrame = c.Get<int32_t>();
@@ -318,12 +307,10 @@ bool ReadSummary(Reader& c, MatchSummary& s) {
     return c.ok();
 }
 
-// A chunk written from `body`, compressed (in a PACK chunk: the tag, the
-// size before compression, the compressed bytes) when that saves a tenth.
 void PutChunk(Writer& out, uint32_t tag, const Writer& body) {
     std::vector<uint8_t> packed;
-    if (body.buf.size() >= 512 && Compress(body.buf.data(), body.buf.size(), &packed) &&
-        packed.size() + 8 < body.buf.size() - body.buf.size() / 10) {
+    if (body.buf.size() >= kMinPackedBody && Compress(body.buf.data(), body.buf.size(), &packed) &&
+        packed.size() + kPackHeader < body.buf.size() - body.buf.size() / 10) {
         const size_t c = out.BeginChunk(kPack);
         out.U32(tag);
         out.U32(static_cast<uint32_t>(body.buf.size()));
@@ -338,9 +325,7 @@ void PutChunk(Writer& out, uint32_t tag, const Writer& body) {
 
 } // namespace
 
-std::vector<RoundResult> RoundsFromFrameFlags(const std::vector<uint8_t>& flags) {
-    // A fight runs from the frame after the one whose tick turned it on to
-    // the one whose tick turned it off (the KO).
+std::vector<RoundResult> ReplayRoundsFromFlags(const std::vector<uint8_t>& flags) {
     std::vector<RoundResult> rounds;
     bool on = false;
     for (size_t f = 0; f < flags.size(); f++) {
@@ -416,10 +401,9 @@ std::vector<uint8_t> SerializeReplay(const ReplayFile& rf, ReplayDetail detail) 
     PutChunk(w, kSetup, b);
 
     if (rf.summary.present) {
-        // Never compressed: lists read it from the file's start.
         const MatchSummary& s = rf.summary;
         b = {};
-        b.U32(2); // the chunk's own version (2: each round's first action frame, at the end)
+        b.U32(kSummaryVersion);
         for (const auto& n : s.names) b.Str(n);
         for (uint8_t v : s.roundWins) b.U8(v);
         b.U8(static_cast<uint8_t>(s.winner));
@@ -500,8 +484,6 @@ std::vector<uint8_t> SerializeReplay(const ReplayFile& rf, ReplayDetail detail) 
 
 namespace {
 
-// What a file's chunks may unpack to in all (each comes from the file):
-// recordings unpack to 25 MB at most.
 constexpr uint64_t kMaxUnpacked = uint64_t{256} << 20;
 
 bool Deserialize(const uint8_t* data, size_t len, ReplayFile* out, std::string* error) {
@@ -519,7 +501,6 @@ bool Deserialize(const uint8_t* data, size_t len, ReplayFile* out, std::string* 
     bool sawEnd = false, sawInputs = false, sawHashes = false;
     uint64_t unpacked = 0;
 
-    // One chunk's payload; a PACK chunk's comes here once uncompressed.
     auto handle = [&](uint32_t tag, Reader& c) {
         switch (tag) {
             case kMeta:
@@ -578,7 +559,6 @@ bool Deserialize(const uint8_t* data, size_t len, ReplayFile* out, std::string* 
             }
             case kHashes:
             case kHashWindows:
-                // Need the region table and the inputs, which are written first.
                 if (!sawInputs) return fail("hash chunk before input chunk");
                 if (!(tag == kHashes ? ReadHashes(c, rf, error) : ReadHashWindows(c, rf, error))) return false;
                 sawHashes = true;
@@ -608,7 +588,7 @@ bool Deserialize(const uint8_t* data, size_t len, ReplayFile* out, std::string* 
                 break;
             }
             default:
-                break; // newer chunk type
+                break;
         }
         if (!c.ok()) return fail("malformed chunk");
         return true;
@@ -648,7 +628,6 @@ bool Deserialize(const uint8_t* data, size_t len, ReplayFile* out, std::string* 
     if (rf.initialHashes.size() != rf.RegionCount()) return fail("initial hashes do not match region table");
     if (!rf.hashesKept.empty()) {
         if (std::all_of(rf.hashesKept.begin(), rf.hashesKept.end(), [](uint8_t k) { return k != 0; })) {
-            // A full file: like a live recording.
             rf.hashesKept.clear();
             rf.checksums.clear();
         } else if (rf.checksums.size() != size_t(rf.FrameCount())) {
@@ -673,7 +652,6 @@ bool DeserializeReplay(const uint8_t* data, size_t len, ReplayFile* out, std::st
 
 bool SaveReplay(const ReplayFile& replay, const std::string& path, std::string* error, ReplayDetail detail) {
     const std::vector<uint8_t> bytes = SerializeReplay(replay, detail);
-    // Write to a temp name and rename so a crash never leaves half a report.
     const std::string tmp = path + ".tmp";
     FILE* f = OpenFile(tmp, "wb");
     if (!f) {
@@ -700,8 +678,6 @@ bool DeserializeReplayHeader(const uint8_t* data, size_t len, ReplayFile* out, s
     if (version != 2 && version != kReplayFormatVersion) return fail("unsupported .sfvr format version");
     ReplayFile rf;
     bool meta = false;
-    // META, SETP and INFO come first and uncompressed; the region table after
-    // them ends the header.
     while (r.ok() && r.left() >= 8) {
         const uint32_t tag = r.Get<uint32_t>();
         const uint32_t size = r.Get<uint32_t>();
@@ -737,7 +713,7 @@ bool LoadReplayHeader(const std::string& path, ReplayFile* out, std::string* err
         if (error) *error = "cannot open " + path;
         return false;
     }
-    std::vector<uint8_t> bytes(16384);
+    std::vector<uint8_t> bytes(kHeaderReadBytes);
     bytes.resize(std::fread(bytes.data(), 1, bytes.size(), f));
     std::fclose(f);
     return DeserializeReplayHeader(bytes.data(), bytes.size(), out, error);
@@ -750,7 +726,7 @@ bool LoadReplay(const std::string& path, ReplayFile* out, std::string* error) {
         return false;
     }
     std::vector<uint8_t> bytes;
-    uint8_t chunk[65536];
+    uint8_t chunk[kReadBlock];
     size_t n;
     while ((n = std::fread(chunk, 1, sizeof(chunk), f)) > 0) bytes.insert(bytes.end(), chunk, chunk + n);
     std::fclose(f);

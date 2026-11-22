@@ -148,15 +148,15 @@ DWORD WINAPI ModMain(LPVOID self) {
     OverlaySetBuild(std::string("Polarity ") + kModVersion);
     if (migrated.moved) OverlaySetMigratedNotice();
     UpdateStart(dir, kModVersion, Narrow(config.updateUrl), config.updateCheck);
-    InstallBattleSetup(image);
+    BattleSetupInstall(image);
     BootInstallProbes(image, config.verbose);
     BootInstallFreePlayGuard(image);
     FlowInstallProbes(image);
     BootWatchLoginStatus();
     BattleInstallDriver(image, &game);
-    InstallCameraRollback(image);
+    CameraInstall(image);
     InstallHudStep(image);
-    SetCameraRollback(config.netplay.cameraRollback);
+    CameraSetRollback(config.netplay.cameraRollback);
     if (config.netplay.skipLoadCallbacks) GameSetSkippedLoadCallbacks(GameDefaultSkippedLoadCallbacks());
     GameSetLeanResim(config.netplay.leanResim);
     if (!config.netplay.leanResim) FlowSetResimTaskSkip({});

@@ -6,7 +6,7 @@ Tables ReadTables() {
     Tables t;
     for (int i = 0; i < FlowCharaCount() && !Stopping(); i++) {
         const std::string name = FlowCharaName(i);
-        if (!IsFighter(i) || name.empty()) continue;
+        if (!BattleSetupIsFighter(i) || name.empty()) continue;
         std::vector<int> costumes;
         std::vector<std::string> names;
         std::vector<std::vector<int>> colors;
