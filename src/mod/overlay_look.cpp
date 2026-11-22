@@ -221,8 +221,8 @@ bool SetUp(IDXGISwapChain* swapChain) {
         return false;
     }
     g_device->GetImmediateContext(&g_context);
-    NoteShaderResourceViewKind(g_device);
-    SetPakTextureDevice(g_device);
+    TexturesNoteViewKind(g_device);
+    PakTexturesSetDevice(g_device);
     g_window = desc.OutputWindow;
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();

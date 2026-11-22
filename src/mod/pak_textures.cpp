@@ -1,3 +1,5 @@
+// Textures read from the paks on worker threads and made on the render thread (docs/research.md).
+
 #include "mod/pak_textures.h"
 
 #include "core/file_open.h"
@@ -24,10 +26,6 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-// The engine's platform file chain (spike, 2026-11-02): FPlatformFileManager::Get(),
-// then FindPlatformFile(manager, L"PakFile"). Its vtable, and the slots used:
-// GetName, FileSize(path), OpenRead(path, allowWrite); the handle's Read(dst,
-// bytes) and its scalar deleting destructor.
 constexpr uint32_t kPlatformFileManagerGet = 0x1131AD0;
 constexpr uint32_t kFindPlatformFile = 0x1133090;
 constexpr uint32_t kPakFileVtable = 0x33C49D8;
@@ -35,6 +33,8 @@ constexpr int kSlotGetName = 8, kSlotFileSize = 10, kSlotOpenRead = 19;
 constexpr int kHandleSlotDestroy = 0, kHandleSlotRead = 4;
 constexpr int kWorkers = 2;
 constexpr int64_t kLargestFile = 64ll * 1024 * 1024;
+constexpr size_t kPakFileNameBytes = sizeof(L"PakFile");
+constexpr double kSlowFrameMs = 20, kIgnoredGapMs = 1000;
 
 enum class State { Queued,
                    Loading,
@@ -46,29 +46,27 @@ struct Entry {
     std::string path;
     uint32_t maxSide = 0;
     TexLook look;
-    bool noise = false; // made, not read: NoiseTexture
+    bool noise = false;
     State state = State::Queued;
     TextureView view;
-    TexImage image; // read, waiting for the render thread (single-threaded device)
+    TexImage image;
 };
 
 std::mutex g_mutex;
 std::condition_variable g_wake;
-std::map<std::string, Entry> g_entries; // by Key()
-std::deque<std::string> g_queue;        // keys, in the order to load
+std::map<std::string, Entry> g_entries;
+std::deque<std::string> g_queue;
 ID3D11Device* g_device = nullptr;
 bool g_freeThreaded = false;
 bool g_started = false;
 std::atomic<bool> g_enabled{true};
 void* g_pakFile = nullptr;
 bool g_pakLooked = false;
-// Figures: since start, and the batch since the queue last ran dry.
 int g_loaded = 0, g_failed = 0;
-size_t g_bytes = 0; // GPU bytes of the textures made
+size_t g_bytes = 0;
 int g_batch = 0;
 double g_batchMs = 0, g_slowestMs = 0;
 Clock::time_point g_batchStart;
-// Frames presented while a batch loads: how many, the longest, how many over 20 ms.
 int g_batchFrames = 0, g_batchLongFrames = 0;
 double g_batchWorstFrameMs = 0;
 Clock::time_point g_lastPresent;
@@ -83,7 +81,6 @@ std::string Key(const std::string& path, uint32_t maxSide, const TexLook& look =
     return key;
 }
 
-// The pak platform file, checked; null when this build's differs.
 void* PakFile() {
     if (g_pakLooked) return g_pakFile;
     g_pakLooked = true;
@@ -97,7 +94,7 @@ void* PakFile() {
         return nullptr;
     }
     const auto name = reinterpret_cast<const wchar_t* (*)(void*)>(vt[kSlotGetName])(file);
-    if (!name || !IsReadable(name, 16) || std::wstring(name) != L"PakFile") {
+    if (!name || !IsReadable(name, kPakFileNameBytes) || std::wstring(name) != L"PakFile") {
         Log("pak textures: the platform file is not the pak file: the game's loader draws");
         return nullptr;
     }
@@ -105,7 +102,6 @@ void* PakFile() {
     return file;
 }
 
-// "/Game/Chara/RYU/Hud/PartCharacter" -> the package's name in the paks.
 std::wstring PakPath(const std::string& path) {
     std::string rest = path.compare(0, 6, "/Game/") == 0 ? path.substr(6) : path;
     std::wstring out = L"../../../StreetFighterV/Content/";
@@ -144,7 +140,6 @@ DXGI_FORMAT DxgiFormat(TexFormat f) {
     }
 }
 
-// The texture and its view, on `device`.
 bool Upload(ID3D11Device* device, const TexImage& image, TextureView* view, std::string* error) {
     D3D11_TEXTURE2D_DESC desc{};
     desc.Width = image.width;
@@ -178,7 +173,6 @@ bool Upload(ID3D11Device* device, const TexImage& image, TextureView* view, std:
     return true;
 }
 
-// Under g_mutex: an entry is done (ready or failed).
 void Finish(Entry& e, bool ok, double ms, const std::string& error) {
     e.state = ok ? State::Ready : State::Failed;
     if (ok) {
@@ -195,7 +189,6 @@ void Finish(Entry& e, bool ok, double ms, const std::string& error) {
 }
 
 void LogBatchIfDone() {
-    // Under g_mutex.
     if (!g_queue.empty() || g_batch == 0) return;
     bool busy = false;
     for (const auto& [key, e] : g_entries) busy |= e.state == State::Loading || e.state == State::Upload;
@@ -250,7 +243,6 @@ void Work() {
             ok = file && ReadPackage(file, path, &bytes, &error);
             if (!file) error = "no pak file";
             if (ok) ok = ParseTexturePackage(bytes.data(), bytes.size(), &package, &error);
-            // A look is worked out from the largest mip (BC ones are not shrunk otherwise).
             const TexMip* mip = ok ? PickMip(package, look.Any() ? 0 : maxSide) : nullptr;
             if (ok) ok = mip && MipImage(bytes.data(), bytes.size(), package, *mip, maxSide, &image, &error, look);
         }
@@ -281,12 +273,10 @@ void StartLocked() {
 
 } // namespace
 
-void SetPakTextureDevice(void* device) {
+void PakTexturesSetDevice(void* device) {
     auto* d = static_cast<ID3D11Device*>(device);
     std::lock_guard lock(g_mutex);
     if (d == g_device) return;
-    // What the last device made is of no use to the new one: made again on
-    // request (a view still drawn this frame stays valid: it holds its texture).
     for (auto it = g_entries.begin(); it != g_entries.end();) {
         if (it->second.state == State::Loading) {
             ++it;
@@ -344,7 +334,7 @@ const TextureView* Ask(const std::string& key, const std::string& path, uint32_t
 
 } // namespace
 
-const TextureView* PakTexture(const std::string& path, uint32_t maxSide, bool urgent, bool* failed, const TexLook& look) {
+const TextureView* PakTexturesGet(const std::string& path, uint32_t maxSide, bool urgent, bool* failed, const TexLook& look) {
     *failed = false;
     if (!g_enabled) {
         *failed = true;
@@ -353,29 +343,28 @@ const TextureView* PakTexture(const std::string& path, uint32_t maxSide, bool ur
     return Ask(Key(path, maxSide, look), path, maxSide, urgent, failed, look, false);
 }
 
-const TextureView* NoiseTexture(uint32_t side) {
+const TextureView* PakTexturesNoise(uint32_t side) {
     bool failed = false;
     return Ask("(noise)@" + std::to_string(side), "(noise)", side, true, &failed, {}, true);
 }
 
-void WarmPakTextures(const std::vector<std::pair<std::string, uint32_t>>& textures) {
+void PakTexturesWarm(const std::vector<std::pair<std::string, uint32_t>>& textures) {
     bool failed = false;
-    for (const auto& [path, maxSide] : textures) PakTexture(path, maxSide, false, &failed);
+    for (const auto& [path, maxSide] : textures) PakTexturesGet(path, maxSide, false, &failed);
 }
 
-void CreatePakTextures() {
+void PakTexturesCreate() {
     std::vector<std::pair<std::string, TexImage>> todo;
     ID3D11Device* device = nullptr;
     {
         std::lock_guard lock(g_mutex);
-        // Frame times while textures load (the batch's log line).
         const auto now = Clock::now();
         if (!g_queue.empty() || g_batch > 0) {
             const double frameMs = std::chrono::duration<double, std::milli>(now - g_lastPresent).count();
-            if (g_lastPresent != Clock::time_point{} && frameMs < 1000) {
+            if (g_lastPresent != Clock::time_point{} && frameMs < kIgnoredGapMs) {
                 g_batchFrames++;
                 g_batchWorstFrameMs = std::max(g_batchWorstFrameMs, frameMs);
-                g_batchLongFrames += frameMs > 20;
+                g_batchLongFrames += frameMs > kSlowFrameMs;
             }
         }
         g_lastPresent = now;
@@ -386,7 +375,6 @@ void CreatePakTextures() {
         device = g_device;
         if (device) device->AddRef();
     }
-    // A few a frame: each costs the copy into the device.
     const auto start = Clock::now();
     for (auto& [key, image] : todo) {
         TextureView view;
@@ -405,7 +393,6 @@ void CreatePakTextures() {
     }
     if (device) device->Release();
     std::lock_guard lock(g_mutex);
-    // Those not reached wait for the next frame (their images moved back).
     for (auto& [key, image] : todo) {
         auto it = g_entries.find(key);
         if (it != g_entries.end() && it->second.state == State::Upload && !image.bytes.empty()) it->second.image = std::move(image);
@@ -413,7 +400,7 @@ void CreatePakTextures() {
     LogBatchIfDone();
 }
 
-void DumpPakPackage(const std::string& path, const std::string& file) {
+void PakTexturesDumpPackage(const std::string& path, const std::string& file) {
     void* pak = nullptr;
     {
         std::lock_guard lock(g_mutex);
@@ -439,12 +426,12 @@ void DumpPakPackage(const std::string& path, const std::string& file) {
     for (const TexMip& m : package.mips) Log("  mip %ux%u at %zu, %zu bytes", m.width, m.height, m.offset, m.size);
 }
 
-void SetPakTexturesEnabled(bool on) {
+void PakTexturesSetEnabled(bool on) {
     g_enabled = on;
     Log("pak textures: %s", on ? "on" : "off (the game's loader draws)");
 }
 
-std::string PakTextureStatus() {
+std::string PakTexturesStatus() {
     std::lock_guard lock(g_mutex);
     int queued = 0, ready = 0, failed = 0;
     for (const auto& [key, e] : g_entries) {

@@ -81,7 +81,7 @@ std::vector<Loaded> ReadLoaded() {
         if (!IsReadable(o + kResourceData, 16)) return;
         const auto* data = *reinterpret_cast<const uint8_t* const*>(o + kResourceData);
         const uint32_t size = *reinterpret_cast<const uint32_t*>(o + kResourceSize);
-        const std::string key = BattleDataKey(ue4::ObjectName(ue4::OuterOf(object)));
+        const std::string key = PakIndexBattleDataKey(ue4::ObjectName(ue4::OuterOf(object)));
         if (key.empty() || !data || size == 0 || size > (64u << 20) || !IsReadable(data, size)) return;
         out.push_back({key, size, Hash64(data, size)});
     });
@@ -142,12 +142,12 @@ const ModScan& ScanModPaks() {
             const size_t at = full.find(L"\\Content\\Paks\\");
             p.name = FilesUtf8Path(at == std::wstring::npos ? full : full.substr(at + 14));
             PakIndex index;
-            p.readable = ReadPakIndex(FilesUtf8Path(full), &index, &p.error);
+            p.readable = PakIndexRead(FilesUtf8Path(full), &index, &p.error);
             if (p.readable) {
                 p.files = index.entries.size();
                 std::set<std::string> move, stage;
                 for (const PakEntry& e : index.entries) {
-                    const BattleFile b = ClassifyGamePath(e.path);
+                    const BattleFile b = PakIndexClassifyPath(e.path);
                     if (b.kind == BattleFileKind::MoveData) move.insert(b.character + (b.version.empty() ? "" : " (" + b.version + ")"));
                     else if (b.kind == BattleFileKind::StageData) stage.insert(b.character);
                     else if (b.kind == BattleFileKind::CpuAi) p.cpuAi = true;

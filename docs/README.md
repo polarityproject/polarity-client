@@ -21,6 +21,7 @@
 | [hitbox-display.md](hitbox-display.md) | the hitbox display: where the boxes come from and how they're drawn |
 | [updater.md](updater.md) | updates from the site, the release key, and making a release |
 | [startup.md](startup.md) | the start: loading, the offline start, settings, moving an SFVR install, Steam content, crash reports, report uploads, logs |
+| [research.md](research.md) | the engine's objects and names, textures and paks, the probes and the call tracer |
 
 Building and the source layout are in the [README](../README.md).
 Changes by version are in the [CHANGELOG](../CHANGELOG.md).

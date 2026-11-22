@@ -26,10 +26,10 @@ struct PakIndex {
 
 // The index of the pak at `path` (UTF-8; versions 1 to 3). False with a reason when
 // it can't be read (not a pak, a newer format, an encrypted index).
-bool ReadPakIndex(const std::string& path, PakIndex* out, std::string* error);
+bool PakIndexRead(const std::string& path, PakIndex* out, std::string* error);
 // The same from the file's bytes: the whole file, or its tail from the index
 // on (`fileSize` the whole file's size, `at` where `bytes` starts in it).
-bool ParsePakIndex(const uint8_t* bytes, size_t size, uint64_t fileSize, uint64_t at, PakIndex* out, std::string* error);
+bool PakIndexParse(const uint8_t* bytes, size_t size, uint64_t fileSize, uint64_t at, PakIndex* out, std::string* error);
 
 // What a game file is to a battle.
 enum class BattleFileKind {
@@ -45,10 +45,10 @@ struct BattleFile {
     std::string version;   // "061" (move data only)
 };
 
-BattleFile ClassifyGamePath(const std::string& path);
+BattleFile PakIndexClassifyPath(const std::string& path);
 
 // The mod's package-like key of a move data file ("KEN/061/BAC_KEN"), as a
 // loaded object's package names it (/Game/Chara/KEN/BattleResource/061/BAC_KEN).
-std::string BattleDataKey(const std::string& packagePath);
+std::string PakIndexBattleDataKey(const std::string& packagePath);
 
 } // namespace sfv

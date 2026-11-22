@@ -78,7 +78,7 @@ void LoadTextures() {
         const size_t slash = path.rfind('/');
         const std::string name = path.substr(slash + 1);
         const auto at = std::chrono::steady_clock::now();
-        TextureView view = ViewOfTexture(FindOrLoadTexture(path + "." + name), true);
+        TextureView view = TexturesViewOf(TexturesFindOrLoad(path + "." + name), true);
         if (view.srv && (view.width < kStandInSize || view.height < kStandInSize)) {
             Log("select screen: %s has a %ux%u view for now: asking again", path.c_str(), view.width, view.height);
             static_cast<IUnknown*>(view.srv)->Release();
@@ -107,7 +107,7 @@ void LoadTextures() {
 
 const TextureView* Texture(const std::string& path) {
     bool failed = false;
-    if (const TextureView* t = PakTexture(path, 0, g_drawing, &failed)) return t;
+    if (const TextureView* t = PakTexturesGet(path, 0, g_drawing, &failed)) return t;
     if (!failed) return nullptr;
     std::lock_guard lock(g_texMutex);
     const auto it = g_textures.find(path);
@@ -149,7 +149,7 @@ void Glyph(ImDrawList* d, const char* name, ImVec2 a, ImVec2 b, ImU32 tint, bool
         look.blur = 4;
         look.pad = kPad;
         bool failed = false;
-        if (const TextureView* s = PakTexture(path, kSide, g_drawing, &failed, look)) {
+        if (const TextureView* s = PakTexturesGet(path, kSide, g_drawing, &failed, look)) {
             const float inner = static_cast<float>(std::max(s->width, s->height) - 2 * kPad);
             const float px = (b.x - a.x) * kPad / inner, py = (b.y - a.y) * kPad / inner;
             const float drop = (b.y - a.y) / 16;
@@ -366,7 +366,7 @@ const TextureView* TextureSized(const std::string& path, float pixels) {
     const uint32_t side = std::max(32u, static_cast<uint32_t>(std::ceil(pixels / 32.0f)) * 32u);
     const TextureView* full = Texture(path);
     bool failed = false;
-    const TextureView* shrunk = PakTexture(path, side, g_drawing, &failed);
+    const TextureView* shrunk = PakTexturesGet(path, side, g_drawing, &failed);
     if (shrunk && (!full || TextureClockMs() - shrunk->readyMs >= kFadeInMs)) return shrunk;
     return full;
 }
@@ -541,7 +541,7 @@ void StageAt(ImDrawList* d, float x0, float y0, float x1, float y1, uint32_t pix
     look.blur = blur * pixels / kStageW;
     look.saturate = saturate;
     bool failed = false;
-    const TextureView* t = PakTexture(kStage, pixels, g_drawing, &failed, look);
+    const TextureView* t = PakTexturesGet(kStage, pixels, g_drawing, &failed, look);
     if (failed) t = TextureSized(kStage, static_cast<float>(pixels));
     if (!t) return;
     const ImVec2 uv0((x0 - kStageX0) / kStageW, y0 / 900), uv1((x1 - kStageX0) / kStageW, y1 / 900);
@@ -557,7 +557,7 @@ bool BackdropReady() {
     look.blur = 4.0f * 1024 / kStageW;
     look.saturate = 1.1f;
     bool failed = false;
-    return PakTexture(kStage, 1024, true, &failed, look) || failed;
+    return PakTexturesGet(kStage, 1024, true, &failed, look) || failed;
 }
 
 void Backdrop(ImDrawList* d, float alpha) {
@@ -571,7 +571,7 @@ void Backdrop(ImDrawList* d, float alpha) {
 }
 
 void Grain(ImDrawList* d, float alpha) {
-    const TextureView* n = NoiseTexture(256);
+    const TextureView* n = PakTexturesNoise(256);
     if (!n) return;
     const ImVec2 screen = ImGui::GetIO().DisplaySize;
     const float tile = 256 * std::max(1.0f, std::round(g_v.s));
@@ -585,7 +585,7 @@ const TextureView* BlurredStage(const std::string& path, float blur, float satur
     TexLook look;
     look.blur = blur * 1024 / kStageW;
     look.saturate = saturate;
-    return PakTexture(path, 1024, g_drawing, failed, look);
+    return PakTexturesGet(path, 1024, g_drawing, failed, look);
 }
 
 void DropShadow(ImDrawList* d, float x0, float y0, float x1, float y1, float offset, float blur, float alpha, bool core) {

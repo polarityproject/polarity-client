@@ -13,6 +13,6 @@ class SfvGame;
 // Runs once at the next battle frame (no netplay session may be running).
 // allMemory: every writable page instead of the UObjects (slower; also finds
 // heap arrays and plain C++ objects).
-void RequestOutsideProbe(SfvGame* game, int ticks, bool allMemory = false);
+void OutsideProbeRequest(SfvGame* game, int ticks, bool allMemory = false);
 
 } // namespace sfv::mod

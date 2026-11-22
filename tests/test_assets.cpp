@@ -78,7 +78,7 @@ void TestPakIndex() {
 
     PakIndex index;
     std::string error;
-    CHECK(ParsePakIndex(pak.data(), pak.size(), pak.size(), 0, &index, &error));
+    CHECK(PakIndexParse(pak.data(), pak.size(), pak.size(), 0, &index, &error));
     CHECK(index.version == 3);
     CHECK(index.entries.size() == 2);
     if (index.entries.size() == 2) {
@@ -86,30 +86,30 @@ void TestPakIndex() {
         CHECK(index.entries[0].uncompressedSize == 300 && index.entries[0].compression == 1);
         CHECK(index.entries[1].path == "StreetFighterV/Content/Chara/JRI/Texture/T_JRI_00_COL.uasset");
     }
-    // From the index on only, as ReadPakIndex reads it.
+    // From the index on only, as PakIndexRead reads it.
     PakIndex tail;
-    CHECK(ParsePakIndex(pak.data() + indexAt, pak.size() - indexAt, pak.size(), indexAt, &tail, &error) && tail.entries.size() == 2);
+    CHECK(PakIndexParse(pak.data() + indexAt, pak.size() - indexAt, pak.size(), indexAt, &tail, &error) && tail.entries.size() == 2);
     // An encrypted index, a newer version, no pak at all.
     std::vector<uint8_t> bad = pak;
     bad[bad.size() - 45] = 1;
-    CHECK(!ParsePakIndex(bad.data(), bad.size(), bad.size(), 0, &index, &error) && error == "encrypted index");
+    CHECK(!PakIndexParse(bad.data(), bad.size(), bad.size(), 0, &index, &error) && error == "encrypted index");
     bad = pak;
     bad[bad.size() - 45 + 5] = 8;
-    CHECK(!ParsePakIndex(bad.data(), bad.size(), bad.size(), 0, &index, &error));
+    CHECK(!PakIndexParse(bad.data(), bad.size(), bad.size(), 0, &index, &error));
     std::vector<uint8_t> none(100, 0);
-    CHECK(!ParsePakIndex(none.data(), none.size(), none.size(), 0, &index, &error));
+    CHECK(!PakIndexParse(none.data(), none.size(), none.size(), 0, &index, &error));
     // Older tools' paks: no flag byte, the footer right after the index.
     std::vector<uint8_t> old = pak;
     old.erase(old.end() - 45);
-    CHECK(ParsePakIndex(old.data(), old.size(), old.size(), 0, &index, &error) && index.entries.size() == 2);
-    CHECK(ParsePakIndex(old.data() + indexAt, old.size() - indexAt, old.size(), indexAt, &tail, &error) && tail.entries.size() == 2);
+    CHECK(PakIndexParse(old.data(), old.size(), old.size(), 0, &index, &error) && index.entries.size() == 2);
+    CHECK(PakIndexParse(old.data() + indexAt, old.size() - indexAt, old.size(), indexAt, &tail, &error) && tail.entries.size() == 2);
     // An index that runs into the footer.
     bad = old;
     const int64_t longer = static_cast<int64_t>(indexSize + 1);
     std::memcpy(bad.data() + bad.size() - 44 + 16, &longer, 8);
-    CHECK(!ParsePakIndex(bad.data(), bad.size(), bad.size(), 0, &index, &error) && error == "index out of the file");
+    CHECK(!PakIndexParse(bad.data(), bad.size(), bad.size(), 0, &index, &error) && error == "index out of the file");
 
-    auto kind = [](const char* path) { return ClassifyGamePath(path).kind; };
+    auto kind = [](const char* path) { return PakIndexClassifyPath(path).kind; };
     CHECK(kind("StreetFighterV/Content/Chara/KEN/BattleResource/061/BAC_KEN.uasset") == BattleFileKind::MoveData);
     CHECK(kind("StreetFighterV/Content/Chara/KEN/BattleResource/061/BAC_KEN_eff.uexp") == BattleFileKind::MoveData);
     CHECK(kind("StreetFighterV/Content/Chara/KEN/BattleResource/061/BCM_KEN.uasset") == BattleFileKind::MoveData);
@@ -121,11 +121,11 @@ void TestPakIndex() {
     CHECK(kind("StreetFighterV/Content/Chara/KEN/Animation/KEN_SPA_SYORYU.uasset") == BattleFileKind::Other);
     CHECK(kind("StreetFighterV/Content/Chara/KEN/Texture/T_KEN_00.uasset") == BattleFileKind::Other);
     CHECK(kind("StreetFighterV/Content/UI/Battle/BAC_FAKE.uasset") == BattleFileKind::Other);
-    const BattleFile b = ClassifyGamePath(R"(StreetFighterV\Content\Chara\JRI\BattleResource\061\BAC_JRI.uasset)");
+    const BattleFile b = PakIndexClassifyPath(R"(StreetFighterV\Content\Chara\JRI\BattleResource\061\BAC_JRI.uasset)");
     CHECK(b.kind == BattleFileKind::MoveData && b.character == "JRI" && b.version == "061");
-    CHECK(BattleDataKey("/Game/Chara/KEN/BattleResource/061/BAC_KEN") == "KEN/061/BAC_KEN");
-    CHECK(BattleDataKey("/Game/Chara/CMN/BattleResource/005/BCM_CMN") == "CMN/005/BCM_CMN");
-    CHECK(BattleDataKey("/Game/Chara/KEN/Texture/T_KEN").empty());
+    CHECK(PakIndexBattleDataKey("/Game/Chara/KEN/BattleResource/061/BAC_KEN") == "KEN/061/BAC_KEN");
+    CHECK(PakIndexBattleDataKey("/Game/Chara/CMN/BattleResource/005/BCM_CMN") == "CMN/005/BCM_CMN");
+    CHECK(PakIndexBattleDataKey("/Game/Chara/KEN/Texture/T_KEN").empty());
 }
 
 void TestTexturePackage() {

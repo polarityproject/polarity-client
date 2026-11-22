@@ -402,8 +402,8 @@ void Draw(IDXGISwapChain* swapChain) {
 
 HRESULT DrawAndPresent(PresentFn next, IDXGISwapChain* self, UINT syncInterval, UINT flags) {
     if (Stopping() || (flags & DXGI_PRESENT_TEST)) return next(self, syncInterval, flags);
-    SaveQueuedTextures();
-    CreatePakTextures();
+    TexturesSaveQueued();
+    PakTexturesCreate();
     static LARGE_INTEGER last{}, freq{}, windowStart{};
     static int windowFrames = 0;
     LARGE_INTEGER now;

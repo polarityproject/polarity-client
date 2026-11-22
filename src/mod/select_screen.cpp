@@ -404,7 +404,7 @@ void SelectWarmBootTextures(const SelectData& data, const std::string& chara, co
     for (const SelectChara& c : data.charas) add(CharaTex(c.code, onRight(c.code) ? "CharaSelectIconRight" : "CharaSelectIconLeft"));
     for (const SelectStage& s : data.stages) add(StageTex(s.code, "StageSelectIcon"));
     for (const SelectStage& s : data.stages) add(StageTex(s.code, "StageSelectBG"));
-    WarmPakTextures(want);
+    PakTexturesWarm(want);
     Log("select screen: warming %zu textures (favorites %s, %s)", want.size(), chara.empty() ? "-" : chara.c_str(),
         stage.empty() ? "-" : stage.c_str());
 }

@@ -138,7 +138,7 @@ DWORD WINAPI ModMain(LPVOID self) {
         Log("mods: %s", ScanModPaks().Text().c_str());
     }).detach();
 
-    if (!InstallProbes(image, config, &game, &stateMap, stateMapPath)) return 0;
+    if (!ProbesInstall(image, config, &game, &stateMap, stateMapPath)) return 0;
     EntitlementsInstall(image.base, iniPath);
     CrashHookProcessEnd();
     InputInstall(config.virtualPads, config.alwaysActive);

@@ -1,3 +1,5 @@
+// The game's textures: their shader resource views for the overlay, and savetex's DDS files (docs/research.md).
+
 #include "mod/textures.h"
 
 #include "core/file_open.h"
@@ -23,6 +25,8 @@
 namespace sfv::mod {
 
 namespace {
+
+constexpr size_t kMinTextureScan = 0x100, kMaxTextureScan = 0x400, kRhiScan = 0x100;
 
 struct Range {
     uintptr_t lo = 0, hi = 0;
@@ -52,12 +56,11 @@ std::string Lower(std::string s) {
     return s;
 }
 
-// The vtable of the device's shader resource views (NoteShaderResourceViewKind).
 std::atomic<uintptr_t> g_srvVtable{0};
 
 } // namespace
 
-void NoteShaderResourceViewKind(void* d3dDevice) {
+void TexturesNoteViewKind(void* d3dDevice) {
     auto* device = static_cast<ID3D11Device*>(d3dDevice);
     if (!device || g_srvVtable) return;
     D3D11_TEXTURE2D_DESC desc{};
@@ -85,7 +88,7 @@ int64_t TextureClockMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-void LogTextures(const std::string& filter, int limit) {
+void TexturesLog(const std::string& filter, int limit) {
     if (!ue4::EnsureObjects(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)))) return;
     const std::string needle = Lower(filter);
     int shown = 0, total = 0;
@@ -101,36 +104,26 @@ void LogTextures(const std::string& filter, int limit) {
     Log("textures: %d of %d loaded Texture2D objects match '%s'", std::min(shown, limit), total, filter.c_str());
 }
 
-const void* FindOrLoadTexture(const std::string& nameOrPath) {
+const void* TexturesFindOrLoad(const std::string& nameOrPath) {
     if (nameOrPath.find('/') != std::string::npos) return FlowLoadAsset("Texture2D", nameOrPath);
     return ue4::FindObject(nameOrPath, "Texture2D");
 }
 
-TextureView ViewOfTexture(const void* texture, bool quiet) {
+TextureView TexturesViewOf(const void* texture, bool quiet) {
     TextureView out;
     if (!texture) return out;
-    // The texture's render resource and its RHI texture are native objects
-    // (vtables in the game image, the D3D11 RHI is linked in); the RHI
-    // texture holds the D3D11 objects: the one that is a shader resource view
-    // is what ImGui draws. First pass: only an object with the vtable of the
-    // device's shader resource views. Second pass (Windows only): any object
-    // whose vtable lies in d3d11.dll, asked whether it is one. Under Wine
-    // d3d11.dll is DXVK, whose own C++ objects have their vtables there too:
-    // asking one of those called a null slot (Steam Deck, 0.2.5, df1a180a).
     const Range game = ModuleRange(GetModuleHandleW(nullptr));
     const Range d3d = ModuleRange(GetModuleHandleW(L"d3d11.dll"));
     const uintptr_t srvVtable = g_srvVtable;
-    const size_t size = std::clamp<size_t>(ue4::ObjectSize(texture), 0x100, 0x400);
-    // The first object along the chain `takes` lets through that answers as a
-    // shader resource view.
+    const size_t size = std::clamp<size_t>(ue4::ObjectSize(texture), kMinTextureScan, kMaxTextureScan);
     auto scan = [&](auto takes) {
         for (size_t a = 0; a + 8 <= size; a += 8) {
             const void* resource = PointerAt(texture, a);
             if (!game.Has(VtableOf(resource))) continue;
-            for (size_t b = 0; b + 8 <= 0x100; b += 8) {
+            for (size_t b = 0; b + 8 <= kRhiScan; b += 8) {
                 const void* rhi = PointerAt(resource, b);
                 if (!game.Has(VtableOf(rhi))) continue;
-                for (size_t c = 0; c + 8 <= 0x100; c += 8) {
+                for (size_t c = 0; c + 8 <= kRhiScan; c += 8) {
                     void* d = const_cast<void*>(PointerAt(rhi, c));
                     if (!takes(VtableOf(d))) continue;
                     ID3D11ShaderResourceView* srv = nullptr;
@@ -175,7 +168,28 @@ struct PendingSave {
 std::mutex g_saveMutex;
 std::vector<PendingSave> g_saves;
 
-// Bytes per 4x4 block (BC formats) or per pixel; 0: not written.
+struct DdsPixelFormat {
+    uint32_t size, flags, fourCc, rgbBits, rMask, gMask, bMask, aMask;
+};
+
+struct DdsHeader {
+    uint32_t size, flags, height, width, linearSize, depth, mipCount, reserved[11];
+    DdsPixelFormat format;
+    uint32_t caps, caps2, caps3, caps4, reserved2;
+};
+
+static_assert(sizeof(DdsHeader) == 124);
+
+struct DdsHeaderDx10 {
+    uint32_t format, dimension, miscFlags, arraySize, miscFlags2;
+};
+
+constexpr uint32_t kDdsCaps = 0x1, kDdsHeight = 0x2, kDdsWidth = 0x4, kDdsPixelFormat = 0x1000, kDdsLinearSize = 0x80000;
+constexpr uint32_t kPixelAlpha = 0x1, kPixelFourCc = 0x4, kPixelRgb = 0x40;
+constexpr uint32_t kCapsTexture = 0x1000;
+constexpr uint32_t kDimensionTexture2d = 3;
+constexpr uint32_t kRgbaBits = 32;
+
 uint32_t BlockBytes(DXGI_FORMAT f, bool* compressed) {
     *compressed = true;
     switch (f) {
@@ -215,10 +229,12 @@ uint32_t BlockBytes(DXGI_FORMAT f, bool* compressed) {
     }
 }
 
-// The legacy four-character code for BC1-BC3 (readers know those best), else
-// 0 and a DX10 header.
+constexpr uint32_t FourCcOf(const char* s) {
+    return uint32_t(s[0]) | uint32_t(s[1]) << 8 | uint32_t(s[2]) << 16 | uint32_t(s[3]) << 24;
+}
+
 uint32_t FourCc(DXGI_FORMAT f) {
-    auto cc = [](const char* s) { return uint32_t(s[0]) | uint32_t(s[1]) << 8 | uint32_t(s[2]) << 16 | uint32_t(s[3]) << 24; };
+    const auto cc = FourCcOf;
     switch (f) {
         case DXGI_FORMAT_BC1_TYPELESS:
         case DXGI_FORMAT_BC1_UNORM:
@@ -271,39 +287,35 @@ void SaveOne(ID3D11ShaderResourceView* srv, const std::string& name) {
         } else {
             const uint32_t rows = compressed ? (desc.Height + 3) / 4 : desc.Height;
             const uint32_t rowBytes = compressed ? (desc.Width + 3) / 4 * unit : desc.Width * unit;
-            // DDS: magic, 124-byte header, (DX10 header), top mip.
-            uint32_t h[31] = {};
-            h[0] = 124;
-            h[1] = 0x1 | 0x2 | 0x4 | 0x1000 | 0x80000; // caps, height, width, pixel format, linear size
-            h[2] = desc.Height;
-            h[3] = desc.Width;
-            h[4] = rowBytes * rows;
-            h[18] = 32; // pixel format size
+            DdsHeader h = {};
+            h.size = sizeof(DdsHeader);
+            h.flags = kDdsCaps | kDdsHeight | kDdsWidth | kDdsPixelFormat | kDdsLinearSize;
+            h.height = desc.Height;
+            h.width = desc.Width;
+            h.linearSize = rowBytes * rows;
+            h.format.size = sizeof(DdsPixelFormat);
             const uint32_t fourCc = FourCc(desc.Format);
-            // Uncompressed: 32-bit RGB with alpha, by channel masks (DX10
-            // headers of the typeless formats the game uses are not read
-            // widely); compressed: a four-character code, or "DX10".
             const bool dx10 = compressed && !fourCc;
             if (!compressed) {
                 const bool bgr = desc.Format >= DXGI_FORMAT_B8G8R8A8_UNORM && desc.Format <= DXGI_FORMAT_B8G8R8X8_UNORM_SRGB;
-                h[19] = 0x41; // RGB, alpha
-                h[21] = 32;
-                h[22] = bgr ? 0x00FF0000 : 0x000000FF;
-                h[23] = 0x0000FF00;
-                h[24] = bgr ? 0x000000FF : 0x00FF0000;
-                h[25] = 0xFF000000;
+                h.format.flags = kPixelRgb | kPixelAlpha;
+                h.format.rgbBits = kRgbaBits;
+                h.format.rMask = bgr ? 0x00FF0000 : 0x000000FF;
+                h.format.gMask = 0x0000FF00;
+                h.format.bMask = bgr ? 0x000000FF : 0x00FF0000;
+                h.format.aMask = 0xFF000000;
             } else {
-                h[19] = 0x4;                          // a four-character code
-                h[20] = fourCc ? fourCc : 0x30315844; // "DX10"
+                h.format.flags = kPixelFourCc;
+                h.format.fourCc = fourCc ? fourCc : FourCcOf("DX10");
             }
-            h[26] = 0x1000; // caps: texture
-            const uint32_t dx10Header[5] = {uint32_t(desc.Format), 3, 0, 1, 0};
+            h.caps = kCapsTexture;
+            const DdsHeaderDx10 dx10Header = {uint32_t(desc.Format), kDimensionTexture2d, 0, 1, 0};
             CreateDirectoryW((FilesDataDir() + L"\\textures").c_str(), nullptr);
             const std::string path = FilesUtf8Path(FilesDataDir()) + "\\textures\\" + name + ".dds";
             if (FILE* f = OpenFile(path, "wb")) {
                 std::fwrite("DDS ", 1, 4, f);
-                std::fwrite(h, 4, 31, f);
-                if (dx10) std::fwrite(dx10Header, 4, 5, f);
+                std::fwrite(&h, sizeof(h), 1, f);
+                if (dx10) std::fwrite(&dx10Header, sizeof(dx10Header), 1, f);
                 for (uint32_t y = 0; y < rows; y++) std::fwrite(static_cast<uint8_t*>(mapped.pData) + size_t(y) * mapped.RowPitch, 1, rowBytes, f);
                 std::fclose(f);
                 Log("savetex %s: %ux%u format %d -> %s", name.c_str(), desc.Width, desc.Height, int(desc.Format), path.c_str());
@@ -321,12 +333,12 @@ void SaveOne(ID3D11ShaderResourceView* srv, const std::string& name) {
 
 } // namespace
 
-void SaveTextureLater(void* srv, const std::string& name) {
+void TexturesSaveLater(void* srv, const std::string& name) {
     std::lock_guard lock(g_saveMutex);
     g_saves.push_back({static_cast<ID3D11ShaderResourceView*>(srv), name});
 }
 
-void SaveQueuedTextures() {
+void TexturesSaveQueued() {
     std::vector<PendingSave> saves;
     {
         std::lock_guard lock(g_saveMutex);

@@ -1,3 +1,5 @@
+// The outside probe: state the snapshot does not restore, by object or by page (docs/research.md).
+
 #include "mod/outside_probe.h"
 
 #include "core/state.h"
@@ -17,10 +19,15 @@ namespace sfv::mod {
 
 namespace {
 
+constexpr uintptr_t kLowestAddress = 0x10000;
+constexpr size_t kPage = 4096;
+constexpr int kWordsShown = 400, kObjectsShown = 80;
+constexpr int kWordsPerBlueprint = 40, kWordsPerObject = 4;
+
 struct Copy {
     const void* object;
     size_t size;
-    size_t at; // in the buffer
+    size_t at;
 };
 
 void Capture(const std::vector<Copy>& objects, std::vector<uint8_t>& buffer) {
@@ -32,19 +39,18 @@ void Capture(const std::vector<Copy>& objects, std::vector<uint8_t>& buffer) {
     }
 }
 
-// Committed private read-write pages of the process (4 KB each).
 std::vector<uintptr_t> WritablePages() {
     std::vector<uintptr_t> pages;
     ULONG_PTR stackLow = 0, stackHigh = 0;
     GetCurrentThreadStackLimits(&stackLow, &stackHigh);
-    uintptr_t addr = 0x10000;
+    uintptr_t addr = kLowestAddress;
     MEMORY_BASIC_INFORMATION mbi;
     while (VirtualQuery(reinterpret_cast<void*>(addr), &mbi, sizeof(mbi))) {
         const auto base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
         const uintptr_t end = base + mbi.RegionSize;
         if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE && mbi.Protect == PAGE_READWRITE) {
-            for (uintptr_t p = base; p < end; p += 4096) {
-                if (p >= stackLow && p < stackHigh) continue; // this thread's stack
+            for (uintptr_t p = base; p < end; p += kPage) {
+                if (p >= stackLow && p < stackHigh) continue;
                 pages.push_back(p);
             }
         }
@@ -56,20 +62,20 @@ std::vector<uintptr_t> WritablePages() {
 
 void HashPages(const std::vector<uintptr_t>& pages, std::vector<uint64_t>& out) {
     out.resize(pages.size());
-    std::vector<uint8_t> buf(4096);
+    std::vector<uint8_t> buf(kPage);
     for (size_t i = 0; i < pages.size(); i++) {
         SIZE_T got = 0;
-        out[i] = ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(pages[i]), buf.data(), 4096, &got)
-                     ? Hash64(buf.data(), 4096)
+        out[i] = ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(pages[i]), buf.data(), kPage, &got)
+                     ? Hash64(buf.data(), kPage)
                      : 0;
     }
 }
 
 void CopyPages(const std::vector<uintptr_t>& pages, std::vector<uint8_t>& out) {
-    out.assign(pages.size() * 4096, 0);
+    out.assign(pages.size() * kPage, 0);
     for (size_t i = 0; i < pages.size(); i++) {
         SIZE_T got = 0;
-        ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(pages[i]), &out[i * 4096], 4096, &got);
+        ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(pages[i]), &out[i * kPage], kPage, &got);
     }
 }
 
@@ -78,7 +84,6 @@ struct ObjectRange {
     const void* object;
 };
 
-// The UObject (from the object array) whose memory holds `address`, or null.
 const void* OwnerOf(const std::vector<ObjectRange>& objects, uintptr_t address) {
     auto it = std::upper_bound(objects.begin(), objects.end(), address,
                                [](uintptr_t a, const ObjectRange& r) { return a < r.lo; });
@@ -87,8 +92,6 @@ const void* OwnerOf(const std::vector<ObjectRange>& objects, uintptr_t address) 
     return address < it->hi ? it->object : nullptr;
 }
 
-// Same idea over all writable memory: pages the ticks changed and the
-// snapshot did not restore (hashes find the pages, a second run the bytes).
 class PageProbe : public IFrameDriver {
 public:
     explicit PageProbe(int ticks) : ticks_(ticks) {}
@@ -146,9 +149,9 @@ private:
         std::sort(objects.begin(), objects.end(), [](const ObjectRange& x, const ObjectRange& y) { return x.lo < y.lo; });
 
         int shown = 0;
-        for (size_t p = 0; p < candidates.size() && shown < 400; p++) {
-            for (size_t w = 0; w < 4096 && shown < 400; w += 8) {
-                const size_t at = p * 4096 + w;
+        for (size_t p = 0; p < candidates.size() && shown < kWordsShown; p++) {
+            for (size_t w = 0; w < kPage && shown < kWordsShown; w += 8) {
+                const size_t at = p * kPage + w;
                 if (std::memcmp(&before[at], &still[at], 8) != 0 || std::memcmp(&before[at], &after[at], 8) == 0) continue;
                 uint64_t x, y;
                 std::memcpy(&x, &before[at], 8);
@@ -209,7 +212,7 @@ private:
         std::vector<uint8_t> state(StateSize(regions));
         SaveRegions(regions, state.data());
         Capture(objects, before);
-        Capture(objects, still); // no ticks: what changes anyway
+        Capture(objects, still);
         for (int i = 0; i < ticks_; i++) game.Advance(FrameInputs{}, false);
         LoadRegions(regions, state.data());
         game.OnStateLoaded(0);
@@ -226,7 +229,7 @@ private:
             int words = 0;
             for (size_t w = 0; w < c.size; w += 8) {
                 const uint8_t* b = &before[c.at + w];
-                if (std::memcmp(b, &still[c.at + w], 8) != 0) continue; // changes without ticks
+                if (std::memcmp(b, &still[c.at + w], 8) != 0) continue;
                 if (std::memcmp(b, &after[c.at + w], 8) == 0) continue;
                 if (covered(reinterpret_cast<uintptr_t>(c.object) + w)) continue;
                 words++;
@@ -236,14 +239,12 @@ private:
         std::sort(hits.begin(), hits.end(), [](const Hit& a, const Hit& b) { return a.words > b.words; });
         Log("outside: %zu objects (%zu MB) checked, %zu changed by %d ticks and not restored", objects.size(),
             total >> 20, hits.size(), ticks_);
-        for (size_t h = 0; h < hits.size() && h < 80; h++) {
+        for (size_t h = 0; h < hits.size() && h < kObjectsShown; h++) {
             const Copy& c = objects[hits[h].index];
             std::string detail;
             int shown = 0;
-            // All words for the game's own blueprint objects (KAB_ animation,
-            // KBP_ battle); a few for the rest.
             const std::string cls = ue4::ObjectName(ue4::ClassOf(c.object));
-            const int limit = cls.rfind("KAB_", 0) == 0 || cls.rfind("KBP_", 0) == 0 ? 40 : 4;
+            const int limit = cls.rfind("KAB_", 0) == 0 || cls.rfind("KBP_", 0) == 0 ? kWordsPerBlueprint : kWordsPerObject;
             for (size_t w = 0; w < c.size && shown < limit; w += 8) {
                 const uint8_t* b = &before[c.at + w];
                 if (std::memcmp(b, &still[c.at + w], 8) != 0 || std::memcmp(b, &after[c.at + w], 8) == 0) continue;
@@ -266,13 +267,12 @@ private:
 
 } // namespace
 
-void RequestOutsideProbe(SfvGame* game, int ticks, bool allMemory) {
+void OutsideProbeRequest(SfvGame* game, int ticks, bool allMemory) {
     (void)game;
     if (BattleCurrentFrameDriver()) {
         Log("outside: a frame driver (netplay?) is running; leave first");
         return;
     }
-    // The probe deletes itself after its one frame.
     if (allMemory) BattleSetFrameDriver(new PageProbe(ticks));
     else BattleSetFrameDriver(new OutsideProbe(ticks));
 }

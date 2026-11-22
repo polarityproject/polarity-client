@@ -1,3 +1,5 @@
+// The start probe: RollbackUnit offline, the ring and the regions, restores and the SSE control word (docs/research.md).
+
 #include "mod/probes.h"
 
 #include "core/state.h"
@@ -18,20 +20,15 @@
 #include <atomic>
 #include <vector>
 
-// Questions these probes answer in a local Versus match:
-//   1. Is RollbackUnit enabled offline, and does Pre open snapshot frames?
-//      Static analysis says Pre takes its frame id from the online sync object
-//      and opens nothing offline. The log shows open=0 if so.
-//   2. How deep is the ring, how big is the state, how many regions, and how
-//      many of their words look like pointers?
-//   3. Does restoring work? F5/F9 copy the regions out and back (what the
-//      netplay session does); F6/F10 use the game's own ring and Restore.
-//      With force_offline_frames=1 the probe opens frames itself so the
-//      game's Store tasks run offline.
-
 namespace sfv::mod {
 
 namespace {
+
+constexpr uint32_t kMxcsrFlags = 0x3F, kMxcsrDefault = 0x1F80;
+constexpr SHORT kKeyDown = static_cast<SHORT>(0x8000);
+constexpr uint64_t kLearnEveryTicks = 30, kSaveEverySamples = 20, kSummaryEveryTicks = 300;
+constexpr int kExtraStackTicks = 3;
+constexpr int32_t kFrameIdMask = 0x7FFFFFFF, kProbeFrameTag = 0x5346;
 
 using PreFn = uint64_t (*)(uint8_t* unit, void* a2, void* a3, void* a4);
 using BeginFrameFn = int (*)(uint8_t* manager, const game::FrameId* id);
@@ -61,9 +58,9 @@ struct ProbeState {
 
     bool keyDown[256] = {};
     uint64_t learnSamples = 0;
-    uint32_t mxcsr = 0xFFFFFFFF;
+    uint32_t mxcsr = ~0u;
     SyncTest syncTest;
-    int stackTicks = 0; // log a few more Pre stacks after a new battle
+    int stackTicks = 0;
 };
 
 ProbeState g;
@@ -75,14 +72,12 @@ bool Pressed(int vk) {
         GetWindowThreadProcessId(w, &pid);
         foreground = pid == GetCurrentProcessId();
     }
-    const bool down = foreground && (GetAsyncKeyState(vk) & 0x8000) != 0;
+    const bool down = foreground && (GetAsyncKeyState(vk) & kKeyDown) != 0;
     const bool edge = down && !g.keyDown[vk];
     g.keyDown[vk] = down;
     return edge;
 }
 
-// Runs at the start of a battle tick, before the game opens this tick's frame:
-// the state is the end state of the previous tick and nothing is mid-update.
 void HandleHotkeys() {
     const auto& regions = g.game->Regions();
     const GameRequest request = ControlTakeGameRequest();
@@ -105,7 +100,6 @@ void HandleHotkeys() {
                           cmd == GameCommand::LearnNoise);
     }
     if (cmd == GameCommand::Unwatch) DisarmWatches();
-    // The keys only when asked for ([probe] debug_hotkeys); scripts' commands always.
     const bool keys = g.config.savestateHotkeys;
     const bool save = (keys && Pressed(VK_F5)) || cmd == GameCommand::Save;
     const bool load = (keys && Pressed(VK_F9)) || cmd == GameCommand::Load;
@@ -157,12 +151,8 @@ void LogSummary(uint8_t* unit) {
 
 uint64_t PreDetour(uint8_t* unit, void* a2, void* a3, void* a4) {
     HookGuard guard;
-    // Float results depend on the SSE control word (rounding, flush-to-zero,
-    // denormals-are-zero). Overlays and drivers injected into the process can
-    // change it on one machine only, which desyncs any float math in the sim.
-    // The low six bits are sticky exception flags, not settings.
-    if (const uint32_t csr = _mm_getcsr() & ~0x3Fu; csr != g.mxcsr) {
-        Log("MXCSR control %08X%s", csr, csr == 0x1F80 ? " (default)" : " (NOT the default 1F80: float results may differ)");
+    if (const uint32_t csr = _mm_getcsr() & ~kMxcsrFlags; csr != g.mxcsr) {
+        Log("MXCSR control %08X%s", csr, csr == kMxcsrDefault ? " (default)" : " (NOT the default 1F80: float results may differ)");
         g.mxcsr = csr;
     }
 
@@ -171,7 +161,7 @@ uint64_t PreDetour(uint8_t* unit, void* a2, void* a3, void* a4) {
         if (g.config.verbose) {
             g.game->LogLayout();
             LogStack("RollbackUnit::Pre", g.image.base);
-            g.stackTicks = 3;
+            g.stackTicks = kExtraStackTicks;
         }
         LogBattleSetup("at battle start");
     }
@@ -180,9 +170,9 @@ uint64_t PreDetour(uint8_t* unit, void* a2, void* a3, void* a4) {
     g.syncTest.OnTick(*g.game);
     if (g.stackTicks > 0 && --g.stackTicks >= 0) LogStack("RollbackUnit::Pre", g.image.base);
 
-    if (g.config.mode == Mode::LearnStateMap && g.ticks % 30 == 0) {
+    if (g.config.mode == Mode::LearnStateMap && g.ticks % kLearnEveryTicks == 0) {
         g.game->LearnPointers(*g.stateMap);
-        if (++g.learnSamples % 20 == 0) {
+        if (++g.learnSamples % kSaveEverySamples == 0) {
             const bool saved = g.stateMap->Save(g.stateMapPath);
             Log("state map: %llu samples, %s", static_cast<unsigned long long>(g.learnSamples),
                 saved ? "saved" : "could not save");
@@ -193,9 +183,7 @@ uint64_t PreDetour(uint8_t* unit, void* a2, void* a3, void* a4) {
     const uint64_t result = g.origPre(unit, a2, a3, a4);
 
     if (g.config.forceOfflineFrames && unit[game::unit::kEnabled] && !unit[game::unit::kFrameOpen]) {
-        // Offline the game opens no frame; open one with our own id so the
-        // Store tasks of this tick fill the ring.
-        game::FrameId id{g.forcedFrame++ & 0x7FFFFFFF, 0x5346};
+        game::FrameId id{g.forcedFrame++ & kFrameIdMask, kProbeFrameTag};
         if (uint8_t* m = g.game->Manager(); m && g.origBeginFrame(m, &id)) {
             unit[game::unit::kFrameOpen] = 1;
             *reinterpret_cast<game::FrameId*>(unit + game::unit::kLastFrameId) = id;
@@ -204,7 +192,7 @@ uint64_t PreDetour(uint8_t* unit, void* a2, void* a3, void* a4) {
     if (unit[game::unit::kFrameOpen]) g.lastOpenId = *reinterpret_cast<game::FrameId*>(unit + game::unit::kLastFrameId);
 
     const uint64_t tick = ++g.ticks;
-    if (g.config.verbose && (tick == 1 || tick - g.lastSummaryTick >= 300)) {
+    if (g.config.verbose && (tick == 1 || tick - g.lastSummaryTick >= kSummaryEveryTicks)) {
         g.lastSummaryTick = tick;
         LogSummary(unit);
     }
@@ -244,7 +232,7 @@ bool Hook(const GameImage& image, const game::CodeSite& site, Fn detour, Fn* ori
 
 } // namespace
 
-bool InstallProbes(const GameImage& image, const Config& config, SfvGame* game, StateMap* stateMap,
+bool ProbesInstall(const GameImage& image, const Config& config, SfvGame* game, StateMap* stateMap,
                    const std::wstring& stateMapPath) {
     g.config = config;
     g.image = image;

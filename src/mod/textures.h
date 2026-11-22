@@ -11,12 +11,12 @@ namespace sfv::mod {
 
 // Logs the loaded Texture2D objects whose name or outer contains `filter`
 // (case-insensitive), at most `limit`, with their size where known.
-void LogTextures(const std::string& filter, int limit = 80);
+void TexturesLog(const std::string& filter, int limit = 80);
 
 // A texture by object name ("T_UI_Foo") among the loaded ones, else by path
 // ("/Game/UI/Foo/T_UI_Foo.T_UI_Foo", loaded on the game thread). Null when
 // neither works. Game thread only for a path.
-const void* FindOrLoadTexture(const std::string& nameOrPath);
+const void* TexturesFindOrLoad(const std::string& nameOrPath);
 
 struct TextureView {
     void* srv = nullptr; // ID3D11ShaderResourceView*, one reference held
@@ -29,17 +29,17 @@ int64_t TextureClockMs();
 // The texture's shader resource view, found by walking its render resource
 // (FTextureResource -> RHI texture -> D3D11 objects); logs the chain unless
 // `quiet` (failures are always logged).
-TextureView ViewOfTexture(const void* texture, bool quiet = false);
+TextureView TexturesViewOf(const void* texture, bool quiet = false);
 // Learns what the device's shader resource views look like (one made and
-// released): ViewOfTexture takes those first, and under Wine only those.
+// released): TexturesViewOf takes those first, and under Wine only those.
 // Before it, under Wine, no texture has a view. `d3dDevice`: ID3D11Device*.
-void NoteShaderResourceViewKind(void* d3dDevice);
+void TexturesNoteViewKind(void* d3dDevice);
 
 // Research (`savetex`): writes the texture's top mip to Polarity\textures\<name>.dds
 // as it is in memory (BC formats stay compressed). Takes over the view's
-// reference. The copy is made on the render thread: SaveQueuedTextures, from
+// reference. The copy is made on the render thread: TexturesSaveQueued, from
 // the overlay's Present.
-void SaveTextureLater(void* srv, const std::string& name);
-void SaveQueuedTextures();
+void TexturesSaveLater(void* srv, const std::string& name);
+void TexturesSaveQueued();
 
 } // namespace sfv::mod

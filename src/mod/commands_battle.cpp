@@ -372,7 +372,7 @@ void OutsidetestCommand(const std::string&, std::stringstream& ss) {
     int ticks = 8;
     std::string mode;
     ss >> ticks >> mode;
-    if (ue4::EnsureObjects(ImageBase())) RequestOutsideProbe(nullptr, ticks, mode == "all");
+    if (ue4::EnsureObjects(ImageBase())) OutsideProbeRequest(nullptr, ticks, mode == "all");
     else Log("outside: object array not found");
 }
 

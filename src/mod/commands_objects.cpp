@@ -157,7 +157,7 @@ void TexturesCommand(const std::string&, std::stringstream& ss) {
     std::string filter;
     int limit = 80;
     ss >> filter >> limit;
-    LogTextures(filter, limit);
+    TexturesLog(filter, limit);
 }
 
 void ShowtexCommand(const std::string&, std::stringstream& ss) {
@@ -168,12 +168,12 @@ void ShowtexCommand(const std::string&, std::stringstream& ss) {
         return;
     }
     FlowRunOnGameThread([which] {
-        const void* texture = FindOrLoadTexture(which);
+        const void* texture = TexturesFindOrLoad(which);
         if (!texture) {
             Log("showtex: no texture %s", which.c_str());
             return;
         }
-        const TextureView view = ViewOfTexture(texture);
+        const TextureView view = TexturesViewOf(texture);
         if (view.srv) OverlaySetTexture(view.srv, view.width, view.height, which);
     });
 }
@@ -182,13 +182,13 @@ void PaktexCommand(const std::string&, std::stringstream& ss) {
     std::string what, path;
     uint32_t maxSide = 0;
     ss >> what >> path >> maxSide;
-    if (what == "on" || what == "off") SetPakTexturesEnabled(what == "on");
-    else if (what == "status") Log("%s", PakTextureStatus().c_str());
+    if (what == "on" || what == "off") PakTexturesSetEnabled(what == "on");
+    else if (what == "status") Log("%s", PakTexturesStatus().c_str());
     else if (what == "dump") {
-        std::thread([path] { DumpPakPackage(path, FilesUtf8Path(FilesDataDir()) + "\\textures\\" + path.substr(path.rfind('/') + 1) + ".uasset"); }).detach();
+        std::thread([path] { PakTexturesDumpPackage(path, FilesUtf8Path(FilesDataDir()) + "\\textures\\" + path.substr(path.rfind('/') + 1) + ".uasset"); }).detach();
     } else if (what == "format") {
         FlowRunOnGameThread([path] {
-            const TextureView view = ViewOfTexture(FindOrLoadTexture(path + "." + path.substr(path.rfind('/') + 1)), true);
+            const TextureView view = TexturesViewOf(TexturesFindOrLoad(path + "." + path.substr(path.rfind('/') + 1)), true);
             if (!view.srv) return;
             auto* srv = static_cast<ID3D11ShaderResourceView*>(view.srv);
             D3D11_SHADER_RESOURCE_VIEW_DESC desc{};
@@ -201,11 +201,11 @@ void PaktexCommand(const std::string&, std::stringstream& ss) {
         std::thread([what, path, maxSide] {
             for (int i = 0; i < 200; i++) {
                 bool failed = false;
-                if (const TextureView* t = PakTexture(path, maxSide, true, &failed)) {
+                if (const TextureView* t = PakTexturesGet(path, maxSide, true, &failed)) {
                     static_cast<IUnknown*>(t->srv)->AddRef();
                     Log("paktex: %s from the paks: %ux%u", path.c_str(), t->width, t->height);
                     if (what == "show") OverlaySetTexture(t->srv, t->width, t->height, path + " (paks)");
-                    else SaveTextureLater(t->srv, "pak_" + path.substr(path.rfind('/') + 1));
+                    else TexturesSaveLater(t->srv, "pak_" + path.substr(path.rfind('/') + 1));
                     return;
                 }
                 if (failed) {
@@ -225,8 +225,8 @@ void SavetexCommand(const std::string&, std::stringstream& ss) {
     while (ss >> word) which.push_back(word);
     FlowRunOnGameThread([which] {
         for (const std::string& w : which) {
-            const void* texture = FindOrLoadTexture(w);
-            const TextureView view = texture ? ViewOfTexture(texture) : TextureView{};
+            const void* texture = TexturesFindOrLoad(w);
+            const TextureView view = texture ? TexturesViewOf(texture) : TextureView{};
             if (!view.srv) {
                 Log("savetex: no texture %s", w.c_str());
                 continue;
@@ -234,7 +234,7 @@ void SavetexCommand(const std::string&, std::stringstream& ss) {
             std::string name = w.rfind("/Game/", 0) == 0 ? w.substr(6) : w;
             name = name.substr(0, name.find('.'));
             std::replace(name.begin(), name.end(), '/', '_');
-            SaveTextureLater(view.srv, name);
+            TexturesSaveLater(view.srv, name);
         }
     });
 }
