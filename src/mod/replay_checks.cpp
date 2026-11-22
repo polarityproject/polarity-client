@@ -289,7 +289,7 @@ void ReplayDriver::CompareDump(SfvGame& game, const StateDump& dump, int f) {
         best->taken = true;
         if (bestDiff == 0) continue;
         differing++;
-        if (shown < 96) Log("replay: frame %d dump: %s owner %s", f, r.name.c_str(), RegionOwner(r.ptr).c_str());
+        if (shown < 96) Log("replay: frame %d dump: %s owner %s", f, r.name.c_str(), BattleRegionOwner(r.ptr).c_str());
         for (size_t w = 0; w + 8 <= r.size && shown < 96; w += 8) {
             if (masked(w / 8) || std::memcmp(r.ptr + w, best->bytes + w, 8) == 0) continue;
             uint64_t mine, theirs;
@@ -404,15 +404,15 @@ void ReplayDriver::Finish(SfvGame& game) {
     std::function<void()> leave;
     if (viewer_ && !restarting_) {
         MuteGameSounds(false);
-        StopCapturedSounds();
-        RecordBattleSounds(false);
+        BattleStopCapturedSounds();
+        BattleRecordSounds(false);
         std::lock_guard lock(g_viewMutex);
         g_view = ReplayView{};
         g_viewCommands.clear();
         g_viewTaken = 0;
         leave = std::move(g_viewLeave);
     } else if (viewer_) {
-        const int stopped = StopBattleSounds();
+        const int stopped = BattleStopSounds();
         Log("replay: the battle's %d sounds stopped for the restart", stopped);
         std::lock_guard lock(g_viewMutex);
         g_view.seeking = true;
@@ -455,7 +455,7 @@ void ReplayDriver::Finish(SfvGame& game) {
     }
     if (!top.empty()) Log("replay:   resimulated differently (frames): %s", top.c_str());
     const bool viewer = viewer_ || bench_;
-    SetFrameDriver(nullptr);
+    BattleSetFrameDriver(nullptr);
     delete this;
     if (restart) {
         g_restartPending = restartWith;

@@ -614,7 +614,7 @@ void DrawHubScreens(bool takeInput) {
             Log("battle log: watching %s", in.watch.c_str());
             g_logLaunch = {true, FlowBattleSceneSwitches(), ImGui::GetTime(), -1};
             ReplayRequestView(in.watch, in.watchTitle, [] { g_reopenLog = true; });
-            if (!CurrentFrameDriver()) {
+            if (!BattleCurrentFrameDriver()) {
                 g_logLaunch = {};
                 AddToast("This replay can't be played.", kRed, 4);
             }

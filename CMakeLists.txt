@@ -212,6 +212,11 @@ if(SFV_BUILD_MOD AND WIN32)
     src/mod/log.cpp
     src/mod/memscan.cpp
     src/mod/battle_driver.cpp
+    src/mod/battle_phases.cpp
+    src/mod/battle_random.cpp
+    src/mod/battle_regions.cpp
+    src/mod/battle_sound.cpp
+    src/mod/battle_trace.cpp
     src/mod/battle_setup.cpp
     src/mod/boot.cpp
     src/mod/files.cpp

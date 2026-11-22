@@ -182,11 +182,11 @@ void SfvGame::OnInputUnit(uint8_t* inputUnit) {
             Log("inputlog: pads %d, values %08X %08X %08X %08X", pads, sampled_[0], sampled_[1], sampled_[2], sampled_[3]);
         }
     }
-    ActorLogTick();
-    CineLogTick();
-    CamTraceRecord(0);
+    BattleActorLogTick();
+    BattleCineLogTick();
+    BattleCamTraceRecord(TraceAt::TickEnd);
     FrameMeterTick(*this);
-    FtraceTick();
+    BattleFtraceTick();
     if (injecting_) {
         values[0] = inject_[0];
         values[1] = inject_[1];
@@ -923,7 +923,7 @@ PackedInput SfvGame::ReadLocalInput(int player) {
 void SfvGame::Advance(const FrameInputs& inputs, bool rollingBack) {
     if (!CanRunTicks()) return;
     hitch::AddTick(rollingBack); // the frame-drop log: ticks per frame, and how many replayed
-    SetReplayingTick(rollingBack);
+    BattleSetReplayingTick(rollingBack);
     // Start reaches the game only when both players pressed it outside the
     // fight (flow.h): one player cannot skip the intro, or pause the fight.
     const PackedInput start = FlowPresentationStart(inputs.p[0], inputs.p[1]);
@@ -935,7 +935,7 @@ void SfvGame::Advance(const FrameInputs& inputs, bool rollingBack) {
     if (inputUnit_) *reinterpret_cast<int32_t*>(inputUnit_ + game::inputunit::kRoundParam) = 0;
     injecting_ = true;
     FlowBeginDrivenTick();
-    SeedTickRandom();
+    BattleSeedTickRandom();
     CameraTickBegin();
     RunBattleTick(rollingBack);
     CameraTickEnd();

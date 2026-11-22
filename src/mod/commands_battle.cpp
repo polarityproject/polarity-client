@@ -26,7 +26,7 @@ void WatchnameCommand(const std::string&, std::stringstream& ss) {
     int len = 4;
     ss >> name >> off >> len;
     const size_t offset = std::stoull(off.empty() ? "0" : off, nullptr, 16);
-    WatchRegionNamed(name, offset, len); // from this thread: a watch covers every thread but the one arming it
+    BattleWatchRegionNamed(name, offset, len); // from this thread: a watch covers every thread but the one arming it
 }
 
 void WatchphaseCommand(const std::string&, std::stringstream&) {
@@ -53,19 +53,19 @@ void CamtraceCommand(const std::string&, std::stringstream& ss) {
     uint32_t from = 0, to = 0;
     std::string text = "Camera";
     ss >> from >> to >> text;
-    FlowRunOnGameThread([=] { TraceCameraObjects(from, to, text); });
+    FlowRunOnGameThread([=] { BattleTraceCameraObjects(from, to, text); });
 }
 
 void CinelogCommand(const std::string&, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    FlowRunOnGameThread([on] { LogCinematics(on); });
+    FlowRunOnGameThread([on] { BattleLogCinematics(on); });
 }
 
 void ActorlogCommand(const std::string&, std::stringstream& ss) {
     int ticks = 120;
     ss >> ticks;
-    FlowRunOnGameThread([ticks] { LogActors(ticks); });
+    FlowRunOnGameThread([ticks] { BattleLogActors(ticks); });
 }
 
 void RcmpCommand(const std::string&, std::stringstream& ss) {
@@ -73,7 +73,7 @@ void RcmpCommand(const std::string&, std::stringstream& ss) {
     ss >> a >> b >> f >> t;
     auto hex = [](const std::string& s) { return s.rfind('-', 0) == 0 ? -std::stoll(s.substr(1), nullptr, 16) : std::stoll(s, nullptr, 16); };
     const long long from = hex(f), to = hex(t);
-    FlowRunOnGameThread([=] { CompareRegions(a, b, from, to); });
+    FlowRunOnGameThread([=] { BattleCompareRegions(a, b, from, to); });
 }
 
 void RpeekCommand(const std::string&, std::stringstream& ss) {
@@ -81,18 +81,18 @@ void RpeekCommand(const std::string&, std::stringstream& ss) {
     int qwords = 4;
     ss >> name >> off >> qwords;
     const long long offset = off.rfind('-', 0) == 0 ? -std::stoll(off.substr(1), nullptr, 16) : std::stoll(off, nullptr, 16);
-    FlowRunOnGameThread([=] { PeekRegion(name, offset, qwords); });
+    FlowRunOnGameThread([=] { BattlePeekRegion(name, offset, qwords); });
 }
 
 void PtrscanCommand(const std::string&, std::stringstream& ss) {
     std::string from, to;
     size_t before = 0, after = 0;
     ss >> from >> std::hex >> before >> after >> std::dec >> to;
-    FlowRunOnGameThread([=] { ScanForPointers(from, before, after, to); });
+    FlowRunOnGameThread([=] { BattleScanForPointers(from, before, after, to); });
 }
 
 void RsnapCommand(const std::string&, std::stringstream&) {
-    FlowRunOnGameThread([] { SnapRegions(); });
+    FlowRunOnGameThread([] { BattleSnapRegions(); });
 }
 
 void BoxlogCommand(const std::string&, std::stringstream& ss) {
@@ -117,13 +117,13 @@ void WinsizeCommand(const std::string&, std::stringstream& ss) {
 void FtraceCommand(const std::string&, std::stringstream& ss) {
     int ticks = 600;
     ss >> ticks;
-    FlowRunOnGameThread([ticks] { TraceRegions(ticks); });
+    FlowRunOnGameThread([ticks] { BattleTraceRegions(ticks); });
 }
 
 void FreezeCommand(const std::string&, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    SetBattleFreeze(on != 0);
+    BattleSetFreeze(on != 0);
 }
 
 void FramemeterCommand(const std::string&, std::stringstream& ss) {
@@ -155,25 +155,25 @@ void HitboxesCommand(const std::string&, std::stringstream& ss) {
 void RdumpCommand(const std::string&, std::stringstream& ss) {
     std::string name, tag;
     ss >> name >> tag;
-    FlowRunOnGameThread([=] { DumpRegion(name, tag); });
+    FlowRunOnGameThread([=] { BattleDumpRegion(name, tag); });
 }
 
 void RdiffCommand(const std::string&, std::stringstream& ss) {
     std::string mode = "side", prefix;
     ss >> mode >> prefix;
-    FlowRunOnGameThread([mode, prefix] { DiffRegions(mode, prefix); });
+    FlowRunOnGameThread([mode, prefix] { BattleDiffRegions(mode, prefix); });
 }
 
 void DumpbacCommand(const std::string&, std::stringstream& ss) {
     std::string name;
     ss >> name;
-    FlowRunOnGameThread([name] { DumpMoveFile(name); });
+    FlowRunOnGameThread([name] { BattleDumpMoveFile(name); });
 }
 
 void RfindCommand(const std::string&, std::stringstream& ss) {
     std::string kind, a, b;
     ss >> kind >> a >> b;
-    FlowRunOnGameThread([kind, a, b] { FindInRegions(kind, a, b); });
+    FlowRunOnGameThread([kind, a, b] { BattleFindInRegions(kind, a, b); });
 }
 
 void WarmupsleepCommand(const std::string&, std::stringstream& ss) {
@@ -217,7 +217,7 @@ void MappedlogCommand(const std::string&, std::stringstream& ss) {
 void InputlogCommand(const std::string&, std::stringstream& ss) {
     int ticks = 0;
     ss >> ticks;
-    LogGameInputs(ticks);
+    BattleLogGameInputs(ticks);
 }
 
 void ResimtasksCommand(const std::string&, std::stringstream& ss) {
@@ -239,29 +239,29 @@ void ResimtasksCommand(const std::string&, std::stringstream& ss) {
 void ResimskipCommand(const std::string&, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    SetResimPresentationSkip(on != 0);
+    BattleSetResimPresentationSkip(on != 0);
 }
 
 void PhasecostCommand(const std::string&, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    SetPhaseTiming(on != 0);
+    BattleSetPhaseTiming(on != 0);
 }
 
 void SerialjobsCommand(const std::string&, std::stringstream& ss) {
     int on = 1;
     ss >> on;
-    SetSerialJobs(on != 0);
+    BattleSetSerialJobs(on != 0);
 }
 
 void JoborderCommand(const std::string&, std::stringstream& ss) {
     int calls = 1;
     ss >> calls;
-    LogJobOrderNext(calls);
+    BattleLogJobOrderNext(calls);
 }
 
 void StartprobeCommand(const std::string&, std::stringstream&) {
-    LogStartProbe();
+    BattleLogStartProbe();
 }
 
 void SoundrollbackCommand(const std::string&, std::stringstream& ss) {
@@ -311,14 +311,14 @@ void KowaitmodeCommand(const std::string&, std::stringstream& ss) {
 void SoundlogCommand(const std::string&, std::stringstream& ss) {
     int count = 400;
     ss >> count;
-    LogSoundPlays(count);
+    BattleLogSoundPlays(count);
 }
 
 void BonelogCommand(const std::string&, std::stringstream& ss) {
     int count = 200;
     std::string from;
     ss >> count >> from;
-    LogBonePositions(count, from.empty() ? 0 : std::stoull(from, nullptr, 16));
+    BattleLogBonePositions(count, from.empty() ? 0 : std::stoull(from, nullptr, 16));
 }
 
 void DrawlogCommand(const std::string&, std::stringstream& ss) {
@@ -327,9 +327,9 @@ void DrawlogCommand(const std::string&, std::stringstream& ss) {
     if (first == "ticks") {
         uint32_t from = 0, to = 0;
         ss >> from >> to;
-        LogRandomDrawsInTicks(from, to);
+        BattleLogRandomDrawsInTicks(from, to);
     } else {
-        LogRandomDraws(std::atoi(first.c_str()));
+        BattleLogRandomDraws(std::atoi(first.c_str()));
     }
 }
 
@@ -355,7 +355,7 @@ void RoundinfoCommand(const std::string&, std::stringstream&) {
 void RegionsCommand(const std::string&, std::stringstream& ss) {
     size_t size = 0;
     ss >> size;
-    LogRegionsOfSize(size);
+    BattleLogRegionsOfSize(size);
 }
 
 void PhasesCommand(const std::string&, std::stringstream&) {

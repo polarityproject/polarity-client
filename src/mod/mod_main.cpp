@@ -169,7 +169,7 @@ DWORD WINAPI ModMain(LPVOID self) {
     InstallFreePlayGuard(image);
     FlowInstallProbes(image);
     WatchLoginStatus();
-    InstallBattleDriver(image, &game);
+    BattleInstallDriver(image, &game);
     InstallCameraRollback(image);
     InstallHudStep(image);
     SetCameraRollback(config.netplay.cameraRollback);

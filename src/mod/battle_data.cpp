@@ -220,8 +220,7 @@ DataCheck LastDataCheck() {
 
 void DumpLoadedBattleData() {
     const std::vector<Loaded> loaded = ReadLoaded();
-    const std::wstring dir = DataDir() + L"\\research";
-    EnsureDirectory(dir);
+    const std::wstring dir = ResearchDir();
     const std::string path = Utf8Path(dir + L"\\battle_data.txt");
     FILE* f = nullptr;
     _wfopen_s(&f, (dir + L"\\battle_data.txt").c_str(), L"ab");

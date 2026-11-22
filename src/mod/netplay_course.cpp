@@ -86,7 +86,7 @@ void NetplayDriver::Transitions() {
     if (next == Next::None) return;
     if (matchLive_) {
         if (GetState() != State::Jumping || game_.BattleRunning()) return;
-        DetachFrameDriver();
+        BattleDetachFrameDriver();
         FinishMatch(game_, next == Next::End || next == Next::Lobby);
         if (next == Next::Lobby) {
             Log("netplay: back to the lobby during the jump: calling it off");
@@ -117,7 +117,7 @@ void NetplayDriver::Transitions() {
             if (game_.BattleRunning()) {
                 FlowSetHoldResults(true);
                 holdOverResults_ = true;
-                SetFrameDriver(this);
+                BattleSetFrameDriver(this);
                 InputIsolatePads(true);
                 InputBlockPause(true);
             }

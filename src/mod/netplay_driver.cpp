@@ -106,7 +106,7 @@ const char* RejectText(lobby::RejectReason r) {
 
 void ReturnToMenuOnceBattleRuns(SfvGame& game, uint64_t switchesAtJump, NoBattle none, int framesLeft) {
     FlowRunOnGameThreadAfter(10, [&game, switchesAtJump, none, framesLeft] {
-        if (FlowBattleSceneSwitches() > switchesAtJump + 1 || CurrentFrameDriver()) return;
+        if (FlowBattleSceneSwitches() > switchesAtJump + 1 || BattleCurrentFrameDriver()) return;
         if (FlowBattleSceneSwitches() != switchesAtJump && game.BattleRunning()) {
             Log("netplay: the battle of the session that ended during its jump runs: back to the menu");
             ClearPendingSetup();
@@ -609,7 +609,7 @@ std::mutex g_driverMutex;
 void Replace(std::unique_ptr<NetplayDriver> next) {
     std::lock_guard lock(g_driverMutex);
     if (g_driver) {
-        if (CurrentFrameDriver() == g_driver.get()) DetachFrameDriver();
+        if (BattleCurrentFrameDriver() == g_driver.get()) BattleDetachFrameDriver();
         g_driver->Stop();
     }
     g_driver = std::move(next);

@@ -22,11 +22,12 @@ constexpr size_t kKeptCrashReports = 20; // crash reports (.log, and .dmp with a
 constexpr size_t kSharedCrashFiles = 6;  // the latest crash reports' files in a shared zip
 
 void SetDataDir(const std::wstring& dir);
-std::wstring DataDir();    // ...\Win64\Polarity
-std::wstring LogsDir();    // ...\Polarity\logs
-std::wstring MatchesDir(); // ...\Polarity\matches
-std::wstring ReplaysDir(); // ...\Polarity\replays: the Battle Log (kept, never pruned)
-std::wstring CrashesDir(); // ...\Polarity\crashes
+std::wstring DataDir();     // ...\Win64\Polarity
+std::wstring LogsDir();     // ...\Polarity\logs
+std::wstring MatchesDir();  // ...\Polarity\matches
+std::wstring ReplaysDir();  // ...\Polarity\replays: the Battle Log (kept, never pruned)
+std::wstring CrashesDir();  // ...\Polarity\crashes
+std::wstring ResearchDir(); // ...\Polarity\research: research dumps, made on first use
 
 // Creates the folder and any missing parents.
 bool EnsureDirectory(const std::wstring& path);

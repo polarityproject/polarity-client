@@ -94,7 +94,7 @@ public:
     explicit PageProbe(int ticks) : ticks_(ticks) {}
 
     bool OnFrame(SfvGame& game) override {
-        SetFrameDriver(nullptr);
+        BattleSetFrameDriver(nullptr);
         Run(game);
         delete this;
         return true;
@@ -172,7 +172,7 @@ public:
     explicit OutsideProbe(int ticks) : ticks_(ticks) {}
 
     bool OnFrame(SfvGame& game) override {
-        SetFrameDriver(nullptr);
+        BattleSetFrameDriver(nullptr);
         Run(game);
         delete this;
         return true;
@@ -268,13 +268,13 @@ private:
 
 void RequestOutsideProbe(SfvGame* game, int ticks, bool allMemory) {
     (void)game;
-    if (CurrentFrameDriver()) {
+    if (BattleCurrentFrameDriver()) {
         Log("outside: a frame driver (netplay?) is running; leave first");
         return;
     }
     // The probe deletes itself after its one frame.
-    if (allMemory) SetFrameDriver(new PageProbe(ticks));
-    else SetFrameDriver(new OutsideProbe(ticks));
+    if (allMemory) BattleSetFrameDriver(new PageProbe(ticks));
+    else BattleSetFrameDriver(new OutsideProbe(ticks));
 }
 
 } // namespace sfv::mod

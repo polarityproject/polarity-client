@@ -91,13 +91,13 @@ std::string Name(const void* object) {
 void LogRequest(const char* what, const Request& r) {
     if (!g_log || g_logs++ > 2000) return;
     Log("camera: %s: tick %u%s%s phase %d, %s -> %s, blend %.3f (function %u), now view %s pending %s, to go %.3f", what, r.tick,
-        r.inTick ? "" : " (outside a tick)", InReplayedTick() ? " replayed" : "", FlowSchedulerPhaseNow(), Name(r.manager).c_str(),
+        r.inTick ? "" : " (outside a tick)", BattleInReplayedTick() ? " replayed" : "", FlowSchedulerPhaseNow(), Name(r.manager).c_str(),
         Name(r.target).c_str(), r.transition.blendTime, r.transition.function, Name(At<void*>(r.manager, kViewTarget)).c_str(),
         Name(At<void*>(r.manager, kPendingTarget)).c_str(), At<float>(r.manager, kBlendTimeToGo));
 }
 
 void SetViewTargetDetour(uint8_t* manager, void* target, const Transition* transition) {
-    if (!g_on || !transition || !CurrentFrameDriver() || !IsReadable(manager, kManagerSize)) {
+    if (!g_on || !transition || !BattleCurrentFrameDriver() || !IsReadable(manager, kManagerSize)) {
         g_origSetViewTarget(manager, target, transition);
         return;
     }
@@ -122,7 +122,7 @@ void SetViewTargetDetour(uint8_t* manager, void* target, const Transition* trans
     g_journal.push_back(r);
     LogRequest("new", r);
     g_origSetViewTarget(manager, target, transition);
-    if (r.inTick && InReplayedTick() && transition->blendTime > 0) g_late.push_back({manager, TargetOf(manager, target), r.tick});
+    if (r.inTick && BattleInReplayedTick() && transition->blendTime > 0) g_late.push_back({manager, TargetOf(manager, target), r.tick});
 }
 
 } // namespace

@@ -126,7 +126,7 @@ void ReplayRequestView(const std::string& path, const std::string& title, std::f
 }
 
 bool ReplayRequestBenchmark(const std::string& path) {
-    if (CurrentFrameDriver()) {
+    if (BattleCurrentFrameDriver()) {
         Log("benchmark: another driver is active");
         return false;
     }
@@ -141,7 +141,7 @@ bool ReplayRequestBenchmark(const std::string& path) {
         g_view.title = "Benchmark";
     }
     ReplayRequest(path, 8, -1, -1, "", -1, -1, true, "", -1, 0, 0, -1, "", false, true);
-    if (CurrentFrameDriver()) return true;
+    if (BattleCurrentFrameDriver()) return true;
     std::lock_guard lock(g_viewMutex);
     g_view = ReplayView{};
     return false;
@@ -185,10 +185,10 @@ void ReplayRequest(const std::string& path, int stressDistance, int watchFrom, i
                    int keepFrom, int keepTo, bool preload, const std::string& traps, int holdAt, int holdSeconds,
                    int mispredictDelay, int remote, const std::string& viewTitle, bool jumpNow, bool benchmark) {
     if (path == "stop") {
-        g_stop = CurrentFrameDriver() != nullptr;
+        g_stop = BattleCurrentFrameDriver() != nullptr;
         return;
     }
-    if (CurrentFrameDriver()) {
+    if (BattleCurrentFrameDriver()) {
         Log("replay: another driver is active (leave the session first)");
         return;
     }
@@ -237,7 +237,7 @@ void ReplayRequest(const std::string& path, int stressDistance, int watchFrom, i
     std::istringstream ts(traps);
     ReplayDriver::Trap t;
     while (ts >> t.frame >> t.region >> std::hex >> t.offset >> std::dec >> t.bytes) driver->AddTrap(t);
-    SetFrameDriver(driver);
+    BattleSetFrameDriver(driver);
     if (jumpNow) {
         FlowJumpToBattle();
         return;

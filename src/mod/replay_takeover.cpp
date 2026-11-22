@@ -44,7 +44,7 @@ void ReplayDriver::TakeoverFrame(SfvGame& game) {
         case TakeoverPhase::Countdown:
             if (now >= tk_.until) {
                 tk_.phase = TakeoverPhase::Live;
-                BeginSoundCapture();
+                BattleBeginSoundCapture();
                 Log("replay: takeover of P%d playing", tk_.side + 1);
             }
             break;
@@ -112,7 +112,7 @@ void ReplayDriver::TakeoverFadeOut() {
 }
 
 void ReplayDriver::TakeoverRewind(SfvGame& game) {
-    const int stopped = StopCapturedSounds();
+    const int stopped = BattleStopCapturedSounds();
     MuteGameSounds(true);
     Log("replay: rewinding the takeover from frame %d (%d of its sounds stopped)", frame_ - 1, stopped);
     if (!wasFight_ && !tk_.ko.empty() && tk_.ticks <= kTakeoverKoTicks) {

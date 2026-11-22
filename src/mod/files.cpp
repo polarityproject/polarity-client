@@ -96,6 +96,12 @@ std::wstring ReplaysDir() { return g_dataDir + L"\\replays"; }
 
 std::wstring CrashesDir() { return g_dataDir + L"\\crashes"; }
 
+std::wstring ResearchDir() {
+    const std::wstring dir = g_dataDir + L"\\research";
+    EnsureDirectory(dir);
+    return dir;
+}
+
 bool EnsureDirectory(const std::wstring& path) {
     if (path.empty()) return false;
     const DWORD attr = GetFileAttributesW(path.c_str());

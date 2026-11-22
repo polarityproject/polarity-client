@@ -405,7 +405,7 @@ void NetplayDriver::FinishMatch(SfvGame& game, bool keepSetup) {
         spectate_.reset();
     }
     watchingMatch_ = 0;
-    SetFrameDriver(nullptr);
+    BattleSetFrameDriver(nullptr);
     matchLive_ = false;
     SetMatchRunning(false);
 }

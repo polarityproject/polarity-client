@@ -119,9 +119,9 @@ bool g_modalNow = false, g_modalBefore = false; // render thread
 void PlayCue(uint8_t cue) {
     if (!g_play || cue >= kCueCount) return;
     const uint8_t mode = 0;
-    SetSoundCaptureExempt(true); // a menu sound of the mod's: never stopped as a muted run's
+    BattleSetSoundCaptureExempt(true); // a menu sound of the mod's: never stopped as a muted run's
     g_play(&cue, &mode);
-    SetSoundCaptureExempt(false);
+    BattleSetSoundCaptureExempt(false);
 }
 
 } // namespace
@@ -145,14 +145,14 @@ void MuteGameSounds(bool mute) {
     if (mute) {
         for (const char* category : {"M_SE", "M_VOICE", "M_SYS_VOICE", "M_EXTRA_VOICE"}) setVolume(category, 0.0f);
         g_muted = true;
-        BeginSoundCapture();
+        BattleBeginSoundCapture();
         Log("ui sound: the game's sounds muted (music stays)");
         return;
     }
     // What the muted stretch started and is still playing (a jump's run: the
     // last round's end, the new round's set-up) is stopped, not heard as the
     // volumes come back.
-    const int stopped = StopCapturedSounds();
+    const int stopped = BattleStopCapturedSounds();
     // The stops go through the plugin's queue to its sound thread while the
     // volumes apply at once: a moment for them first, or a tail slips out.
     if (stopped > 0) Sleep(35);

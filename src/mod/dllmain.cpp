@@ -41,7 +41,7 @@ extern "C" __declspec(dllexport) bool SfvCanUnload() {
         Log("hot reload refused: a netplay session is on (leave it first)");
         return false;
     }
-    if (CurrentFrameDriver()) {
+    if (BattleCurrentFrameDriver()) {
         Log("hot reload refused: the battle's frames are still driven (wait for the menus)");
         return false;
     }

@@ -18,7 +18,7 @@ bool ReplayDriver::Warmup(SfvGame& game) {
     if (const int latch = g_latch.exchange(-1); latch >= 0) game.latchEachTick = latch != 0;
     if (!game.latchEachTick) Log("replay: %s predates adapter-9: the game's own pad latch", rf_.gameBuild.c_str());
     FlowSetRoundDirectorPerTick(true, true);
-    SetMatchDrawSeed(rf_.setup.seed);
+    BattleSetMatchDrawSeed(rf_.setup.seed);
     game.Recanonicalize();
     std::vector<uint64_t> hashes(CheckRegions(game).size());
     HashRegions(CheckRegions(game), hashes.data());

@@ -6,7 +6,7 @@ void NetplayDriver::ReleaseResults() {
     if (!holdOverResults_.exchange(false)) return;
     InputIsolatePads(false);
     InputBlockPause(false);
-    DetachFrameDriver();
+    BattleDetachFrameDriver();
 }
 
 int NetplayDriver::ViewerSide() const { return role_ == Role::Spectator || host_ ? 0 : 1; }
@@ -69,7 +69,7 @@ void NetplayDriver::BeginJump() {
     matchLive_ = true;
     SetMatchRunning(true);
     SetState(State::Jumping);
-    SetFrameDriver(this);
+    BattleSetFrameDriver(this);
     jump_ = std::thread([this] {
         ThreadGuard running;
         RunJump();
@@ -112,7 +112,7 @@ bool NetplayDriver::FrameWhileLoading(SfvGame& game) {
         InputIsolatePads(true);
         game.exclusiveTicks = true;
         FlowSetRoundDirectorPerTick(true, options_.roundEndRollback);
-        SetMatchDrawSeed(setup_.seed);
+        BattleSetMatchDrawSeed(setup_.seed);
         game.Recanonicalize();
         std::vector<uint64_t> hashes(game.Regions().size());
         HashRegions(game.Regions(), hashes.data());

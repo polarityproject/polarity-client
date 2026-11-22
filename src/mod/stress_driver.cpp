@@ -153,7 +153,7 @@ private:
                 Log("stress:   frame %d checksum %08x, first simulation %08x", d.frame, d.localChecksum, d.remoteChecksum);
             }
         }
-        SetFrameDriver(nullptr);
+        BattleSetFrameDriver(nullptr);
         delete this;
     }
 
@@ -183,14 +183,14 @@ private:
 void SetNoisePath(const std::wstring& path) { g_noisePath = path; }
 
 void RequestStressTest(int frames, int distance, uint64_t seed, bool learnNoise) {
-    if (CurrentFrameDriver()) {
+    if (BattleCurrentFrameDriver()) {
         Log("stress: another driver is active");
         return;
     }
     distance = distance < 1 ? 1 : distance > 30 ? 30
                                                 : distance;
     Log("stress: %d frames, distance %d, seed %llu", frames, distance, static_cast<unsigned long long>(seed));
-    SetFrameDriver(new StressDriver(frames, distance, seed, learnNoise));
+    BattleSetFrameDriver(new StressDriver(frames, distance, seed, learnNoise));
 }
 
 } // namespace sfv::mod
