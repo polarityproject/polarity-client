@@ -91,7 +91,7 @@ are ready at once, and the player is named "Player <instance + 1>" unless
 | `update [check [url]] \| install \| pretend <version> \| restart` | the updater (updater.h) |
 | `reports [send] [url <address>]` | desync report uploads (report_upload.h) |
 | `packlogs` | what Settings, Logs, "Pack logs to share" does |
-| `crash game\|thread\|overflow\|hang\|fastfail\|raise\|stub\|exit` | ends or freezes the game for real, to test crash reports: `raise` is an exception that is not a fault, left to the engine; `stub` is what Wine raises for a function it lacks; `exit` ends the game with an error code, as the engine does after an error |
+| `crash game\|thread\|overflow\|hang\|fastfail\|raise\|stub\|exit`, `crash dismiss` | ends or freezes the game for real, to test crash reports (`dismiss` presses OK on the engine's error dialog, as a player would): `raise` is an exception that is not a fault, left to the engine; `stub` is what Wine raises for a function it lacks; `exit` ends the game with an error code, as the engine does after an error |
 
 ## Research: the game's objects, memory and tables
 

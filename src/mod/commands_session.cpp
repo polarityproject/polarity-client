@@ -241,9 +241,40 @@ void NameCommand(const std::string&, std::stringstream& ss) {
     Log("netplay: test sessions play as %s", TestName().c_str());
 }
 
+constexpr UINT kTaskDialogClickButton = WM_USER + 102; // commctrl.h TDM_CLICK_BUTTON
+
+// A dialog of this game's (the engine's error message after a fault): OK
+// pressed, as a player would.
+BOOL CALLBACK PressDialogOk(HWND window, LPARAM pressed) {
+    DWORD pid = 0;
+    GetWindowThreadProcessId(window, &pid);
+    char kind[16] = {};
+    if (pid != GetCurrentProcessId() || !IsWindowVisible(window) || !GetClassNameA(window, kind, sizeof(kind)) ||
+        std::strcmp(kind, "#32770") != 0) {
+        return TRUE;
+    }
+    char title[128] = {};
+    GetWindowTextA(window, title, sizeof(title));
+    // A message box's button, else a task dialog's (no Button child windows).
+    HWND button = FindWindowExA(window, nullptr, "Button", nullptr);
+    char text[64] = {};
+    if (button) GetWindowTextA(button, text, sizeof(text));
+    Log("crash: pressing %s on the dialog '%s'", button ? text : "its default button", title);
+    if (button) PostMessageW(button, BM_CLICK, 0, 0);
+    else PostMessageW(window, kTaskDialogClickButton, IDOK, 0);
+    ++*reinterpret_cast<int*>(pressed);
+    return TRUE;
+}
+
 void CrashCommand(const std::string&, std::stringstream& ss) {
     std::string how;
     ss >> how;
+    if (how == "dismiss") {
+        int pressed = 0;
+        EnumWindows(PressDialogOk, reinterpret_cast<LPARAM>(&pressed));
+        if (!pressed) Log("crash: no dialog to press OK on");
+        return;
+    }
     Log("crash: %s on purpose (testing)", how.c_str());
     if (how == "thread") {
         std::thread([] { *reinterpret_cast<volatile int*>(16) = 1; }).detach();
