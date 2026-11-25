@@ -7,6 +7,49 @@ Each version's first paragraph is the summary players see in the game
 (Polarity settings › Updates). A release tag doesn't build without its
 version's entry here, and the entry becomes the GitHub release's description.
 
+## [0.4.4] - 2026-11-25
+
+Fixes an Urien desync from his alternate costume, crashes when a session
+went back to the lobby as a battle loaded and on an empty save file, and
+Battle Log round jumps that drifted from the recording. Each game now
+builds a match's start on its own and checks the other side's picks.
+0.4.4 plays only 0.4.4.
+
+### Added
+
+- `load=none` under `[loader]` in polarity.ini starts plain Street Fighter
+  V, with nothing of Polarity loaded.
+- Polarity is under the MIT License. Each release carries the licenses of
+  the libraries built into it in `polarity_third_party_notices.txt`.
+
+### Changed
+
+- Updates come from Polarity's releases on GitHub, and so do the
+  installers on polaritymod.link.
+- Each game builds a match's first frame on its own, and nothing from the
+  other side is copied into it. If the two starts differ, the match ends
+  after 2 seconds and both sides save a desync report.
+- Picks and match setups from the other player, from the host a spectator
+  watches and from recordings are checked against this game's own
+  characters, costumes, colors and stages first. A bad one ends the session
+  with the reason on both sides, and a recording with one doesn't play.
+- When SFV Ember's launcher starts the game, Polarity steps aside and loads
+  nothing.
+
+### Fixed
+
+- Urien could start a match in a different costume on each side when his
+  player held LP+LK+HK for his alternate costume.
+- A crash when the other player went back to character select, or a
+  watched match ended, just as the next battle loaded.
+- A crash at the start of some battles, where the game closed itself.
+- A crash on a profile whose save file was empty.
+- A Battle Log round jump could drift from the recording partway through a
+  fight, mostly on the Steam Deck.
+- Joining a room by code right after a failed join waited on "joining" for
+  good.
+- A damaged recording could end the game. It is now refused.
+
 ## [0.4.3] - 2026-11-13
 
 Fixes desyncs from the first frame of some matches and three seconds after
