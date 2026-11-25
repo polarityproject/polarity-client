@@ -35,31 +35,35 @@ Set-Content (Join-Path $win 'polarity.ini') $ini
 if ($Public) {
   Remove-Item $repo -Recurse -Force
   @"
-Polarity ${version}: rollback netplay for Street Fighter V (test build)
+Polarity ${version}: rollback netplay for Street Fighter V
 
-Install
+The installer from https://polaritymod.link does all of this for you.
+
+Install by hand
 1. Copy the files in Win64\ into StreetFighterV\StreetFighterV\Binaries\Win64\
    (the folder with StreetFighterV.exe; in Steam: right-click the game,
    Manage, Browse local files).
-2. Start the game from Steam as usual. F1, or Back + Start on a pad, opens
-   the Polarity panel: host a match and send the code, or join with one.
+2. On Linux or the Steam Deck, also set the game's launch options in Steam
+   to: WINEDLLOVERRIDES="xinput1_3=n,b" %command%
+3. Start the game from Steam as usual. It opens on the Polarity hub:
+   Custom Rooms to play online, Play Offline for the game's own modes, and
+   Polarity settings on Start.
 
-Updates: the game offers new versions in the panel (Settings, Updates).
-Both players need the same version to play each other.
+Updates: Polarity offers each new version when the game starts. Both
+players need the same version to play each other.
 
-Problems: in the panel, Settings, Logs, "Pack logs to share", then send the
-zip it makes (in Binaries\Win64\Polarity\).
+Problems: in Polarity settings, Pack logs, then send the zip it makes (in
+Binaries\Win64\Polarity\).
 
 Reports: after a match with a desync, its recording and match log (player
-names, picks, inputs) are sent to the Polarity server so it can be fixed; after a
-crash, the end of the log and a small crash dump, at the next start. To turn
-that off: in the panel, Settings, Logs, untick "Send desync and crash
-reports".
+names, picks, inputs) go to the Polarity server so it can be fixed; after a
+crash, the end of the log and a small crash dump, at the next start. To
+turn that off: Polarity settings, Send reports.
 
-Uninstall: delete xinput1_3.dll, polarity.dll, sfv_noise.txt (0.1.0),
-polarity_fonts_license.txt, polarity_third_party_notices.txt and polarity.ini
-from Binaries\Win64\ (and the Polarity
-folder, with the logs and the fonts).
+Uninstall: delete xinput1_3.dll, polarity.dll, polarity.ini,
+polarity_fonts_license.txt and polarity_third_party_notices.txt from
+Binaries\Win64\, and the Polarity folder there (logs, recordings and
+fonts). On Linux, also clear the launch option.
 "@ | Set-Content (Join-Path $out 'INSTALL.txt')
   $zip = Join-Path $root "dist\$name.zip"
   if (Test-Path $zip) { Remove-Item $zip -Force }
