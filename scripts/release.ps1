@@ -19,6 +19,7 @@
 #     updates signed with it.
 # Needs PowerShell 7 (for the key's PKCS#8 import and export) and gh signed in
 # with an account that can publish releases in -Repo.
+#Requires -Version 7
 param([string]$KeyFile = (Join-Path $env:USERPROFILE '.sfvr\update-signing-key.txt'),
       [string]$Repo = 'polarityproject/polarity-client',
       [switch]$NewKey, [switch]$Force)
@@ -59,24 +60,25 @@ if ((@($built) -join ',') -ne ((PublicKeyOf $ecdsa) -join ',')) { throw "src\mod
 $version = (Select-String -Path (Join-Path $root 'src\core\version.h') -Pattern 'kPolarityVersion = "([^"]+)"').Matches.Groups[1].Value
 $tag = "v$version"
 
-# The release the workflow made for the tag.
-function Gh { & gh @args; if ($LASTEXITCODE) { throw "gh $($args -join ' ') failed" } }
-$release = Gh release view $tag --repo $Repo --json isDraft,body,assets,url | ConvertFrom-Json
+# The release the workflow made for the tag. The helper isn't named gh:
+# PowerShell finds commands without regard to case, so it would call itself.
+function Invoke-Gh { & gh @args; if ($LASTEXITCODE) { throw "gh $($args -join ' ') failed" } }
+$release = Invoke-Gh release view $tag --repo $Repo --json 'isDraft,body,assets,url' | ConvertFrom-Json
 if (-not $release.isDraft -and -not $Force) { throw "$($release.url) is published already; -Force signs its update info again" }
 $notes = (($release.body.Trim() -split "\r?\n\s*\r?\n")[0] -replace '\s*\r?\n\s*', ' ').Trim()
 if (-not $notes -or $notes.StartsWith('#')) { throw "the description of $($release.url) does not start with the summary paragraph" }
 
 # Its files, each checked to come from this repository's build workflow. The
 # update info is signed here instead, so a -Force run leaves it out.
-$built = @($release.assets | Where-Object { $_.name -notlike 'update.json*' })
+$assets = @($release.assets | Where-Object { $_.name -notlike 'update.json*' })
 $dir = Join-Path $root "dist\release\$version"
 if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
 New-Item -ItemType Directory -Force $dir | Out-Null
-foreach ($asset in $built) {
-  Gh release download $tag --repo $Repo --dir $dir --pattern $asset.name
-  Gh attestation verify (Join-Path $dir $asset.name) --repo $Repo --signer-workflow "$Repo/.github/workflows/build.yml" | Out-Null
+foreach ($asset in $assets) {
+  Invoke-Gh release download $tag --repo $Repo --dir $dir --pattern $asset.name
+  Invoke-Gh attestation verify (Join-Path $dir $asset.name) --repo $Repo --signer-workflow "$Repo/.github/workflows/build.yml" | Out-Null
 }
-"$($built.Count) files checked: built by $Repo's build workflow"
+"$($assets.Count) files checked: built by $Repo's build workflow"
 $symbols = New-Item -ItemType Directory -Force (Join-Path $root "dist\symbols\$version")
 Copy-Item (Join-Path $dir 'polarity.pdb') $symbols -Force
 
@@ -109,6 +111,6 @@ $infoFile = Join-Path $dir 'update.json'
 
 # Both go on the release before it is published, so the latest release always
 # carries its own update info.
-Gh release upload $tag --repo $Repo --clobber $infoFile "$infoFile.sig"
-if ($release.isDraft) { Gh release edit $tag --repo $Repo --draft=false --latest | Out-Null }
-"Polarity $version is offered: $($release.url)"
+Invoke-Gh release upload $tag --repo $Repo --clobber $infoFile "$infoFile.sig"
+if ($release.isDraft) { Invoke-Gh release edit $tag --repo $Repo --draft=false --latest | Out-Null }
+"Polarity $version is offered: https://github.com/$Repo/releases/tag/$tag"
